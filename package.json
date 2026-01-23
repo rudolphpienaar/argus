@@ -1,0 +1,25 @@
+{
+  "name": "argus",
+  "version": "0.1.0",
+  "description": "ARGUS - ATLAS Resource Graphical User System",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "serve": "npx http-server dist -p 8080 -c-1",
+    "dev": "npm run build && npm run serve"
+  },
+  "keywords": [
+    "atlas",
+    "argus",
+    "medical-imaging",
+    "federated-learning",
+    "lcars"
+  ],
+  "author": "ATLAS Project Team",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "http-server": "^14.1.1"
+  }
+}

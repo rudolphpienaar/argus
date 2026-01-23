@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARGUS - ATLAS Resource Graphical User System</title>
+    <link rel="stylesheet" href="css/lcars.css">
+</head>
+<body>
+    <section class="wrap-all">
+        <!-- Top Frame -->
+        <div class="wrap">
+            <div class="left-frame-top" id="top-frame">
+                <div class="panel-1">
+                    <span id="lcars-date"></span>
+                    <span class="hop" id="lcars-time"></span>
+                </div>
+                <div class="panel-2">
+                    DEVELOPER <span class="hop">MODE</span>
+                </div>
+            </div>
+            <div class="right-frame-top" id="right-top-frame">
+                <div class="banner">ARGUS</div>
+                <nav class="stage-nav">
+                    <button data-stage="search" class="active">Search</button>
+                    <button data-stage="gather" disabled>Gather</button>
+                    <button data-stage="process" disabled>Process</button>
+                    <button data-stage="monitor" disabled>Monitor</button>
+                    <button data-stage="post" disabled>Post</button>
+                </nav>
+                <div class="bar-panel">
+                    <div class="bar-1"></div>
+                    <div class="bar-2"></div>
+                    <div class="bar-3"></div>
+                    <div class="bar-4"></div>
+                    <div class="bar-5"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="wrap" id="main-wrap">
+            <div class="left-frame">
+                <button onclick="ui_toggleTopFrame(event)" id="topBtn" class="panel-button">
+                    <span class="hop">show</span> detail
+                </button>
+                <div class="sidebar-panels">
+                    <div class="sidebar-panel panel-3">ATLAS<span class="hop">-01</span></div>
+                    <div class="sidebar-panel panel-4">SEAGAP<span class="hop">-MP</span></div>
+                    <div class="sidebar-panel panel-5" id="stage-indicator">SEARCH</div>
+                    <div class="sidebar-panel panel-6" id="cost-indicator">$0.00</div>
+                    <div class="sidebar-panel panel-7" id="item-count">0 <span class="hop">items</span></div>
+                </div>
+            </div>
+            <div class="right-frame">
+                <main>
+                    <!-- SEARCH Stage -->
+                    <div class="stage-content active" data-stage="search">
+                        <h1>Search Training Data</h1>
+                        <p>Query the ATLAS catalog for annotated medical imaging datasets.</p>
+
+                        <div class="search-controls">
+                            <input type="text" id="search-query" placeholder="Search datasets...">
+                            <select id="search-modality">
+                                <option value="">All Modalities</option>
+                                <option value="xray">X-Ray</option>
+                                <option value="ct">CT</option>
+                                <option value="mri">MRI</option>
+                                <option value="pathology">Pathology</option>
+                            </select>
+                            <select id="search-annotation">
+                                <option value="">All Annotations</option>
+                                <option value="segmentation">Segmentation</option>
+                                <option value="classification">Classification</option>
+                                <option value="detection">Detection</option>
+                            </select>
+                            <button onclick="catalog_search()">Search</button>
+                        </div>
+
+                        <h2>Available Datasets</h2>
+                        <div class="dataset-grid" id="dataset-results">
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <div class="launch-controls mt-2">
+                            <button onclick="stage_advanceTo('gather')" id="btn-to-gather" disabled>
+                                Proceed to Gather →
+                            </button>
+                            <span id="selection-count">0 datasets selected</span>
+                        </div>
+                    </div>
+
+                    <!-- GATHER Stage -->
+                    <div class="stage-content" data-stage="gather">
+                        <h1>Gather Virtual Cohort</h1>
+                        <p>Your selected datasets assembled as a virtual filesystem.</p>
+
+                        <div class="filesystem-view">
+                            <div class="file-tree" id="file-tree">
+                                <!-- Populated by JS -->
+                            </div>
+                            <div class="file-preview" id="file-preview">
+                                <p class="hop">Select a file to preview</p>
+                            </div>
+                        </div>
+
+                        <div class="cost-summary" id="cost-summary">
+                            <h3>Estimated Costs</h3>
+                            <p>Data Access: <span id="cost-data">$0.00</span></p>
+                            <p>Compute (est.): <span id="cost-compute">$0.00</span></p>
+                            <p>Storage: <span id="cost-storage">$0.00</span></p>
+                            <hr style="margin: .5rem 0; border-color: var(--orange);">
+                            <p class="total">Total: <span id="cost-total">$0.00</span></p>
+                        </div>
+
+                        <div class="launch-controls">
+                            <button onclick="stage_advanceTo('search')">← Back to Search</button>
+                            <button onclick="stage_advanceTo('process')" class="launch">
+                                Proceed to Process →
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- PROCESS Stage -->
+                    <div class="stage-content" data-stage="process">
+                        <h1>Process - Model Development</h1>
+                        <p>Write your training code. ATLAS will handle federation automatically.</p>
+
+                        <div class="code-panel">
+                            <div class="code-header">
+                                <span>train_model.py</span>
+                                <span class="hop">ATLAS Template</span>
+                            </div>
+                            <div class="code-content" id="code-editor">
+<span class="comment"># ATLAS Federated Training Template</span>
+<span class="comment"># Your code runs locally on each Trusted Domain</span>
+
+<span class="keyword">import</span> atlas
+<span class="keyword">from</span> atlas.data <span class="keyword">import</span> DataLoader
+<span class="keyword">from</span> atlas.model <span class="keyword">import</span> ChestXRayClassifier
+
+<span class="comment"># Load data from virtual filesystem (/in)</span>
+train_data = DataLoader(<span class="string">'/in/training'</span>)
+val_data = DataLoader(<span class="string">'/in/validation'</span>)
+
+<span class="comment"># Define your model</span>
+model = ChestXRayClassifier(
+    backbone=<span class="string">'resnet50'</span>,
+    num_classes=<span class="number">14</span>,
+    pretrained=<span class="keyword">True</span>
+)
+
+<span class="comment"># Training loop - ATLAS handles distribution</span>
+<span class="keyword">for</span> epoch <span class="keyword">in</span> <span class="function">range</span>(<span class="number">50</span>):
+    <span class="keyword">for</span> batch <span class="keyword">in</span> train_data:
+        loss = model.train_step(batch)
+        atlas.log_metric(<span class="string">'loss'</span>, loss)
+
+    <span class="comment"># Validation</span>
+    metrics = model.evaluate(val_data)
+    atlas.log_metrics(metrics)
+
+<span class="comment"># Save model to output (/out)</span>
+model.save(<span class="string">'/out/model_weights.pt'</span>)
+                            </div>
+                        </div>
+
+                        <div class="launch-controls">
+                            <button onclick="stage_advanceTo('gather')">← Back to Gather</button>
+                            <button onclick="training_launch()" class="launch" id="btn-launch">
+                                🚀 Launch Federated Training
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- MONITOR Stage -->
+                    <div class="stage-content" data-stage="monitor">
+                        <h1>Monitor - Training Progress</h1>
+                        <p>Real-time federated training status across Trusted Domains.</p>
+
+                        <div class="monitor-grid">
+                            <div class="monitor-panel">
+                                <h3>Overall Progress</h3>
+                                <div class="progress-bar">
+                                    <div class="fill" id="progress-fill" style="width: 0%"></div>
+                                </div>
+                                <div class="epoch-display">
+                                    Epoch <span id="current-epoch">0</span> / <span id="total-epochs">50</span>
+                                    <span class="hop" id="epoch-status">Initializing...</span>
+                                </div>
+                            </div>
+
+                            <div class="monitor-panel">
+                                <h3>Training Loss</h3>
+                                <div class="loss-chart">
+                                    <canvas id="loss-canvas"></canvas>
+                                </div>
+                            </div>
+
+                            <div class="monitor-panel" style="grid-column: span 2;">
+                                <h3>Node Status</h3>
+                                <div class="node-status" id="node-status">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+
+                            <div class="monitor-panel">
+                                <h3>Current Metrics</h3>
+                                <p>Loss: <span id="metric-loss">--</span></p>
+                                <p>Accuracy: <span id="metric-accuracy">--</span></p>
+                                <p>AUC: <span id="metric-auc">--</span></p>
+                            </div>
+
+                            <div class="monitor-panel">
+                                <h3>Cost Tracker</h3>
+                                <p>Running Cost: <span id="running-cost">$0.00</span></p>
+                                <p>Budget Limit: <span id="budget-limit">$500.00</span></p>
+                                <div class="progress-bar">
+                                    <div class="fill" id="cost-progress" style="width: 0%; background: var(--harvestgold);"></div>
+                                </div>
+                                <button onclick="training_abort()" style="margin-top: .5rem; background: var(--tomato); padding: .5rem 1rem; border-radius: 4px;">
+                                    Abort Training
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- POST Stage -->
+                    <div class="stage-content" data-stage="post">
+                        <h1>Post - Publish Model</h1>
+                        <p>Register your trained model in the ATLAS marketplace.</p>
+
+                        <div class="publish-summary">
+                            <h4>Training Summary</h4>
+                            <p>Final Loss: <span id="final-loss">0.0234</span></p>
+                            <p>Final Accuracy: <span id="final-accuracy">94.2%</span></p>
+                            <p>Training Time: <span id="training-time">2h 34m</span></p>
+                            <p>Total Cost: <span id="final-cost">$127.50</span></p>
+                        </div>
+
+                        <div class="publish-form">
+                            <div class="form-group">
+                                <label for="model-name">Model Name</label>
+                                <input type="text" id="model-name" value="ChestXRay-Classifier-v1">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="model-description">Description</label>
+                                <textarea id="model-description">A 14-class chest X-ray classifier trained on federated data from 5 institutions. Achieves 94.2% accuracy on held-out validation set.</textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="model-license">License</label>
+                                <select id="model-license">
+                                    <option value="atlas-standard">ATLAS Standard License</option>
+                                    <option value="research-only">Research Only</option>
+                                    <option value="commercial">Commercial Use Permitted</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="model-price">Inference Price (per 1000 images)</label>
+                                <input type="text" id="model-price" value="$2.50">
+                            </div>
+
+                            <button onclick="model_publish()" class="publish-btn">
+                                Publish to Marketplace
+                            </button>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </section>
+
+    <script src="js/argus.js" type="module"></script>
+</body>
+</html>
