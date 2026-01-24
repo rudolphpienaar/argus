@@ -29,7 +29,7 @@ const VERSION = '0.1.0';
 /**
  * Git commit hash (short). Update on each commit.
  */
-const GIT_HASH = '009b82';
+const GIT_HASH = '5f7842';
 
 // ============================================================================
 // Mock Data
