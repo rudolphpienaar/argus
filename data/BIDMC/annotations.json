@@ -1,0 +1,523 @@
+[
+  { "file": "BIDMC_001.jpg", "box": [377, 66, 232, 219], "label": "opacity" }
+,
+  { "file": "BIDMC_002.jpg", "box": [63, 444, 246, 190], "label": "opacity" }
+,
+  { "file": "BIDMC_003.jpg", "box": [134, 200, 165, 285], "label": "opacity" }
+,
+  { "file": "BIDMC_004.jpg", "box": [300, 143, 153, 274], "label": "opacity" }
+,
+  { "file": "BIDMC_005.jpg", "box": [419, 304, 233, 199], "label": "opacity" }
+,
+  { "file": "BIDMC_006.jpg", "box": [185, 116, 259, 243], "label": "opacity" }
+,
+  { "file": "BIDMC_007.jpg", "box": [118, 437, 169, 279], "label": "opacity" }
+,
+  { "file": "BIDMC_008.jpg", "box": [40, 408, 219, 183], "label": "opacity" }
+,
+  { "file": "BIDMC_010.jpg", "box": [298, 109, 158, 198], "label": "opacity" }
+,
+  { "file": "BIDMC_012.jpg", "box": [146, 91, 138, 156], "label": "opacity" }
+,
+  { "file": "BIDMC_015.jpg", "box": [125, 288, 189, 166], "label": "opacity" }
+,
+  { "file": "BIDMC_016.jpg", "box": [133, 358, 170, 269], "label": "opacity" }
+,
+  { "file": "BIDMC_017.jpg", "box": [10, 486, 208, 255], "label": "opacity" }
+,
+  { "file": "BIDMC_018.jpg", "box": [118, 372, 288, 204], "label": "opacity" }
+,
+  { "file": "BIDMC_019.jpg", "box": [308, 322, 206, 201], "label": "opacity" }
+,
+  { "file": "BIDMC_020.jpg", "box": [305, 122, 245, 156], "label": "opacity" }
+,
+  { "file": "BIDMC_023.jpg", "box": [259, 171, 177, 299], "label": "opacity" }
+,
+  { "file": "BIDMC_024.jpg", "box": [424, 10, 149, 223], "label": "opacity" }
+,
+  { "file": "BIDMC_025.jpg", "box": [432, 449, 163, 151], "label": "opacity" }
+,
+  { "file": "BIDMC_026.jpg", "box": [218, 422, 105, 180], "label": "opacity" }
+,
+  { "file": "BIDMC_027.jpg", "box": [197, 72, 219, 277], "label": "opacity" }
+,
+  { "file": "BIDMC_028.jpg", "box": [464, 437, 175, 242], "label": "opacity" }
+,
+  { "file": "BIDMC_029.jpg", "box": [100, 458, 162, 106], "label": "opacity" }
+,
+  { "file": "BIDMC_030.jpg", "box": [393, 186, 134, 120], "label": "opacity" }
+,
+  { "file": "BIDMC_031.jpg", "box": [139, 167, 123, 276], "label": "opacity" }
+,
+  { "file": "BIDMC_032.jpg", "box": [89, 72, 249, 101], "label": "opacity" }
+,
+  { "file": "BIDMC_033.jpg", "box": [434, 484, 122, 159], "label": "opacity" }
+,
+  { "file": "BIDMC_034.jpg", "box": [122, 479, 118, 140], "label": "opacity" }
+,
+  { "file": "BIDMC_035.jpg", "box": [332, 343, 269, 136], "label": "opacity" }
+,
+  { "file": "BIDMC_037.jpg", "box": [138, 100, 231, 236], "label": "opacity" }
+,
+  { "file": "BIDMC_038.jpg", "box": [5, 417, 129, 258], "label": "opacity" }
+,
+  { "file": "BIDMC_039.jpg", "box": [448, 30, 255, 199], "label": "opacity" }
+,
+  { "file": "BIDMC_040.jpg", "box": [190, 214, 114, 213], "label": "opacity" }
+,
+  { "file": "BIDMC_041.jpg", "box": [189, 109, 170, 172], "label": "opacity" }
+,
+  { "file": "BIDMC_042.jpg", "box": [335, 14, 274, 286], "label": "opacity" }
+,
+  { "file": "BIDMC_045.jpg", "box": [301, 21, 283, 198], "label": "opacity" }
+,
+  { "file": "BIDMC_046.jpg", "box": [98, 49, 111, 294], "label": "opacity" }
+,
+  { "file": "BIDMC_047.jpg", "box": [40, 247, 190, 188], "label": "opacity" }
+,
+  { "file": "BIDMC_048.jpg", "box": [322, 149, 271, 237], "label": "opacity" }
+,
+  { "file": "BIDMC_049.jpg", "box": [331, 449, 148, 104], "label": "opacity" }
+,
+  { "file": "BIDMC_050.jpg", "box": [293, 18, 106, 238], "label": "opacity" }
+,
+  { "file": "BIDMC_051.jpg", "box": [305, 496, 276, 234], "label": "opacity" }
+,
+  { "file": "BIDMC_052.jpg", "box": [119, 327, 299, 119], "label": "opacity" }
+,
+  { "file": "BIDMC_053.jpg", "box": [161, 166, 150, 110], "label": "opacity" }
+,
+  { "file": "BIDMC_054.jpg", "box": [399, 51, 128, 265], "label": "opacity" }
+,
+  { "file": "BIDMC_055.jpg", "box": [10, 360, 108, 256], "label": "opacity" }
+,
+  { "file": "BIDMC_056.jpg", "box": [130, 490, 163, 241], "label": "opacity" }
+,
+  { "file": "BIDMC_057.jpg", "box": [115, 215, 163, 131], "label": "opacity" }
+,
+  { "file": "BIDMC_058.jpg", "box": [124, 49, 294, 206], "label": "opacity" }
+,
+  { "file": "BIDMC_059.jpg", "box": [243, 223, 135, 222], "label": "opacity" }
+,
+  { "file": "BIDMC_060.jpg", "box": [201, 356, 284, 219], "label": "opacity" }
+,
+  { "file": "BIDMC_062.jpg", "box": [87, 363, 272, 224], "label": "opacity" }
+,
+  { "file": "BIDMC_063.jpg", "box": [201, 368, 279, 178], "label": "opacity" }
+,
+  { "file": "BIDMC_064.jpg", "box": [310, 287, 187, 197], "label": "opacity" }
+,
+  { "file": "BIDMC_065.jpg", "box": [248, 240, 281, 108], "label": "opacity" }
+,
+  { "file": "BIDMC_066.jpg", "box": [337, 101, 206, 176], "label": "opacity" }
+,
+  { "file": "BIDMC_068.jpg", "box": [318, 64, 148, 289], "label": "opacity" }
+,
+  { "file": "BIDMC_069.jpg", "box": [491, 87, 135, 238], "label": "opacity" }
+,
+  { "file": "BIDMC_070.jpg", "box": [260, 365, 262, 155], "label": "opacity" }
+,
+  { "file": "BIDMC_071.jpg", "box": [143, 72, 206, 110], "label": "opacity" }
+,
+  { "file": "BIDMC_072.jpg", "box": [119, 417, 144, 288], "label": "opacity" }
+,
+  { "file": "BIDMC_073.jpg", "box": [120, 366, 297, 153], "label": "opacity" }
+,
+  { "file": "BIDMC_074.jpg", "box": [136, 161, 276, 125], "label": "opacity" }
+,
+  { "file": "BIDMC_076.jpg", "box": [209, 306, 277, 227], "label": "opacity" }
+,
+  { "file": "BIDMC_078.jpg", "box": [401, 289, 213, 174], "label": "opacity" }
+,
+  { "file": "BIDMC_079.jpg", "box": [238, 130, 121, 100], "label": "opacity" }
+,
+  { "file": "BIDMC_080.jpg", "box": [96, 85, 167, 109], "label": "opacity" }
+,
+  { "file": "BIDMC_081.jpg", "box": [68, 231, 297, 279], "label": "opacity" }
+,
+  { "file": "BIDMC_083.jpg", "box": [200, 350, 200, 297], "label": "opacity" }
+,
+  { "file": "BIDMC_084.jpg", "box": [212, 452, 221, 178], "label": "opacity" }
+,
+  { "file": "BIDMC_085.jpg", "box": [80, 494, 291, 117], "label": "opacity" }
+,
+  { "file": "BIDMC_086.jpg", "box": [74, 405, 114, 293], "label": "opacity" }
+,
+  { "file": "BIDMC_087.jpg", "box": [68, 145, 204, 254], "label": "opacity" }
+,
+  { "file": "BIDMC_088.jpg", "box": [133, 488, 105, 286], "label": "opacity" }
+,
+  { "file": "BIDMC_089.jpg", "box": [280, 151, 139, 173], "label": "opacity" }
+,
+  { "file": "BIDMC_090.jpg", "box": [310, 448, 176, 154], "label": "opacity" }
+,
+  { "file": "BIDMC_091.jpg", "box": [339, 222, 222, 212], "label": "opacity" }
+,
+  { "file": "BIDMC_092.jpg", "box": [254, 303, 167, 275], "label": "opacity" }
+,
+  { "file": "BIDMC_093.jpg", "box": [116, 39, 281, 264], "label": "opacity" }
+,
+  { "file": "BIDMC_094.jpg", "box": [107, 461, 242, 128], "label": "opacity" }
+,
+  { "file": "BIDMC_095.jpg", "box": [461, 150, 183, 171], "label": "opacity" }
+,
+  { "file": "BIDMC_096.jpg", "box": [367, 470, 298, 202], "label": "opacity" }
+,
+  { "file": "BIDMC_097.jpg", "box": [38, 1, 271, 205], "label": "opacity" }
+,
+  { "file": "BIDMC_099.jpg", "box": [495, 405, 156, 135], "label": "opacity" }
+,
+  { "file": "BIDMC_100.jpg", "box": [216, 328, 218, 106], "label": "opacity" }
+,
+  { "file": "BIDMC_101.jpg", "box": [244, 462, 130, 257], "label": "opacity" }
+,
+  { "file": "BIDMC_103.jpg", "box": [186, 419, 188, 236], "label": "opacity" }
+,
+  { "file": "BIDMC_108.jpg", "box": [239, 301, 249, 144], "label": "opacity" }
+,
+  { "file": "BIDMC_109.jpg", "box": [14, 292, 165, 106], "label": "opacity" }
+,
+  { "file": "BIDMC_110.jpg", "box": [468, 219, 197, 153], "label": "opacity" }
+,
+  { "file": "BIDMC_111.jpg", "box": [297, 58, 233, 147], "label": "opacity" }
+,
+  { "file": "BIDMC_112.jpg", "box": [484, 426, 199, 238], "label": "opacity" }
+,
+  { "file": "BIDMC_113.jpg", "box": [35, 146, 180, 136], "label": "opacity" }
+,
+  { "file": "BIDMC_114.jpg", "box": [37, 418, 216, 131], "label": "opacity" }
+,
+  { "file": "BIDMC_115.jpg", "box": [68, 203, 173, 205], "label": "opacity" }
+,
+  { "file": "BIDMC_116.jpg", "box": [208, 413, 143, 133], "label": "opacity" }
+,
+  { "file": "BIDMC_118.jpg", "box": [85, 75, 180, 195], "label": "opacity" }
+,
+  { "file": "BIDMC_119.jpg", "box": [236, 471, 153, 231], "label": "opacity" }
+,
+  { "file": "BIDMC_120.jpg", "box": [112, 138, 179, 295], "label": "opacity" }
+,
+  { "file": "BIDMC_121.jpg", "box": [152, 24, 209, 246], "label": "opacity" }
+,
+  { "file": "BIDMC_122.jpg", "box": [328, 346, 191, 119], "label": "opacity" }
+,
+  { "file": "BIDMC_123.jpg", "box": [139, 355, 199, 156], "label": "opacity" }
+,
+  { "file": "BIDMC_124.jpg", "box": [128, 42, 214, 261], "label": "opacity" }
+,
+  { "file": "BIDMC_125.jpg", "box": [292, 50, 271, 227], "label": "opacity" }
+,
+  { "file": "BIDMC_126.jpg", "box": [72, 283, 239, 245], "label": "opacity" }
+,
+  { "file": "BIDMC_128.jpg", "box": [498, 342, 192, 196], "label": "opacity" }
+,
+  { "file": "BIDMC_129.jpg", "box": [390, 343, 175, 143], "label": "opacity" }
+,
+  { "file": "BIDMC_130.jpg", "box": [368, 432, 244, 246], "label": "opacity" }
+,
+  { "file": "BIDMC_131.jpg", "box": [272, 62, 237, 212], "label": "opacity" }
+,
+  { "file": "BIDMC_132.jpg", "box": [165, 453, 139, 160], "label": "opacity" }
+,
+  { "file": "BIDMC_134.jpg", "box": [429, 89, 290, 269], "label": "opacity" }
+,
+  { "file": "BIDMC_135.jpg", "box": [478, 75, 207, 223], "label": "opacity" }
+,
+  { "file": "BIDMC_136.jpg", "box": [147, 198, 289, 210], "label": "opacity" }
+,
+  { "file": "BIDMC_137.jpg", "box": [422, 21, 125, 177], "label": "opacity" }
+,
+  { "file": "BIDMC_138.jpg", "box": [146, 180, 134, 294], "label": "opacity" }
+,
+  { "file": "BIDMC_139.jpg", "box": [404, 372, 209, 161], "label": "opacity" }
+,
+  { "file": "BIDMC_140.jpg", "box": [264, 151, 263, 150], "label": "opacity" }
+,
+  { "file": "BIDMC_141.jpg", "box": [82, 206, 189, 147], "label": "opacity" }
+,
+  { "file": "BIDMC_142.jpg", "box": [77, 332, 131, 193], "label": "opacity" }
+,
+  { "file": "BIDMC_144.jpg", "box": [292, 383, 135, 134], "label": "opacity" }
+,
+  { "file": "BIDMC_145.jpg", "box": [463, 164, 106, 117], "label": "opacity" }
+,
+  { "file": "BIDMC_147.jpg", "box": [226, 475, 112, 184], "label": "opacity" }
+,
+  { "file": "BIDMC_150.jpg", "box": [311, 84, 264, 194], "label": "opacity" }
+,
+  { "file": "BIDMC_151.jpg", "box": [413, 54, 209, 143], "label": "opacity" }
+,
+  { "file": "BIDMC_152.jpg", "box": [252, 471, 244, 169], "label": "opacity" }
+,
+  { "file": "BIDMC_153.jpg", "box": [193, 218, 203, 230], "label": "opacity" }
+,
+  { "file": "BIDMC_154.jpg", "box": [345, 339, 207, 169], "label": "opacity" }
+,
+  { "file": "BIDMC_155.jpg", "box": [483, 243, 138, 128], "label": "opacity" }
+,
+  { "file": "BIDMC_156.jpg", "box": [70, 363, 111, 146], "label": "opacity" }
+,
+  { "file": "BIDMC_157.jpg", "box": [94, 61, 122, 221], "label": "opacity" }
+,
+  { "file": "BIDMC_158.jpg", "box": [391, 106, 149, 129], "label": "opacity" }
+,
+  { "file": "BIDMC_159.jpg", "box": [34, 459, 118, 135], "label": "opacity" }
+,
+  { "file": "BIDMC_160.jpg", "box": [16, 196, 263, 178], "label": "opacity" }
+,
+  { "file": "BIDMC_161.jpg", "box": [3, 135, 143, 124], "label": "opacity" }
+,
+  { "file": "BIDMC_162.jpg", "box": [232, 2, 156, 100], "label": "opacity" }
+,
+  { "file": "BIDMC_164.jpg", "box": [0, 254, 126, 152], "label": "opacity" }
+,
+  { "file": "BIDMC_165.jpg", "box": [220, 321, 139, 267], "label": "opacity" }
+,
+  { "file": "BIDMC_166.jpg", "box": [54, 299, 276, 214], "label": "opacity" }
+,
+  { "file": "BIDMC_167.jpg", "box": [215, 373, 249, 294], "label": "opacity" }
+,
+  { "file": "BIDMC_168.jpg", "box": [78, 16, 131, 297], "label": "opacity" }
+,
+  { "file": "BIDMC_169.jpg", "box": [489, 63, 178, 214], "label": "opacity" }
+,
+  { "file": "BIDMC_170.jpg", "box": [171, 46, 221, 189], "label": "opacity" }
+,
+  { "file": "BIDMC_171.jpg", "box": [218, 479, 114, 239], "label": "opacity" }
+,
+  { "file": "BIDMC_172.jpg", "box": [87, 333, 109, 233], "label": "opacity" }
+,
+  { "file": "BIDMC_173.jpg", "box": [294, 359, 225, 191], "label": "opacity" }
+,
+  { "file": "BIDMC_174.jpg", "box": [489, 305, 121, 185], "label": "opacity" }
+,
+  { "file": "BIDMC_176.jpg", "box": [473, 388, 123, 145], "label": "opacity" }
+,
+  { "file": "BIDMC_177.jpg", "box": [225, 140, 201, 299], "label": "opacity" }
+,
+  { "file": "BIDMC_178.jpg", "box": [466, 137, 229, 146], "label": "opacity" }
+,
+  { "file": "BIDMC_180.jpg", "box": [484, 472, 209, 200], "label": "opacity" }
+,
+  { "file": "BIDMC_181.jpg", "box": [122, 372, 283, 168], "label": "opacity" }
+,
+  { "file": "BIDMC_183.jpg", "box": [78, 40, 121, 164], "label": "opacity" }
+,
+  { "file": "BIDMC_184.jpg", "box": [241, 260, 228, 255], "label": "opacity" }
+,
+  { "file": "BIDMC_185.jpg", "box": [216, 421, 108, 140], "label": "opacity" }
+,
+  { "file": "BIDMC_187.jpg", "box": [316, 15, 295, 271], "label": "opacity" }
+,
+  { "file": "BIDMC_188.jpg", "box": [233, 404, 252, 275], "label": "opacity" }
+,
+  { "file": "BIDMC_189.jpg", "box": [144, 470, 145, 289], "label": "opacity" }
+,
+  { "file": "BIDMC_190.jpg", "box": [488, 123, 192, 176], "label": "opacity" }
+,
+  { "file": "BIDMC_191.jpg", "box": [303, 278, 126, 204], "label": "opacity" }
+,
+  { "file": "BIDMC_192.jpg", "box": [329, 360, 131, 194], "label": "opacity" }
+,
+  { "file": "BIDMC_193.jpg", "box": [70, 389, 296, 209], "label": "opacity" }
+,
+  { "file": "BIDMC_194.jpg", "box": [198, 306, 245, 120], "label": "opacity" }
+,
+  { "file": "BIDMC_197.jpg", "box": [425, 56, 190, 269], "label": "opacity" }
+,
+  { "file": "BIDMC_198.jpg", "box": [17, 66, 138, 278], "label": "opacity" }
+,
+  { "file": "BIDMC_199.jpg", "box": [339, 487, 228, 122], "label": "opacity" }
+,
+  { "file": "BIDMC_200.jpg", "box": [277, 172, 110, 245], "label": "opacity" }
+,
+  { "file": "BIDMC_202.jpg", "box": [414, 441, 167, 143], "label": "opacity" }
+,
+  { "file": "BIDMC_203.jpg", "box": [251, 315, 257, 186], "label": "opacity" }
+,
+  { "file": "BIDMC_205.jpg", "box": [52, 331, 174, 110], "label": "opacity" }
+,
+  { "file": "BIDMC_206.jpg", "box": [62, 86, 146, 106], "label": "opacity" }
+,
+  { "file": "BIDMC_209.jpg", "box": [252, 209, 149, 270], "label": "opacity" }
+,
+  { "file": "BIDMC_210.jpg", "box": [138, 151, 121, 152], "label": "opacity" }
+,
+  { "file": "BIDMC_212.jpg", "box": [191, 284, 143, 108], "label": "opacity" }
+,
+  { "file": "BIDMC_213.jpg", "box": [194, 75, 248, 259], "label": "opacity" }
+,
+  { "file": "BIDMC_214.jpg", "box": [150, 455, 239, 202], "label": "opacity" }
+,
+  { "file": "BIDMC_215.jpg", "box": [403, 3, 248, 138], "label": "opacity" }
+,
+  { "file": "BIDMC_217.jpg", "box": [207, 497, 150, 252], "label": "opacity" }
+,
+  { "file": "BIDMC_218.jpg", "box": [398, 388, 195, 115], "label": "opacity" }
+,
+  { "file": "BIDMC_220.jpg", "box": [124, 258, 245, 285], "label": "opacity" }
+,
+  { "file": "BIDMC_223.jpg", "box": [147, 142, 239, 170], "label": "opacity" }
+,
+  { "file": "BIDMC_225.jpg", "box": [211, 416, 203, 161], "label": "opacity" }
+,
+  { "file": "BIDMC_226.jpg", "box": [458, 353, 263, 256], "label": "opacity" }
+,
+  { "file": "BIDMC_227.jpg", "box": [436, 384, 197, 232], "label": "opacity" }
+,
+  { "file": "BIDMC_228.jpg", "box": [198, 56, 208, 261], "label": "opacity" }
+,
+  { "file": "BIDMC_229.jpg", "box": [233, 332, 231, 172], "label": "opacity" }
+,
+  { "file": "BIDMC_230.jpg", "box": [299, 170, 203, 172], "label": "opacity" }
+,
+  { "file": "BIDMC_231.jpg", "box": [106, 173, 235, 167], "label": "opacity" }
+,
+  { "file": "BIDMC_232.jpg", "box": [90, 488, 134, 195], "label": "opacity" }
+,
+  { "file": "BIDMC_235.jpg", "box": [409, 289, 110, 120], "label": "opacity" }
+,
+  { "file": "BIDMC_237.jpg", "box": [117, 369, 191, 122], "label": "opacity" }
+,
+  { "file": "BIDMC_238.jpg", "box": [465, 3, 184, 261], "label": "opacity" }
+,
+  { "file": "BIDMC_239.jpg", "box": [154, 219, 168, 251], "label": "opacity" }
+,
+  { "file": "BIDMC_241.jpg", "box": [6, 464, 272, 230], "label": "opacity" }
+,
+  { "file": "BIDMC_242.jpg", "box": [424, 155, 272, 190], "label": "opacity" }
+,
+  { "file": "BIDMC_243.jpg", "box": [388, 189, 189, 146], "label": "opacity" }
+,
+  { "file": "BIDMC_244.jpg", "box": [462, 258, 117, 257], "label": "opacity" }
+,
+  { "file": "BIDMC_245.jpg", "box": [285, 38, 256, 208], "label": "opacity" }
+,
+  { "file": "BIDMC_246.jpg", "box": [267, 133, 129, 287], "label": "opacity" }
+,
+  { "file": "BIDMC_247.jpg", "box": [59, 48, 129, 163], "label": "opacity" }
+,
+  { "file": "BIDMC_250.jpg", "box": [473, 212, 286, 180], "label": "opacity" }
+,
+  { "file": "BIDMC_252.jpg", "box": [224, 43, 222, 238], "label": "opacity" }
+,
+  { "file": "BIDMC_253.jpg", "box": [95, 259, 161, 165], "label": "opacity" }
+,
+  { "file": "BIDMC_254.jpg", "box": [44, 389, 161, 195], "label": "opacity" }
+,
+  { "file": "BIDMC_255.jpg", "box": [116, 313, 247, 257], "label": "opacity" }
+,
+  { "file": "BIDMC_256.jpg", "box": [276, 157, 263, 228], "label": "opacity" }
+,
+  { "file": "BIDMC_257.jpg", "box": [350, 196, 191, 210], "label": "opacity" }
+,
+  { "file": "BIDMC_258.jpg", "box": [342, 222, 204, 230], "label": "opacity" }
+,
+  { "file": "BIDMC_259.jpg", "box": [430, 438, 254, 151], "label": "opacity" }
+,
+  { "file": "BIDMC_260.jpg", "box": [129, 44, 173, 281], "label": "opacity" }
+,
+  { "file": "BIDMC_009.png", "box": [296, 127, 133, 181], "label": "opacity" }
+,
+  { "file": "BIDMC_011.png", "box": [412, 372, 204, 218], "label": "opacity" }
+,
+  { "file": "BIDMC_013.png", "box": [94, 332, 137, 298], "label": "opacity" }
+,
+  { "file": "BIDMC_014.png", "box": [207, 147, 124, 210], "label": "opacity" }
+,
+  { "file": "BIDMC_021.png", "box": [163, 112, 231, 207], "label": "opacity" }
+,
+  { "file": "BIDMC_022.png", "box": [203, 486, 141, 149], "label": "opacity" }
+,
+  { "file": "BIDMC_036.png", "box": [356, 149, 100, 186], "label": "opacity" }
+,
+  { "file": "BIDMC_043.png", "box": [111, 186, 103, 170], "label": "opacity" }
+,
+  { "file": "BIDMC_044.png", "box": [320, 405, 117, 276], "label": "opacity" }
+,
+  { "file": "BIDMC_061.png", "box": [470, 277, 110, 244], "label": "opacity" }
+,
+  { "file": "BIDMC_067.png", "box": [440, 399, 165, 197], "label": "opacity" }
+,
+  { "file": "BIDMC_075.png", "box": [396, 494, 280, 135], "label": "opacity" }
+,
+  { "file": "BIDMC_077.png", "box": [430, 384, 172, 238], "label": "opacity" }
+,
+  { "file": "BIDMC_082.png", "box": [244, 119, 108, 154], "label": "opacity" }
+,
+  { "file": "BIDMC_098.png", "box": [45, 428, 295, 187], "label": "opacity" }
+,
+  { "file": "BIDMC_102.png", "box": [246, 319, 220, 175], "label": "opacity" }
+,
+  { "file": "BIDMC_104.png", "box": [162, 160, 133, 199], "label": "opacity" }
+,
+  { "file": "BIDMC_105.png", "box": [69, 480, 202, 284], "label": "opacity" }
+,
+  { "file": "BIDMC_106.png", "box": [51, 199, 259, 194], "label": "opacity" }
+,
+  { "file": "BIDMC_107.png", "box": [371, 94, 205, 276], "label": "opacity" }
+,
+  { "file": "BIDMC_117.png", "box": [131, 118, 144, 190], "label": "opacity" }
+,
+  { "file": "BIDMC_127.png", "box": [492, 172, 280, 135], "label": "opacity" }
+,
+  { "file": "BIDMC_133.png", "box": [204, 322, 107, 286], "label": "opacity" }
+,
+  { "file": "BIDMC_143.png", "box": [357, 428, 207, 118], "label": "opacity" }
+,
+  { "file": "BIDMC_146.png", "box": [105, 376, 253, 234], "label": "opacity" }
+,
+  { "file": "BIDMC_148.png", "box": [484, 485, 287, 143], "label": "opacity" }
+,
+  { "file": "BIDMC_149.png", "box": [196, 300, 101, 117], "label": "opacity" }
+,
+  { "file": "BIDMC_163.png", "box": [193, 420, 224, 125], "label": "opacity" }
+,
+  { "file": "BIDMC_175.png", "box": [324, 292, 133, 244], "label": "opacity" }
+,
+  { "file": "BIDMC_179.png", "box": [130, 429, 181, 113], "label": "opacity" }
+,
+  { "file": "BIDMC_182.png", "box": [269, 214, 104, 283], "label": "opacity" }
+,
+  { "file": "BIDMC_186.png", "box": [103, 216, 258, 178], "label": "opacity" }
+,
+  { "file": "BIDMC_195.png", "box": [331, 408, 101, 108], "label": "opacity" }
+,
+  { "file": "BIDMC_196.png", "box": [39, 371, 242, 153], "label": "opacity" }
+,
+  { "file": "BIDMC_201.png", "box": [360, 470, 234, 206], "label": "opacity" }
+,
+  { "file": "BIDMC_204.png", "box": [31, 399, 143, 264], "label": "opacity" }
+,
+  { "file": "BIDMC_207.png", "box": [21, 94, 228, 205], "label": "opacity" }
+,
+  { "file": "BIDMC_208.png", "box": [456, 265, 227, 290], "label": "opacity" }
+,
+  { "file": "BIDMC_211.png", "box": [67, 40, 240, 211], "label": "opacity" }
+,
+  { "file": "BIDMC_216.png", "box": [210, 275, 173, 273], "label": "opacity" }
+,
+  { "file": "BIDMC_219.png", "box": [62, 81, 213, 189], "label": "opacity" }
+,
+  { "file": "BIDMC_221.png", "box": [175, 17, 230, 175], "label": "opacity" }
+,
+  { "file": "BIDMC_222.png", "box": [23, 398, 229, 110], "label": "opacity" }
+,
+  { "file": "BIDMC_224.png", "box": [476, 461, 251, 137], "label": "opacity" }
+,
+  { "file": "BIDMC_233.png", "box": [481, 163, 242, 157], "label": "opacity" }
+,
+  { "file": "BIDMC_234.png", "box": [367, 66, 218, 234], "label": "opacity" }
+,
+  { "file": "BIDMC_236.png", "box": [371, 49, 211, 187], "label": "opacity" }
+,
+  { "file": "BIDMC_240.png", "box": [271, 391, 224, 188], "label": "opacity" }
+,
+  { "file": "BIDMC_248.png", "box": [311, 474, 214, 210], "label": "opacity" }
+,
+  { "file": "BIDMC_249.png", "box": [374, 252, 116, 284], "label": "opacity" }
+,
+  { "file": "BIDMC_251.png", "box": [160, 111, 239, 216], "label": "opacity" }
+,
+  { "file": "*.jpeg", "box": [284, 101, 166, 151], "label": "opacity" }
+]

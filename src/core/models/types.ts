@@ -79,7 +79,7 @@ export interface CostEstimate {
  * Application state for the SeaGaP-MP workflow.
  */
 export interface AppState {
-    currentStage: 'search' | 'gather' | 'process' | 'monitor' | 'post';
+    currentStage: 'login' | 'role-selection' | 'search' | 'gather' | 'process' | 'monitor' | 'post';
     selectedDatasets: Dataset[];
     virtualFilesystem: FileNode | null;
     costEstimate: CostEstimate;

@@ -1205,3 +1205,207 @@ hr {
 .pulse {
     animation: pulse 2300ms infinite;
 }
+
+/* ============================================================ */
+/* LOGIN STAGE                                                  */
+/* ============================================================ */
+
+.login-container {
+    max-width: 900px;
+    margin-inline: auto;
+    padding-top: 2rem;
+}
+
+.login-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+    margin-top: 2rem;
+}
+
+.lcars-header-block {
+    border-bottom: 2px solid var(--orange);
+    padding-bottom: 1rem;
+    margin-bottom: 2rem;
+    text-align: right;
+}
+
+.lcars-subtitle {
+    color: var(--orange);
+    font-size: 1.2rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.blurb {
+    font-size: 1.25rem;
+    color: var(--honey);
+    line-height: 1.5;
+    margin-bottom: 2rem;
+}
+
+.blurb-text {
+    font-size: 1rem;
+    color: var(--font-color);
+    margin-bottom: 2rem;
+    text-align: justify;
+}
+
+.lcars-digits {
+    display: flex;
+    justify-content: space-between;
+    font-size: 2rem;
+    color: var(--october-sunset);
+    font-family: 'Antonio', sans-serif;
+    opacity: 0.5;
+    margin-top: 2rem;
+}
+
+.login-form {
+    background: #111;
+    border: 2px solid var(--harvestgold);
+    border-radius: 20px; /* LCARS curve */
+    padding: 2rem;
+    border-bottom-right-radius: 0;
+}
+
+@media (max-width: 800px) {
+    .login-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    .login-container {
+        padding-top: 0;
+    }
+}
+
+/* ============================================================ */
+/* LOCKED STATE (Login/Role Selection)                          */
+/* ============================================================ */
+
+/* Hide main navigation and standard cascade */
+body.state-locked .left-frame > *,
+body.state-locked nav,
+body.state-locked .persona-btn,
+body.state-locked .data-wrapper {
+    display: none !important;
+}
+
+/* Show Telemetry Dashboard */
+.telemetry-wrapper {
+    display: none;
+}
+
+body.state-locked .telemetry-wrapper {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.5fr;
+    gap: 1rem;
+    width: 100%;
+    height: 184px; /* Match data-wrapper height */
+    padding-top: 10px;
+    padding-right: 2rem;
+    padding-left: clamp(20px, 3vw, 50px);
+}
+
+.tele-col {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--october-sunset);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.tele-header {
+    background: var(--october-sunset);
+    color: black;
+    font-size: 0.7rem;
+    font-weight: bold;
+    padding: 2px 5px;
+    text-align: right;
+}
+
+.tele-content {
+    padding: 5px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--honey);
+    flex: 1;
+    overflow: hidden;
+    white-space: pre;
+}
+
+.tele-content span.highlight { color: var(--canary); }
+.tele-content span.dim { opacity: 0.5; }
+.tele-content span.warn { color: var(--tomato); }
+
+@media (max-width: 1000px) {
+    body.state-locked .telemetry-wrapper {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    .tele-col {
+        height: 100px;
+    }
+}
+
+/* ============================================================ */
+/* ROLE SELECTION STAGE                                         */
+/* ============================================================ */
+
+.role-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.role-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    background: #111;
+    border: 2px solid var(--honey);
+    border-radius: 20px;
+    padding: 1.5rem;
+    border-bottom-right-radius: 0;
+    text-align: right;
+    transition: all 0.3s ease;
+    min-height: 260px;
+    width: 100%;
+}
+
+.role-card:hover {
+    background: #222;
+    transform: translateY(-5px);
+    box-shadow: 0 0 15px rgba(255, 204, 153, 0.2);
+}
+
+.role-icon {
+    width: 80px;
+    height: 80px;
+    background-color: var(--honey);
+    color: black;
+    font-size: 1.5rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    margin-bottom: auto;
+}
+
+.role-card h3 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    margin-top: 1rem;
+    color: var(--honey);
+}
+
+.role-card p {
+    font-size: 1rem;
+    color: var(--font-color);
+    margin: 0;
+    opacity: 0.8;
+}

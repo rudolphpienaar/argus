@@ -23,7 +23,7 @@ import { VERSION, GIT_HASH } from './generated/version.js';
 // Types
 // ============================================================================
 
-type Persona = 'developer' | 'annotator' | 'user' | 'provider';
+type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 type GutterStatus = 'idle' | 'active' | 'success' | 'error';
 
 // ============================================================================
@@ -33,83 +33,83 @@ type GutterStatus = 'idle' | 'active' | 'success' | 'error';
 const MOCK_DATASETS: Dataset[] = [
     {
         id: 'ds-001',
-        name: 'NIH ChestX-ray14',
-        description: 'Large-scale chest X-ray dataset with 14 disease labels',
+        name: 'BCH Chest X-ray Cohort',
+        description: 'Pediatric chest radiographs from Boston Children\'s Hospital',
         modality: 'xray',
         annotationType: 'classification',
-        imageCount: 112120,
-        size: '42 GB',
+        imageCount: 293,
+        size: '1.2 GB',
         cost: 45.00,
-        provider: 'NIH Clinical Center',
-        thumbnail: 'data/chest_xray_001.png'
+        provider: 'Boston Children\'s Hospital',
+        thumbnail: 'data/BCH/BCH_001.jpg'
     },
     {
         id: 'ds-002',
-        name: 'COVID-CXR Collection',
-        description: 'Curated COVID-19 chest radiographs with severity annotations',
+        name: 'MGH COVID Collection',
+        description: 'Adult chest X-rays with COVID-19 annotations',
         modality: 'xray',
         annotationType: 'classification',
-        imageCount: 5000,
-        size: '8 GB',
-        cost: 25.00,
-        provider: 'BSTI Consortium',
-        thumbnail: 'data/chest_xray_002.jpg'
+        imageCount: 249,
+        size: '1.1 GB',
+        cost: 35.00,
+        provider: 'Mass General Hospital',
+        thumbnail: 'data/MGH/MGH_001.jpg'
     },
     {
         id: 'ds-003',
-        name: 'Pneumonia Detection Set',
-        description: 'Pediatric chest X-rays labeled for pneumonia detection',
+        name: 'BIDMC Pneumonia Set',
+        description: 'Emergency department chest films labeled for pneumonia',
         modality: 'xray',
         annotationType: 'detection',
-        imageCount: 5863,
-        size: '2 GB',
-        cost: 15.00,
-        provider: 'Guangzhou Medical',
-        thumbnail: 'data/chest_xray_003.jpg'
+        imageCount: 177,
+        size: '0.8 GB',
+        cost: 25.00,
+        provider: 'Beth Israel Deaconess',
+        thumbnail: 'data/BIDMC/BIDMC_001.jpg'
     },
     {
         id: 'ds-004',
-        name: 'Thoracic Segmentation',
-        description: 'Chest X-rays with lung and heart segmentation masks',
+        name: 'BWH Thoracic Segments',
+        description: 'High-resolution chest X-rays with organ segmentation',
         modality: 'xray',
         annotationType: 'segmentation',
-        imageCount: 800,
+        imageCount: 223,
         size: '1.5 GB',
-        cost: 35.00,
-        provider: 'Montgomery County',
-        thumbnail: 'data/chest_xray_004.jpg'
+        cost: 40.00,
+        provider: 'Brigham and Women\'s',
+        thumbnail: 'data/BWH/BWH_001.jpg'
     },
     {
         id: 'ds-005',
-        name: 'Multi-Label CXR',
-        description: 'Chest radiographs with multi-label disease annotations',
-        modality: 'xray',
-        annotationType: 'classification',
-        imageCount: 25000,
-        size: '15 GB',
-        cost: 55.00,
-        provider: 'CheXpert Stanford',
-        thumbnail: 'data/chest_xray_005.jpg'
+        name: 'Brain MRI Segmentation',
+        description: 'Brain Tumor MRI Dataset (Glioma) with generated masks',
+        modality: 'mri',
+        annotationType: 'segmentation',
+        imageCount: 20,
+        size: '18 MB',
+        cost: 15.00,
+        provider: 'Kaggle (Masoud Nickparvar)',
+        thumbnail: 'data/KaggleBrain/Training/glioma/Tr-gl_0010.jpg'
     },
     {
         id: 'ds-006',
-        name: 'Tuberculosis Screening',
-        description: 'TB screening dataset from multiple countries',
-        modality: 'xray',
-        annotationType: 'classification',
-        imageCount: 3500,
-        size: '4 GB',
-        cost: 20.00,
-        provider: 'WHO TB Initiative',
-        thumbnail: 'data/chest_xray_006.jpg'
+        name: 'Histology Segmentation',
+        description: 'Microscopic white blood cell images with ground truth masks',
+        modality: 'pathology',
+        annotationType: 'segmentation',
+        imageCount: 20,
+        size: '15 MB',
+        cost: 5.00,
+        provider: 'Jiangxi University',
+        thumbnail: 'data/WBC/images/WBC_001.bmp'
     }
 ];
 
 const MOCK_NODES: TrustedDomainNode[] = [
-    { id: 'td-001', name: 'BCH-TD-01', institution: "Boston Children's Hospital", status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 5000 },
-    { id: 'td-002', name: 'MGH-TD-01', institution: 'Mass General Hospital', status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 8000 },
-    { id: 'td-003', name: 'BIDMC-TD-01', institution: 'Beth Israel Deaconess', status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 6500 },
-    { id: 'td-004', name: 'BWH-TD-01', institution: "Brigham and Women's", status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 7200 },
+    { id: 'td-001', name: 'BCH-TD-01', institution: "Boston Children's Hospital", status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 293 },
+    { id: 'td-002', name: 'MGH-TD-01', institution: 'Mass General Hospital', status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 249 },
+    { id: 'td-003', name: 'BIDMC-TD-01', institution: 'Beth Israel Deaconess', status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 177 },
+    { id: 'td-004', name: 'BWH-TD-01', institution: "Brigham and Women's", status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 223 },
     { id: 'td-005', name: 'MOC-HUB', institution: 'Mass Open Cloud (Aggregator)', status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 0 }
 ];
 
@@ -119,7 +119,7 @@ const MOCK_NODES: TrustedDomainNode[] = [
 
 const state: AppState & { currentPersona: Persona } = {
     currentPersona: 'developer',
-    currentStage: 'search',
+    currentStage: 'login',
     selectedDatasets: [],
     virtualFilesystem: null,
     costEstimate: { dataAccess: 0, compute: 0, storage: 0, total: 0 },
@@ -243,16 +243,41 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
     state.currentStage = stageName;
 
     // Update stage indicators in sidebar
-    document.querySelectorAll('.stage-indicator').forEach(indicator => {
-        const indicatorStage = indicator.getAttribute('data-stage');
+    document.querySelectorAll('.stage-indicator').forEach((indicator: Element) => {
+        const indicatorStage: string | null = indicator.getAttribute('data-stage');
         indicator.classList.toggle('active', indicatorStage === stageName);
     });
 
     // Show/hide stage content
-    document.querySelectorAll('.stage-content').forEach(content => {
-        const contentStage = content.getAttribute('data-stage');
+    document.querySelectorAll('.stage-content').forEach((content: Element) => {
+        const contentStage: string | null = content.getAttribute('data-stage');
         content.classList.toggle('active', contentStage === stageName);
     });
+
+    // Sidebar and Header management
+    const isUnlocked: boolean = stageName !== 'login' && stageName !== 'role-selection';
+    
+    if (isUnlocked) {
+        document.body.classList.remove('state-locked');
+    } else {
+        document.body.classList.add('state-locked');
+    }
+
+    const sidebarStages: HTMLElement | null = document.querySelector('.sidebar-panels') as HTMLElement;
+    
+    // Add "LOCKED" panel for login if needed
+    let lockPanel: HTMLElement | null = document.getElementById('lock-panel');
+    if (!isUnlocked) {
+        if (!lockPanel && sidebarStages && sidebarStages.parentElement) {
+            lockPanel = document.createElement('div');
+            lockPanel.id = 'lock-panel';
+            lockPanel.className = 'panel-3 stage-indicator active';
+            lockPanel.innerHTML = 'ACCESS<span class="hop">-LOCKED</span>';
+            sidebarStages.parentElement.insertBefore(lockPanel, sidebarStages);
+        }
+    } else {
+        if (lockPanel) lockPanel.remove();
+    }
 
     // Update cascade status
     cascade_update();
@@ -306,30 +331,131 @@ function stageIndicators_initialize(): void {
 // ============================================================================
 
 /**
- * Updates the data cascade display with current metrics.
+ * Updates the data cascade display with current metrics or system telemetry.
  */
 function cascade_update(): void {
-    const datasetsEl = document.getElementById('cascade-datasets');
-    const imagesEl = document.getElementById('cascade-images');
-    const costEl = document.getElementById('cascade-cost');
-    const statusEl = document.getElementById('cascade-status');
+    const datasetsEl: HTMLElement | null = document.getElementById('cascade-datasets');
+    const imagesEl: HTMLElement | null = document.getElementById('cascade-images');
+    const costEl: HTMLElement | null = document.getElementById('cascade-cost');
+    const statusEl: HTMLElement | null = document.getElementById('cascade-status');
 
-    const totalImages = state.selectedDatasets.reduce((sum, ds) => sum + ds.imageCount, 0);
-    const totalCost = state.costEstimate.total;
+    const label1: HTMLElement | null = document.getElementById('cascade-label-1');
+    const label2: HTMLElement | null = document.getElementById('cascade-label-2');
+    const label3: HTMLElement | null = document.getElementById('cascade-label-3');
+    const label4: HTMLElement | null = document.getElementById('cascade-label-4');
+    const label5: HTMLElement | null = document.getElementById('cascade-label-5');
+    const label6: HTMLElement | null = document.getElementById('cascade-label-6');
 
-    if (datasetsEl) datasetsEl.textContent = state.selectedDatasets.length.toString();
-    if (imagesEl) imagesEl.textContent = totalImages.toLocaleString();
-    if (costEl) costEl.textContent = `$${totalCost.toFixed(0)}`;
+    if (state.currentStage === 'login' || state.currentStage === 'role-selection') {
+        // Telemetry Mode
+        if (label1) label1.textContent = 'NODES';
+        if (label2) label2.textContent = 'JOBS';
+        if (label3) label3.textContent = 'TRAFFIC';
+        if (label4) label4.textContent = 'ACCESS';
+        // Labels 5/6 (GPU/MEM) are static in HTML for now or can be set here
+        if (label5) label5.textContent = 'GPU';
+        if (label6) label6.textContent = 'MEM';
 
-    if (statusEl) {
-        const statusMap: Record<AppState['currentStage'], string> = {
-            search: 'SEARCHING',
-            gather: 'GATHERING',
-            process: 'PROCESSING',
-            monitor: 'TRAINING',
-            post: 'COMPLETE'
-        };
-        statusEl.textContent = statusMap[state.currentStage] || 'READY';
+        // Values are updated via telemetry_update
+    } else {
+        // Workflow Mode
+        if (label1) label1.textContent = 'DATASETS';
+        if (label2) label2.textContent = 'IMAGES';
+        if (label3) label3.textContent = 'COST';
+        if (label4) label4.textContent = 'STATUS';
+
+        const totalImages: number = state.selectedDatasets.reduce((sum: number, ds: Dataset) => sum + ds.imageCount, 0);
+        const totalCost: number = state.costEstimate.total;
+
+        if (datasetsEl) datasetsEl.textContent = state.selectedDatasets.length.toString();
+        if (imagesEl) imagesEl.textContent = totalImages.toLocaleString();
+        if (costEl) costEl.textContent = `$${totalCost.toFixed(0)}`;
+
+        if (statusEl) {
+            const statusMap: Record<AppState['currentStage'], string> = {
+                login: 'LOCKED',
+                'role-selection': 'AWAITING ROLE',
+                search: 'SEARCHING',
+                gather: 'GATHERING',
+                process: 'PROCESSING',
+                monitor: 'TRAINING',
+                post: 'COMPLETE'
+            };
+            statusEl.textContent = statusMap[state.currentStage] || 'READY';
+        }
+    }
+}
+
+let telemetryCycle = 0;
+
+/**
+ * Updates real-time system telemetry numbers (btop effect).
+ */
+function telemetry_update(): void {
+    if (state.currentStage !== 'login' && state.currentStage !== 'role-selection') return;
+
+    telemetryCycle++;
+
+    // Update Process List (Simulated `top`)
+    const procEl: HTMLElement | null = document.getElementById('tele-proc');
+    if (procEl) {
+        const procs = [
+            { pid: 1492, usr: 'root', cpu: (Math.random() * 80).toFixed(1), mem: '1.2', cmd: 'kube-apiserver' },
+            { pid: 1503, usr: 'root', cpu: (Math.random() * 40).toFixed(1), mem: '4.5', cmd: 'etcd' },
+            { pid: 8821, usr: 'atlas', cpu: (Math.random() * 95).toFixed(1), mem: '12.4', cmd: 'python3 train.py' },
+            { pid: 2201, usr: 'root', cpu: (Math.random() * 10).toFixed(1), mem: '0.8', cmd: 'containerd' },
+            { pid: 3392, usr: 'atlas', cpu: (Math.random() * 5).toFixed(1), mem: '0.4', cmd: 'argus-agent' }
+        ];
+        
+        // Sort by CPU
+        procs.sort((a, b) => parseFloat(b.cpu) - parseFloat(a.cpu));
+        
+        let html = '<span class="dim">  PID USER     %CPU %MEM COMMAND</span>\n';
+        procs.forEach(p => {
+            const cpuClass = parseFloat(p.cpu) > 80 ? 'warn' : 'highlight';
+            html += `<span class="${cpuClass}">${p.pid.toString().padEnd(5)} ${p.usr.padEnd(8)} ${p.cpu.padStart(4)} ${p.mem.padStart(4)} ${p.cmd}</span>\n`;
+        });
+        procEl.innerHTML = html;
+    }
+
+    // Update Network (Simulated `ifconfig` / activity)
+    const netEl: HTMLElement | null = document.getElementById('tele-net');
+    if (netEl) {
+        const eth0_rx = (42 + telemetryCycle * 0.1 + Math.random()).toFixed(2);
+        const eth0_tx = (12 + telemetryCycle * 0.05 + Math.random()).toFixed(2);
+        const tun0_rx = (8 + Math.random() * 2).toFixed(2);
+        
+        let html = '<span class="dim">IFACE    RX (GB)   TX (GB)   STATUS</span>\n';
+        html += `eth0     ${eth0_rx.padStart(7)}   ${eth0_tx.padStart(7)}   <span class="highlight">UP 1000Mb</span>\n`;
+        html += `tun0     ${tun0_rx.padStart(7)}   0008.12   <span class="highlight">UP VPN</span>\n`;
+        html += `docker0  0042.11   0041.88   <span class="dim">UP</span>\n`;
+        netEl.innerHTML = html;
+    }
+
+    // Update Logs (Scrolling text)
+    const logEl: HTMLElement | null = document.getElementById('tele-log');
+    if (logEl) {
+        const events = [
+            '[KERN] Tainted: P           O      5.15.0-1031-aws #35~20.04.1',
+            '[AUTH] pam_unix(sshd:session): session opened for user atlas',
+            '[K8S ] Pod/default/trainer-x86-04 scheduled on node-04',
+            '[NET ] eth0: promiscuous mode enabled',
+            '[WARN] GPU-0: Temperature 82C, fan speed 100%',
+            '[INFO] ATLAS Federation Link: Heartbeat received from MGH',
+            '[INFO] ATLAS Federation Link: Heartbeat received from BCH',
+            '[AUDIT] User access granted: dev-001 from 10.0.4.2'
+        ];
+        
+        // Pick a random event occasionally
+        if (Math.random() > 0.7) {
+            const time = new Date().toISOString().split('T')[1].slice(0,8);
+            const event = events[Math.floor(Math.random() * events.length)];
+            const line = `${time} ${event}`;
+            
+            // Append and scroll
+            const lines = (logEl.innerText + '\n' + line).split('\n').slice(-5); // Keep last 5 lines
+            logEl.innerText = lines.join('\n');
+        }
     }
 }
 
@@ -357,6 +483,51 @@ function gutter_resetAll(): void {
     for (let i = 1; i <= 5; i++) {
         gutter_setStatus(i, 'idle');
     }
+}
+
+// ============================================================================
+// Login Stage Functions
+// ============================================================================
+
+/**
+ * Authenticates the user (mock).
+ */
+function user_authenticate(): void {
+    const user: string = (document.getElementById('login-user') as HTMLInputElement)?.value ?? '';
+    const pass: string = (document.getElementById('login-pass') as HTMLInputElement)?.value ?? '';
+
+    // For prototype, accept any non-empty input or just let them through
+    // Simple "animation" of success
+    const btn: HTMLButtonElement | null = document.querySelector('.login-form button') as HTMLButtonElement;
+    if (btn) {
+        btn.textContent = 'ACCESS GRANTED';
+        btn.classList.add('pulse');
+    }
+
+    setTimeout(() => {
+        state.currentStage = 'role-selection';
+        stage_advanceTo('role-selection');
+        
+        // Reset button
+        if (btn) {
+            btn.textContent = 'AUTHENTICATE';
+            btn.classList.remove('pulse');
+        }
+    }, 1000);
+}
+
+/**
+ * Selects the user persona/role and initializes the workflow.
+ * 
+ * @param persona - The selected persona
+ */
+function role_select(persona: Persona): void {
+    // Set persona
+    persona_switch(persona);
+    
+    // Advance to Search
+    state.currentStage = 'search';
+    stage_advanceTo('search');
 }
 
 // ============================================================================
@@ -473,20 +644,114 @@ function filesystem_build(): void {
                 name: 'training',
                 type: 'folder',
                 path: '/cohort/training',
-                children: state.selectedDatasets.map(ds => ({
-                    name: ds.name.replace(/\s+/g, '_'),
-                    type: 'folder' as const,
-                    path: `/cohort/training/${ds.name.replace(/\s+/g, '_')}`,
-                    children: [
-                        { name: 'images', type: 'folder' as const, path: '', children: [
-                            { name: 'img_001.png', type: 'image' as const, path: 'data/chest_xray_001.png' },
-                            { name: 'img_002.jpg', type: 'image' as const, path: 'data/chest_xray_002.jpg' },
-                            { name: 'img_003.jpg', type: 'image' as const, path: 'data/chest_xray_003.jpg' }
-                        ]},
-                        { name: 'labels.csv', type: 'file' as const, path: '', size: '1.2 MB' },
-                        { name: 'metadata.json', type: 'file' as const, path: '', size: '45 KB' }
-                    ]
-                }))
+                children: state.selectedDatasets.map(ds => {
+                    // Extract provider code from thumbnail path
+                    const parts = ds.thumbnail.split('/');
+                    const providerCode = parts.length > 2 ? parts[1] : 'UNK';
+                    
+                    // Generate image nodes based on count
+                    const imageNodes: FileNode[] = [];
+                    for (let i = 1; i <= ds.imageCount; i++) {
+                        // Special handling for exemplars
+                        if (providerCode === 'WBC') {
+                            const fileName = `WBC_${String(i).padStart(3, '0')}.bmp`;
+                            imageNodes.push({
+                                name: fileName,
+                                type: 'image',
+                                path: `data/WBC/images/${fileName}`
+                            });
+                        } else if (providerCode === 'KaggleBrain') {
+                            // Map index to real filenames (0010 to 0029)
+                            const num = 10 + (i - 1);
+                            const fileName = `Tr-gl_${String(num).padStart(4, '0')}.jpg`;
+                            imageNodes.push({
+                                name: fileName,
+                                type: 'image',
+                                path: `data/KaggleBrain/Training/glioma/${fileName}`
+                            });
+                        } else {
+                            const fileName = `${providerCode}_${String(i).padStart(3, '0')}.jpg`;
+                            imageNodes.push({
+                                name: fileName,
+                                type: 'image',
+                                path: `data/${providerCode}/${fileName}`
+                            });
+                        }
+                    }
+
+                    // Build children based on annotation type
+                    const children: FileNode[] = [
+                        { 
+                            name: 'images', 
+                            type: 'folder' as const, 
+                            path: '', 
+                            children: imageNodes 
+                        }
+                    ];
+
+                    // Add auxiliary files based on type
+                    if (ds.annotationType === 'segmentation') {
+                        // Add masks folder
+                        const maskNodes: FileNode[] = [];
+                        for (let i = 1; i <= ds.imageCount; i++) {
+                            if (providerCode === 'WBC') {
+                                const maskName = `WBC_${String(i).padStart(3, '0')}_mask.png`;
+                                maskNodes.push({
+                                    name: maskName,
+                                    type: 'image',
+                                    path: `data/WBC/masks/${maskName}`
+                                });
+                            } else if (providerCode === 'KaggleBrain') {
+                                const num = 10 + (i - 1);
+                                const maskName = `Tr-gl_${String(num).padStart(4, '0')}_mask.png`;
+                                maskNodes.push({
+                                    name: maskName,
+                                    type: 'image',
+                                    path: `data/KaggleBrain/masks/${maskName}`
+                                });
+                            } else {
+                                const maskName = `${providerCode}_${String(i).padStart(3, '0')}_mask.png`;
+                                maskNodes.push({
+                                    name: maskName,
+                                    type: 'image',
+                                    path: `data/${providerCode}/masks/${maskName}`
+                                });
+                            }
+                        }
+                        children.push({
+                            name: 'masks',
+                            type: 'folder' as const,
+                            path: '',
+                            children: maskNodes
+                        });
+                    } else if (ds.annotationType === 'detection') {
+                        // Add annotations.json
+                        children.push({ 
+                            name: 'annotations.json', 
+                            type: 'file' as const, 
+                            path: '', 
+                            size: `${(ds.imageCount * 0.15).toFixed(1)} KB` 
+                        });
+                    } else {
+                        // Default classification: labels.csv
+                        children.push({ 
+                            name: 'labels.csv', 
+                            type: 'file' as const, 
+                            path: '', 
+                            size: `${(ds.imageCount * 0.05).toFixed(1)} KB` 
+                        });
+                    }
+                    
+                    // Always add metadata
+                    children.push({ name: 'metadata.json', type: 'file' as const, path: '', size: '4 KB' });
+
+                    return {
+                        name: ds.name.replace(/\s+/g, '_'),
+                        type: 'folder' as const,
+                        path: `/cohort/training/${ds.name.replace(/\s+/g, '_')}`,
+                        children: children
+                    };
+                })
             },
             {
                 name: 'validation',
@@ -494,8 +759,8 @@ function filesystem_build(): void {
                 path: '/cohort/validation',
                 children: [
                     { name: 'images', type: 'folder' as const, path: '', children: [
-                        { name: 'val_001.jpg', type: 'image' as const, path: 'data/chest_xray_004.jpg' },
-                        { name: 'val_002.jpg', type: 'image' as const, path: 'data/chest_xray_005.jpg' }
+                        { name: 'val_001.jpg', type: 'image' as const, path: 'data/NIH/NIH_001.jpg' },
+                        { name: 'val_002.jpg', type: 'image' as const, path: 'data/NIH/NIH_002.jpg' }
                     ]},
                     { name: 'labels.csv', type: 'file' as const, path: '', size: '256 KB' }
                 ]
@@ -895,8 +1160,14 @@ function app_initialize(): void {
     // Initialize cascade
     cascade_update();
 
+    // Start Telemetry
+    setInterval(telemetry_update, 500);
+
     // Set initial gutter state
     gutter_setStatus(1, 'active');
+
+    // Handle initial login state
+    stage_advanceTo(state.currentStage);
 
     // Expose functions to window for onclick handlers
     (window as unknown as Record<string, unknown>).stage_advanceTo = stage_advanceTo;
@@ -908,6 +1179,8 @@ function app_initialize(): void {
     (window as unknown as Record<string, unknown>).model_publish = model_publish;
     (window as unknown as Record<string, unknown>).persona_switch = persona_switch;
     (window as unknown as Record<string, unknown>).ui_toggleTopFrame = ui_toggleTopFrame;
+    (window as unknown as Record<string, unknown>).user_authenticate = user_authenticate;
+    (window as unknown as Record<string, unknown>).role_select = role_select;
 }
 
 // Initialize on DOM ready

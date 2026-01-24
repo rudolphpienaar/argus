@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/lcars.css">
 </head>
-<body>
+<body class="state-locked">
     <section class="wrap-all">
         <!-- ============================================================ -->
         <!-- TOP SECTION - Header with data cascade and navigation        -->
@@ -31,22 +31,40 @@
                     <!-- Data Cascade -->
                     <div class="data-wrapper">
                         <div class="data-column">
-                            <div class="dc-row-1">DATASETS</div>
+                            <div class="dc-row-1" id="cascade-label-1">DATASETS</div>
                             <div class="dc-row-2" id="cascade-datasets">0</div>
                         </div>
                         <div class="data-column">
-                            <div class="dc-row-1">IMAGES</div>
+                            <div class="dc-row-1" id="cascade-label-2">IMAGES</div>
                             <div class="dc-row-2" id="cascade-images">0</div>
                         </div>
                         <div class="data-column">
-                            <div class="dc-row-1">COST</div>
+                            <div class="dc-row-1" id="cascade-label-3">COST</div>
                             <div class="dc-row-2" id="cascade-cost">$0</div>
                         </div>
+                        
                         <div class="data-column">
-                            <div class="dc-row-1">STATUS</div>
+                            <div class="dc-row-1" id="cascade-label-4">STATUS</div>
                             <div class="dc-row-2" id="cascade-status">READY</div>
                         </div>
                     </div>
+                    
+                    <!-- Telemetry Dashboard (Login Mode) -->
+                    <div id="telemetry-dashboard" class="telemetry-wrapper">
+                        <div class="tele-col">
+                            <div class="tele-header">ACTIVE PROCESSES (K8S)</div>
+                            <div class="tele-content monospace" id="tele-proc">Initializing...</div>
+                        </div>
+                        <div class="tele-col">
+                            <div class="tele-header">NETWORK INTERFACES</div>
+                            <div class="tele-content monospace" id="tele-net">Scanning...</div>
+                        </div>
+                        <div class="tele-col wide">
+                            <div class="tele-header">SYSTEM EVENTS</div>
+                            <div class="tele-content monospace" id="tele-log">Boot sequence initiated...</div>
+                        </div>
+                    </div>
+
                     <!-- Navigation Buttons -->
                     <nav>
                         <button class="persona-btn active" data-persona="developer">DEVELOPER</button>
@@ -92,8 +110,106 @@
                     <div class="bar-10"></div>
                 </div>
                 <main id="main-content">
+                    <!-- LOGIN Stage -->
+                    <div class="stage-content active" data-stage="login">
+                        <div class="login-container">
+                            <div class="lcars-header-block">
+                                <h1 style="margin-bottom: 0;">ATLAS RESOURCE GRAPHICAL USER SYSTEM</h1>
+                                <div class="lcars-subtitle">SECURE FEDERATED GATEWAY</div>
+                            </div>
+                            
+                            <div class="login-grid">
+                                <div class="login-info">
+                                    <p class="hop" style="font-size: 1.5rem; line-height: 1.2; margin-bottom: 2rem;">
+                                        RESTRICTED ACCESS<br>
+                                        VERIFIED IDENTITY REQUIRED
+                                    </p>
+                                    <p class="blurb">
+                                        System Status: <span class="blink">OPERATIONAL</span><br>
+                                        Security Level: <span class="blink">TIER 4</span><br>
+                                        Encryption: <span class="blink">AES-256-GCM</span>
+                                    </p>
+                                    <p class="blurb-text">
+                                        This system is for the use of authorized users only. Individuals using this computer system without authority, or in
+                                        excess of their authority, are subject to having all of their activities on this system monitored and recorded.
+                                    </p>
+                                </div>
+
+                                <div class="login-form">
+                                    <div class="form-group">
+                                        <label for="login-user">USER ID</label>
+                                        <input type="text" id="login-user" placeholder="ENTER ID" autocomplete="off">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="login-pass">ACCESS KEY</label>
+                                        <input type="password" id="login-pass" placeholder="ENTER KEY">
+                                    </div>
+                                    <div style="display: flex; justify-content: flex-end; margin-top: 2rem;">
+                                        <button onclick="user_authenticate()" class="button-honey" style="width: 200px; height: 60px; border-radius: 30px;">
+                                            INITIATE SESSION
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ROLE SELECTION Stage -->
+                    <div class="stage-content" data-stage="role-selection">
+                        <div class="login-container">
+                            <div class="lcars-header-block">
+                                <h1 style="margin-bottom: 0;">SELECT ASSIGNMENT</h1>
+                                <div class="lcars-subtitle">CHOOSE OPERATIONAL CONTEXT</div>
+                            </div>
+                            
+                            <div class="role-grid">
+                                <button onclick="role_select('developer')" class="role-card">
+                                    <div class="role-icon">DEV</div>
+                                    <h3>DEVELOPER</h3>
+                                    <p>Federated Model Training<br>Algorithm Design</p>
+                                </button>
+                                
+                                <button onclick="role_select('annotator')" class="role-card" style="border-color: var(--canary);">
+                                    <div class="role-icon" style="background-color: var(--canary);">ANN</div>
+                                    <h3 style="color: var(--canary);">ANNOTATOR</h3>
+                                    <p>Data Labeling<br>Ground Truth Generation</p>
+                                </button>
+                                
+                                <button onclick="role_select('provider')" class="role-card" style="border-color: var(--tamarillo);">
+                                    <div class="role-icon" style="background-color: var(--tamarillo);">PVD</div>
+                                    <h3 style="color: var(--tamarillo);">PROVIDER</h3>
+                                    <p>Data Contribution<br>Usage Tracking</p>
+                                </button>
+
+                                <button onclick="role_select('scientist')" class="role-card" style="border-color: var(--sky);">
+                                    <div class="role-icon" style="background-color: var(--sky);">SCI</div>
+                                    <h3 style="color: var(--sky);">SCIENTIST</h3>
+                                    <p>Analysis & Experiments<br>Cohort Discovery</p>
+                                </button>
+
+                                <button onclick="role_select('clinician')" class="role-card" style="border-color: var(--galaxy);">
+                                    <div class="role-icon" style="background-color: var(--galaxy);">CLI</div>
+                                    <h3 style="color: var(--galaxy);">CLINICIAN</h3>
+                                    <p>Inference & Diagnosis<br>Patient Review</p>
+                                </button>
+
+                                <button onclick="role_select('admin')" class="role-card" style="border-color: var(--mars);">
+                                    <div class="role-icon" style="background-color: var(--mars);">ADM</div>
+                                    <h3 style="color: var(--mars);">ADMIN</h3>
+                                    <p>System Oversight<br>User Management</p>
+                                </button>
+
+                                <button onclick="role_select('fda')" class="role-card" style="border-color: #fff;">
+                                    <div class="role-icon" style="background-color: #fff; color: black;">FDA</div>
+                                    <h3 style="color: #fff;">REGULATORY</h3>
+                                    <p>Compliance Auditing<br>Model Safety Review</p>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- SEARCH Stage -->
-                    <div class="stage-content active" data-stage="search">
+                    <div class="stage-content" data-stage="search">
                         <h1>Search Training Data</h1>
                         <p>Query the ATLAS catalog for annotated medical imaging datasets.</p>
 
