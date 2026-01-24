@@ -4,8 +4,9 @@
   "description": "ARGUS - ATLAS Resource Graphical User System",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch",
+    "version:generate": "bash scripts/generate-version.sh",
+    "build": "npm run version:generate && tsc",
+    "watch": "npm run version:generate && tsc --watch",
     "serve": "npx http-server dist -p 8080 -c-1",
     "dev": "npm run build && npm run serve"
   },

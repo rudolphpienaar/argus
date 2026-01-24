@@ -17,19 +17,7 @@ import type {
     AppState
 } from './core/models/types.js';
 
-// ============================================================================
-// Version Information
-// ============================================================================
-
-/**
- * Application version. Keep in sync with package.json version.
- */
-const VERSION = '0.1.0';
-
-/**
- * Git commit hash (short). Update on each commit.
- */
-const GIT_HASH = 'b752e0';
+import { VERSION, GIT_HASH } from './generated/version.js';
 
 // ============================================================================
 // Mock Data

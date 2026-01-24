@@ -4,6 +4,9 @@ node_modules/
 # Build output (keep dist/css and dist/index.html, ignore compiled JS)
 dist/js/
 
+# Auto-generated source files
+src/generated/
+
 # IDE
 .idea/
 .vscode/
