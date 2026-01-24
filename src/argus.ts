@@ -18,6 +18,20 @@ import type {
 } from './core/models/types.js';
 
 // ============================================================================
+// Version Information
+// ============================================================================
+
+/**
+ * Application version. Keep in sync with package.json version.
+ */
+const VERSION = '0.1.0';
+
+/**
+ * Git commit hash (short). Update on each commit.
+ */
+const GIT_HASH = '009b82';
+
+// ============================================================================
 // Mock Data
 // ============================================================================
 
@@ -710,7 +724,20 @@ function model_publish(): void {
 /**
  * Initializes the ARGUS application.
  */
+/**
+ * Displays the application version in the UI.
+ */
+function version_display(): void {
+    const versionEl = document.getElementById('app-version');
+    if (versionEl) {
+        versionEl.textContent = `v${VERSION}-${GIT_HASH}`;
+    }
+}
+
 function app_initialize(): void {
+    // Display version
+    version_display();
+
     // Start clock
     clock_update();
     setInterval(clock_update, 1000);

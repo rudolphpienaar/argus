@@ -199,6 +199,12 @@ button:active {
     background-color: var(--panel-2-color);
 }
 
+.left-frame-top .panel-3 {
+    padding: .25rem .5rem;
+    background-color: var(--panel-3-color);
+    margin-top: .25rem;
+}
+
 /* Top Frame - Right */
 .right-frame-top {
     flex: 1;
