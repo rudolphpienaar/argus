@@ -7,6 +7,8 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 VERSION=$(node -p "require('$PROJECT_ROOT/package.json').version")
 GIT_HASH=$(git rev-parse --short=6 HEAD 2>/dev/null || echo "unknown")
 
+mkdir -p "$PROJECT_ROOT/src/generated"
+
 cat > "$PROJECT_ROOT/src/generated/version.ts" << EOF
 /**
  * @file Auto-generated version information
