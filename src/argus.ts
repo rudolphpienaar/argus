@@ -20,6 +20,13 @@ import type {
 import { VERSION, GIT_HASH } from './generated/version.js';
 
 // ============================================================================
+// Types
+// ============================================================================
+
+type Persona = 'developer' | 'annotator' | 'user' | 'provider';
+type GutterStatus = 'idle' | 'active' | 'success' | 'error';
+
+// ============================================================================
 // Mock Data
 // ============================================================================
 
@@ -110,7 +117,8 @@ const MOCK_NODES: TrustedDomainNode[] = [
 // Application State
 // ============================================================================
 
-const state: AppState = {
+const state: AppState & { currentPersona: Persona } = {
+    currentPersona: 'developer',
     currentStage: 'search',
     selectedDatasets: [],
     virtualFilesystem: null,
@@ -122,7 +130,7 @@ let trainingInterval: number | null = null;
 let lossChart: { ctx: CanvasRenderingContext2D; data: number[] } | null = null;
 
 // ============================================================================
-// UI Functions
+// Clock & Version Functions
 // ============================================================================
 
 /**
@@ -145,27 +153,86 @@ function clock_update(): void {
 }
 
 /**
- * Toggles the top frame visibility.
+ * Displays the application version in the UI.
+ */
+function version_display(): void {
+    const versionEl = document.getElementById('app-version');
+    if (versionEl) {
+        versionEl.textContent = `v${VERSION}-${GIT_HASH}`;
+    }
+}
+
+// ============================================================================
+// UI Functions
+// ============================================================================
+
+/**
+ * Toggles the visibility of the top frame.
  *
  * @param event - The click event
  */
-function ui_toggleTopFrame(event?: Event): void {
-    if (event) {
-        event.stopPropagation();
-        event.preventDefault();
-    }
-
+function ui_toggleTopFrame(event: Event): void {
+    event.preventDefault();
     const topFrame = document.getElementById('top-frame');
-    const rightTopFrame = document.getElementById('right-top-frame');
-    const button = document.getElementById('topBtn');
-    const buttonText = button?.querySelector('.hop');
+    const topBtn = document.getElementById('topBtn');
 
-    if (topFrame && rightTopFrame && buttonText) {
-        const isHidden = topFrame.classList.toggle('hidden');
-        rightTopFrame.classList.toggle('hidden');
-        buttonText.textContent = isHidden ? 'hide' : 'show';
+    if (topFrame && topBtn) {
+        topFrame.classList.toggle('collapsed');
+        const isCollapsed = topFrame.classList.contains('collapsed');
+        const spanEl = topBtn.querySelector('span.hop');
+        if (spanEl) {
+            spanEl.textContent = isCollapsed ? 'show' : 'hide';
+        }
     }
 }
+
+// ============================================================================
+// Persona Functions
+// ============================================================================
+
+/**
+ * Switches to a new persona.
+ *
+ * @param persona - The persona to switch to
+ */
+function persona_switch(persona: Persona): void {
+    state.currentPersona = persona;
+
+    // Update persona buttons
+    document.querySelectorAll('.persona-btn').forEach(btn => {
+        const btnPersona = btn.getAttribute('data-persona');
+        btn.classList.toggle('active', btnPersona === persona);
+    });
+
+    // Update left frame persona display
+    const personaEl = document.getElementById('current-persona');
+    if (personaEl) {
+        personaEl.textContent = persona.toUpperCase();
+    }
+
+    // Flash gutter to indicate change
+    gutter_setStatus(1, 'active');
+    setTimeout(() => gutter_setStatus(1, 'success'), 300);
+    setTimeout(() => gutter_setStatus(1, 'idle'), 800);
+}
+
+/**
+ * Initializes persona button click handlers.
+ */
+function personaButtons_initialize(): void {
+    document.querySelectorAll('.persona-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const persona = btn.getAttribute('data-persona') as Persona;
+            if (persona) {
+                persona_switch(persona);
+            }
+        });
+    });
+}
+
+// ============================================================================
+// Stage Navigation Functions
+// ============================================================================
 
 /**
  * Advances to a specific SeaGaP-MP stage.
@@ -175,10 +242,10 @@ function ui_toggleTopFrame(event?: Event): void {
 function stage_advanceTo(stageName: AppState['currentStage']): void {
     state.currentStage = stageName;
 
-    // Update stage navigation buttons
-    document.querySelectorAll('.stage-nav button').forEach(btn => {
-        const btnStage = btn.getAttribute('data-stage');
-        btn.classList.toggle('active', btnStage === stageName);
+    // Update stage indicators in sidebar
+    document.querySelectorAll('.stage-indicator').forEach(indicator => {
+        const indicatorStage = indicator.getAttribute('data-stage');
+        indicator.classList.toggle('active', indicatorStage === stageName);
     });
 
     // Show/hide stage content
@@ -187,31 +254,108 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
         content.classList.toggle('active', contentStage === stageName);
     });
 
-    // Update sidebar indicator
-    const stageIndicator = document.getElementById('stage-indicator');
-    if (stageIndicator) {
-        stageIndicator.textContent = stageName.toUpperCase();
-    }
+    // Update cascade status
+    cascade_update();
 
     // Stage-specific initialization
     if (stageName === 'gather') {
         filesystem_build();
         costs_calculate();
+        gutter_setStatus(2, 'active');
+    } else if (stageName === 'process') {
+        gutter_setStatus(3, 'active');
     } else if (stageName === 'monitor') {
         monitor_initialize();
+        gutter_setStatus(4, 'active');
+    } else if (stageName === 'post') {
+        gutter_setStatus(5, 'active');
+    } else {
+        gutter_setStatus(1, 'active');
     }
 }
 
 /**
- * Enables or disables a stage navigation button.
+ * Enables or disables a stage indicator.
  *
  * @param stageName - The stage to enable/disable
- * @param enabled - Whether to enable the button
+ * @param enabled - Whether to enable the indicator
  */
 function stageButton_setEnabled(stageName: string, enabled: boolean): void {
-    const btn = document.querySelector(`.stage-nav button[data-stage="${stageName}"]`) as HTMLButtonElement;
-    if (btn) {
-        btn.disabled = !enabled;
+    const indicator = document.querySelector(`.stage-indicator[data-stage="${stageName}"]`) as HTMLElement;
+    if (indicator) {
+        indicator.classList.toggle('disabled', !enabled);
+    }
+}
+
+/**
+ * Initializes stage indicator click handlers.
+ */
+function stageIndicators_initialize(): void {
+    document.querySelectorAll('.stage-indicator').forEach(indicator => {
+        indicator.addEventListener('click', () => {
+            const stage = indicator.getAttribute('data-stage') as AppState['currentStage'];
+            if (stage && !indicator.classList.contains('disabled')) {
+                stage_advanceTo(stage);
+            }
+        });
+    });
+}
+
+// ============================================================================
+// Data Cascade Functions
+// ============================================================================
+
+/**
+ * Updates the data cascade display with current metrics.
+ */
+function cascade_update(): void {
+    const datasetsEl = document.getElementById('cascade-datasets');
+    const imagesEl = document.getElementById('cascade-images');
+    const costEl = document.getElementById('cascade-cost');
+    const statusEl = document.getElementById('cascade-status');
+
+    const totalImages = state.selectedDatasets.reduce((sum, ds) => sum + ds.imageCount, 0);
+    const totalCost = state.costEstimate.total;
+
+    if (datasetsEl) datasetsEl.textContent = state.selectedDatasets.length.toString();
+    if (imagesEl) imagesEl.textContent = totalImages.toLocaleString();
+    if (costEl) costEl.textContent = `$${totalCost.toFixed(0)}`;
+
+    if (statusEl) {
+        const statusMap: Record<AppState['currentStage'], string> = {
+            search: 'SEARCHING',
+            gather: 'GATHERING',
+            process: 'PROCESSING',
+            monitor: 'TRAINING',
+            post: 'COMPLETE'
+        };
+        statusEl.textContent = statusMap[state.currentStage] || 'READY';
+    }
+}
+
+// ============================================================================
+// Gutter Functions
+// ============================================================================
+
+/**
+ * Sets the status of a gutter section.
+ *
+ * @param section - The gutter section number (1-5)
+ * @param status - The status to set
+ */
+function gutter_setStatus(section: number, status: GutterStatus): void {
+    const gutter = document.getElementById(`gutter-${section}`);
+    if (gutter) {
+        gutter.setAttribute('data-status', status);
+    }
+}
+
+/**
+ * Resets all gutter sections to idle.
+ */
+function gutter_resetAll(): void {
+    for (let i = 1; i <= 5; i++) {
+        gutter_setStatus(i, 'idle');
     }
 }
 
@@ -235,6 +379,11 @@ function catalog_search(): void {
     });
 
     datasetResults_render(filtered);
+
+    // Flash gutter on search
+    gutter_setStatus(1, 'active');
+    setTimeout(() => gutter_setStatus(1, 'success'), 200);
+    setTimeout(() => gutter_setStatus(1, 'idle'), 600);
 }
 
 /**
@@ -285,6 +434,7 @@ function dataset_toggle(datasetId: string): void {
     });
 
     selectionCount_update();
+    cascade_update();
 }
 
 /**
@@ -294,7 +444,6 @@ function selectionCount_update(): void {
     const count = state.selectedDatasets.length;
     const countEl = document.getElementById('selection-count');
     const btnToGather = document.getElementById('btn-to-gather') as HTMLButtonElement;
-    const itemCount = document.getElementById('item-count');
 
     if (countEl) {
         countEl.textContent = `${count} dataset${count !== 1 ? 's' : ''} selected`;
@@ -302,10 +451,6 @@ function selectionCount_update(): void {
 
     if (btnToGather) {
         btnToGather.disabled = count === 0;
-    }
-
-    if (itemCount) {
-        itemCount.innerHTML = `${count} <span class="hop">items</span>`;
     }
 
     stageButton_setEnabled('gather', count > 0);
@@ -399,9 +544,9 @@ function filePreview_show(path: string, type: string): void {
     if (type === 'image' && path) {
         preview.innerHTML = `<img src="${path}" alt="Preview">`;
     } else if (type === 'file') {
-        preview.innerHTML = `<p class="hop">File preview not available</p>`;
+        preview.innerHTML = `<p class="dim">File preview not available</p>`;
     } else {
-        preview.innerHTML = `<p class="hop">Select a file to preview</p>`;
+        preview.innerHTML = `<p class="dim">Select a file to preview</p>`;
     }
 }
 
@@ -424,14 +569,13 @@ function costs_calculate(): void {
     const costCompute = document.getElementById('cost-compute');
     const costStorage = document.getElementById('cost-storage');
     const costTotal = document.getElementById('cost-total');
-    const costIndicator = document.getElementById('cost-indicator');
 
     if (costData) costData.textContent = `$${dataAccess.toFixed(2)}`;
     if (costCompute) costCompute.textContent = `$${compute.toFixed(2)}`;
     if (costStorage) costStorage.textContent = `$${storage.toFixed(2)}`;
     if (costTotal) costTotal.textContent = `$${state.costEstimate.total.toFixed(2)}`;
-    if (costIndicator) costIndicator.textContent = `$${state.costEstimate.total.toFixed(2)}`;
 
+    cascade_update();
     stageButton_setEnabled('process', true);
 }
 
@@ -540,6 +684,14 @@ function trainingStep_simulate(): void {
         }
     });
 
+    // Pulse gutter during training
+    const gutterIndex = Math.floor(job.currentEpoch) % 5 + 1;
+    gutter_resetAll();
+    gutter_setStatus(4, 'active');
+    if (gutterIndex !== 4) {
+        gutter_setStatus(gutterIndex, 'active');
+    }
+
     monitorUI_update();
 }
 
@@ -576,6 +728,9 @@ function monitorUI_update(): void {
     if (runningCost) runningCost.textContent = `$${job.runningCost.toFixed(2)}`;
     if (costProgress) costProgress.style.width = `${(job.runningCost / job.budgetLimit) * 100}%`;
 
+    // Update cascade
+    cascade_update();
+
     // Update loss chart
     lossChart_draw();
 
@@ -588,7 +743,7 @@ function monitorUI_update(): void {
  */
 function lossChart_draw(): void {
     if (!lossChart || !state.trainingJob) return;
-    const { ctx, data } = lossChart;
+    const { ctx } = lossChart;
     const history = state.trainingJob.lossHistory;
 
     const canvas = ctx.canvas;
@@ -661,6 +816,11 @@ function training_complete(): void {
         trainingInterval = null;
     }
 
+    // Set all gutters to success
+    for (let i = 1; i <= 5; i++) {
+        gutter_setStatus(i, 'success');
+    }
+
     monitorUI_update();
     stageButton_setEnabled('post', true);
 
@@ -684,6 +844,9 @@ function training_abort(): void {
         clearInterval(trainingInterval);
         trainingInterval = null;
     }
+
+    // Set gutter to error
+    gutter_setStatus(4, 'error');
 
     const epochStatus = document.getElementById('epoch-status');
     if (epochStatus) epochStatus.textContent = 'Aborted - No charge';
@@ -712,16 +875,6 @@ function model_publish(): void {
 /**
  * Initializes the ARGUS application.
  */
-/**
- * Displays the application version in the UI.
- */
-function version_display(): void {
-    const versionEl = document.getElementById('app-version');
-    if (versionEl) {
-        versionEl.textContent = `v${VERSION}-${GIT_HASH}`;
-    }
-}
-
 function app_initialize(): void {
     // Display version
     version_display();
@@ -730,11 +883,22 @@ function app_initialize(): void {
     clock_update();
     setInterval(clock_update, 1000);
 
+    // Initialize persona buttons
+    personaButtons_initialize();
+
+    // Initialize stage indicators
+    stageIndicators_initialize();
+
     // Initial search
     catalog_search();
 
+    // Initialize cascade
+    cascade_update();
+
+    // Set initial gutter state
+    gutter_setStatus(1, 'active');
+
     // Expose functions to window for onclick handlers
-    (window as unknown as Record<string, unknown>).ui_toggleTopFrame = ui_toggleTopFrame;
     (window as unknown as Record<string, unknown>).stage_advanceTo = stage_advanceTo;
     (window as unknown as Record<string, unknown>).catalog_search = catalog_search;
     (window as unknown as Record<string, unknown>).dataset_toggle = dataset_toggle;
@@ -742,6 +906,8 @@ function app_initialize(): void {
     (window as unknown as Record<string, unknown>).training_launch = training_launch;
     (window as unknown as Record<string, unknown>).training_abort = training_abort;
     (window as unknown as Record<string, unknown>).model_publish = model_publish;
+    (window as unknown as Record<string, unknown>).persona_switch = persona_switch;
+    (window as unknown as Record<string, unknown>).ui_toggleTopFrame = ui_toggleTopFrame;
 }
 
 // Initialize on DOM ready

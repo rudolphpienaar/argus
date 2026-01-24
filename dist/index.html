@@ -4,34 +4,58 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ARGUS - ATLAS Resource Graphical User System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/lcars.css">
 </head>
 <body>
     <section class="wrap-all">
-        <!-- Top Frame -->
+        <!-- ============================================================ -->
+        <!-- TOP SECTION - Header with data cascade and navigation        -->
+        <!-- ============================================================ -->
         <div class="wrap">
             <div class="left-frame-top" id="top-frame">
                 <div class="panel-1">
-                    <span id="lcars-date"></span>
-                    <span class="hop" id="lcars-time"></span>
+                    <span id="lcars-date">01/24/2026</span>
+                    <span class="hop" id="lcars-time">12:00:00</span>
                 </div>
                 <div class="panel-2">
-                    DEVELOPER <span class="hop">MODE</span>
-                </div>
-                <div class="panel-3">
-                    <span id="app-version" class="hop">v0.0.0</span>
+                    <span id="current-persona">DEVELOPER</span>
+                    <span class="hop" id="app-version">v0.0.0</span>
                 </div>
             </div>
             <div class="right-frame-top" id="right-top-frame">
                 <div class="banner">ARGUS</div>
-                <nav class="stage-nav">
-                    <button data-stage="search" class="active">Search</button>
-                    <button data-stage="gather" disabled>Gather</button>
-                    <button data-stage="process" disabled>Process</button>
-                    <button data-stage="monitor" disabled>Monitor</button>
-                    <button data-stage="post" disabled>Post</button>
-                </nav>
-                <div class="bar-panel">
+                <div class="data-cascade-button-group">
+                    <!-- Data Cascade -->
+                    <div class="data-wrapper">
+                        <div class="data-column">
+                            <div class="dc-row-1">DATASETS</div>
+                            <div class="dc-row-2" id="cascade-datasets">0</div>
+                        </div>
+                        <div class="data-column">
+                            <div class="dc-row-1">IMAGES</div>
+                            <div class="dc-row-2" id="cascade-images">0</div>
+                        </div>
+                        <div class="data-column">
+                            <div class="dc-row-1">COST</div>
+                            <div class="dc-row-2" id="cascade-cost">$0</div>
+                        </div>
+                        <div class="data-column">
+                            <div class="dc-row-1">STATUS</div>
+                            <div class="dc-row-2" id="cascade-status">READY</div>
+                        </div>
+                    </div>
+                    <!-- Navigation Buttons -->
+                    <nav>
+                        <button class="persona-btn active" data-persona="developer">DEVELOPER</button>
+                        <button class="persona-btn" data-persona="annotator">ANNOTATOR</button>
+                        <button class="persona-btn" data-persona="user">USER</button>
+                        <button class="persona-btn" data-persona="provider">PROVIDER</button>
+                    </nav>
+                </div>
+                <div class="bar-panel first-bar-panel">
                     <div class="bar-1"></div>
                     <div class="bar-2"></div>
                     <div class="bar-3"></div>
@@ -41,22 +65,33 @@
             </div>
         </div>
 
-        <!-- Main Content -->
-        <div class="wrap" id="main-wrap">
+        <!-- ============================================================ -->
+        <!-- BOTTOM SECTION - Main content area                           -->
+        <!-- ============================================================ -->
+        <div class="wrap" id="gap">
             <div class="left-frame">
                 <button onclick="ui_toggleTopFrame(event)" id="topBtn" class="panel-button">
                     <span class="hop">show</span> detail
                 </button>
                 <div class="sidebar-panels">
-                    <div class="sidebar-panel panel-3">ATLAS<span class="hop">-01</span></div>
-                    <div class="sidebar-panel panel-4">SEAGAP<span class="hop">-MP</span></div>
-                    <div class="sidebar-panel panel-5" id="stage-indicator">SEARCH</div>
-                    <div class="sidebar-panel panel-6" id="cost-indicator">$0.00</div>
-                    <div class="sidebar-panel panel-7" id="item-count">0 <span class="hop">items</span></div>
+                    <div class="panel-3 stage-indicator" data-stage="search">01<span class="hop">-SEARCH</span></div>
+                    <div class="panel-4 stage-indicator" data-stage="gather">02<span class="hop">-GATHER</span></div>
+                    <div class="panel-5 stage-indicator" data-stage="process">03<span class="hop">-PROCESS</span></div>
+                    <div class="panel-6 stage-indicator" data-stage="monitor">04<span class="hop">-MONITOR</span></div>
+                </div>
+                <div>
+                    <div class="panel-7 stage-indicator" data-stage="post">05<span class="hop">-POST</span></div>
                 </div>
             </div>
             <div class="right-frame">
-                <main>
+                <div class="bar-panel">
+                    <div class="bar-6"></div>
+                    <div class="bar-7"></div>
+                    <div class="bar-8"></div>
+                    <div class="bar-9"></div>
+                    <div class="bar-10"></div>
+                </div>
+                <main id="main-content">
                     <!-- SEARCH Stage -->
                     <div class="stage-content active" data-stage="search">
                         <h1>Search Training Data</h1>
@@ -85,11 +120,11 @@
                             <!-- Populated by JS -->
                         </div>
 
-                        <div class="launch-controls mt-2">
+                        <div class="buttons mt-2">
                             <button onclick="stage_advanceTo('gather')" id="btn-to-gather" disabled>
-                                Proceed to Gather →
+                                Proceed to Gather
                             </button>
-                            <span id="selection-count">0 datasets selected</span>
+                            <span id="selection-count" class="selection-info">0 datasets selected</span>
                         </div>
                     </div>
 
@@ -112,14 +147,14 @@
                             <p>Data Access: <span id="cost-data">$0.00</span></p>
                             <p>Compute (est.): <span id="cost-compute">$0.00</span></p>
                             <p>Storage: <span id="cost-storage">$0.00</span></p>
-                            <hr style="margin: .5rem 0; border-color: var(--orange);">
+                            <hr>
                             <p class="total">Total: <span id="cost-total">$0.00</span></p>
                         </div>
 
-                        <div class="launch-controls">
-                            <button onclick="stage_advanceTo('search')">← Back to Search</button>
-                            <button onclick="stage_advanceTo('process')" class="launch">
-                                Proceed to Process →
+                        <div class="buttons">
+                            <button onclick="stage_advanceTo('search')">Back to Search</button>
+                            <button onclick="stage_advanceTo('process')" class="button-honey">
+                                Proceed to Process
                             </button>
                         </div>
                     </div>
@@ -168,10 +203,10 @@ model.save(<span class="string">'/out/model_weights.pt'</span>)
                             </div>
                         </div>
 
-                        <div class="launch-controls">
-                            <button onclick="stage_advanceTo('gather')">← Back to Gather</button>
-                            <button onclick="training_launch()" class="launch" id="btn-launch">
-                                🚀 Launch Federated Training
+                        <div class="buttons">
+                            <button onclick="stage_advanceTo('gather')">Back to Gather</button>
+                            <button onclick="training_launch()" class="button-honey" id="btn-launch">
+                                Launch Federated Training
                             </button>
                         </div>
                     </div>
@@ -200,7 +235,7 @@ model.save(<span class="string">'/out/model_weights.pt'</span>)
                                 </div>
                             </div>
 
-                            <div class="monitor-panel" style="grid-column: span 2;">
+                            <div class="monitor-panel span-2">
                                 <h3>Node Status</h3>
                                 <div class="node-status" id="node-status">
                                     <!-- Populated by JS -->
@@ -221,7 +256,7 @@ model.save(<span class="string">'/out/model_weights.pt'</span>)
                                 <div class="progress-bar">
                                     <div class="fill" id="cost-progress" style="width: 0%; background: var(--harvestgold);"></div>
                                 </div>
-                                <button onclick="training_abort()" style="margin-top: .5rem; background: var(--tomato); padding: .5rem 1rem; border-radius: 4px;">
+                                <button onclick="training_abort()" class="button-abort">
                                     Abort Training
                                 </button>
                             </div>
@@ -266,9 +301,11 @@ model.save(<span class="string">'/out/model_weights.pt'</span>)
                                 <input type="text" id="model-price" value="$2.50">
                             </div>
 
-                            <button onclick="model_publish()" class="publish-btn">
-                                Publish to Marketplace
-                            </button>
+                            <div class="buttons">
+                                <button onclick="model_publish()" class="button-honey">
+                                    Publish to Marketplace
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </main>
