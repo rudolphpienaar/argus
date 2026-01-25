@@ -19,16 +19,16 @@ import type {
 
 import { VERSION, GIT_HASH } from './generated/version.js';
 
-// ============================================================================
+// ============================================================================ 
 // Types
-// ============================================================================
+// ============================================================================ 
 
 type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 type GutterStatus = 'idle' | 'active' | 'success' | 'error';
 
-// ============================================================================
+// ============================================================================ 
 // Mock Data
-// ============================================================================
+// ============================================================================ 
 
 const MOCK_DATASETS: Dataset[] = [
     {
@@ -113,9 +113,9 @@ const MOCK_NODES: TrustedDomainNode[] = [
     { id: 'td-005', name: 'MOC-HUB', institution: 'Mass Open Cloud (Aggregator)', status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 0 }
 ];
 
-// ============================================================================
+// ============================================================================ 
 // Application State
-// ============================================================================
+// ============================================================================ 
 
 const state: AppState & { currentPersona: Persona } = {
     currentPersona: 'developer',
@@ -127,11 +127,11 @@ const state: AppState & { currentPersona: Persona } = {
 };
 
 let trainingInterval: number | null = null;
-let lossChart: { ctx: CanvasRenderingContext2D; data: number[] } | null = null;
+let lossChart: {ctx: CanvasRenderingContext2D; data: number[]} | null = null;
 
-// ============================================================================
+// ============================================================================ 
 // Clock & Version Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Updates the LCARS clock display.
@@ -162,9 +162,9 @@ function version_display(): void {
     }
 }
 
-// ============================================================================
+// ============================================================================ 
 // UI Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Toggles the visibility of the top frame.
@@ -186,9 +186,37 @@ function ui_toggleTopFrame(event: Event): void {
     }
 }
 
-// ============================================================================
+/**
+ * Updates the SeaGaP progress tracker in the top right panel.
+ *
+ * @param currentStage - The current stage name
+ */
+function ui_updateTracker(currentStage: AppState['currentStage']): void {
+    // Only update tracker for SeaGaP stages
+    const seaGapStages: AppState['currentStage'][] = ['search', 'gather', 'process', 'monitor', 'post'];
+    if (!seaGapStages.includes(currentStage)) return;
+
+    const currentIndex = seaGapStages.indexOf(currentStage);
+
+    seaGapStages.forEach((stage, index) => {
+        const segment = document.getElementById(`trk-${stage}`);
+        if (!segment) return;
+
+        // Reset classes
+        segment.classList.remove('active', 'visited');
+
+        if (index === currentIndex) {
+            segment.classList.add('active');
+        } else if (index < currentIndex) {
+            segment.classList.add('visited');
+        }
+        // Future stages remain with default opacity/pointer-events (handled by CSS)
+    });
+}
+
+// ============================================================================ 
 // Persona Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Switches to a new persona.
@@ -197,12 +225,6 @@ function ui_toggleTopFrame(event: Event): void {
  */
 function persona_switch(persona: Persona): void {
     state.currentPersona = persona;
-
-    // Update persona buttons
-    document.querySelectorAll('.persona-btn').forEach(btn => {
-        const btnPersona = btn.getAttribute('data-persona');
-        btn.classList.toggle('active', btnPersona === persona);
-    });
 
     // Update left frame persona display
     const personaEl = document.getElementById('current-persona');
@@ -216,23 +238,9 @@ function persona_switch(persona: Persona): void {
     setTimeout(() => gutter_setStatus(1, 'idle'), 800);
 }
 
-/**
- * Initializes persona button click handlers.
- */
-function personaButtons_initialize(): void {
-    document.querySelectorAll('.persona-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const persona = btn.getAttribute('data-persona') as Persona;
-            if (persona) {
-                persona_switch(persona);
-            }
-        });
-    });
-}
-
-// ============================================================================
+// ============================================================================ 
 // Stage Navigation Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Advances to a specific SeaGaP-MP stage.
@@ -278,6 +286,9 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
     } else {
         if (lockPanel) lockPanel.remove();
     }
+
+    // Update Tracker
+    ui_updateTracker(stageName);
 
     // Update cascade status
     cascade_update();
@@ -326,9 +337,9 @@ function stageIndicators_initialize(): void {
     });
 }
 
-// ============================================================================
+// ============================================================================ 
 // Data Cascade Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Updates the data cascade display with current metrics or system telemetry.
@@ -459,9 +470,9 @@ function telemetry_update(): void {
     }
 }
 
-// ============================================================================
+// ============================================================================ 
 // Gutter Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Sets the status of a gutter section.
@@ -485,9 +496,9 @@ function gutter_resetAll(): void {
     }
 }
 
-// ============================================================================
+// ============================================================================ 
 // Login Stage Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Authenticates the user (mock).
@@ -517,6 +528,39 @@ function user_authenticate(): void {
 }
 
 /**
+ * Logs the user out and returns to the login screen.
+ */
+function user_logout(): void {
+    // Reset state
+    state.currentStage = 'login';
+    state.selectedDatasets = [];
+    state.virtualFilesystem = null;
+    state.trainingJob = null;
+    state.costEstimate = { dataAccess: 0, compute: 0, storage: 0, total: 0 };
+    
+    // Clear intervals
+    if (trainingInterval) {
+        clearInterval(trainingInterval);
+        trainingInterval = null;
+    }
+
+    // Update UI
+    stage_advanceTo('login');
+    
+    // Reset login form
+    const userIn = document.getElementById('login-user') as HTMLInputElement;
+    const passIn = document.getElementById('login-pass') as HTMLInputElement;
+    const btn = document.querySelector('.login-form button') as HTMLButtonElement;
+    
+    if (userIn) userIn.value = '';
+    if (passIn) passIn.value = '';
+    if (btn) btn.textContent = 'INITIATE SESSION';
+
+    // Reset tracker visualization (though it's hidden in login)
+    // No explicit call needed as stage_advanceTo('login') will handle visibility
+}
+
+/**
  * Selects the user persona/role and initializes the workflow.
  * 
  * @param persona - The selected persona
@@ -530,9 +574,9 @@ function role_select(persona: Persona): void {
     stage_advanceTo('search');
 }
 
-// ============================================================================
+// ============================================================================ 
 // Search Stage Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Searches the catalog and displays results.
@@ -627,9 +671,9 @@ function selectionCount_update(): void {
     stageButton_setEnabled('gather', count > 0);
 }
 
-// ============================================================================
+// ============================================================================ 
 // Gather Stage Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Builds the virtual filesystem from selected datasets.
@@ -681,11 +725,11 @@ function filesystem_build(): void {
 
                     // Build children based on annotation type
                     const children: FileNode[] = [
-                        { 
-                            name: 'images', 
-                            type: 'folder' as const, 
-                            path: '', 
-                            children: imageNodes 
+                        {
+                            name: 'images',
+                            type: 'folder' as const,
+                            path: '',
+                            children: imageNodes
                         }
                     ];
 
@@ -726,19 +770,19 @@ function filesystem_build(): void {
                         });
                     } else if (ds.annotationType === 'detection') {
                         // Add annotations.json
-                        children.push({ 
-                            name: 'annotations.json', 
-                            type: 'file' as const, 
-                            path: '', 
-                            size: `${(ds.imageCount * 0.15).toFixed(1)} KB` 
+                        children.push({
+                            name: 'annotations.json',
+                            type: 'file' as const,
+                            path: '',
+                            size: `${(ds.imageCount * 0.15).toFixed(1)} KB`
                         });
                     } else {
                         // Default classification: labels.csv
-                        children.push({ 
-                            name: 'labels.csv', 
-                            type: 'file' as const, 
-                            path: '', 
-                            size: `${(ds.imageCount * 0.05).toFixed(1)} KB` 
+                        children.push({
+                            name: 'labels.csv',
+                            type: 'file' as const,
+                            path: '',
+                            size: `${(ds.imageCount * 0.05).toFixed(1)} KB`
                         });
                     }
                     
@@ -844,9 +888,9 @@ function costs_calculate(): void {
     stageButton_setEnabled('process', true);
 }
 
-// ============================================================================
+// ============================================================================ 
 // Process Stage Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Launches federated training.
@@ -872,9 +916,9 @@ function training_launch(): void {
     stage_advanceTo('monitor');
 }
 
-// ============================================================================
+// ============================================================================ 
 // Monitor Stage Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Initializes the monitor stage.
@@ -889,7 +933,7 @@ function monitor_initialize(): void {
         if (ctx) {
             canvas.width = canvas.offsetWidth;
             canvas.height = canvas.offsetHeight;
-            lossChart = { ctx, data: [] };
+            lossChart = {ctx, data: []};
         }
     }
 
@@ -1008,7 +1052,7 @@ function monitorUI_update(): void {
  */
 function lossChart_draw(): void {
     if (!lossChart || !state.trainingJob) return;
-    const { ctx } = lossChart;
+    const {ctx} = lossChart;
     const history = state.trainingJob.lossHistory;
 
     const canvas = ctx.canvas;
@@ -1121,9 +1165,9 @@ function training_abort(): void {
     if (runningCost) runningCost.textContent = '$0.00';
 }
 
-// ============================================================================
+// ============================================================================ 
 // Post Stage Functions
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Publishes the trained model to the marketplace.
@@ -1133,9 +1177,9 @@ function model_publish(): void {
     alert(`Model "${modelName}" published to ATLAS Marketplace!\n\nThis is a prototype - in production, this would register the model with full provenance tracking.`);
 }
 
-// ============================================================================
+// ============================================================================ 
 // Initialization
-// ============================================================================
+// ============================================================================ 
 
 /**
  * Initializes the ARGUS application.
@@ -1147,9 +1191,6 @@ function app_initialize(): void {
     // Start clock
     clock_update();
     setInterval(clock_update, 1000);
-
-    // Initialize persona buttons
-    personaButtons_initialize();
 
     // Initialize stage indicators
     stageIndicators_initialize();
@@ -1180,6 +1221,7 @@ function app_initialize(): void {
     (window as unknown as Record<string, unknown>).persona_switch = persona_switch;
     (window as unknown as Record<string, unknown>).ui_toggleTopFrame = ui_toggleTopFrame;
     (window as unknown as Record<string, unknown>).user_authenticate = user_authenticate;
+    (window as unknown as Record<string, unknown>).user_logout = user_logout;
     (window as unknown as Record<string, unknown>).role_select = role_select;
 }
 

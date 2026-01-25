@@ -66,12 +66,34 @@
                     </div>
 
                     <!-- Navigation Buttons -->
-                    <nav>
-                        <button class="persona-btn active" data-persona="developer">DEVELOPER</button>
-                        <button class="persona-btn" data-persona="annotator">ANNOTATOR</button>
-                        <button class="persona-btn" data-persona="user">USER</button>
-                        <button class="persona-btn" data-persona="provider">PROVIDER</button>
-                    </nav>
+                    <div class="seagap-tracker-container">
+                        <div class="tracker-segment" onclick="stage_advanceTo('search')" id="trk-search">
+                            <div class="trk-circle"></div>
+                            <div class="trk-label">SEARCH</div>
+                        </div>
+                        <div class="trk-line"></div>
+                        <div class="tracker-segment" onclick="stage_advanceTo('gather')" id="trk-gather">
+                            <div class="trk-circle"></div>
+                            <div class="trk-label">GATHER</div>
+                        </div>
+                        <div class="trk-line"></div>
+                        <div class="tracker-segment" onclick="stage_advanceTo('process')" id="trk-process">
+                            <div class="trk-circle"></div>
+                            <div class="trk-label">PROCESS</div>
+                        </div>
+                        <div class="trk-line"></div>
+                        <div class="tracker-segment" onclick="stage_advanceTo('monitor')" id="trk-monitor">
+                            <div class="trk-circle"></div>
+                            <div class="trk-label">MONITOR</div>
+                        </div>
+                        <div class="trk-line"></div>
+                        <div class="tracker-segment" onclick="stage_advanceTo('post')" id="trk-post">
+                            <div class="trk-circle"></div>
+                            <div class="trk-label">POST</div>
+                        </div>
+                        
+                        <button onclick="user_logout()" class="logout-btn">LOGOUT</button>
+                    </div>
                 </div>
                 <div class="bar-panel first-bar-panel">
                     <div class="bar-1"></div>

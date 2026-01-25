@@ -1409,3 +1409,111 @@ body.state-locked .telemetry-wrapper {
     margin: 0;
     opacity: 0.8;
 }
+
+/* ============================================================ */
+/* SEAGAP TRACKER                                               */
+/* ============================================================ */
+
+.seagap-tracker-container {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 0;
+    align-self: center;
+    padding-bottom: 0.5rem;
+}
+
+.tracker-segment {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    width: 60px;
+    opacity: 0.4;
+    pointer-events: none; /* Default locked */
+    transition: all 0.3s ease;
+    padding: 0 5px;
+}
+
+.tracker-segment.active {
+    opacity: 1;
+    pointer-events: none; /* Current stage shouldn't be clicked to reload */
+}
+
+.tracker-segment.visited {
+    opacity: 0.7;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.tracker-segment.visited:hover {
+    opacity: 1;
+    filter: brightness(1.2);
+}
+
+.trk-circle {
+    width: 24px;
+    height: 24px;
+    background-color: var(--orange);
+    border-radius: 50%;
+    margin-bottom: 0.25rem;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    z-index: 2;
+}
+
+.tracker-segment.active .trk-circle {
+    background-color: var(--honey);
+    box-shadow: 0 0 10px var(--honey);
+    transform: scale(1.2);
+}
+
+.tracker-segment.visited .trk-circle {
+    background-color: var(--october-sunset);
+}
+
+.trk-label {
+    font-size: 0.7rem;
+    color: var(--honey);
+    font-weight: bold;
+    text-align: center;
+}
+
+.trk-line {
+    width: 30px;
+    height: 4px;
+    background-color: var(--october-sunset);
+    opacity: 0.3;
+    margin-top: 10px; /* Aligns with roughly center of 24px circle */
+}
+
+.tracker-segment.visited + .trk-line,
+.tracker-segment.active + .trk-line {
+    opacity: 0.8;
+}
+
+/* Logout Button */
+.logout-btn {
+    margin-left: 2rem;
+    background-color: var(--mars);
+    color: white;
+    padding: 0.5rem 1.5rem;
+    border-radius: 100vmax;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    font-weight: bold;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+}
+
+.logout-btn:hover {
+    filter: brightness(1.2);
+    box-shadow: 0 0 10px var(--mars);
+}
+
+/* Hide tracker in locked state */
+body.state-locked .seagap-tracker-container {
+    display: none !important;
+}
