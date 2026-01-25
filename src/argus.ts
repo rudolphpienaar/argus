@@ -263,6 +263,19 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
         document.body.classList.add('state-locked');
     }
 
+    // Toggle visibility between telemetry dashboard and metrics cascade
+    const viewMetrics: HTMLElement | null = document.getElementById('view-metrics');
+    const viewTelemetry: HTMLElement | null = document.getElementById('telemetry-dashboard');
+    const showTelemetry: boolean = ['login', 'role-selection', 'process', 'monitor'].includes(stageName);
+
+    if (showTelemetry) {
+        if (viewMetrics) viewMetrics.classList.add('hidden');
+        if (viewTelemetry) viewTelemetry.classList.remove('hidden');
+    } else {
+        if (viewMetrics) viewMetrics.classList.remove('hidden');
+        if (viewTelemetry) viewTelemetry.classList.add('hidden');
+    }
+
     const sidebarStages: HTMLElement | null = document.querySelector('.sidebar-panels') as HTMLElement;
     
     // Add "LOCKED" panel for login if needed

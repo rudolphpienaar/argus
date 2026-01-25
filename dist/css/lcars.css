@@ -23,6 +23,8 @@
     --rich-pumpkin: #c50;
     --tomato: #f24;
     --mars: #f22;
+    --canary: #ff0;
+    --tamarillo: #922;
     --sky: #9cf;
     --galaxy: #99f;
     --nebula: #c9f;
@@ -241,6 +243,7 @@ button:disabled {
     color: black;
     background-color: var(--left-frame-top-color);
     border-radius: var(--radius-top);
+    overflow: hidden; /* CRITICAL for elbow curve */
 }
 
 .left-frame-top.hidden {
@@ -280,6 +283,7 @@ button:disabled {
     flex: 1;
     align-content: flex-end;
     position: relative;
+    max-width: calc(100% - var(--lfw));
 }
 
 .right-frame-top.hidden {
@@ -1409,19 +1413,105 @@ body.state-locked .telemetry-wrapper {
     margin: 0;
     opacity: 0.8;
 }
-:root { --canary: #ff0; --tamarillo: #922; }
-.hidden { display: none !important; }
-body.state-locked .data-wrapper, body.state-locked .seagap-tracker-container { display: none !important; }
-.data-cascade-button-group { justify-content: space-between !important; }
-.data-wrapper, .telemetry-wrapper { flex: 1; justify-content: flex-start !important; }
-.seagap-tracker-container { display: flex; align-items: center; justify-content: flex-end; gap: 0; align-self: center; padding-bottom: 0.5rem; flex: 0 0 auto; }
-.tracker-segment { display: flex; flex-direction: column; align-items: center; cursor: pointer; width: 55px; opacity: 0.4; pointer-events: none; transition: all 0.3s ease; padding: 0 2px; }
-.tracker-segment.active { opacity: 1; }
-.tracker-segment.visited { opacity: 0.7; pointer-events: auto; cursor: pointer; }
-.trk-circle { width: 22px; height: 22px; background-color: var(--orange); border-radius: 50%; margin-bottom: 0.2rem; box-shadow: 0 0 5px rgba(0,0,0,0.5); z-index: 2; }
-.tracker-segment.active .trk-circle { background-color: var(--honey); box-shadow: 0 0 10px var(--honey); transform: scale(1.1); }
-.tracker-segment.visited .trk-circle { background-color: var(--october-sunset); }
-.trk-label { font-size: 0.65rem; color: var(--honey); font-weight: bold; text-align: center; }
-.trk-line { width: 20px; height: 4px; background-color: var(--october-sunset); opacity: 0.3; margin-top: 10px; }
-.logout-btn { margin-left: 1rem; background-color: var(--mars); color: white; padding: 0.25rem 1rem; border-radius: 100vmax; font-size: 0.8rem; text-transform: uppercase; font-weight: bold; height: 32px; display: flex; align-items: center; justify-content: center; }
-.stage-indicator.disabled { opacity: 0.2; pointer-events: none; }
+/* ============================================================ */
+/* UTILITY CLASSES                                              */
+/* ============================================================ */
+
+.hidden {
+    display: none !important;
+}
+
+.stage-indicator.disabled {
+    opacity: 0.2;
+    pointer-events: none;
+}
+
+/* ============================================================ */
+/* SEAGAP TRACKER NAVIGATION                                    */
+/* ============================================================ */
+
+.seagap-tracker-container {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+    align-self: center;
+    padding-bottom: 0.5rem;
+    flex: 0 0 auto;
+}
+
+body.state-locked .seagap-tracker-container {
+    display: none;
+}
+
+.tracker-segment {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    width: 55px;
+    opacity: 0.4;
+    pointer-events: none;
+    transition: all 0.3s ease;
+    padding: 0 2px;
+}
+
+.tracker-segment.active {
+    opacity: 1;
+}
+
+.tracker-segment.visited {
+    opacity: 0.7;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.trk-circle {
+    width: 22px;
+    height: 22px;
+    background-color: var(--orange);
+    border-radius: 50%;
+    margin-bottom: 0.2rem;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    z-index: 2;
+}
+
+.tracker-segment.active .trk-circle {
+    background-color: var(--honey);
+    box-shadow: 0 0 10px var(--honey);
+    transform: scale(1.1);
+}
+
+.tracker-segment.visited .trk-circle {
+    background-color: var(--october-sunset);
+}
+
+.trk-label {
+    font-size: 0.65rem;
+    color: var(--honey);
+    font-weight: bold;
+    text-align: center;
+}
+
+.trk-line {
+    width: 20px;
+    height: 4px;
+    background-color: var(--october-sunset);
+    opacity: 0.3;
+    margin-top: 10px;
+}
+
+.logout-btn {
+    margin-left: 1rem;
+    background-color: var(--mars);
+    color: white;
+    padding: 0.25rem 1rem;
+    border-radius: 100vmax;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    font-weight: bold;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
