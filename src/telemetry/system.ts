@@ -25,7 +25,7 @@ const state: SystemTelemetryState = {
  */
 export function processList_render(isProvisioning: boolean): void {
     const procEl: HTMLElement | null = document.getElementById('tele-proc');
-    const procHeader = procEl?.parentElement?.querySelector('.tele-header');
+    const procHeader: Element | null | undefined = procEl?.parentElement?.querySelector('.tele-header');
     
     if (!procEl) return;
 
