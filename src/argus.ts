@@ -129,6 +129,156 @@ const state: AppState & { currentPersona: Persona } = {
 let trainingInterval: number | null = null;
 let lossChart: { ctx: CanvasRenderingContext2D; data: number[] } | null = null;
 
+/** Tracks which SeaGaP stages have been visited for back-navigation */
+const visitedStages: Set<string> = new Set();
+
+/** Ordered list of SeaGaP stages for navigation logic */
+const STAGE_ORDER: readonly string[] = ['search', 'gather', 'process', 'monitor', 'post'] as const;
+
+// ============================================================================
+// SeaGaP Station Functions
+// ============================================================================
+
+/**
+ * Updates the visual state of all SeaGaP stations.
+ *
+ * @param currentStage - The currently active stage
+ */
+function stations_update(currentStage: AppState['currentStage']): void {
+    // Mark current stage as visited
+    if (STAGE_ORDER.includes(currentStage)) {
+        visitedStages.add(currentStage);
+    }
+
+    // Update each station's visual state
+    STAGE_ORDER.forEach((stageName: string) => {
+        const station: HTMLElement | null = document.getElementById(`station-${stageName}`);
+        if (!station) return;
+
+        const isActive: boolean = stageName === currentStage;
+        const isVisited: boolean = visitedStages.has(stageName) && !isActive;
+
+        station.classList.toggle('active', isActive);
+        station.classList.toggle('visited', isVisited);
+    });
+
+    // Update telemetry content for active station
+    stationTelemetry_update(currentStage);
+}
+
+/**
+ * Handles click on a station for back-navigation.
+ *
+ * @param stageName - The stage to navigate to
+ */
+function station_click(stageName: string): void {
+    // Only allow navigation to visited stages (back-navigation)
+    if (!visitedStages.has(stageName)) return;
+
+    // Navigate to the clicked stage
+    stage_advanceTo(stageName as AppState['currentStage']);
+}
+
+/**
+ * Advances to the next stage in the SeaGaP workflow.
+ */
+function stage_next(): void {
+    const currentIndex: number = STAGE_ORDER.indexOf(state.currentStage);
+    if (currentIndex === -1 || currentIndex >= STAGE_ORDER.length - 1) return;
+
+    const nextStage: string = STAGE_ORDER[currentIndex + 1];
+    stage_advanceTo(nextStage as AppState['currentStage']);
+}
+
+/** Telemetry ticker state */
+let telemetryTickerInterval: number | null = null;
+let telemetryTickCount: number = 0;
+
+/**
+ * Updates the telemetry content for the active station with btop-style stats.
+ *
+ * @param stageName - The active stage name
+ */
+function stationTelemetry_update(stageName: AppState['currentStage']): void {
+    // Clear existing ticker
+    if (telemetryTickerInterval) {
+        clearInterval(telemetryTickerInterval);
+        telemetryTickerInterval = null;
+    }
+
+    // Start new ticker for active station
+    telemetryTickCount = 0;
+    stationTelemetry_tick(stageName);
+    telemetryTickerInterval = window.setInterval(() => stationTelemetry_tick(stageName), 800);
+}
+
+/**
+ * Generates dynamic telemetry content for a station.
+ *
+ * @param stageName - The stage to generate content for
+ */
+function stationTelemetry_tick(stageName: AppState['currentStage']): void {
+    const teleEl: HTMLElement | null = document.getElementById(`tele-${stageName}`);
+    if (!teleEl) return;
+
+    const contentEl: HTMLElement | null = teleEl.querySelector('.tele-content');
+    if (!contentEl) return;
+
+    telemetryTickCount++;
+    const t: number = telemetryTickCount;
+
+    // Dynamic content generators for each stage
+    const generators: Record<string, () => string> = {
+        search: () => {
+            const queries: string[] = ['chest xray', 'pneumonia', 'covid-19', 'thoracic', 'lung nodule'];
+            const modalities: string[] = ['XRAY', 'CT', 'MRI', 'PATH'];
+            const query: string = queries[t % queries.length];
+            return `[${String(t).padStart(4, '0')}] SCAN: ${modalities[t % 4]}\n` +
+                   `QUERY: "${query}"\n` +
+                   `HITS: ${Math.floor(Math.random() * 50 + 10)}\n` +
+                   `CACHE: ${(Math.random() * 100).toFixed(1)}% warm\n` +
+                   `LATENCY: ${Math.floor(Math.random() * 50 + 5)}ms`;
+        },
+        gather: () => {
+            const imageCount: number = state.selectedDatasets.reduce((sum: number, ds: Dataset) => sum + ds.imageCount, 0);
+            const ops: string[] = ['INDEXING', 'HASHING', 'VALIDATING', 'CACHING', 'SYNCING'];
+            return `[${String(t).padStart(4, '0')}] ${ops[t % ops.length]}\n` +
+                   `DATASETS: ${state.selectedDatasets.length}\n` +
+                   `IMAGES: ${imageCount.toLocaleString()}\n` +
+                   `COST: $${state.costEstimate.total.toFixed(2)}\n` +
+                   `QUEUE: ${Math.floor(Math.random() * 10)} pending`;
+        },
+        process: () => {
+            const tasks: string[] = ['COMPILING', 'LINKING', 'VALIDATING', 'OPTIMIZING', 'STAGING'];
+            return `[${String(t).padStart(4, '0')}] ${tasks[t % tasks.length]}\n` +
+                   `MODEL: ResNet50\n` +
+                   `PARAMS: 25.6M\n` +
+                   `GPU MEM: ${(Math.random() * 4 + 8).toFixed(1)} GB\n` +
+                   `READY: ${t > 3 ? 'YES' : 'preparing...'}`;
+        },
+        monitor: () => {
+            const epoch: number = state.trainingJob?.currentEpoch ?? 0;
+            const loss: string = state.trainingJob?.loss?.toFixed(4) ?? (2.5 - t * 0.02).toFixed(4);
+            return `[${String(t).padStart(4, '0')}] TRAINING\n` +
+                   `EPOCH: ${epoch}/50\n` +
+                   `LOSS: ${loss}\n` +
+                   `THROUGHPUT: ${Math.floor(Math.random() * 100 + 150)} img/s\n` +
+                   `ETA: ${Math.max(0, 50 - epoch) * 2}m`;
+        },
+        post: () => {
+            const actions: string[] = ['CHECKSUMMING', 'PACKAGING', 'SIGNING', 'REGISTERING', 'PUBLISHING'];
+            return `[${String(t).padStart(4, '0')}] ${actions[t % actions.length]}\n` +
+                   `MODEL: ChestXRay-v1\n` +
+                   `SIZE: 98.2 MB\n` +
+                   `ACC: 94.2%  AUC: 0.967\n` +
+                   `STATUS: ready`;
+        }
+    };
+
+    const generator = generators[stageName];
+    contentEl.textContent = generator ? generator() : 'Initializing...';
+}
+
 // ============================================================================
 // Clock & Version Functions
 // ============================================================================
@@ -263,18 +413,8 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
         document.body.classList.add('state-locked');
     }
 
-    // Toggle visibility between telemetry dashboard and metrics cascade
-    const viewMetrics: HTMLElement | null = document.getElementById('view-metrics');
-    const viewTelemetry: HTMLElement | null = document.getElementById('telemetry-dashboard');
-    const showTelemetry: boolean = ['login', 'role-selection', 'process', 'monitor'].includes(stageName);
-
-    if (showTelemetry) {
-        if (viewMetrics) viewMetrics.classList.add('hidden');
-        if (viewTelemetry) viewTelemetry.classList.remove('hidden');
-    } else {
-        if (viewMetrics) viewMetrics.classList.remove('hidden');
-        if (viewTelemetry) viewTelemetry.classList.add('hidden');
-    }
+    // Update SeaGaP station states
+    stations_update(stageName);
 
     const sidebarStages: HTMLElement | null = document.querySelector('.sidebar-panels') as HTMLElement;
     
@@ -527,6 +667,40 @@ function user_authenticate(): void {
             btn.classList.remove('pulse');
         }
     }, 1000);
+}
+
+/**
+ * Logs the user out and resets the application state.
+ */
+function user_logout(): void {
+    // Reset state
+    state.currentStage = 'login';
+    state.selectedDatasets = [];
+    state.virtualFilesystem = null;
+    state.costEstimate = { dataAccess: 0, compute: 0, storage: 0, total: 0 };
+    state.trainingJob = null;
+
+    // Reset UI components
+    const loginUser = document.getElementById('login-user') as HTMLInputElement;
+    const loginPass = document.getElementById('login-pass') as HTMLInputElement;
+    if (loginUser) loginUser.value = '';
+    if (loginPass) loginPass.value = '';
+
+    const btn = document.querySelector('.login-form button') as HTMLButtonElement;
+    if (btn) {
+        btn.textContent = 'INITIATE SESSION';
+        btn.classList.remove('pulse');
+    }
+    
+    // Clear visited stages
+    visitedStages.clear();
+
+    // Reset gutters
+    gutter_resetAll();
+    gutter_setStatus(1, 'active');
+
+    // Navigate to login
+    stage_advanceTo('login');
 }
 
 /**
@@ -1184,6 +1358,8 @@ function app_initialize(): void {
 
     // Expose functions to window for onclick handlers
     (window as unknown as Record<string, unknown>).stage_advanceTo = stage_advanceTo;
+    (window as unknown as Record<string, unknown>).station_click = station_click;
+    (window as unknown as Record<string, unknown>).stage_next = stage_next;
     (window as unknown as Record<string, unknown>).catalog_search = catalog_search;
     (window as unknown as Record<string, unknown>).dataset_toggle = dataset_toggle;
     (window as unknown as Record<string, unknown>).filePreview_show = filePreview_show;
@@ -1193,6 +1369,7 @@ function app_initialize(): void {
     (window as unknown as Record<string, unknown>).persona_switch = persona_switch;
     (window as unknown as Record<string, unknown>).ui_toggleTopFrame = ui_toggleTopFrame;
     (window as unknown as Record<string, unknown>).user_authenticate = user_authenticate;
+    (window as unknown as Record<string, unknown>).user_logout = user_logout;
     (window as unknown as Record<string, unknown>).role_select = role_select;
 }
 

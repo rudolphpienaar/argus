@@ -25,76 +25,82 @@
                     <span class="hop" id="app-version">v0.0.0</span>
                 </div>
             </div>
-            <div class="right-frame-top" id="right-top-frame">
-                <div class="banner">ARGUS</div>
-                <div class="data-cascade-button-group">
-                    <!-- Data Cascade -->
-                    <div class="data-wrapper hidden" id="view-metrics">
-                        <div class="data-column">
-                            <div class="dc-row-1" id="cascade-label-1">DATASETS</div>
-                            <div class="dc-row-2" id="cascade-datasets">0</div>
+            <!-- Content area (seagap + ARGUS + bars) -->
+            <div class="content-top" id="content-top">
+                <!-- SeaGaP Tracker with Telemetry Windows -->
+                <div class="seagap-panel" id="seagap-panel">
+                    <div class="seagap-stations">
+                        <!-- SEARCH Station -->
+                        <div class="station" id="station-search" data-stage="search">
+                            <div class="station-header" onclick="station_click('search')">
+                                <div class="station-circle"></div>
+                                <div class="station-label">SEARCH</div>
+                            </div>
+                            <div class="station-telemetry" id="tele-search">
+                                <div class="tele-content monospace">Catalog ready...</div>
+                            </div>
                         </div>
-                        <div class="data-column">
-                            <div class="dc-row-1" id="cascade-label-2">IMAGES</div>
-                            <div class="dc-row-2" id="cascade-images">0</div>
-                        </div>
-                        <div class="data-column">
-                            <div class="dc-row-1" id="cascade-label-3">COST</div>
-                            <div class="dc-row-2" id="cascade-cost">$0</div>
-                        </div>
-                        
-                        <div class="data-column">
-                            <div class="dc-row-1" id="cascade-label-4">STATUS</div>
-                            <div class="dc-row-2" id="cascade-status">READY</div>
-                        </div>
-                    </div>
-                    
-                    <!-- Telemetry Dashboard (Login Mode) -->
-                    <div id="telemetry-dashboard" class="telemetry-wrapper">
-                        <div class="tele-col">
-                            <div class="tele-header">ACTIVE PROCESSES (K8S)</div>
-                            <div class="tele-content monospace" id="tele-proc">Initializing...</div>
-                        </div>
-                        <div class="tele-col">
-                            <div class="tele-header">NETWORK INTERFACES</div>
-                            <div class="tele-content monospace" id="tele-net">Scanning...</div>
-                        </div>
-                        <div class="tele-col wide">
-                            <div class="tele-header">SYSTEM EVENTS</div>
-                            <div class="tele-content monospace" id="tele-log">Boot sequence initiated...</div>
-                        </div>
-                    </div>
+                        <div class="station-line"></div>
 
-                    <!-- Navigation Tracker -->
-                    <div class="seagap-tracker-container">
-                        <div class="tracker-segment" onclick="stage_advanceTo('search')" id="trk-search">
-                            <div class="trk-circle"></div>
-                            <div class="trk-label">SEARCH</div>
+                        <!-- GATHER Station -->
+                        <div class="station" id="station-gather" data-stage="gather">
+                            <div class="station-header" onclick="station_click('gather')">
+                                <div class="station-circle"></div>
+                                <div class="station-label">GATHER</div>
+                            </div>
+                            <div class="station-telemetry" id="tele-gather">
+                                <div class="tele-content monospace">Awaiting selection...</div>
+                            </div>
                         </div>
-                        <div class="trk-line"></div>
-                        <div class="tracker-segment" onclick="stage_advanceTo('gather')" id="trk-gather">
-                            <div class="trk-circle"></div>
-                            <div class="trk-label">GATHER</div>
+                        <div class="station-line"></div>
+
+                        <!-- PROCESS Station -->
+                        <div class="station" id="station-process" data-stage="process">
+                            <div class="station-header" onclick="station_click('process')">
+                                <div class="station-circle"></div>
+                                <div class="station-label">PROCESS</div>
+                            </div>
+                            <div class="station-telemetry" id="tele-process">
+                                <div class="tele-content monospace">Config pending...</div>
+                            </div>
                         </div>
-                        <div class="trk-line"></div>
-                        <div class="tracker-segment" onclick="stage_advanceTo('process')" id="trk-process">
-                            <div class="trk-circle"></div>
-                            <div class="trk-label">PROCESS</div>
+                        <div class="station-line"></div>
+
+                        <!-- MONITOR Station -->
+                        <div class="station" id="station-monitor" data-stage="monitor">
+                            <div class="station-header" onclick="station_click('monitor')">
+                                <div class="station-circle"></div>
+                                <div class="station-label">MONITOR</div>
+                            </div>
+                            <div class="station-telemetry" id="tele-monitor">
+                                <div class="tele-content monospace">Idle...</div>
+                            </div>
                         </div>
-                        <div class="trk-line"></div>
-                        <div class="tracker-segment" onclick="stage_advanceTo('monitor')" id="trk-monitor">
-                            <div class="trk-circle"></div>
-                            <div class="trk-label">MONITOR</div>
+                        <div class="station-line"></div>
+
+                        <!-- POST Station -->
+                        <div class="station" id="station-post" data-stage="post">
+                            <div class="station-header" onclick="station_click('post')">
+                                <div class="station-circle"></div>
+                                <div class="station-label">POST</div>
+                            </div>
+                            <div class="station-telemetry" id="tele-post">
+                                <div class="tele-content monospace">Ready to publish...</div>
+                            </div>
                         </div>
-                        <div class="trk-line"></div>
-                        <div class="tracker-segment" onclick="stage_advanceTo('post')" id="trk-post">
-                            <div class="trk-circle"></div>
-                            <div class="trk-label">POST</div>
-                        </div>
-                        
-                        <button onclick="user_logout()" class="logout-btn">LOGOUT</button>
                     </div>
                 </div>
+
+                <!-- ARGUS Banner and Pills -->
+                <div class="argus-column">
+                    <div class="banner">ARGUS</div>
+                    <div class="pill-stack">
+                        <button onclick="user_logout()" class="pill-btn logout-pill">LOGOUT</button>
+                        <button onclick="stage_next()" class="pill-btn next-pill" id="btn-next">NEXT</button>
+                    </div>
+                </div>
+
+                <!-- Bar panel at bottom -->
                 <div class="bar-panel first-bar-panel">
                     <div class="bar-1"></div>
                     <div class="bar-2"></div>
