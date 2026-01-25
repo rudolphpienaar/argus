@@ -5,6 +5,11 @@
 
 import type { Dataset, CostEstimate, AppState } from '../core/models/types.js';
 
+interface RevolvingStat {
+    label: string;
+    value: string;
+}
+
 let tickerInterval: number | null = null;
 let tickerIndex = 0;
 
@@ -42,7 +47,7 @@ export function renderSearchMetrics(): void {
     if (statusEl) statusEl.textContent = 'ONLINE';
 
     // Start Revolving Stats Ticker
-    const revolvingStats = [
+    const revolvingStats: RevolvingStat[] = [
         { label: 'MODALITY', value: 'MRI: 12K' },
         { label: 'MODALITY', value: 'CT: 8.5K' },
         { label: 'MODALITY', value: 'X-RAY: 15K' },
