@@ -17,6 +17,7 @@ import type {
     AppState
 } from './core/models/types.js';
 
+import { costEstimate_calculate } from './core/logic/costs.js';
 import { VERSION, GIT_HASH } from './generated/version.js';
 
 // ============================================================================
@@ -162,8 +163,8 @@ function stations_update(currentStage: AppState['currentStage']): void {
         station.classList.toggle('visited', isVisited);
     });
 
-    // Update telemetry content for active station
-    stationTelemetry_update(currentStage);
+    // Start global telemetry ticker
+    stationTelemetry_start();
 }
 
 /**
@@ -195,21 +196,17 @@ let telemetryTickerInterval: number | null = null;
 let telemetryTickCount: number = 0;
 
 /**
- * Updates the telemetry content for the active station with btop-style stats.
- *
- * @param stageName - The active stage name
+ * Initializes and starts the global telemetry ticker for SeaGaP stations.
  */
-function stationTelemetry_update(stageName: AppState['currentStage']): void {
-    // Clear existing ticker
-    if (telemetryTickerInterval) {
-        clearInterval(telemetryTickerInterval);
-        telemetryTickerInterval = null;
-    }
+function stationTelemetry_start(): void {
+    if (telemetryTickerInterval) return;
 
-    // Start new ticker for active station
-    telemetryTickCount = 0;
-    stationTelemetry_tick(stageName);
-    telemetryTickerInterval = window.setInterval(() => stationTelemetry_tick(stageName), 800);
+    telemetryTickerInterval = window.setInterval(() => {
+        telemetryTickCount++;
+        STAGE_ORDER.forEach((stage: string) => {
+            stationTelemetry_tick(stage as AppState['currentStage']);
+        });
+    }, 800);
 }
 
 /**
@@ -218,66 +215,71 @@ function stationTelemetry_update(stageName: AppState['currentStage']): void {
  * @param stageName - The stage to generate content for
  */
 function stationTelemetry_tick(stageName: AppState['currentStage']): void {
-    const teleEl: HTMLElement | null = document.getElementById(`tele-${stageName}`);
+    const stationEl = document.getElementById(`station-${stageName}`);
+    if (!stationEl || (!stationEl.classList.contains('active') && !stationEl.classList.contains('visited'))) {
+        return;
+    }
+
+    const teleEl = document.getElementById(`tele-${stageName}`);
     if (!teleEl) return;
 
-    const contentEl: HTMLElement | null = teleEl.querySelector('.tele-content');
+    const contentEl = teleEl.querySelector('.tele-content');
     if (!contentEl) return;
 
-    telemetryTickCount++;
-    const t: number = telemetryTickCount;
+    const isActive = stationEl.classList.contains('active');
+    const t = telemetryTickCount + (STAGE_ORDER.indexOf(stageName) * 10); // Offset for variety
+    const timeStr = String(t % 10000).padStart(4, '0');
 
     // Dynamic content generators for each stage
     const generators: Record<string, () => string> = {
         search: () => {
+            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">SCAN COMPLETE</span><br>HITS: 42<br>STATUS: IDLE`;
             const queries: string[] = ['chest xray', 'pneumonia', 'covid-19', 'thoracic', 'lung nodule'];
-            const modalities: string[] = ['XRAY', 'CT', 'MRI', 'PATH'];
             const query: string = queries[t % queries.length];
-            return `[${String(t).padStart(4, '0')}] SCAN: ${modalities[t % 4]}\n` +
-                   `QUERY: "${query}"\n` +
-                   `HITS: ${Math.floor(Math.random() * 50 + 10)}\n` +
-                   `CACHE: ${(Math.random() * 100).toFixed(1)}% warm\n` +
+            return `<span class="dim">[${timeStr}]</span> SCAN: <span class="highlight">XRAY</span><br>` +
+                   `QUERY: "<span class="warn">${query}</span>"<br>` +
+                   `HITS: <span class="highlight">${Math.floor(Math.random() * 50 + 10)}</span><br>` +
                    `LATENCY: ${Math.floor(Math.random() * 50 + 5)}ms`;
         },
         gather: () => {
-            const imageCount: number = state.selectedDatasets.reduce((sum: number, ds: Dataset) => sum + ds.imageCount, 0);
+            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">GATHERED</span><br>IMG: ${state.selectedDatasets.reduce((sum, d) => sum + d.imageCount, 0)}<br>STATUS: SYNCED`;
             const ops: string[] = ['INDEXING', 'HASHING', 'VALIDATING', 'CACHING', 'SYNCING'];
-            return `[${String(t).padStart(4, '0')}] ${ops[t % ops.length]}\n` +
-                   `DATASETS: ${state.selectedDatasets.length}\n` +
-                   `IMAGES: ${imageCount.toLocaleString()}\n` +
-                   `COST: $${state.costEstimate.total.toFixed(2)}\n` +
-                   `QUEUE: ${Math.floor(Math.random() * 10)} pending`;
+            return `<span class="dim">[${timeStr}]</span> <span class="warn">${ops[t % ops.length]}</span><br>` +
+                   `DATASETS: <span class="highlight">${state.selectedDatasets.length}</span><br>` +
+                   `IMAGES: ${state.selectedDatasets.reduce((sum, d) => sum + d.imageCount, 0).toLocaleString()}<br>` +
+                   `COST: <span class="highlight">$${state.costEstimate.total.toFixed(2)}</span>`;
         },
         process: () => {
+            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">COMPILED</span><br>MODEL: ResNet50<br>READY: YES`;
             const tasks: string[] = ['COMPILING', 'LINKING', 'VALIDATING', 'OPTIMIZING', 'STAGING'];
-            return `[${String(t).padStart(4, '0')}] ${tasks[t % tasks.length]}\n` +
-                   `MODEL: ResNet50\n` +
-                   `PARAMS: 25.6M\n` +
-                   `GPU MEM: ${(Math.random() * 4 + 8).toFixed(1)} GB\n` +
-                   `READY: ${t > 3 ? 'YES' : 'preparing...'}`;
+            return `<span class="dim">[${timeStr}]</span> <span class="warn">${tasks[t % tasks.length]}</span><br>` +
+                   `MODEL: ResNet50<br>` +
+                   `PARAMS: <span class="highlight">25.6M</span><br>` +
+                   `GPU MEM: ${(Math.random() * 4 + 8).toFixed(1)} GB`;
         },
         monitor: () => {
-            const epoch: number = state.trainingJob?.currentEpoch ?? 0;
-            const loss: string = state.trainingJob?.loss?.toFixed(4) ?? (2.5 - t * 0.02).toFixed(4);
-            return `[${String(t).padStart(4, '0')}] TRAINING\n` +
-                   `EPOCH: ${epoch}/50\n` +
-                   `LOSS: ${loss}\n` +
-                   `THROUGHPUT: ${Math.floor(Math.random() * 100 + 150)} img/s\n` +
-                   `ETA: ${Math.max(0, 50 - epoch) * 2}m`;
+            const epoch = state.trainingJob?.currentEpoch ?? 0;
+            const loss = state.trainingJob?.loss?.toFixed(4) ?? (2.5 - (t % 100) * 0.02).toFixed(4);
+            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">FINISHED</span><br>EPOCH: 50/50<br>LOSS: 0.0231`;
+            return `<span class="dim">[${timeStr}]</span> <span class="warn">TRAINING</span><br>` +
+                   `EPOCH: <span class="highlight">${Math.floor(epoch)}/50</span><br>` +
+                   `LOSS: <span class="warn">${loss}</span><br>` +
+                   `THROUGHPUT: ${Math.floor(Math.random() * 100 + 150)} img/s`;
         },
         post: () => {
+            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">PUBLISHED</span><br>VER: 1.0.0`;
             const actions: string[] = ['CHECKSUMMING', 'PACKAGING', 'SIGNING', 'REGISTERING', 'PUBLISHING'];
-            return `[${String(t).padStart(4, '0')}] ${actions[t % actions.length]}\n` +
-                   `MODEL: ChestXRay-v1\n` +
-                   `SIZE: 98.2 MB\n` +
-                   `ACC: 94.2%  AUC: 0.967\n` +
-                   `STATUS: ready`;
+            return `<span class="dim">[${timeStr}]</span> <span class="warn">${actions[t % actions.length]}</span><br>` +
+                   `MODEL: ChestXRay-v1<br>` +
+                   `SIZE: <span class="highlight">98.2 MB</span><br>` +
+                   `ACC: 94.2%  AUC: 0.967`;
         }
     };
 
     const generator = generators[stageName];
-    contentEl.textContent = generator ? generator() : 'Initializing...';
+    contentEl.innerHTML = generator ? generator() : 'Initializing...';
 }
+
 
 // ============================================================================
 // Clock & Version Functions
@@ -443,7 +445,7 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
     } else if (stageName === 'process') {
         gutter_setStatus(3, 'active');
     } else if (stageName === 'monitor') {
-        monitor_initialize();
+        setTimeout(monitor_initialize, 50);
         gutter_setStatus(4, 'active');
     } else if (stageName === 'post') {
         gutter_setStatus(5, 'active');
@@ -1006,25 +1008,16 @@ function filePreview_show(path: string, type: string): void {
  * Calculates and displays cost estimates.
  */
 function costs_calculate(): void {
-    const dataAccess = state.selectedDatasets.reduce((sum, ds) => sum + ds.cost, 0);
-    const compute = dataAccess * 2.5; // Mock compute cost
-    const storage = dataAccess * 0.3; // Mock storage cost
-
-    state.costEstimate = {
-        dataAccess,
-        compute,
-        storage,
-        total: dataAccess + compute + storage
-    };
+    state.costEstimate = costEstimate_calculate(state.selectedDatasets);
 
     const costData = document.getElementById('cost-data');
     const costCompute = document.getElementById('cost-compute');
     const costStorage = document.getElementById('cost-storage');
     const costTotal = document.getElementById('cost-total');
 
-    if (costData) costData.textContent = `$${dataAccess.toFixed(2)}`;
-    if (costCompute) costCompute.textContent = `$${compute.toFixed(2)}`;
-    if (costStorage) costStorage.textContent = `$${storage.toFixed(2)}`;
+    if (costData) costData.textContent = `$${state.costEstimate.dataAccess.toFixed(2)}`;
+    if (costCompute) costCompute.textContent = `$${state.costEstimate.compute.toFixed(2)}`;
+    if (costStorage) costStorage.textContent = `$${state.costEstimate.storage.toFixed(2)}`;
     if (costTotal) costTotal.textContent = `$${state.costEstimate.total.toFixed(2)}`;
 
     cascade_update();
@@ -1067,7 +1060,23 @@ function training_launch(): void {
  * Initializes the monitor stage.
  */
 function monitor_initialize(): void {
-    if (!state.trainingJob) return;
+    if (!state.trainingJob) {
+        // Auto-initialize a job if none exists (e.g. direct navigation)
+        state.trainingJob = {
+            id: `job-${Date.now()}`,
+            status: 'running',
+            currentEpoch: 0,
+            totalEpochs: 50,
+            loss: 2.5,
+            accuracy: 0,
+            auc: 0,
+            runningCost: 0,
+            budgetLimit: 500,
+            startTime: new Date(),
+            nodes: JSON.parse(JSON.stringify(MOCK_NODES)),
+            lossHistory: []
+        };
+    }
 
     // Initialize loss chart
     const canvas = document.getElementById('loss-canvas') as HTMLCanvasElement;
@@ -1349,6 +1358,7 @@ function app_initialize(): void {
 
     // Start Telemetry
     setInterval(telemetry_update, 500);
+    stationTelemetry_start();
 
     // Set initial gutter state
     gutter_setStatus(1, 'active');

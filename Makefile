@@ -13,6 +13,7 @@ help:
 	@echo "  make serve    - Start dev server on port 8080"
 	@echo "  make dev      - Build and serve"
 	@echo "  make watch    - Watch mode (rebuild on changes)"
+	@echo "  make test     - Run unit tests"
 	@echo "  make clean    - Remove build artifacts"
 	@echo "  make argus    - Full cycle (clean, install, build)"
 
@@ -33,6 +34,10 @@ dev: build serve
 watch:
 	@echo "Watching for changes..."
 	npm run watch
+
+test:
+	@echo "Running tests..."
+	npm run test
 
 clean:
 	@echo "Cleaning artifacts..."

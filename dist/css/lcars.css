@@ -1440,10 +1440,10 @@ body.state-locked .telemetry-wrapper {
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
-    padding: 0 1rem 0 70px; /* Left padding for elbow */
-    min-width: 0; /* Allow flex shrinking */
-    position: relative; /* For elbow pseudo-elements */
+    justify-content: flex-start; /* Align entire panel to top */
+    padding: 10px 1rem 0 70px; /* Top padding for breathing room */
+    min-width: 0;
+    position: relative;
 }
 
 body.state-locked .seagap-panel {
@@ -1453,30 +1453,33 @@ body.state-locked .seagap-panel {
 
 .seagap-stations {
     display: flex;
-    align-items: flex-end;
+    align-items: flex-start; /* CRITICAL: Anchor all stations to the TOP */
     gap: 0;
-    padding-bottom: 0.5rem;
+    height: 100%; /* Allow telemetry to fill downwards */
 }
 
 /* Individual Station */
 .station {
     display: flex;
     flex-direction: column;
-    flex: 0 1 60px; /* Shrink to min, base 60px */
-    min-width: 50px;
-    transition: flex 0.3s ease, opacity 0.3s ease;
+    flex: 0 0 auto; /* Default: don't grow, size to content */
+    width: 120px;    /* Broadened base width */
+    transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
     opacity: 0.3;
     pointer-events: none;
+    margin-right: 4px;
 }
 
 .station.visited {
-    opacity: 0.6;
+    width: 180px; /* Broadened visited width */
+    opacity: 0.8;
     pointer-events: auto;
     cursor: pointer;
 }
 
 .station.active {
-    flex: 1 1 auto; /* Expand to fill space */
+    flex: 1 1 auto; /* Take remaining space */
+    min-width: 200px; /* Ensure active station is always broad */
     opacity: 1;
     pointer-events: auto;
 }
@@ -1486,17 +1489,19 @@ body.state-locked .seagap-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 0.25rem;
+    padding: 0 0.25rem 0.5rem 0.25rem;
+    z-index: 2; /* Keep above lines if needed */
 }
 
 .station-circle {
-    width: 20px;
-    height: 20px;
+    width: 32px; /* Larger, striking circles */
+    height: 32px;
     background-color: var(--october-sunset);
     border-radius: 50%;
-    margin-bottom: 0.25rem;
-    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    margin-bottom: 0.5rem;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
     transition: all 0.3s ease;
+    border: 2px solid black; /* Definition against lines */
 }
 
 .station.visited .station-circle {
@@ -1505,54 +1510,86 @@ body.state-locked .seagap-panel {
 
 .station.active .station-circle {
     background-color: var(--honey);
-    box-shadow: 0 0 12px var(--honey);
-    transform: scale(1.2);
+    box-shadow: 0 0 15px var(--honey);
+    transform: scale(1.1);
+    border-color: var(--honey);
 }
 
 .station-label {
-    font-size: 0.6rem;
+    font-size: 0.75rem;
     color: var(--honey);
     font-weight: bold;
     text-align: center;
     white-space: nowrap;
+    letter-spacing: 1px;
 }
 
-/* Station Telemetry Window */
+/* Station Telemetry Window - HANGING DOWN */
 .station-telemetry {
     height: 0;
     overflow: hidden;
-    background-color: rgba(0, 0, 0, 0.4);
-    border: 1px solid var(--october-sunset);
-    border-radius: 4px;
-    margin-top: 0.25rem;
+    background-color: rgba(0, 0, 0, 0.4); /* Match .tele-col opacity */
+    border: 1px solid var(--october-sunset); /* Full border */
+    border-radius: 4px; /* Match .tele-col radius */
+    margin: 0 4px;
     opacity: 0;
-    transition: height 0.3s ease, opacity 0.3s ease;
+    transition: all 0.4s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
 }
 
+/* Active State: Large, Detailed Window */
 .station.active .station-telemetry {
-    height: 120px;
+    height: 180px; /* Increased depth */
     opacity: 1;
+    border-color: var(--honey);
+    background-color: rgba(255, 204, 153, 0.08); /* Tinted background */
+    box-shadow: 0 5px 20px rgba(255, 201, 153, 0.15); /* Glow */
+}
+
+/* Visited State: Compact, Summary Window */
+.station.visited .station-telemetry {
+    height: 100px; /* Increased depth */
+    opacity: 0.7;
+    border-color: var(--orange);
 }
 
 .station-telemetry .tele-content {
     padding: 0.5rem;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     color: var(--honey);
     line-height: 1.4;
     height: 100%;
     overflow-y: auto;
+    font-family: 'Courier New', monospace;
+}
+
+/* Compact text for visited stations */
+.station.visited .tele-content {
+    font-size: 0.65rem;
+    line-height: 1.2;
+    color: var(--orange);
 }
 
 /* Connector Lines */
 .station-line {
-    width: 100%;
-    max-width: 30px;
-    height: 3px;
+    flex: 1;
+    min-width: 20px;
+    height: 4px;
     background-color: var(--october-sunset);
     opacity: 0.3;
-    align-self: center;
-    margin-bottom: 45px; /* Align with circles */
-    flex-shrink: 0;
+    margin-top: 16px;
+    margin-left: -55px;  /* Reach into left station */
+    margin-right: -55px; /* Reach into right station */
+    position: relative;
+    z-index: 1;
+}
+
+.button-abort { 
+    background-color: var(--mars) !important; 
+    color: white !important;
+    width: auto !important; /* Overide standard button width */
+    height: auto !important;
+    padding: 0.5rem 1.5rem !important;
 }
 
 /* ============================================================ */

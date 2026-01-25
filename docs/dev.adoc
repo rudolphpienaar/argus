@@ -231,137 +231,53 @@ make serve
 make watch
 ----
 
-== Top Frame Redesign: SeaGaP Tracker (v1.2.0)
+== Top Frame Redesign: SeaGaP Tracker (v1.2.0 - v1.3.0)
 
-=== Design Goals
+=== Design Evolution: From Accordion to "Hanging Subway"
 
-The top frame was redesigned to provide better workflow visualization using a "subway stop" metaphor for the SeaGaP-MP workflow stages: SEARCH, GATHER, PROCESS, MONITOR, POST.
+The initial top frame design used a horizontal accordion. While functional, it lacked the "command center" feel of LCARS. The design evolved into a "Hanging Subway" layout:
 
-==== Visual Design
+* **Top-Aligned Stations:** The station circles are anchored to the top of the panel, creating a persistent, straight "subway line" that never jumps.
+* **Hanging Telemetry:** Instead of expanding sideways, telemetry windows "hang" down from the active station.
+* **Multi-Window Display:**
+    * **Active Station:** Large, detailed window with real-time stats.
+    * **Visited Stations:** Compact, dimmed windows to the left, showing summary stats.
+* **Global Ticker:** A single heartbeat loop updates all visible telemetry windows simultaneously, creating a busy, living dashboard effect.
 
-* **Subway stations**: 5 stations span horizontally across the top panel
-* **Connecting lines**: Dashed lines connect stations, showing the workflow path
-* **Active station**: Expands with a telemetry window, fully opaque
-* **Inactive stations**: Shrink and dim (opacity: 0.3)
-* **Visited stations**: Clickable for back-navigation, slightly dimmed
-* **ARGUS banner**: Positioned on far right with pill buttons (LOGOUT, NEXT) underneath
-
-==== HTML Structure
-
-[source,html]
-----
-<div class="content-top" id="content-top">
-    <!-- SeaGaP Tracker with Telemetry Windows -->
-    <div class="seagap-panel" id="seagap-panel">
-        <div class="seagap-stations">
-            <div class="station" id="station-search" data-stage="search">
-                <div class="station-header" onclick="station_click('search')">
-                    <div class="station-circle"></div>
-                    <div class="station-label">SEARCH</div>
-                </div>
-                <div class="station-telemetry" id="tele-search">
-                    <div class="tele-content monospace">...</div>
-                </div>
-            </div>
-            <!-- Additional stations: gather, process, monitor, post -->
-        </div>
-    </div>
-    <!-- ARGUS Banner and Pills -->
-    <div class="argus-column">
-        <div class="banner">ARGUS</div>
-        <div class="pill-stack">
-            <button class="pill-btn logout-pill">LOGOUT</button>
-            <button class="pill-btn next-pill" id="btn-next">NEXT</button>
-        </div>
-    </div>
-    <!-- Bar panel at bottom -->
-    <div class="bar-panel first-bar-panel">...</div>
-</div>
-----
-
-==== TypeScript Functions (RPN Naming)
-
-[source,typescript]
-----
-// Track visited stages for back-navigation
-const visitedStages: Set<string> = new Set();
-const STAGE_ORDER: readonly string[] = ['search', 'gather', 'process', 'monitor', 'post'];
-
-// Update station visual states
-function stations_update(currentStage: AppState['currentStage']): void
-
-// Handle click on visited station (back-navigation)
-function station_click(stageName: string): void
-
-// Advance to next stage in sequence
-function stage_next(): void
-
-// Update telemetry content with scrolling ticker
-function stationTelemetry_update(stageName: AppState['currentStage']): void
-----
-
-=== Elbow Curve Fix: Stacking Context Issue
-
-==== The Problem
-
-When restructuring the top panel, the elbow curve (diagonal corner connecting left frame to content area) disappeared. Multiple attempts to fix using pseudo-elements with `z-index: -1` failed.
-
-==== Root Cause
-
-The `z-index: -1` pseudo-elements were being placed behind the `body` element's black background. This happened because:
-
-1. The original `.right-frame-top` didn't use `display: flex`
-2. The new `.content-top` used `display: flex` which changed the stacking context behavior
-3. Without an explicit stacking context, `z-index: -1` elements go behind all ancestors
-
-==== The Solution
-
-Add `isolation: isolate` to create a new stacking context:
+==== CSS Implementation Details
 
 [source,css]
 ----
-.content-top {
-    flex: 1;
-    display: flex;
-    flex-wrap: wrap;
-    align-content: flex-end;
-    position: relative;
-    max-width: calc(100% - var(--lfw));
-    isolation: isolate; /* CRITICAL: Contains z-index:-1 pseudo-elements */
+.seagap-stations {
+    align-items: flex-start; /* Anchors circles to top */
 }
 
-.content-top::before {
-    content: '';
-    width: 60px;
-    height: 60px;
-    background: linear-gradient(to top right, var(--corner-color-top) 50%, black 50%);
-    position: absolute;
-    left: 0;
-    bottom: var(--bar-height);
-    z-index: -1;
+/* Reaching Connector Lines */
+.station-line {
+    margin-left: -55px;  /* Negative margins bridge the gap */
+    margin-right: -55px; /* between wide station containers */
 }
 
-.content-top::after {
-    content: '';
-    width: 60px;
-    height: 60px;
-    background-color: black;
-    border-radius: var(--radius-content-top); /* 0 0 0 44px */
-    position: absolute;
-    left: 0;
-    bottom: var(--bar-height);
-    z-index: -1;
+/* Hanging Window Effect */
+.station-telemetry {
+    border-top: none; /* Seamless connection to station */
+    border-radius: 0 0 12px 12px;
 }
 ----
 
-==== Key Lesson
+== Testing Strategy (v1.3.0)
 
-When using `z-index: -1` for pseudo-elements that should appear behind content but still be visible, ensure the parent element creates its own stacking context using one of:
+With v1.3.0, we introduced a formal testing harness to ensure logic stability as the prototype grows.
 
-* `isolation: isolate` (preferred - explicit and purpose-built)
-* `transform: translateZ(0)`
-* `opacity` less than 1
-* `position: relative` with explicit `z-index`
+* **Framework:** Vitest (chosen for native ESM/TypeScript support and speed).
+* **Scope:** Unit tests for pure logic extracted from the monolithic `argus.ts`.
+* **Current Coverage:** Cost calculation engine (`src/core/logic/costs.ts`).
+
+[source,bash]
+----
+# Run tests
+npm run test
+----
 
 === Version History
 
@@ -387,4 +303,8 @@ When using `z-index: -1` for pseudo-elements that should appear behind content b
 | 1.2.0
 | 2026-01-25
 | Top frame redesign with subway-stop SeaGaP tracker, telemetry windows, elbow curve fix
+
+| 1.3.0
+| 2026-01-25
+| "Hanging Subway" layout, multi-window telemetry, Monitor stage fix, Vitest integration
 |===
