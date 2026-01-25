@@ -329,24 +329,23 @@ button:disabled {
 
 .data-cascade-button-group {
     display: flex;
-    justify-content: space-between; /* Changed from flex-end to utilize space */
-    align-items: flex-end; /* Align bottom to match LCARS style */
-    flex-wrap: wrap; /* Allow wrapping */
+    justify-content: flex-end;
+    align-items: flex-start;
+    flex-wrap: wrap;
     padding-bottom: .75rem;
-    width: 100%; /* Ensure it takes full width */
 }
 
 .data-wrapper {
-    flex: 1 1 400px; /* Allow shrinking/growing, base width 400px */
+    flex: 1;
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-start; /* Left align data */
+    justify-content: flex-end;
     align-items: flex-end;
     max-width: 100%;
-    height: 100px; /* Fixed height for consistency */
+    height: 184px;
     overflow: hidden;
     padding-top: 10px;
-    padding-right: 1rem;
+    padding-right: 2rem;
     padding-left: clamp(20px, 3vw, 50px);
     column-gap: 1.5rem;
     font-size: 1.25rem;
@@ -357,21 +356,19 @@ button:disabled {
     grid-template-columns: 1fr;
     text-align: right;
     line-height: 1;
-    --dc-row-height: 25px; /* Reduced height */
+    --dc-row-height: 45px;
 }
 
 .dc-row-1 {
     min-height: var(--dc-row-height);
     color: var(--october-sunset);
     font-size: 0.8rem;
-    text-align: left;
 }
 
 .dc-row-2 {
     min-height: var(--dc-row-height);
     color: var(--honey);
     font-size: 1.5rem;
-    text-align: left;
 }
 
 @media (max-width: 1300px) {
@@ -1286,28 +1283,28 @@ hr {
 /* LOCKED STATE (Login/Role Selection)                          */
 /* ============================================================ */
 
-/* Hide main navigation only in locked state */
+/* Hide main navigation and standard cascade */
 body.state-locked .left-frame > *,
 body.state-locked nav,
-body.state-locked .persona-btn {
+body.state-locked .persona-btn,
+body.state-locked .seagap-tracker-container,
+body.state-locked .data-wrapper {
     display: none !important;
 }
 
-/* Dashboard Visibility Toggles */
-.data-wrapper.hidden,
-.telemetry-wrapper.hidden {
-    display: none !important;
-}
-
-/* Telemetry Dashboard Layout */
+/* Show Telemetry Dashboard */
 .telemetry-wrapper {
-    flex: 1 1 500px;
+    display: none;
+}
+
+body.state-locked .telemetry-wrapper {
     display: grid;
     grid-template-columns: 1fr 1fr 1.5fr;
     gap: 1rem;
-    height: 100px; /* Match data-wrapper */
-    padding-top: 5px;
-    padding-right: 1rem;
+    width: 100%;
+    height: 184px; /* Match data-wrapper height */
+    padding-top: 10px;
+    padding-right: 2rem;
     padding-left: clamp(20px, 3vw, 50px);
 }
 
@@ -1318,7 +1315,6 @@ body.state-locked .persona-btn {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: 100%;
 }
 
 .tele-header {
@@ -1414,110 +1410,16 @@ body.state-locked .persona-btn {
     margin: 0;
     opacity: 0.8;
 }
-
-/* ============================================================ */
-/* SEAGAP TRACKER                                               */
-/* ============================================================ */
-
-.seagap-tracker-container {
-    display: flex;
-    align-items: center; /* Center vertically */
-    justify-content: flex-end;
-    gap: 0;
-    padding-bottom: 0.5rem;
-    flex: 0 0 auto; /* Don't grow/shrink unexpectedly */
-}
-
-.tracker-segment {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    cursor: pointer;
-    width: 50px; /* Reduced width */
-    opacity: 0.4;
-    pointer-events: none; /* Default locked */
-    transition: all 0.3s ease;
-    padding: 0 2px;
-}
-
-.tracker-segment.active {
-    opacity: 1;
-    pointer-events: none; /* Current stage shouldn't be clicked to reload */
-}
-
-.tracker-segment.visited {
-    opacity: 0.7;
-    pointer-events: auto;
-    cursor: pointer;
-}
-
-.tracker-segment.visited:hover {
-    opacity: 1;
-    filter: brightness(1.2);
-}
-
-.trk-circle {
-    width: 24px;
-    height: 24px;
-    background-color: var(--orange);
-    border-radius: 50%;
-    margin-bottom: 0.25rem;
-    box-shadow: 0 0 5px rgba(0,0,0,0.5);
-    z-index: 2;
-}
-
-.tracker-segment.active .trk-circle {
-    background-color: var(--honey);
-    box-shadow: 0 0 10px var(--honey);
-    transform: scale(1.2);
-}
-
-.tracker-segment.visited .trk-circle {
-    background-color: var(--october-sunset);
-}
-
-.trk-label {
-    font-size: 0.7rem;
-    color: var(--honey);
-    font-weight: bold;
-    text-align: center;
-}
-
-.trk-line {
-    width: 20px; /* Reduced line width */
-    height: 4px;
-    background-color: var(--october-sunset);
-    opacity: 0.3;
-    margin-top: 8px; /* Adjusted alignment */
-}
-
-.tracker-segment.visited + .trk-line,
-.tracker-segment.active + .trk-line {
-    opacity: 0.8;
-}
-
-/* Logout Button */
-.logout-btn {
-    margin-left: 1rem; /* Reduced margin */
-    background-color: var(--mars);
-    color: white;
-    padding: 0.25rem 1rem; /* Smaller padding */
-    border-radius: 100vmax;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    font-weight: bold;
-    height: 32px; /* Smaller height */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.logout-btn:hover {
-    filter: brightness(1.2);
-    box-shadow: 0 0 10px var(--mars);
-}
-
-/* Hide tracker in locked state */
-body.state-locked .seagap-tracker-container {
-    display: none !important;
-}
+.hidden { display: none !important; }
+.seagap-tracker-container { display: flex; align-items: center; justify-content: flex-end; gap: 0; align-self: center; padding-bottom: 0.5rem; flex: 0 0 auto; }
+.tracker-segment { display: flex; flex-direction: column; align-items: center; cursor: pointer; width: 45px; opacity: 0.4; pointer-events: none; transition: all 0.3s ease; padding: 0 2px; }
+.tracker-segment.active { opacity: 1; }
+.tracker-segment.visited { opacity: 0.7; pointer-events: auto; }
+.trk-circle { width: 18px; height: 18px; background-color: var(--orange); border-radius: 50%; margin-bottom: 0.2rem; box-shadow: 0 0 5px rgba(0,0,0,0.5); z-index: 2; }
+.trk-label { font-size: 0.6rem; color: var(--honey); font-weight: bold; text-align: center; }
+.trk-line { width: 12px; height: 3px; background-color: var(--october-sunset); opacity: 0.3; margin-top: 6px; }
+.logout-btn { margin-left: 1rem; background-color: var(--mars); color: white; padding: 0.2rem 0.8rem; border-radius: 100vmax; font-size: 0.75rem; text-transform: uppercase; font-weight: bold; height: 30px; display: flex; align-items: center; justify-content: center; }
+.data-wrapper, .telemetry-wrapper { max-width: 600px; }
+body.state-locked .telemetry-wrapper { display: grid !important; }
+.banner { font-size: clamp(1.25rem, 0.75rem + 3vw, 2.5rem); }
+.login-form input { padding: 1rem; border-radius: 10px; font-size: 1.2rem; }
