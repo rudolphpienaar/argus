@@ -44,7 +44,7 @@ export function stage_set(stage: AppState['currentStage']): void {
 function tick(): void {
     // Only run high-frequency updates (System Telemetry) if the view is visible
     if (['login', 'role-selection', 'process', 'monitor'].includes(currentStage)) {
-        const isProcess = currentStage === 'process';
+        const isProcess: boolean = currentStage === 'process';
         SystemTelemetry.processList_render(isProcess);
         SystemTelemetry.networkStats_render();
         SystemTelemetry.systemLogs_render();
@@ -56,8 +56,8 @@ function tick(): void {
  * Toggles the visibility of the dashboard containers based on the stage.
  */
 function viewVisibility_update(): void {
-    const viewMetrics = document.getElementById('view-metrics');
-    const viewTelemetry = document.getElementById('telemetry-dashboard');
+    const viewMetrics: HTMLElement | null = document.getElementById('view-metrics');
+    const viewTelemetry: HTMLElement | null = document.getElementById('telemetry-dashboard');
 
     if (['login', 'role-selection', 'process', 'monitor'].includes(currentStage)) {
         // Show Telemetry
@@ -78,7 +78,7 @@ function viewVisibility_update(): void {
  */
 export function metrics_refresh(selectedDatasets: Dataset[], costEstimate: CostEstimate): void {
     if (currentStage === 'search') {
-        MetricsDashboard.searchMetrics_render();
+        MetricsDashboard.searchMetrics_render(selectedDatasets);
     } else if (currentStage === 'gather') {
         MetricsDashboard.gatherMetrics_render(selectedDatasets, costEstimate);
     } else if (currentStage === 'post') {

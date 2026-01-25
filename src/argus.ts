@@ -13,6 +13,7 @@ import type {
     FileNode,
     TrustedDomainNode,
     TrainingJob,
+    CostEstimate,
     AppState
 } from './core/models/types.js';
 
@@ -137,16 +138,16 @@ let lossChart: {ctx: CanvasRenderingContext2D; data: number[]} | null = null;
  * Updates the LCARS clock display.
  */
 function clock_update(): void {
-    const now = new Date();
-    const time = now.toLocaleTimeString('en-US', { hour12: false });
-    const date = now.toLocaleDateString('en-US', {
+    const now: Date = new Date();
+    const time: string = now.toLocaleTimeString('en-US', { hour12: false });
+    const date: string = now.toLocaleDateString('en-US', {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit'
     });
 
-    const dateEl = document.getElementById('lcars-date');
-    const timeEl = document.getElementById('lcars-time');
+    const dateEl: HTMLElement | null = document.getElementById('lcars-date');
+    const timeEl: HTMLElement | null = document.getElementById('lcars-time');
 
     if (dateEl) dateEl.textContent = date;
     if (timeEl) timeEl.textContent = time;
@@ -156,7 +157,7 @@ function clock_update(): void {
  * Displays the application version in the UI.
  */
 function version_display(): void {
-    const versionEl = document.getElementById('app-version');
+    const versionEl: HTMLElement | null = document.getElementById('app-version');
     if (versionEl) {
         versionEl.textContent = `v${VERSION}-${GIT_HASH}`;
     }
@@ -173,13 +174,13 @@ function version_display(): void {
  */
 function ui_toggleTopFrame(event: Event): void {
     event.preventDefault();
-    const topFrame = document.getElementById('top-frame');
-    const topBtn = document.getElementById('topBtn');
+    const topFrame: HTMLElement | null = document.getElementById('top-frame');
+    const topBtn: HTMLElement | null = document.getElementById('topBtn');
 
     if (topFrame && topBtn) {
         topFrame.classList.toggle('collapsed');
-        const isCollapsed = topFrame.classList.contains('collapsed');
-        const spanEl = topBtn.querySelector('span.hop');
+        const isCollapsed: boolean = topFrame.classList.contains('collapsed');
+        const spanEl: Element | null = topBtn.querySelector('span.hop');
         if (spanEl) {
             spanEl.textContent = isCollapsed ? 'show' : 'hide';
         }
@@ -196,10 +197,10 @@ function ui_updateTracker(currentStage: AppState['currentStage']): void {
     const seaGapStages: AppState['currentStage'][] = ['search', 'gather', 'process', 'monitor', 'post'];
     if (!seaGapStages.includes(currentStage)) return;
 
-    const currentIndex = seaGapStages.indexOf(currentStage);
+    const currentIndex: number = seaGapStages.indexOf(currentStage);
 
-    seaGapStages.forEach((stage, index) => {
-        const segment = document.getElementById(`trk-${stage}`);
+    seaGapStages.forEach((stage: AppState['currentStage'], index: number) => {
+        const segment: HTMLElement | null = document.getElementById(`trk-${stage}`);
         if (!segment) return;
 
         // Reset classes
@@ -227,7 +228,7 @@ function persona_switch(persona: Persona): void {
     state.currentPersona = persona;
 
     // Update left frame persona display
-    const personaEl = document.getElementById('current-persona');
+    const personaEl: HTMLElement | null = document.getElementById('current-persona');
     if (personaEl) {
         personaEl.textContent = persona.toUpperCase();
     }
@@ -320,7 +321,7 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
  * @param enabled - Whether to enable the indicator
  */
 function stageButton_setEnabled(stageName: string, enabled: boolean): void {
-    const indicator = document.querySelector(`.stage-indicator[data-stage="${stageName}"]`) as HTMLElement;
+    const indicator: HTMLElement | null = document.querySelector(`.stage-indicator[data-stage="${stageName}"]`) as HTMLElement;
     if (indicator) {
         indicator.classList.toggle('disabled', !enabled);
     }
@@ -330,9 +331,9 @@ function stageButton_setEnabled(stageName: string, enabled: boolean): void {
  * Initializes stage indicator click handlers.
  */
 function stageIndicators_initialize(): void {
-    document.querySelectorAll('.stage-indicator').forEach(indicator => {
+    document.querySelectorAll('.stage-indicator').forEach((indicator: Element) => {
         indicator.addEventListener('click', () => {
-            const stage = indicator.getAttribute('data-stage') as AppState['currentStage'];
+            const stage: AppState['currentStage'] | null = indicator.getAttribute('data-stage') as AppState['currentStage'];
             if (stage && !indicator.classList.contains('disabled')) {
                 stage_advanceTo(stage);
             }
@@ -351,7 +352,7 @@ function stageIndicators_initialize(): void {
  * @param status - The status to set
  */
 function gutter_setStatus(section: number, status: GutterStatus): void {
-    const gutter = document.getElementById(`gutter-${section}`);
+    const gutter: HTMLElement | null = document.getElementById(`gutter-${section}`);
     if (gutter) {
         gutter.setAttribute('data-status', status);
     }
@@ -361,7 +362,7 @@ function gutter_setStatus(section: number, status: GutterStatus): void {
  * Resets all gutter sections to idle.
  */
 function gutter_resetAll(): void {
-    for (let i = 1; i <= 5; i++) {
+    for (let i: number = 1; i <= 5; i++) {
         gutter_setStatus(i, 'idle');
     }
 }
@@ -423,9 +424,9 @@ function user_logout(): void {
     stage_advanceTo('login');
     
     // Reset login form
-    const userIn = document.getElementById('login-user') as HTMLInputElement;
-    const passIn = document.getElementById('login-pass') as HTMLInputElement;
-    const btn = document.querySelector('.login-form button') as HTMLButtonElement;
+    const userIn: HTMLInputElement | null = document.getElementById('login-user') as HTMLInputElement;
+    const passIn: HTMLInputElement | null = document.getElementById('login-pass') as HTMLInputElement;
+    const btn: HTMLButtonElement | null = document.querySelector('.login-form button') as HTMLButtonElement;
     
     if (userIn) userIn.value = '';
     if (passIn) passIn.value = '';
@@ -457,14 +458,14 @@ function role_select(persona: Persona): void {
  * Searches the catalog and displays results.
  */
 function catalog_search(): void {
-    const query = (document.getElementById('search-query') as HTMLInputElement)?.value.toLowerCase() || '';
-    const modality = (document.getElementById('search-modality') as HTMLSelectElement)?.value || '';
-    const annotation = (document.getElementById('search-annotation') as HTMLSelectElement)?.value || '';
+    const query: string = (document.getElementById('search-query') as HTMLInputElement)?.value.toLowerCase() || '';
+    const modality: string = (document.getElementById('search-modality') as HTMLSelectElement)?.value || '';
+    const annotation: string = (document.getElementById('search-annotation') as HTMLSelectElement)?.value || '';
 
-    const filtered = MOCK_DATASETS.filter(ds => {
-        const matchesQuery = !query || ds.name.toLowerCase().includes(query) || ds.description.toLowerCase().includes(query);
-        const matchesModality = !modality || ds.modality === modality;
-        const matchesAnnotation = !annotation || ds.annotationType === annotation;
+    const filtered: Dataset[] = MOCK_DATASETS.filter((ds: Dataset) => {
+        const matchesQuery: boolean = !query || ds.name.toLowerCase().includes(query) || ds.description.toLowerCase().includes(query);
+        const matchesModality: boolean = !modality || ds.modality === modality;
+        const matchesAnnotation: boolean = !annotation || ds.annotationType === annotation;
         return matchesQuery && matchesModality && matchesAnnotation;
     });
 
@@ -482,10 +483,10 @@ function catalog_search(): void {
  * @param datasets - The datasets to display
  */
 function datasetResults_render(datasets: Dataset[]): void {
-    const container = document.getElementById('dataset-results');
+    const container: HTMLElement | null = document.getElementById('dataset-results');
     if (!container) return;
 
-    container.innerHTML = datasets.map(ds => `
+    container.innerHTML = datasets.map((ds: Dataset) => `
         <div class="dataset-card ${state.selectedDatasets.some(s => s.id === ds.id) ? 'selected' : ''}"
              data-id="${ds.id}"
              onclick="dataset_toggle('${ds.id}')">
@@ -507,10 +508,10 @@ function datasetResults_render(datasets: Dataset[]): void {
  * @param datasetId - The dataset ID to toggle
  */
 function dataset_toggle(datasetId: string): void {
-    const dataset = MOCK_DATASETS.find(ds => ds.id === datasetId);
+    const dataset: Dataset | undefined = MOCK_DATASETS.find((ds: Dataset) => ds.id === datasetId);
     if (!dataset) return;
 
-    const index = state.selectedDatasets.findIndex(ds => ds.id === datasetId);
+    const index: number = state.selectedDatasets.findIndex((ds: Dataset) => ds.id === datasetId);
     if (index >= 0) {
         state.selectedDatasets.splice(index, 1);
     } else {
@@ -518,8 +519,8 @@ function dataset_toggle(datasetId: string): void {
     }
 
     // Update UI
-    document.querySelectorAll('.dataset-card').forEach(card => {
-        const cardId = card.getAttribute('data-id');
+    document.querySelectorAll('.dataset-card').forEach((card: Element) => {
+        const cardId: string | null = card.getAttribute('data-id');
         card.classList.toggle('selected', state.selectedDatasets.some(ds => ds.id === cardId));
     });
 
@@ -531,9 +532,9 @@ function dataset_toggle(datasetId: string): void {
  * Updates the selection count display and button state.
  */
 function selectionCount_update(): void {
-    const count = state.selectedDatasets.length;
-    const countEl = document.getElementById('selection-count');
-    const btnToGather = document.getElementById('btn-to-gather') as HTMLButtonElement;
+    const count: number = state.selectedDatasets.length;
+    const countEl: HTMLElement | null = document.getElementById('selection-count');
+    const btnToGather: HTMLButtonElement | null = document.getElementById('btn-to-gather') as HTMLButtonElement;
 
     if (countEl) {
         countEl.textContent = `${count} dataset${count !== 1 ? 's' : ''} selected`;
@@ -563,17 +564,17 @@ function filesystem_build(): void {
                 name: 'training',
                 type: 'folder',
                 path: '/cohort/training',
-                children: state.selectedDatasets.map(ds => {
+                children: state.selectedDatasets.map((ds: Dataset) => {
                     // Extract provider code from thumbnail path
-                    const parts = ds.thumbnail.split('/');
-                    const providerCode = parts.length > 2 ? parts[1] : 'UNK';
+                    const parts: string[] = ds.thumbnail.split('/');
+                    const providerCode: string = parts.length > 2 ? parts[1] : 'UNK';
                     
                     // Generate image nodes based on count
                     const imageNodes: FileNode[] = [];
-                    for (let i = 1; i <= ds.imageCount; i++) {
+                    for (let i: number = 1; i <= ds.imageCount; i++) {
                         // Special handling for exemplars
                         if (providerCode === 'WBC') {
-                            const fileName = `WBC_${String(i).padStart(3, '0')}.bmp`;
+                            const fileName: string = `WBC_${String(i).padStart(3, '0')}.bmp`;
                             imageNodes.push({
                                 name: fileName,
                                 type: 'image',
@@ -581,15 +582,15 @@ function filesystem_build(): void {
                             });
                         } else if (providerCode === 'KaggleBrain') {
                             // Map index to real filenames (0010 to 0029)
-                            const num = 10 + (i - 1);
-                            const fileName = `Tr-gl_${String(num).padStart(4, '0')}.jpg`;
+                            const num: number = 10 + (i - 1);
+                            const fileName: string = `Tr-gl_${String(num).padStart(4, '0')}.jpg`;
                             imageNodes.push({
                                 name: fileName,
                                 type: 'image',
                                 path: `data/KaggleBrain/Training/glioma/${fileName}`
                             });
                         } else {
-                            const fileName = `${providerCode}_${String(i).padStart(3, '0')}.jpg`;
+                            const fileName: string = `${providerCode}_${String(i).padStart(3, '0')}.jpg`;
                             imageNodes.push({
                                 name: fileName,
                                 type: 'image',
@@ -612,24 +613,24 @@ function filesystem_build(): void {
                     if (ds.annotationType === 'segmentation') {
                         // Add masks folder
                         const maskNodes: FileNode[] = [];
-                        for (let i = 1; i <= ds.imageCount; i++) {
+                        for (let i: number = 1; i <= ds.imageCount; i++) {
                             if (providerCode === 'WBC') {
-                                const maskName = `WBC_${String(i).padStart(3, '0')}_mask.png`;
+                                const maskName: string = `WBC_${String(i).padStart(3, '0')}_mask.png`;
                                 maskNodes.push({
                                     name: maskName,
                                     type: 'image',
                                     path: `data/WBC/masks/${maskName}`
                                 });
                             } else if (providerCode === 'KaggleBrain') {
-                                const num = 10 + (i - 1);
-                                const maskName = `Tr-gl_${String(num).padStart(4, '0')}_mask.png`;
+                                const num: number = 10 + (i - 1);
+                                const maskName: string = `Tr-gl_${String(num).padStart(4, '0')}_mask.png`;
                                 maskNodes.push({
                                     name: maskName,
                                     type: 'image',
                                     path: `data/KaggleBrain/masks/${maskName}`
                                 });
                             } else {
-                                const maskName = `${providerCode}_${String(i).padStart(3, '0')}_mask.png`;
+                                const maskName: string = `${providerCode}_${String(i).padStart(3, '0')}_mask.png`;
                                 maskNodes.push({
                                     name: maskName,
                                     type: 'image',
@@ -697,11 +698,11 @@ function filesystem_build(): void {
  * @param node - The root node to render
  */
 function fileTree_render(node: FileNode): void {
-    const container = document.getElementById('file-tree');
+    const container: HTMLElement | null = document.getElementById('file-tree');
     if (!container) return;
 
     function nodeHtml_build(n: FileNode): string {
-        const typeClass = n.type;
+        const typeClass: string = n.type;
         if (n.children && n.children.length > 0) {
             return `
                 <li class="${typeClass}">${n.name}
@@ -722,7 +723,7 @@ function fileTree_render(node: FileNode): void {
  * @param type - The file type
  */
 function filePreview_show(path: string, type: string): void {
-    const preview = document.getElementById('file-preview');
+    const preview: HTMLElement | null = document.getElementById('file-preview');
     if (!preview) return;
 
     if (type === 'image' && path) {
@@ -738,9 +739,9 @@ function filePreview_show(path: string, type: string): void {
  * Calculates and displays cost estimates.
  */
 function costs_calculate(): void {
-    const dataAccess = state.selectedDatasets.reduce((sum, ds) => sum + ds.cost, 0);
-    const compute = dataAccess * 2.5; // Mock compute cost
-    const storage = dataAccess * 0.3; // Mock storage cost
+    const dataAccess: number = state.selectedDatasets.reduce((sum: number, ds: Dataset) => sum + ds.cost, 0);
+    const compute: number = dataAccess * 2.5; // Mock compute cost
+    const storage: number = dataAccess * 0.3; // Mock storage cost
 
     state.costEstimate = {
         dataAccess,
@@ -749,10 +750,10 @@ function costs_calculate(): void {
         total: dataAccess + compute + storage
     };
 
-    const costData = document.getElementById('cost-data');
-    const costCompute = document.getElementById('cost-compute');
-    const costStorage = document.getElementById('cost-storage');
-    const costTotal = document.getElementById('cost-total');
+    const costData: HTMLElement | null = document.getElementById('cost-data');
+    const costCompute: HTMLElement | null = document.getElementById('cost-compute');
+    const costStorage: HTMLElement | null = document.getElementById('cost-storage');
+    const costTotal: HTMLElement | null = document.getElementById('cost-total');
 
     if (costData) costData.textContent = `$${dataAccess.toFixed(2)}`;
     if (costCompute) costCompute.textContent = `$${compute.toFixed(2)}`;
@@ -802,9 +803,9 @@ function monitor_initialize(): void {
     if (!state.trainingJob) return;
 
     // Initialize loss chart
-    const canvas = document.getElementById('loss-canvas') as HTMLCanvasElement;
+    const canvas: HTMLCanvasElement | null = document.getElementById('loss-canvas') as HTMLCanvasElement;
     if (canvas) {
-        const ctx = canvas.getContext('2d');
+        const ctx: CanvasRenderingContext2D | null = canvas.getContext('2d');
         if (ctx) {
             canvas.width = canvas.offsetWidth;
             canvas.height = canvas.offsetHeight;
@@ -826,7 +827,7 @@ function monitor_initialize(): void {
 function trainingStep_simulate(): void {
     if (!state.trainingJob || state.trainingJob.status !== 'running') return;
 
-    const job = state.trainingJob;
+    const job: TrainingJob = state.trainingJob;
 
     // Simulate progress
     job.currentEpoch += 0.5;
@@ -836,7 +837,7 @@ function trainingStep_simulate(): void {
     }
 
     // Simulate loss decrease with noise
-    const baseLoss = 2.5 * Math.exp(-job.currentEpoch / 15);
+    const baseLoss: number = 2.5 * Math.exp(-job.currentEpoch / 15);
     job.loss = baseLoss + (Math.random() - 0.5) * 0.1;
     job.lossHistory.push(job.loss);
 
@@ -848,13 +849,13 @@ function trainingStep_simulate(): void {
     job.runningCost = (job.currentEpoch / job.totalEpochs) * state.costEstimate.total;
 
     // Update node statuses
-    job.nodes.forEach((node, i) => {
+    job.nodes.forEach((node: TrustedDomainNode, i: number) => {
         if (i === job.nodes.length - 1) {
             // Aggregator
             node.status = job.currentEpoch % 5 < 1 ? 'active' : 'waiting';
         } else {
             // Training nodes
-            const nodeProgress = (job.currentEpoch / job.totalEpochs) * 100;
+            const nodeProgress: number = (job.currentEpoch / job.totalEpochs) * 100;
             node.progress = Math.min(100, nodeProgress + (Math.random() - 0.5) * 10);
             node.samplesProcessed = Math.floor((node.progress / 100) * node.totalSamples);
 
@@ -869,7 +870,7 @@ function trainingStep_simulate(): void {
     });
 
     // Pulse gutter during training
-    const gutterIndex = Math.floor(job.currentEpoch) % 5 + 1;
+    const gutterIndex: number = Math.floor(job.currentEpoch) % 5 + 1;
     gutter_resetAll();
     gutter_setStatus(4, 'active');
     if (gutterIndex !== 4) {
@@ -884,31 +885,31 @@ function trainingStep_simulate(): void {
  */
 function monitorUI_update(): void {
     if (!state.trainingJob) return;
-    const job = state.trainingJob;
+    const job: TrainingJob = state.trainingJob;
 
     // Progress bar
-    const progressFill = document.getElementById('progress-fill');
+    const progressFill: HTMLElement | null = document.getElementById('progress-fill');
     if (progressFill) {
         progressFill.style.width = `${(job.currentEpoch / job.totalEpochs) * 100}%`;
     }
 
     // Epoch display
-    const currentEpoch = document.getElementById('current-epoch');
-    const epochStatus = document.getElementById('epoch-status');
+    const currentEpoch: HTMLElement | null = document.getElementById('current-epoch');
+    const epochStatus: HTMLElement | null = document.getElementById('epoch-status');
     if (currentEpoch) currentEpoch.textContent = Math.floor(job.currentEpoch).toString();
     if (epochStatus) epochStatus.textContent = job.status === 'running' ? 'Training...' : job.status;
 
     // Metrics
-    const metricLoss = document.getElementById('metric-loss');
-    const metricAccuracy = document.getElementById('metric-accuracy');
-    const metricAuc = document.getElementById('metric-auc');
+    const metricLoss: HTMLElement | null = document.getElementById('metric-loss');
+    const metricAccuracy: HTMLElement | null = document.getElementById('metric-accuracy');
+    const metricAuc: HTMLElement | null = document.getElementById('metric-auc');
     if (metricLoss) metricLoss.textContent = job.loss.toFixed(4);
     if (metricAccuracy) metricAccuracy.textContent = `${job.accuracy.toFixed(1)}%`;
     if (metricAuc) metricAuc.textContent = job.auc.toFixed(3);
 
     // Cost tracker
-    const runningCost = document.getElementById('running-cost');
-    const costProgress = document.getElementById('cost-progress');
+    const runningCost: HTMLElement | null = document.getElementById('running-cost');
+    const costProgress: HTMLElement | null = document.getElementById('cost-progress');
     if (runningCost) runningCost.textContent = `$${job.runningCost.toFixed(2)}`;
     if (costProgress) costProgress.style.width = `${(job.runningCost / job.budgetLimit) * 100}%`;
 
@@ -927,10 +928,10 @@ function monitorUI_update(): void {
  */
 function lossChart_draw(): void {
     if (!lossChart || !state.trainingJob) return;
-    const {ctx} = lossChart;
-    const history = state.trainingJob.lossHistory;
+    const ctx: CanvasRenderingContext2D = lossChart.ctx;
+    const history: number[] = state.trainingJob.lossHistory;
 
-    const canvas = ctx.canvas;
+    const canvas: HTMLCanvasElement = ctx.canvas;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (history.length < 2) return;
@@ -938,8 +939,8 @@ function lossChart_draw(): void {
     // Draw grid
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
-    for (let i = 0; i < 5; i++) {
-        const y = (canvas.height / 5) * i;
+    for (let i: number = 0; i < 5; i++) {
+        const y: number = (canvas.height / 5) * i;
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(canvas.width, y);
@@ -951,12 +952,12 @@ function lossChart_draw(): void {
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    const maxLoss = Math.max(...history, 0.1);
-    const xStep = canvas.width / Math.max(history.length - 1, 1);
+    const maxLoss: number = Math.max(...history, 0.1);
+    const xStep: number = canvas.width / Math.max(history.length - 1, 1);
 
-    history.forEach((loss, i) => {
-        const x = i * xStep;
-        const y = canvas.height - (loss / maxLoss) * canvas.height * 0.9;
+    history.forEach((loss: number, i: number) => {
+        const x: number = i * xStep;
+        const y: number = canvas.height - (loss / maxLoss) * canvas.height * 0.9;
         if (i === 0) {
             ctx.moveTo(x, y);
         } else {
@@ -972,10 +973,10 @@ function lossChart_draw(): void {
  */
 function nodeStatus_render(): void {
     if (!state.trainingJob) return;
-    const container = document.getElementById('node-status');
+    const container: HTMLElement | null = document.getElementById('node-status');
     if (!container) return;
 
-    container.innerHTML = state.trainingJob.nodes.map(node => `
+    container.innerHTML = state.trainingJob.nodes.map((node: TrustedDomainNode) => `
         <div class="node-card">
             <div class="name">${node.name}</div>
             <div class="status ${node.status}">${node.status}</div>
@@ -993,7 +994,7 @@ function training_complete(): void {
     if (!state.trainingJob) return;
 
     state.trainingJob.status = 'complete';
-    state.trainingJob.nodes.forEach(n => n.status = 'complete');
+    state.trainingJob.nodes.forEach((n: TrustedDomainNode) => n.status = 'complete');
 
     if (trainingInterval) {
         clearInterval(trainingInterval);
@@ -1001,7 +1002,7 @@ function training_complete(): void {
     }
 
     // Set all gutters to success
-    for (let i = 1; i <= 5; i++) {
+    for (let i: number = 1; i <= 5; i++) {
         gutter_setStatus(i, 'success');
     }
 
@@ -1009,7 +1010,7 @@ function training_complete(): void {
     stageButton_setEnabled('post', true);
 
     // Update epoch status
-    const epochStatus = document.getElementById('epoch-status');
+    const epochStatus: HTMLElement | null = document.getElementById('epoch-status');
     if (epochStatus) epochStatus.textContent = 'Complete!';
 
     // Auto-advance to post after a moment
@@ -1032,11 +1033,11 @@ function training_abort(): void {
     // Set gutter to error
     gutter_setStatus(4, 'error');
 
-    const epochStatus = document.getElementById('epoch-status');
+    const epochStatus: HTMLElement | null = document.getElementById('epoch-status');
     if (epochStatus) epochStatus.textContent = 'Aborted - No charge';
 
     // Reset cost
-    const runningCost = document.getElementById('running-cost');
+    const runningCost: HTMLElement | null = document.getElementById('running-cost');
     if (runningCost) runningCost.textContent = '$0.00';
 }
 
@@ -1048,7 +1049,7 @@ function training_abort(): void {
  * Publishes the trained model to the marketplace.
  */
 function model_publish(): void {
-    const modelName = (document.getElementById('model-name') as HTMLInputElement)?.value;
+    const modelName: string | undefined = (document.getElementById('model-name') as HTMLInputElement)?.value;
     alert(`Model "${modelName}" published to ATLAS Marketplace!\n\nThis is a prototype - in production, this would register the model with full provenance tracking.`);
 }
 
@@ -1072,6 +1073,7 @@ function app_initialize(): void {
 
     // Initial search
     catalog_search();
+    selectionCount_update();
 
     // Initialize Telemetry
     Telemetry.Manager.telemetry_start();
