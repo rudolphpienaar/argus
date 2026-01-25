@@ -16,7 +16,7 @@ let tickerIndex = 0;
 /**
  * Stops any active ticker animation.
  */
-export function stopTicker(): void {
+export function ticker_stop(): void {
     if (tickerInterval) {
         clearInterval(tickerInterval);
         tickerInterval = null;
@@ -26,7 +26,7 @@ export function stopTicker(): void {
 /**
  * Renders the metrics dashboard for the Search stage (Global Stats + Revolving Ticker).
  */
-export function renderSearchMetrics(): void {
+export function searchMetrics_render(): void {
     const datasetsEl = document.getElementById('cascade-datasets');
     const imagesEl = document.getElementById('cascade-images');
     const costEl = document.getElementById('cascade-cost');
@@ -68,8 +68,8 @@ export function renderSearchMetrics(): void {
 /**
  * Renders the metrics dashboard for the Gather stage (Selected Stats).
  */
-export function renderGatherMetrics(selectedDatasets: Dataset[], costEstimate: CostEstimate): void {
-    stopTicker();
+export function gatherMetrics_render(selectedDatasets: Dataset[], costEstimate: CostEstimate): void {
+    ticker_stop();
 
     const datasetsEl = document.getElementById('cascade-datasets');
     const imagesEl = document.getElementById('cascade-images');
@@ -98,8 +98,8 @@ export function renderGatherMetrics(selectedDatasets: Dataset[], costEstimate: C
 /**
  * Renders the metrics dashboard for the Post stage (Final Summary).
  */
-export function renderPostMetrics(): void {
-    stopTicker();
+export function postMetrics_render(): void {
+    ticker_stop();
     
     const datasetsEl = document.getElementById('cascade-datasets');
     const imagesEl = document.getElementById('cascade-images');

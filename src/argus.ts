@@ -291,7 +291,10 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
     ui_updateTracker(stageName);
 
     // Update Telemetry Context
-    Telemetry.Manager.setStage(stageName);
+    Telemetry.Manager.stage_set(stageName);
+    
+    // Force a metric refresh if we are entering a relevant stage
+    Telemetry.Manager.metrics_refresh(state.selectedDatasets, state.costEstimate);
 
     // Stage-specific initialization
     if (stageName === 'gather') {
@@ -412,9 +415,9 @@ function user_logout(): void {
     }
 
     // Stop Telemetry
-    Telemetry.Manager.stop();
-    Telemetry.Manager.setStage('login');
-    Telemetry.Manager.start();
+    Telemetry.Manager.telemetry_stop();
+    Telemetry.Manager.stage_set('login');
+    Telemetry.Manager.telemetry_start();
 
     // Update UI
     stage_advanceTo('login');
@@ -521,7 +524,7 @@ function dataset_toggle(datasetId: string): void {
     });
 
     selectionCount_update();
-    Telemetry.Manager.refreshMetrics(state.selectedDatasets, state.costEstimate);
+    Telemetry.Manager.metrics_refresh(state.selectedDatasets, state.costEstimate);
 }
 
 /**
@@ -756,7 +759,7 @@ function costs_calculate(): void {
     if (costStorage) costStorage.textContent = `$${storage.toFixed(2)}`;
     if (costTotal) costTotal.textContent = `$${state.costEstimate.total.toFixed(2)}`;
 
-    Telemetry.Manager.refreshMetrics(state.selectedDatasets, state.costEstimate);
+    Telemetry.Manager.metrics_refresh(state.selectedDatasets, state.costEstimate);
     stageButton_setEnabled('process', true);
 }
 
@@ -910,7 +913,7 @@ function monitorUI_update(): void {
     if (costProgress) costProgress.style.width = `${(job.runningCost / job.budgetLimit) * 100}%`;
 
     // Update Telemetry
-    Telemetry.Manager.refreshMetrics(state.selectedDatasets, state.costEstimate);
+    Telemetry.Manager.metrics_refresh(state.selectedDatasets, state.costEstimate);
 
     // Update loss chart
     lossChart_draw();
@@ -1071,7 +1074,7 @@ function app_initialize(): void {
     catalog_search();
 
     // Initialize Telemetry
-    Telemetry.Manager.start();
+    Telemetry.Manager.telemetry_start();
 
     // Set initial gutter state
     gutter_setStatus(1, 'active');

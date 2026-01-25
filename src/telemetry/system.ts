@@ -23,7 +23,7 @@ const state: SystemTelemetryState = {
  * Updates the Process List (Simulated top/htop).
  * @param isProvisioning - If true, shows provisioning logs instead of process list.
  */
-export function renderProcessList(isProvisioning: boolean): void {
+export function processList_render(isProvisioning: boolean): void {
     const procEl: HTMLElement | null = document.getElementById('tele-proc');
     const procHeader = procEl?.parentElement?.querySelector('.tele-header');
     
@@ -65,7 +65,7 @@ export function renderProcessList(isProvisioning: boolean): void {
 /**
  * Updates Network Stats (Simulated ifconfig).
  */
-export function renderNetworkStats(): void {
+export function networkStats_render(): void {
     state.cycle++;
     const netEl: HTMLElement | null = document.getElementById('tele-net');
     if (!netEl) return;
@@ -84,7 +84,7 @@ export function renderNetworkStats(): void {
 /**
  * Updates System Logs (Scrolling text).
  */
-export function renderSystemLogs(): void {
+export function systemLogs_render(): void {
     const logEl: HTMLElement | null = document.getElementById('tele-log');
     if (!logEl) return;
 
