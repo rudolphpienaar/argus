@@ -1283,20 +1283,21 @@ hr {
 /* LOCKED STATE (Login/Role Selection)                          */
 /* ============================================================ */
 
-/* Hide main navigation and standard cascade */
+/* Hide main navigation only in locked state */
 body.state-locked .left-frame > *,
 body.state-locked nav,
-body.state-locked .persona-btn,
-body.state-locked .data-wrapper {
+body.state-locked .persona-btn {
     display: none !important;
 }
 
-/* Show Telemetry Dashboard */
-.telemetry-wrapper {
-    display: none;
+/* Dashboard Visibility Toggles */
+.data-wrapper.hidden,
+.telemetry-wrapper.hidden {
+    display: none !important;
 }
 
-body.state-locked .telemetry-wrapper {
+/* Telemetry Dashboard Layout */
+.telemetry-wrapper {
     display: grid;
     grid-template-columns: 1fr 1fr 1.5fr;
     gap: 1rem;
