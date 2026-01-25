@@ -13,10 +13,10 @@ import type {
     FileNode,
     TrustedDomainNode,
     TrainingJob,
-    CostEstimate,
     AppState
 } from './core/models/types.js';
 
+import * as Telemetry from './telemetry/index.js';
 import { VERSION, GIT_HASH } from './generated/version.js';
 
 // ============================================================================ 
@@ -128,8 +128,6 @@ const state: AppState & { currentPersona: Persona } = {
 
 let trainingInterval: number | null = null;
 let lossChart: {ctx: CanvasRenderingContext2D; data: number[]} | null = null;
-let searchTicker: number | null = null;
-let searchTickerIndex = 0;
 
 // ============================================================================ 
 // Clock & Version Functions
@@ -292,8 +290,8 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
     // Update Tracker
     ui_updateTracker(stageName);
 
-    // Update cascade status (Main Dashboard Logic)
-    cascade_update();
+    // Update Telemetry Context
+    Telemetry.Manager.setStage(stageName);
 
     // Stage-specific initialization
     if (stageName === 'gather') {
@@ -337,213 +335,6 @@ function stageIndicators_initialize(): void {
             }
         });
     });
-}
-
-// ============================================================================ 
-// Data Cascade / Dashboard Functions
-// ============================================================================ 
-
-/**
- * Updates the data cascade display with stage-specific metrics/layouts.
- */
-function cascade_update(): void {
-    const viewMetrics = document.getElementById('view-metrics');
-    const viewTelemetry = document.getElementById('telemetry-dashboard');
-    
-    // Clear existing intervals
-    if (searchTicker) {
-        clearInterval(searchTicker);
-        searchTicker = null;
-    }
-
-    // Dashboard Selection Logic
-    if (['login', 'role-selection', 'process', 'monitor'].includes(state.currentStage)) {
-        // Show Telemetry View
-        if (viewMetrics) viewMetrics.classList.add('hidden');
-        if (viewTelemetry) viewTelemetry.classList.remove('hidden');
-        
-        // Customize labels for context
-        dashboard_telemetry_configure(state.currentStage);
-        
-    } else {
-        // Show Metrics View (Search, Gather, Post)
-        if (viewMetrics) viewMetrics.classList.remove('hidden');
-        if (viewTelemetry) viewTelemetry.classList.add('hidden');
-        
-        dashboard_metrics_configure(state.currentStage);
-    }
-}
-
-/**
- * Configures the text-based metrics dashboard for specific stages.
- */
-function dashboard_metrics_configure(stage: AppState['currentStage']): void {
-    const datasetsEl = document.getElementById('cascade-datasets');
-    const imagesEl = document.getElementById('cascade-images');
-    const costEl = document.getElementById('cascade-cost');
-    const statusEl = document.getElementById('cascade-status');
-
-    const label1 = document.getElementById('cascade-label-1');
-    const label2 = document.getElementById('cascade-label-2');
-    const label3 = document.getElementById('cascade-label-3');
-    const label4 = document.getElementById('cascade-label-4');
-
-    if (stage === 'search') {
-        // SEARCH: Global Mock Stats
-        if (label1) label1.textContent = 'TOTAL DATASETS';
-        if (label2) label2.textContent = 'TOTAL IMAGES';
-        if (label3) label3.textContent = 'MODALITY'; // Will revolve
-        if (label4) label4.textContent = 'FEDERATION';
-
-        if (datasetsEl) datasetsEl.textContent = '14,203';
-        if (imagesEl) imagesEl.textContent = '45.2M';
-        if (statusEl) statusEl.textContent = 'ONLINE';
-
-        // Start Revolving Stats Ticker for Col 3
-        const revolvingStats = [
-            { label: 'MODALITY', value: 'MRI: 12K' },
-            { label: 'MODALITY', value: 'CT: 8.5K' },
-            { label: 'MODALITY', value: 'X-RAY: 15K' },
-            { label: 'PATHOLOGY', value: '25.4 TB' },
-            { label: 'GENOMICS', value: '4.2 PB' }
-        ];
-
-        searchTicker = window.setInterval(() => {
-            searchTickerIndex = (searchTickerIndex + 1) % revolvingStats.length;
-            const stat = revolvingStats[searchTickerIndex];
-            if (label3) label3.textContent = stat.label;
-            if (costEl) costEl.textContent = stat.value;
-        }, 2000);
-
-    } else if (stage === 'gather') {
-        // GATHER: Selection Specific Stats
-        if (label1) label1.textContent = 'SELECTED';
-        if (label2) label2.textContent = 'PROVIDERS';
-        if (label3) label3.textContent = 'EST. COST';
-        if (label4) label4.textContent = 'SIZE';
-
-        const totalImages = state.selectedDatasets.reduce((sum, ds) => sum + ds.imageCount, 0);
-        const uniqueProviders = new Set(state.selectedDatasets.map(ds => ds.provider)).size;
-        const totalSize = state.selectedDatasets.length > 0 ? "2.4 GB" : "0 B"; // Mock calculation
-
-        if (datasetsEl) datasetsEl.textContent = state.selectedDatasets.length.toString();
-        if (imagesEl) imagesEl.textContent = uniqueProviders.toString();
-        if (costEl) costEl.textContent = `$${state.costEstimate.total.toFixed(0)}`;
-        if (statusEl) statusEl.textContent = totalSize;
-    } else if (stage === 'post') {
-        // POST: Final Summary
-        if (label1) label1.textContent = 'PUBLISHED';
-        if (label2) label2.textContent = 'ACCURACY';
-        if (label3) label3.textContent = 'FINAL COST';
-        if (label4) label4.textContent = 'STATUS';
-
-        if (datasetsEl) datasetsEl.textContent = "1";
-        if (imagesEl) imagesEl.textContent = "94.2%";
-        if (costEl) costEl.textContent = "$127";
-        if (statusEl) statusEl.textContent = "LIVE";
-    }
-}
-
-/**
- * Configures the telemetry dashboard labels for specific stages.
- */
-function dashboard_telemetry_configure(stage: AppState['currentStage']): void {
-    // Labels are mostly fixed in HTML structure but we can tweak headers if needed
-    // Currently relying on telemetry_update to fill content
-}
-
-let telemetryCycle = 0;
-
-/**
- * Updates real-time system telemetry numbers (btop effect).
- */
-function telemetry_update(): void {
-    // Only run if telemetry view is active
-    const viewTelemetry = document.getElementById('telemetry-dashboard');
-    if (viewTelemetry?.classList.contains('hidden')) return;
-
-    telemetryCycle++;
-
-    const isProcess = state.currentStage === 'process';
-
-    // Update Process List
-    const procEl: HTMLElement | null = document.getElementById('tele-proc');
-    const procHeader = procEl?.parentElement?.querySelector('.tele-header');
-    
-    if (procEl) {
-        if (isProcess) {
-            if (procHeader) procHeader.textContent = "PROVISIONING RESOURCES";
-            const steps = [
-                "Allocating GPU nodes (g4dn.xlarge)...",
-                "Pulling container images (pytorch:1.13)...",
-                "Mounting virtual volumes (/cohort/training)...",
-                "Verifying CUDA drivers...",
-                " establishing secure tunnels..."
-            ];
-            // Randomly show these log-style
-            const step = steps[Math.floor(Math.random() * steps.length)];
-             procEl.innerHTML = `<span class="highlight">${step}</span>\n<span class="dim">Queue position: 1</span>`;
-        } else {
-            if (procHeader) procHeader.textContent = "ACTIVE PROCESSES (K8S)";
-            const procs = [
-                { pid: 1492, usr: 'root', cpu: (Math.random() * 80).toFixed(1), mem: '1.2', cmd: 'kube-apiserver' },
-                { pid: 1503, usr: 'root', cpu: (Math.random() * 40).toFixed(1), mem: '4.5', cmd: 'etcd' },
-                { pid: 8821, usr: 'atlas', cpu: (Math.random() * 95).toFixed(1), mem: '12.4', cmd: 'python3 train.py' },
-                { pid: 2201, usr: 'root', cpu: (Math.random() * 10).toFixed(1), mem: '0.8', cmd: 'containerd' },
-                { pid: 3392, usr: 'atlas', cpu: (Math.random() * 5).toFixed(1), mem: '0.4', cmd: 'argus-agent' }
-            ];
-            
-            // Sort by CPU
-            procs.sort((a, b) => parseFloat(b.cpu) - parseFloat(a.cpu));
-            
-            let html = '<span class="dim">  PID USER     %CPU %MEM COMMAND</span>\n';
-            procs.forEach(p => {
-                const cpuClass = parseFloat(p.cpu) > 80 ? 'warn' : 'highlight';
-                html += `<span class="${cpuClass}">${p.pid.toString().padEnd(5)} ${p.usr.padEnd(8)} ${p.cpu.padStart(4)} ${p.mem.padStart(4)} ${p.cmd}</span>\n`;
-            });
-            procEl.innerHTML = html;
-        }
-    }
-
-    // Update Network (Simulated `ifconfig` / activity)
-    const netEl: HTMLElement | null = document.getElementById('tele-net');
-    if (netEl) {
-        const eth0_rx = (42 + telemetryCycle * 0.1 + Math.random()).toFixed(2);
-        const eth0_tx = (12 + telemetryCycle * 0.05 + Math.random()).toFixed(2);
-        const tun0_rx = (8 + Math.random() * 2).toFixed(2);
-        
-        let html = '<span class="dim">IFACE    RX (GB)   TX (GB)   STATUS</span>\n';
-        html += `eth0     ${eth0_rx.padStart(7)}   ${eth0_tx.padStart(7)}   <span class="highlight">UP 1000Mb</span>\n`;
-        html += `tun0     ${tun0_rx.padStart(7)}   0008.12   <span class="highlight">UP VPN</span>\n`;
-        html += `docker0  0042.11   0041.88   <span class="dim">UP</span>\n`;
-        netEl.innerHTML = html;
-    }
-
-    // Update Logs (Scrolling text)
-    const logEl: HTMLElement | null = document.getElementById('tele-log');
-    if (logEl) {
-        const events = [
-            '[KERN] Tainted: P           O      5.15.0-1031-aws #35~20.04.1',
-            '[AUTH] pam_unix(sshd:session): session opened for user atlas',
-            '[K8S ] Pod/default/trainer-x86-04 scheduled on node-04',
-            '[NET ] eth0: promiscuous mode enabled',
-            '[WARN] GPU-0: Temperature 82C, fan speed 100%',
-            '[INFO] ATLAS Federation Link: Heartbeat received from MGH',
-            '[INFO] ATLAS Federation Link: Heartbeat received from BCH',
-            '[AUDIT] User access granted: dev-001 from 10.0.4.2'
-        ];
-        
-        // Pick a random event occasionally
-        if (Math.random() > 0.7) {
-            const time = new Date().toISOString().split('T')[1].slice(0,8);
-            const event = events[Math.floor(Math.random() * events.length)];
-            const line = `${time} ${event}`;
-            
-            // Append and scroll
-            const lines = (logEl.innerText + '\n' + line).split('\n').slice(-5); // Keep last 5 lines
-            logEl.innerText = lines.join('\n');
-        }
-    }
 }
 
 // ============================================================================ 
@@ -619,6 +410,11 @@ function user_logout(): void {
         clearInterval(trainingInterval);
         trainingInterval = null;
     }
+
+    // Stop Telemetry
+    Telemetry.Manager.stop();
+    Telemetry.Manager.setStage('login');
+    Telemetry.Manager.start();
 
     // Update UI
     stage_advanceTo('login');
@@ -725,7 +521,7 @@ function dataset_toggle(datasetId: string): void {
     });
 
     selectionCount_update();
-    cascade_update();
+    Telemetry.Manager.refreshMetrics(state.selectedDatasets, state.costEstimate);
 }
 
 /**
@@ -960,7 +756,7 @@ function costs_calculate(): void {
     if (costStorage) costStorage.textContent = `$${storage.toFixed(2)}`;
     if (costTotal) costTotal.textContent = `$${state.costEstimate.total.toFixed(2)}`;
 
-    cascade_update();
+    Telemetry.Manager.refreshMetrics(state.selectedDatasets, state.costEstimate);
     stageButton_setEnabled('process', true);
 }
 
@@ -1113,8 +909,8 @@ function monitorUI_update(): void {
     if (runningCost) runningCost.textContent = `$${job.runningCost.toFixed(2)}`;
     if (costProgress) costProgress.style.width = `${(job.runningCost / job.budgetLimit) * 100}%`;
 
-    // Update cascade
-    cascade_update();
+    // Update Telemetry
+    Telemetry.Manager.refreshMetrics(state.selectedDatasets, state.costEstimate);
 
     // Update loss chart
     lossChart_draw();
@@ -1274,11 +1070,8 @@ function app_initialize(): void {
     // Initial search
     catalog_search();
 
-    // Initialize cascade (triggers dashboard config)
-    cascade_update();
-
-    // Start Telemetry
-    setInterval(telemetry_update, 500);
+    // Initialize Telemetry
+    Telemetry.Manager.start();
 
     // Set initial gutter state
     gutter_setStatus(1, 'active');
