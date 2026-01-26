@@ -503,7 +503,7 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
             document.head.appendChild(style);
 
             // Replace process content
-            const processStage = document.getElementById('stage-process');
+            const processStage = document.querySelector('.stage-content[data-stage="process"]');
             if (processStage) {
                 processStage.innerHTML = '<div id="terminal-container" style="height: 500px;"></div>';
                 terminal = new LCARSTerminal('terminal-container');
