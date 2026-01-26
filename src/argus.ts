@@ -452,33 +452,104 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
             // Inject Terminal CSS
             const style = document.createElement('style');
             style.textContent = `
-                .lcars-terminal-window {
-                    background: #000;
-                    border: 2px solid var(--lcars-orange);
-                    border-radius: 0 0 20px 0;
-                    font-family: 'Inconsolata', 'Courier New', monospace;
-                    padding: 1rem;
-                    height: 100%;
+                .lcars-terminal-wrapper {
                     display: flex;
                     flex-direction: column;
-                    color: var(--lcars-orange);
+                    height: 100%;
+                    padding-right: 1rem;
+                }
+                .lcars-terminal-header-bar {
+                    display: flex;
+                    height: 30px;
+                    align-items: flex-end;
+                }
+                .lcars-elbow-top-left {
+                    width: 60px;
+                    height: 30px;
+                    background-color: var(--honey);
+                    border-radius: 15px 0 0 0;
+                    margin-right: 0.5rem;
+                }
+                .lcars-bar-horizontal {
+                    flex: 1;
+                    height: 30px;
+                    background-color: var(--honey);
+                    display: flex;
+                    align-items: center;
+                    padding-left: 1rem;
+                    color: black;
+                    font-weight: bold;
+                    text-transform: uppercase;
                     font-size: 1.1rem;
                 }
-                .lcars-terminal-header {
-                    border-bottom: 1px solid var(--lcars-lilac);
-                    margin-bottom: 0.5rem;
-                    padding-bottom: 0.25rem;
-                    font-weight: bold;
-                    color: var(--lcars-lilac);
+                .lcars-bar-end {
+                    width: 30px;
+                    height: 30px;
+                    background-color: var(--honey);
+                    border-radius: 0 15px 15px 0;
+                    margin-left: 0.5rem;
                 }
+                .lcars-terminal-body {
+                    display: flex;
+                    flex: 1;
+                    min-height: 0; /* flex scroll fix */
+                }
+                .lcars-column-left {
+                    width: 60px;
+                    background-color: transparent;
+                    display: flex;
+                    flex-direction: column;
+                    margin-right: 0.5rem;
+                }
+                .lcars-bar-vertical {
+                    flex: 1;
+                    width: 100%;
+                    background-color: var(--honey);
+                    margin-bottom: 0.5rem;
+                }
+                .lcars-terminal-screen {
+                    flex: 1;
+                    background-color: black;
+                    border: 2px solid var(--october-sunset);
+                    border-radius: 0 0 20px 0;
+                    padding: 1rem;
+                    display: flex;
+                    flex-direction: column;
+                    font-family: 'Inconsolata', 'Courier New', monospace;
+                    color: var(--lcars-orange);
+                    overflow: hidden;
+                    margin-bottom: 0.5rem;
+                }
+                .lcars-terminal-footer-bar {
+                    display: flex;
+                    height: 30px;
+                }
+                .lcars-elbow-bottom-left {
+                    width: 60px;
+                    height: 30px;
+                    background-color: var(--honey);
+                    border-radius: 0 0 0 15px;
+                    margin-right: 0.5rem;
+                }
+                .lcars-bar-horizontal-bottom {
+                    flex: 1;
+                    height: 30px;
+                    background-color: var(--honey);
+                    border-radius: 0 0 15px 0;
+                }
+                
                 .lcars-terminal-output {
                     flex: 1;
                     overflow-y: auto;
                     margin-bottom: 0.5rem;
+                    font-size: 1rem;
+                    line-height: 1.2;
                 }
                 .lcars-terminal-input-line {
                     display: flex;
                     align-items: center;
+                    border-top: 1px solid var(--lcars-rust);
+                    padding-top: 0.5rem;
                 }
                 .lcars-terminal-input-line input {
                     background: transparent;

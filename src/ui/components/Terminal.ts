@@ -53,14 +53,29 @@ export class LCARSTerminal {
         
         // Build UI
         this.container.innerHTML = `
-            <div class="lcars-terminal-window">
-                <div class="lcars-terminal-header">
-                    <span class="blink">TERMINAL ACCESS // VFS LINK ACTIVE</span>
+            <div class="lcars-terminal-wrapper">
+                <div class="lcars-terminal-header-bar">
+                    <div class="lcars-elbow-top-left"></div>
+                    <div class="lcars-bar-horizontal">
+                        <span class="lcars-title">TERMINAL ACCESS // VFS LINK ACTIVE</span>
+                    </div>
+                    <div class="lcars-bar-end"></div>
                 </div>
-                <div class="lcars-terminal-output" id="${elementId}-output"></div>
-                <div class="lcars-terminal-input-line">
-                    <span id="${elementId}-prompt" class="prompt">dev@argus:~/ $</span>
-                    <input type="text" id="${elementId}-input" autocomplete="off" spellcheck="false">
+                <div class="lcars-terminal-body">
+                    <div class="lcars-column-left">
+                        <div class="lcars-bar-vertical"></div>
+                    </div>
+                    <div class="lcars-terminal-screen">
+                        <div class="lcars-terminal-output" id="${elementId}-output"></div>
+                        <div class="lcars-terminal-input-line">
+                            <span id="${elementId}-prompt" class="prompt">dev@argus:~/ $</span>
+                            <input type="text" id="${elementId}-input" autocomplete="off" spellcheck="false">
+                        </div>
+                    </div>
+                </div>
+                <div class="lcars-terminal-footer-bar">
+                    <div class="lcars-elbow-bottom-left"></div>
+                    <div class="lcars-bar-horizontal-bottom"></div>
                 </div>
             </div>
         `;
@@ -136,7 +151,7 @@ export class LCARSTerminal {
 
         switch (cmd) {
             case 'help':
-                this.println('Available commands: ls, cd, pwd, cat, clear, python, mount');
+                this.println('Available commands: ls, cd, pwd, cat, mkdir, touch, rm, whoami, date, echo, clear, python, mount');
                 break;
             case 'clear':
                 this.output.innerHTML = '';
@@ -149,6 +164,27 @@ export class LCARSTerminal {
                 break;
             case 'cd':
                 this.cmd_cd(args);
+                break;
+            case 'cat':
+                this.cmd_cat(args);
+                break;
+            case 'mkdir':
+                this.cmd_mkdir(args);
+                break;
+            case 'touch':
+                this.cmd_touch(args);
+                break;
+            case 'rm':
+                this.cmd_rm(args);
+                break;
+            case 'whoami':
+                this.println('developer');
+                break;
+            case 'date':
+                this.println(new Date().toString());
+                break;
+            case 'echo':
+                this.println(args.join(' '));
                 break;
             case 'python':
                 this.cmd_python(args);
@@ -200,6 +236,93 @@ export class LCARSTerminal {
         }
         
         this.updatePrompt();
+    }
+
+    private cmd_cat(args: string[]): void {
+        if (args.length === 0) {
+            this.println('cat: missing operand');
+            return;
+        }
+        const target = args[0];
+        const currentNode = this.getCurrentNode();
+        const file = currentNode?.children?.find(c => c.name === target && c.type !== 'folder');
+
+        if (file) {
+            if (file.name.endsWith('.py')) {
+                this.println('<span class="code">import atlas... # (file content hidden)</span>');
+            } else if (file.name.endsWith('.md')) {
+                this.println('# Project README\n\n Federated learning setup for chest x-ray analysis.');
+            } else {
+                this.println(`[Content of ${file.name}]`);
+            }
+        } else {
+            this.println(`cat: ${target}: No such file or directory`);
+        }
+    }
+
+    private cmd_mkdir(args: string[]): void {
+        if (args.length === 0) {
+            this.println('mkdir: missing operand');
+            return;
+        }
+        const target = args[0];
+        const currentNode = this.getCurrentNode();
+        
+        if (currentNode && currentNode.children) {
+            if (currentNode.children.some(c => c.name === target)) {
+                this.println(`mkdir: cannot create directory '${target}': File exists`);
+            } else {
+                currentNode.children.push({
+                    name: target,
+                    type: 'folder',
+                    path: `${currentNode.path === '/' ? '' : currentNode.path}/${target}`,
+                    children: []
+                });
+            }
+        }
+    }
+
+    private cmd_touch(args: string[]): void {
+        if (args.length === 0) {
+            this.println('touch: missing operand');
+            return;
+        }
+        const target = args[0];
+        const currentNode = this.getCurrentNode();
+        
+        if (currentNode && currentNode.children) {
+            if (!currentNode.children.some(c => c.name === target)) {
+                currentNode.children.push({
+                    name: target,
+                    type: 'file',
+                    path: `${currentNode.path === '/' ? '' : currentNode.path}/${target}`,
+                    size: '0 B'
+                });
+            }
+        }
+    }
+
+    private cmd_rm(args: string[]): void {
+        if (args.length === 0) {
+            this.println('rm: missing operand');
+            return;
+        }
+        const target = args[0];
+        const currentNode = this.getCurrentNode();
+        
+        if (currentNode && currentNode.children) {
+            const index = currentNode.children.findIndex(c => c.name === target);
+            if (index !== -1) {
+                const node = currentNode.children[index];
+                if (node.type === 'folder' && !args.includes('-r') && !args.includes('-rf')) {
+                    this.println(`rm: cannot remove '${target}': Is a directory`);
+                } else {
+                    currentNode.children.splice(index, 1);
+                }
+            } else {
+                this.println(`rm: cannot remove '${target}': No such file or directory`);
+            }
+        }
     }
 
     private cmd_python(args: string[]): void {
