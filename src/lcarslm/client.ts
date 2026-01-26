@@ -32,13 +32,13 @@ export class OpenAIClient {
      */
     async listModels(): Promise<string> {
         try {
-            const response = await fetch('https://api.openai.com/v1/models', {
+            const response: Response = await fetch('https://api.openai.com/v1/models', {
                 headers: { 'Authorization': `Bearer ${this.apiKey}` }
             });
             if (!response.ok) return "UNABLE TO RETRIEVE MODEL LIST.";
             const data: any = await response.json();
             return data.data.map((m: any) => m.id).join('\n');
-        } catch (e) {
+        } catch (e: any) {
             return "ERROR QUERYING MODELS.";
         }
     }
@@ -52,7 +52,7 @@ export class OpenAIClient {
      */
     async chat(messages: ChatMessage[]): Promise<string> {
         try {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            const response: Response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -66,13 +66,13 @@ export class OpenAIClient {
             });
 
             if (!response.ok) {
-                const error = await response.json();
+                const error: any = await response.json();
                 throw new Error(error.error?.message || 'Unknown API Error');
             }
 
-            const data = await response.json();
+            const data: any = await response.json();
             return data.choices[0]?.message?.content || '';
-        } catch (error) {
+        } catch (error: any) {
             console.error('OpenAI API Error:', error);
             throw error;
         }

@@ -1694,7 +1694,7 @@ body.state-locked .next-pill {
 }
 
 .terminal-drawer.open {
-    height: 350px;
+    height: 600px;
     opacity: 1;
 }
 
@@ -1771,16 +1771,30 @@ body.state-locked .next-pill {
     font-family: 'Antonio', sans-serif; /* Consistent LCARS font */
     color: var(--daybreak);
     overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+/* Developer Mode: Monofont and Mixed Case */
+.lcars-terminal-screen.developer-mode {
+    font-family: 'Inconsolata', 'Courier New', monospace;
+    color: var(--canary);
 }
 
 .lcars-terminal-output {
     flex: 1;
     overflow-y: auto;
     margin-bottom: 0.75rem;
-    font-size: 1rem; /* Smaller to match instructional text */
+    font-size: 1rem; 
     line-height: 1.3;
     letter-spacing: 1px;
     text-shadow: 0 0 2px var(--daybreak);
+    white-space: pre-wrap; /* Support multi-line responses */
+}
+
+.lcars-terminal-screen.developer-mode .lcars-terminal-output {
+    text-transform: none;
+    text-shadow: none;
+    font-size: 0.95rem;
 }
 
 .lcars-terminal-input-line {
@@ -1789,15 +1803,20 @@ body.state-locked .next-pill {
     border-top: 1px solid var(--rich-pumpkin);
     padding-top: 0.75rem;
     font-weight: bold;
-    text-transform: uppercase; /* Prompt stays caps */
+    text-transform: uppercase; /* Prompt stays caps by default */
+}
+
+.lcars-terminal-screen.developer-mode .lcars-terminal-input-line {
+    text-transform: none;
+    border-color: var(--harvestgold);
 }
 
 .lcars-terminal-input-line input {
     background: transparent;
     border: none;
     color: var(--butter);
-    font-family: 'Antonio', sans-serif;
-    font-size: 1rem; /* Smaller to match output */
+    font-family: inherit;
+    font-size: 1rem; 
     text-transform: none; /* User input allows mixed case */
     letter-spacing: 1px;
     flex: 1;

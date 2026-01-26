@@ -384,6 +384,15 @@ export class LCARSTerminal {
     }
 
     /**
+     * Clears the terminal output and history.
+     */
+    public clear(): void {
+        this.output.innerHTML = '';
+        this.history = [];
+        this.historyIndex = -1;
+    }
+
+    /**
      * Sets the terminal status text in the header.
      * 
      * @param text - The new status text.

@@ -273,6 +273,37 @@
                         <p>Query the ATLAS catalog for annotated medical imaging datasets.</p>
 
                         <!-- AUTH PANEL -->
+                        <div id="search-auth-panel" style="margin-bottom: 2rem;">
+                            <div class="lcars-header-block" style="border-color: var(--october-sunset);">
+                                <h3 style="margin: 0; color: var(--october-sunset);">SECURITY CLEARANCE REQUIRED</h3>
+                            </div>
+                            <p>To access the AI Core, please input your operational parameters.</p>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>PROVIDER</label>
+                                    <select id="api-provider-select" style="height: 40px; border: 2px solid var(--orange); background: #222; color: var(--honey);">
+                                        <option value="gemini">Google Gemini</option>
+                                        <option value="openai">OpenAI</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>MODEL ID (OPTIONAL)</label>
+                                    <input type="text" id="api-model-input" placeholder="gemini-flash-latest" style="height: 40px;">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>ENCRYPTION KEY</label>
+                                <div style="display: flex; gap: 1rem;">
+                                    <input type="password" id="api-key-input" placeholder="API Key..." style="flex: 1; height: 40px;">
+                                    <button onclick="lcarslm_auth()" class="pill-btn" style="height: 40px; background-color: var(--october-sunset); color: white; width: 150px;">AUTHENTICATE</button>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-top: 2rem; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+                                <span style="font-size: 0.8rem; color: var(--harvestgold);">OR BYPASS SYSTEM AUTHENTICATION</span>
+                                <button onclick="lcarslm_simulate()" class="pill-btn" style="height: 50px; background-color: var(--nebula); color: black; width: 100%; font-size: 1.1rem;">ACTIVATE SIMULATION MODE</button>
+                            </div>
+                        </div>
 
                         <!-- LEGACY CONTROLS (Fallback) -->
                         <div class="search-controls" style="opacity: 0.5; transform: scale(0.95); transform-origin: top left;">

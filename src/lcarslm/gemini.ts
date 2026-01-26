@@ -23,7 +23,12 @@ export class GeminiClient {
     constructor(config: LCARSSystemConfig) {
         this.apiKey = config.apiKey;
         // Use user-provided model ID, or fallback
-        this.model = config.model && config.model !== 'default' ? config.model : 'gemini-1.5-flash';
+        let modelId: string = config.model && config.model !== 'default' ? config.model : 'gemini-flash-latest';
+        // Ensure models/ prefix exists
+        if (!modelId.startsWith('models/')) {
+            modelId = `models/${modelId}`;
+        }
+        this.model = modelId;
     }
 
     /**
@@ -33,11 +38,11 @@ export class GeminiClient {
      */
     async listModels(): Promise<string> {
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${this.apiKey}`);
+            const response: Response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${this.apiKey}`);
             if (!response.ok) return "UNABLE TO RETRIEVE MODEL LIST.";
             const data: any = await response.json();
             return data.models.map((m: any) => m.name).join('\n');
-        } catch (e) {
+        } catch (e: any) {
             return "ERROR QUERYING MODELS.";
         }
     }
@@ -51,16 +56,6 @@ export class GeminiClient {
      */
     async chat(messages: ChatMessage[]): Promise<string> {
         try {
-            // Convert standard ChatMessage format to Gemini format
-            const contents: Array<{ role: string; parts: Array<{ text: string }> }> = messages.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-            }));
-
-            // Filter out system messages as Gemini handles them differently (or prepends context)
-            // For simplicity in this prototype, we'll merge system prompt into the first user message
-            // or use the system_instruction if using the beta API, but simpler is better here.
-            
             // Extract system context
             const systemContext: string = messages
                 .filter(m => m.role === 'system')
@@ -79,7 +74,7 @@ export class GeminiClient {
                 userMessages[0].parts[0].text = `SYSTEM CONTEXT:\n${systemContext}\n\nUSER REQUEST:\n${userMessages[0].parts[0].text}`;
             }
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`, {
+            const response: Response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${this.model}:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -97,7 +92,7 @@ export class GeminiClient {
 
             const data: any = await response.json();
             return data.candidates[0]?.content?.parts[0]?.text || '';
-        } catch (error) {
+        } catch (error: any) {
             console.error('Gemini API Error:', error);
             throw error;
         }

@@ -22,6 +22,7 @@ import { filesystem_create } from './core/logic/filesystem.js';
 import { DATASETS } from './core/data/datasets.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
 import { LCARSEngine } from './lcarslm/engine.js';
+import type { QueryResponse } from './lcarslm/types.js';
 import { VERSION, GIT_HASH } from './generated/version.js';
 
 // ============================================================================
@@ -393,6 +394,8 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
 
     // Update Terminal Visibility and Prompt
     const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+    const terminalScreen: HTMLElement | null = consoleEl?.querySelector('.lcars-terminal-screen') as HTMLElement;
+
     if (consoleEl && terminal) {
         // Hide terminal on login/role selection, show otherwise
         const isEntryStage: boolean = stageName === 'login' || stageName === 'role-selection';
@@ -403,6 +406,11 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
             consoleEl.style.display = 'block';
         }
 
+        // Reset Developer Mode state
+        if (terminalScreen) {
+            terminalScreen.classList.remove('developer-mode');
+        }
+
         // Contextual Prompt
         if (stageName === 'search') {
             terminal.setPrompt('ARGUS: SEARCH >');
@@ -411,7 +419,15 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
         } else if (stageName === 'gather') {
             terminal.setPrompt('ARGUS: COHORT >');
         } else if (stageName === 'process') {
-            terminal.setPrompt('dev@argus:~/ $');
+            // DEVELOPER HUB MODE
+            terminal.clear();
+            if (terminalScreen) {
+                terminalScreen.classList.add('developer-mode');
+            }
+            terminal.setPrompt('dev@argus:~/src/project $ ');
+            terminal.println('○ ENVIRONMENT: BASH 5.2.15 // ARGUS CORE v1.4.5');
+            terminal.println('● PROJECT MOUNTED AT /home/developer/src/project');
+            terminal.println('○ RUN "ls" TO VIEW ASSETS OR "python train.py" TO INITIATE FEDERATION.');
             consoleEl.classList.add('open');
         } else {
             terminal.setPrompt('dev@argus:~/ $');
@@ -805,7 +821,8 @@ async function catalog_search(): Promise<void> {
         if (statusEl) statusEl.textContent = 'COMPUTING...';
         
         try {
-            const response = await lcarsEngine.query(nlQuery);
+            const selectedIds: string[] = state.selectedDatasets.map(ds => ds.id);
+            const response: QueryResponse = await lcarsEngine.query(nlQuery, selectedIds);
             datasetResults_render(response.relevantDatasets);
             
             if (statusEl) statusEl.innerHTML = `<span class="highlight">${response.answer}</span>`;
@@ -1306,10 +1323,32 @@ async function terminal_handleCommand(cmd: string, args: string[]): Promise<void
     const query: string = [cmd, ...args].join(' ');
     
     if (lcarsEngine) {
-        terminal.println('>> CONTACTING AI CORE... PROCESSING...');
+        terminal.println('○ CONTACTING AI CORE... PROCESSING...');
         try {
-            const response = await lcarsEngine.query(query);
-            terminal.println(`<span class="highlight">COMPUTER: ${response.answer}</span>`);
+            const selectedIds: string[] = state.selectedDatasets.map(ds => ds.id);
+            const response: QueryResponse = await lcarsEngine.query(query, selectedIds);
+            
+            // 1. Process Intent: [SELECT: ds-xxx]
+            const selectMatch = response.answer.match(/\[SELECT: (ds-[0-9]+)\]/);
+            if (selectMatch) {
+                const datasetId = selectMatch[1];
+                dataset_toggle(datasetId);
+                terminal.println(`● AFFIRMATIVE. DATASET [${datasetId}] SELECTED AND ADDED TO SESSION BUFFER.`);
+            }
+
+            // 2. Process Intent: [ACTION: PROCEED]
+            if (response.answer.includes('[ACTION: PROCEED]')) {
+                terminal.println('● AFFIRMATIVE. PREPARING GATHER PROTOCOL.');
+                setTimeout(stage_next, 1000);
+            }
+
+            // 3. Clean and Print the Response
+            const cleanAnswer = response.answer
+                .replace(/\[SELECT: ds-[0-9]+\]/g, '')
+                .replace(/\[ACTION: PROCEED\]/g, '')
+                .trim();
+
+            terminal.println(`<span class="highlight">${cleanAnswer}</span>`);
             
             // If we are in search stage and datasets were found, update readout
             if (state.currentStage === 'search') {

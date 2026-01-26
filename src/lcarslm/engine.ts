@@ -28,31 +28,20 @@ export class LCARSEngine {
      * @param config - The system configuration, or null for simulation mode.
      */
     constructor(config: LCARSSystemConfig | null) {
-        if (config) {
-            if (config.provider === 'gemini') {
-                this.client = new GeminiClient(config);
-            } else {
-                this.client = new OpenAIClient(config);
-            }
-            this.isSimulated = false;
-        } else {
-            this.client = null;
-            this.isSimulated = true;
-        }
+        this.client = config ? (config.provider === 'gemini' ? new GeminiClient(config) : new OpenAIClient(config)) : null;
+        this.isSimulated = !config;
         this.systemPrompt = `You are the core computer of the ATLAS Resource Graphical User System (ARGUS).
-Your primary function is to query the medical imaging dataset catalog based on user natural language requests.
+Your primary function is to query the medical imaging dataset catalog and manage the user session.
 
 ### OPERATIONAL DIRECTIVES:
-1.  **Analyze** the user's request to identify key medical terms (modality, pathology, anatomy, provider).
-2.  **Scan** the provided "Current Data Availability" context.
-3.  **Identify** datasets that strictly match the criteria.
-4.  **Respond** in the persona of the Star Trek Enterprise Computer (Majel Barrett).
-    *   Use phrases like "Affirmative," "Processing," "There are X matching datasets," "Unable to comply."
-    *   Be concise, logical, and devoid of emotional filler.
-    *   If no datasets match, state "No matching records found in current sector."
+1.  **Response Format**: Use LCARS markers. Start important affirmations with "●". Use "○" for technical details. Use line breaks (\n) between logical sections for terminal readability.
+2.  **Intent Identification**:
+    *   If the user wants to select/get a dataset, include [SELECT: ds-ID] in your response.
+    *   If the user wants to proceed to the next stage (Gather), include [ACTION: PROCEED] in your response.
+3.  **Persona**: Star Trek Computer (concise, logical).
 
 ### DATA CONTEXT:
-The context provided to you contains a JSON list of available datasets. Use this strictly as your source of truth. Do not hallucinate external datasets.`;
+The context provided to you contains a JSON list of available datasets. Use this strictly as your source of truth.`;
     }
 
     /**
@@ -61,7 +50,7 @@ The context provided to you contains a JSON list of available datasets. Use this
      * 2. Augmentation: Adds dataset metadata to the prompt.
      * 3. Generation: Asks LLM to answer based on context.
      */
-    async query(userText: string): Promise<QueryResponse> {
+    async query(userText: string, selectedIds: string[] = []): Promise<QueryResponse> {
         // Intercept System Commands
         if (userText.toLowerCase().trim() === 'listmodels') {
             const models: string = this.client ? await this.client.listModels() : "SIMULATION MODE: ALL MODELS EMULATED.";
@@ -71,38 +60,46 @@ The context provided to you contains a JSON list of available datasets. Use this
             };
         }
 
-        // 1. Retrieval (Simplified for prototype)
-        const relevantDatasets = this.retrieve(userText);
+        // 1. Context Preparation
+        const relevantDatasets: Dataset[] = DATASETS;
 
         if (this.isSimulated) {
             // Simulate processing delay
-            await new Promise(resolve => setTimeout(resolve, 800));
+            await new Promise((resolve: (value: unknown) => void) => setTimeout(resolve, 800));
             
             const count: number = relevantDatasets.length;
             const answer: string = count > 0 
-                ? `AFFIRMATIVE. SCAN COMPLETE. IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS. DISPLAYING RESULTS.`
-                : `UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR. PLEASE BROADEN SEARCH PARAMETERS.`;
+                ? `● AFFIRMATIVE. SCAN COMPLETE.\n○ IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS.\n○ DISPLAYING RESULTS.`
+                : `○ UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR.\n● PLEASE BROADEN SEARCH PARAMETERS.`;
             
             return { answer, relevantDatasets };
         }
 
         // 2. Augmentation (Real LLM Path)
-        const context = JSON.stringify(relevantDatasets.map(ds => ({
+        const context: string = JSON.stringify(relevantDatasets.map(ds => ({
             id: ds.id,
             name: ds.name,
             modality: ds.modality,
             annotation: ds.annotationType,
-            description: ds.description
+            description: ds.description,
+            imageCount: ds.imageCount,
+            size: ds.size,
+            provider: ds.provider
         })));
+
+        const selectedContext: string = selectedIds.length > 0 
+            ? `USER CURRENT SELECTION: ${selectedIds.join(', ')}`
+            : "USER CURRENT SELECTION: NONE";
 
         const messages: ChatMessage[] = [
             { role: 'system', content: this.systemPrompt },
-            { role: 'system', content: `Current Data Availability: ${context}` },
+            { role: 'system', content: `AVAILABLE DATASETS: ${context}` },
+            { role: 'system', content: selectedContext },
             { role: 'user', content: userText }
         ];
 
         // 3. Generation
-        const answer = await this.client!.chat(messages);
+        const answer: string = await this.client!.chat(messages);
 
         return {
             answer,
@@ -117,7 +114,7 @@ The context provided to you contains a JSON list of available datasets. Use this
      * @returns An array of matching datasets.
      */
     private retrieve(query: string): Dataset[] {
-        const q = query.toLowerCase();
+        const q: string = query.toLowerCase();
         // Naive keyword matching for "retrieval"
         return DATASETS.filter(ds => 
             ds.name.toLowerCase().includes(q) ||

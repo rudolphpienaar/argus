@@ -6,7 +6,7 @@ This document captures the specific interaction and visual metaphors used in the
 
 == The Intelligence Console (Terminal)
 
-The terminal is the primary command buffer for ARGUS. It functions as a "Unified Intelligence Console" where both standard system commands (bash-like) and natural language queries (LCARSLM) are processed.
+The terminal is the primary command and control hub for ARGUS. It functions as a "Unified Intelligence Console" where standard system commands (bash-like), natural language queries (LCARSLM), and agentic UI manipulations are integrated into a single stream.
 
 === Visual Metaphor: The Tactical Drawer
 
@@ -31,47 +31,32 @@ The primary method for adjusting the terminal's height is the **Access Strip**.
   - **Tactical Close**: A glowing `mars` red pill at the top-right of the terminal header for quick retraction.
   - **Primary Toggle**: The leftmost orange bar (`bar-6`) of the workstation lid acts as a large-target toggle switch.
 
+== Operational Modes
+
+The terminal dynamically adapts its persona and capabilities based on the active SeaGaP stage.
+
+=== Search Mode (AI Core)
+During the Search stage, the terminal acts as an AI-driven discovery engine.
+* **Prompt**: `ARGUS: SEARCH >`
+* **Agentic Logic**: The AI can automatically select datasets in the visual grid using the `[SELECT: ID]` intent parser.
+* **Telematic Readout**: The visual grid below the terminal serves as a secondary evidence display, updating in real-time as the AI identifies relevant cohorts.
+
+=== Developer Mode (Technical Shell)
+Upon entering the Process stage, the console transitions into a technical coding environment.
+* **Prompt**: `dev@argus:~/src/project $`
+* **Styling**: The UI automatically switches to a monospaced font (**Inconsolata**), clears history, and enables mixed-case input/output for technical accuracy.
+* **Commands**: Supports standard linux-style commands (`ls`, `cd`, `pwd`, `mkdir`, `rm`, `python`).
+
 == Typography: The Dual-Voice System
 
-ARGUS uses the **Antonio** font family with a selective casing strategy to balance LCARS fidelity with developer utility:
+ARGUS uses the **Antonio** font family with a selective casing strategy:
 
-* **The System Voice (Uppercase)**: All structural elements, headers, prompts, and button labels are strictly uppercase. This defines the "Ship's Computer" authoritative presence.
-* **The Data Voice (Mixed Case)**: Terminal output (AI responses, file contents) and user input allow mixed case. This preserves technical accuracy (e.g., `train.py`) and improves readability for long AI explanations.
+* **The System Voice (Uppercase)**: All structural elements, headers, prompts, and button labels are strictly uppercase.
+* **The Data Voice (Mixed Case)**: Terminal output (AI responses, file contents) and user input allow mixed case to preserve technical precision and improve readability.
 * **Visual Polish**: Terminal readouts feature a soft text-shadow glow, simulating a high-density CRT display.
-
-== Color Language
-
-ARGUS adheres to a strict LCARS color palette defined in `lcars.css`:
-
-[cols="1,2,2"]
-|===
-| Variable | Functional Meaning | Context
-
-| `--honey`
-| Primary Structural
-| Header bars, elbows, primary navigation.
-
-| `--october-sunset`
-| Alert / Active
-| Current stage indicator, active system processes.
-
-| `--nebula`
-| Intelligence / AI
-| LCARSLM status, neural link indicators.
-
-| `--galaxy`
-| Utility / Simulation
-| Secondary console functions, simulation mode.
-
-| `--mars`
-| Critical / Warning / Tactical
-| Reset functions, error states, and the terminal "Retract" control.
-|===
 
 == Implementation Details
 
-* **Global Component**: The `LCARSTerminal` is a global singleton initialized in `app_initialize()`.
-* **State Managed**: Visibility and height are controlled via CSS classes (`.open`) and inline style overrides.
-* **Contextual Intelligence**: 
-  - **Prompts**: Updates based on SeaGaP stage (`ARGUS: SEARCH >`, `ARGUS: COHORT >`, `dev@argus:~/ $`).
-  - **Status Readout**: The terminal header displays the active AI provider and model ID (e.g., `MODE: [GEMINI] // MODEL: [GEMINI-FLASH-LATEST]`).
+* **Global Component**: The `LCARSTerminal` is a global singleton.
+* **Intent Parsing**: The `terminal_handleCommand` function intercepts LLM responses to trigger system actions (selecting data, transitioning stages).
+* **Contextual Awareness**: The AI engine receives the full dataset catalog and the user's current "Selection Buffer" with every query, ensuring high-fidelity RAG (Retrieval Augmented Generation) reasoning.
