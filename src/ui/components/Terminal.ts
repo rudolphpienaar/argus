@@ -50,6 +50,9 @@ export class LCARSTerminal {
         ]
     };
 
+    /** Callback for handling commands not recognized by the terminal. */
+    public onUnhandledCommand: ((cmd: string, args: string[]) => Promise<void>) | null = null;
+
     /**
      * Creates a new LCARSTerminal instance.
      * 
@@ -65,16 +68,13 @@ export class LCARSTerminal {
         this.container.innerHTML = `
             <div class="lcars-terminal-wrapper">
                 <div class="lcars-terminal-header-bar">
-                    <div class="lcars-elbow-top-left"></div>
                     <div class="lcars-bar-horizontal">
-                        <span class="lcars-title">TERMINAL ACCESS // VFS LINK ACTIVE</span>
+                        <span class="lcars-title">INTELLIGENCE CONSOLE // VFS LINK ACTIVE</span>
+                        <span class="lcars-terminal-status" id="${elementId}-status">MODE: [INITIALIZING]</span>
                     </div>
-                    <div class="lcars-bar-end"></div>
+                    <div class="lcars-bar-end" id="${elementId}-toggle"></div>
                 </div>
                 <div class="lcars-terminal-body">
-                    <div class="lcars-column-left">
-                        <div class="lcars-bar-vertical"></div>
-                    </div>
                     <div class="lcars-terminal-screen">
                         <div class="lcars-terminal-output" id="${elementId}-output"></div>
                         <div class="lcars-terminal-input-line">
@@ -83,16 +83,23 @@ export class LCARSTerminal {
                         </div>
                     </div>
                 </div>
-                <div class="lcars-terminal-footer-bar">
-                    <div class="lcars-elbow-bottom-left"></div>
-                    <div class="lcars-bar-horizontal-bottom"></div>
-                </div>
             </div>
         `;
 
         this.output = document.getElementById(`${elementId}-output`) as HTMLElement;
         this.input = document.getElementById(`${elementId}-input`) as HTMLInputElement;
         this.prompt = document.getElementById(`${elementId}-prompt`) as HTMLElement;
+
+        // Set up toggle listener
+        const toggleBtn = document.getElementById(`${elementId}-toggle`);
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                const win = window as any;
+                if (typeof win.terminal_toggle === 'function') {
+                    win.terminal_toggle();
+                }
+            });
+        }
 
         this.bindEvents();
         this.println('ATLAS Resource Graphical User System [Version 1.4.0]');
@@ -132,7 +139,7 @@ export class LCARSTerminal {
                 const cmd: string = this.input.value.trim();
                 this.history.push(cmd);
                 this.historyIndex = this.history.length;
-                this.println(`${this.getPrompt()} ${cmd}`);
+                this.println(`${this.getPrompt()} <span class="user-input">${cmd}</span>`);
                 this.input.value = '';
                 this.execute(cmd);
                 this.scrollToBottom();
@@ -155,7 +162,7 @@ export class LCARSTerminal {
         });
     }
 
-    private execute(cmdStr: string): void {
+    private async execute(cmdStr: string): Promise<void> {
         if (!cmdStr) return;
         const parts: string[] = cmdStr.split(/\s+/);
         const cmd: string = parts[0].toLowerCase();
@@ -202,7 +209,11 @@ export class LCARSTerminal {
                 this.cmd_python(args);
                 break;
             default:
-                this.println(`<span class="error">Command not found: ${cmd}</span>`);
+                if (this.onUnhandledCommand) {
+                    await this.onUnhandledCommand(cmd, args);
+                } else {
+                    this.println(`<span class="error">Command not found: ${cmd}</span>`);
+                }
         }
     }
 
@@ -372,6 +383,40 @@ export class LCARSTerminal {
         return current;
     }
 
+    /**
+     * Sets the terminal status text in the header.
+     * 
+     * @param text - The new status text.
+     */
+    public setStatus(text: string): void {
+        const statusEl: HTMLElement | null = document.getElementById(`${this.container.id}-status`);
+        if (statusEl) {
+            statusEl.textContent = text;
+        }
+    }
+
+    /**
+     * Sets the terminal prompt text.
+     * 
+     * @param text - The new prompt text.
+     */
+    public setPrompt(text: string): void {
+        this.prompt.textContent = text;
+    }
+
+    /**
+     * Prints a line of text to the terminal output.
+     * 
+     * @param html - The HTML string to print.
+     */
+    public println(html: string): void {
+        const line: HTMLDivElement = document.createElement('div');
+        line.className = 'line';
+        line.innerHTML = html;
+        this.output.appendChild(line);
+        this.scrollToBottom();
+    }
+
     private updatePrompt(): void {
         let displayPath = '/' + this.currentPath.join('/');
         if (displayPath.startsWith('/home/developer')) {
@@ -382,13 +427,6 @@ export class LCARSTerminal {
 
     private getPrompt(): string {
         return this.prompt.textContent || '$';
-    }
-
-    private println(html: string): void {
-        const line = document.createElement('div');
-        line.className = 'line';
-        line.innerHTML = html;
-        this.output.appendChild(line);
     }
 
     private scrollToBottom(): void {

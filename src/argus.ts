@@ -50,6 +50,7 @@ declare global {
         lcarslm_auth: typeof lcarslm_auth;
         lcarslm_reset: typeof lcarslm_reset;
         lcarslm_simulate: typeof lcarslm_simulate;
+        terminal_toggle: typeof terminal_toggle;
     }
 }
 
@@ -390,6 +391,33 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
     // Update cascade status
     cascade_update();
 
+    // Update Terminal Visibility and Prompt
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+    if (consoleEl && terminal) {
+        // Hide terminal on login/role selection, show otherwise
+        const isEntryStage: boolean = stageName === 'login' || stageName === 'role-selection';
+        
+        if (isEntryStage) {
+            consoleEl.style.display = 'none';
+        } else {
+            consoleEl.style.display = 'block';
+        }
+
+        // Contextual Prompt
+        if (stageName === 'search') {
+            terminal.setPrompt('ARGUS: SEARCH >');
+            // Small delay to ensure display: block is processed before animating height
+            setTimeout(() => consoleEl.classList.add('open'), 10);
+        } else if (stageName === 'gather') {
+            terminal.setPrompt('ARGUS: COHORT >');
+        } else if (stageName === 'process') {
+            terminal.setPrompt('dev@argus:~/ $');
+            consoleEl.classList.add('open');
+        } else {
+            terminal.setPrompt('dev@argus:~/ $');
+        }
+    }
+
     // Stage-specific initialization
     if (stageName === 'gather') {
         filesystem_build();
@@ -397,142 +425,6 @@ function stage_advanceTo(stageName: AppState['currentStage']): void {
         gutter_setStatus(2, 'active');
     } else if (stageName === 'process') {
         gutter_setStatus(3, 'active');
-        // Initialize terminal if not exists
-        if (!terminal) {
-            // Inject Terminal CSS
-            const style = document.createElement('style');
-            style.textContent = `
-                .lcars-terminal-wrapper {
-                    display: flex;
-                    flex-direction: column;
-                    height: 100%;
-                    padding-right: 1rem;
-                }
-                .lcars-terminal-header-bar {
-                    display: flex;
-                    height: 30px;
-                    align-items: flex-end;
-                }
-                .lcars-elbow-top-left {
-                    width: 60px;
-                    height: 30px;
-                    background-color: var(--honey);
-                    border-radius: 15px 0 0 0;
-                    margin-right: 0.5rem;
-                }
-                .lcars-bar-horizontal {
-                    flex: 1;
-                    height: 30px;
-                    background-color: var(--honey);
-                    display: flex;
-                    align-items: center;
-                    padding-left: 1rem;
-                    color: black;
-                    font-weight: bold;
-                    text-transform: uppercase;
-                    font-size: 1.1rem;
-                }
-                .lcars-bar-end {
-                    width: 30px;
-                    height: 30px;
-                    background-color: var(--honey);
-                    border-radius: 0 15px 15px 0;
-                    margin-left: 0.5rem;
-                }
-                .lcars-terminal-body {
-                    display: flex;
-                    flex: 1;
-                    min-height: 0; /* flex scroll fix */
-                }
-                .lcars-column-left {
-                    width: 60px;
-                    background-color: transparent;
-                    display: flex;
-                    flex-direction: column;
-                    margin-right: 0.5rem;
-                }
-                .lcars-bar-vertical {
-                    flex: 1;
-                    width: 100%;
-                    background-color: var(--honey);
-                    margin-bottom: 0.5rem;
-                }
-                .lcars-terminal-screen {
-                    flex: 1;
-                    background-color: black;
-                    border: 2px solid var(--october-sunset);
-                    border-radius: 0 0 20px 0;
-                    padding: 1rem;
-                    display: flex;
-                    flex-direction: column;
-                    font-family: 'Inconsolata', 'Courier New', monospace;
-                    color: var(--lcars-orange);
-                    overflow: hidden;
-                    margin-bottom: 0.5rem;
-                }
-                .lcars-terminal-footer-bar {
-                    display: flex;
-                    height: 30px;
-                }
-                .lcars-elbow-bottom-left {
-                    width: 60px;
-                    height: 30px;
-                    background-color: var(--honey);
-                    border-radius: 0 0 0 15px;
-                    margin-right: 0.5rem;
-                }
-                .lcars-bar-horizontal-bottom {
-                    flex: 1;
-                    height: 30px;
-                    background-color: var(--honey);
-                    border-radius: 0 0 15px 0;
-                }
-                
-                .lcars-terminal-output {
-                    flex: 1;
-                    overflow-y: auto;
-                    margin-bottom: 0.5rem;
-                    font-size: 1rem;
-                    line-height: 1.2;
-                }
-                .lcars-terminal-input-line {
-                    display: flex;
-                    align-items: center;
-                    border-top: 1px solid var(--lcars-rust);
-                    padding-top: 0.5rem;
-                }
-                .lcars-terminal-input-line input {
-                    background: transparent;
-                    border: none;
-                    color: #fff;
-                    font-family: inherit;
-                    font-size: inherit;
-                    flex: 1;
-                    outline: none;
-                    margin-left: 0.5rem;
-                }
-                .prompt { color: var(--lcars-blue); }
-                .dir { color: var(--lcars-lilac); font-weight: bold; }
-                .exec { color: var(--lcars-red); }
-                .dim { color: #666; font-size: 0.9em; }
-                .success { color: var(--lcars-pool); }
-                .warn { color: var(--lcars-peach); }
-                .error { color: var(--lcars-rust); }
-                .blink { animation: blink 1s infinite; }
-                @keyframes blink { 50% { opacity: 0; } }
-            `;
-            document.head.appendChild(style);
-
-            // Replace process content
-            const processStage = document.querySelector('.stage-content[data-stage="process"]');
-            if (processStage) {
-                processStage.innerHTML = '<div id="terminal-container" style="height: 500px;"></div>';
-                terminal = new LCARSTerminal('terminal-container');
-                if (state.virtualFilesystem) {
-                    terminal.mount(state.virtualFilesystem);
-                }
-            }
-        }
     } else if (stageName === 'monitor') {
         setTimeout(monitor_initialize, 50);
         gutter_setStatus(4, 'active');
@@ -823,6 +715,10 @@ function lcarslm_initialize(): void {
             provider: provider as 'openai' | 'gemini'
         });
         searchUI_updateState('ready');
+        if (terminal) {
+            terminal.setStatus(`MODE: [${provider.toUpperCase()}] // MODEL: [${model.toUpperCase()}]`);
+            terminal.println(`>> AI CORE LINK ESTABLISHED: PROVIDER [${provider.toUpperCase()}]`);
+        }
     } else {
         searchUI_updateState('auth-required');
     }
@@ -867,19 +763,26 @@ function lcarslm_reset(): void {
 function lcarslm_simulate(): void {
     lcarsEngine = new LCARSEngine(null);
     searchUI_updateState('ready');
+    if (terminal) {
+        terminal.setStatus('MODE: [SIMULATION] // EMULATION ACTIVE');
+        terminal.println('>> AI CORE: SIMULATION MODE ACTIVE. EMULATING NEURAL RESPONSES.');
+    }
 }
 
 function searchUI_updateState(status: 'auth-required' | 'ready'): void {
     const authPanel: HTMLElement | null = document.getElementById('search-auth-panel');
     const queryPanel: HTMLElement | null = document.getElementById('search-query-panel');
+    const statusPanel: HTMLElement | null = document.getElementById('search-status-panel');
     
     if (authPanel && queryPanel) {
         if (status === 'ready') {
             authPanel.style.display = 'none';
             queryPanel.style.display = 'block';
+            if (statusPanel) statusPanel.style.display = 'block';
         } else {
             authPanel.style.display = 'block';
             queryPanel.style.display = 'none';
+            if (statusPanel) statusPanel.style.display = 'none';
         }
     }
 }
@@ -1392,6 +1295,108 @@ function model_publish(): void {
 // ============================================================================
 
 /**
+ * Handles unrecognized terminal commands by routing them to the AI core.
+ * 
+ * @param cmd - The base command or natural language string.
+ * @param args - The arguments.
+ */
+async function terminal_handleCommand(cmd: string, args: string[]): Promise<void> {
+    if (!terminal) return;
+
+    const query: string = [cmd, ...args].join(' ');
+    
+    if (lcarsEngine) {
+        terminal.println('>> CONTACTING AI CORE... PROCESSING...');
+        try {
+            const response = await lcarsEngine.query(query);
+            terminal.println(`<span class="highlight">COMPUTER: ${response.answer}</span>`);
+            
+            // If we are in search stage and datasets were found, update readout
+            if (state.currentStage === 'search') {
+                datasetResults_render(response.relevantDatasets);
+            }
+        } catch (e: any) {
+            terminal.println(`<span class="error">>> ERROR: UNABLE TO ESTABLISH LINK. ${e.message}</span>`);
+        }
+    } else {
+        terminal.println(`<span class="warn">>> COMMAND NOT RECOGNIZED. AI CORE OFFLINE.</span>`);
+    }
+}
+
+/**
+ * Toggles the visibility of the Intelligence Console.
+ */
+function terminal_toggle(): void {
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+    if (consoleEl) {
+        const isOpen: boolean = consoleEl.classList.contains('open');
+        if (isOpen) {
+            consoleEl.classList.remove('open');
+            // Clear inline height to allow CSS to roll it up to 0
+            consoleEl.style.height = '';
+        } else {
+            consoleEl.classList.add('open');
+            // Reset to default height if it was cleared
+            if (!consoleEl.style.height) {
+                consoleEl.style.height = '350px';
+            }
+        }
+    }
+}
+
+/**
+ * Initializes the draggable Access Strip for console height adjustment.
+ */
+function terminal_initializeDraggable(): void {
+    const strip: HTMLElement | null = document.getElementById('access-strip');
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+    
+    if (!strip || !consoleEl) return;
+
+    let isDragging: boolean = false;
+    let startY: number = 0;
+    let startHeight: number = 0;
+
+    strip.addEventListener('mousedown', (e: MouseEvent) => {
+        isDragging = true;
+        startY = e.clientY;
+        startHeight = consoleEl.offsetHeight;
+        strip.classList.add('active');
+        document.body.style.cursor = 'ns-resize';
+        
+        // Ensure console has 'open' class if dragging starts
+        if (!consoleEl.classList.contains('open')) {
+            consoleEl.classList.add('open');
+        }
+    });
+
+    window.addEventListener('mousemove', (e: MouseEvent) => {
+        if (!isDragging) return;
+        
+        const deltaY: number = e.clientY - startY;
+        const newHeight: number = Math.max(0, Math.min(window.innerHeight - 400, startHeight + deltaY));
+        
+        consoleEl.style.height = `${newHeight}px`;
+        consoleEl.style.transition = 'none'; // Disable transition during drag
+        
+        // Synchronize 'open' class for styling
+        if (newHeight > 50) {
+            consoleEl.classList.add('open');
+        } else {
+            consoleEl.classList.remove('open');
+        }
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        strip.classList.remove('active');
+        document.body.style.cursor = 'default';
+        consoleEl.style.transition = ''; // Restore transition
+    });
+}
+
+/**
  * Initializes the ARGUS application.
  */
 function app_initialize(): void {
@@ -1421,7 +1426,14 @@ function app_initialize(): void {
     // Set initial gutter state
     gutter_setStatus(1, 'active');
 
-    // Initialize LCARSLM
+    // Initialize Global Intelligence Console
+    terminal = new LCARSTerminal('intelligence-console');
+    terminal.onUnhandledCommand = terminal_handleCommand;
+
+    // Initialize Draggable Strip
+    terminal_initializeDraggable();
+
+    // Initialize LCARSLM (Terminal MUST be ready first)
     lcarslm_initialize();
 
     // Handle initial login state
@@ -1445,6 +1457,7 @@ function app_initialize(): void {
     window.lcarslm_auth = lcarslm_auth;
     window.lcarslm_reset = lcarslm_reset;
     window.lcarslm_simulate = lcarslm_simulate;
+    window.terminal_toggle = terminal_toggle;
 }
 
 // Initialize on DOM ready

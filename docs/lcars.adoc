@@ -1,0 +1,77 @@
+= ARGUS LCARS Interface Design
+:toc:
+:icons: font
+
+This document captures the specific interaction and visual metaphors used in the ARGUS (ATLAS Resource Graphical User System) LCARS interface.
+
+== The Intelligence Console (Terminal)
+
+The terminal is the primary command buffer for ARGUS. It functions as a "Unified Intelligence Console" where both standard system commands (bash-like) and natural language queries (LCARSLM) are processed.
+
+=== Visual Metaphor: The Tactical Drawer
+
+The terminal is conceptually positioned **between** the Status Header (top panel) and the Operational Workspace (bottom panel). It is designed as a "retractable drawer" that unfurls from behind the main workspace.
+
+.Key Design Principles:
+* **Frameless Integration**: To avoid visual clutter, the terminal does not have its own left-side LCARS framing. Instead, it sits flush against the primary `left-frame` (sidebar), which acts as a "rail" for the drawer.
+* **The Workspace Lid**: The horizontal `bar-panel` (containing bars 6-10) functions as the physical "lid" of the bottom panel.
+* **Retraction Logic**:
+  - **Closed**: The lid sits at the top of the right-frame; the terminal is hidden.
+  - **Open**: The lid slides downward, revealing the terminal screen above it.
+* **Dynamic Elbows**: The LCARS corner elbows are attached to the sliding "lid" rather than the frame, ensuring a flush join at any deployment height.
+
+=== Interaction Metaphor: The Pullable Access Strip
+
+The primary method for adjusting the terminal's height is the **Access Strip**.
+
+* **The Handle**: A horizontal bar sitting precisely on the workspace lid.
+* **Draggable Workspace**: By "grabbing" this handle, the user physically pulls the entire workspace down, increasing the terminal's visibility.
+* **Visual Feedback**: The handle changes color from `october-sunset` to `canary` and glows when active, providing tactile confirmation.
+* **Integrated Toggles**:
+  - **Tactical Close**: A glowing `mars` red pill at the top-right of the terminal header for quick retraction.
+  - **Primary Toggle**: The leftmost orange bar (`bar-6`) of the workstation lid acts as a large-target toggle switch.
+
+== Typography: The Dual-Voice System
+
+ARGUS uses the **Antonio** font family with a selective casing strategy to balance LCARS fidelity with developer utility:
+
+* **The System Voice (Uppercase)**: All structural elements, headers, prompts, and button labels are strictly uppercase. This defines the "Ship's Computer" authoritative presence.
+* **The Data Voice (Mixed Case)**: Terminal output (AI responses, file contents) and user input allow mixed case. This preserves technical accuracy (e.g., `train.py`) and improves readability for long AI explanations.
+* **Visual Polish**: Terminal readouts feature a soft text-shadow glow, simulating a high-density CRT display.
+
+== Color Language
+
+ARGUS adheres to a strict LCARS color palette defined in `lcars.css`:
+
+[cols="1,2,2"]
+|===
+| Variable | Functional Meaning | Context
+
+| `--honey`
+| Primary Structural
+| Header bars, elbows, primary navigation.
+
+| `--october-sunset`
+| Alert / Active
+| Current stage indicator, active system processes.
+
+| `--nebula`
+| Intelligence / AI
+| LCARSLM status, neural link indicators.
+
+| `--galaxy`
+| Utility / Simulation
+| Secondary console functions, simulation mode.
+
+| `--mars`
+| Critical / Warning / Tactical
+| Reset functions, error states, and the terminal "Retract" control.
+|===
+
+== Implementation Details
+
+* **Global Component**: The `LCARSTerminal` is a global singleton initialized in `app_initialize()`.
+* **State Managed**: Visibility and height are controlled via CSS classes (`.open`) and inline style overrides.
+* **Contextual Intelligence**: 
+  - **Prompts**: Updates based on SeaGaP stage (`ARGUS: SEARCH >`, `ARGUS: COHORT >`, `dev@argus:~/ $`).
+  - **Status Readout**: The terminal header displays the active AI provider and model ID (e.g., `MODE: [GEMINI] // MODEL: [GEMINI-FLASH-LATEST]`).
