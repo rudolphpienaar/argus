@@ -27,6 +27,22 @@
             </div>
             <!-- Content area (seagap + ARGUS + bars) -->
             <div class="content-top" id="content-top">
+                <!-- Telemetry Dashboard (Visible only in LOCKED state) -->
+                <div class="telemetry-wrapper">
+                    <div class="tele-col">
+                        <div class="tele-header">ACTIVE PROCESSES</div>
+                        <div class="tele-content monospace" id="tele-proc"></div>
+                    </div>
+                    <div class="tele-col">
+                        <div class="tele-header">NETWORK TRAFFIC</div>
+                        <div class="tele-content monospace" id="tele-net"></div>
+                    </div>
+                    <div class="tele-col">
+                        <div class="tele-header">SYSTEM LOGS</div>
+                        <div class="tele-content monospace" id="tele-log"></div>
+                    </div>
+                </div>
+
                 <!-- SeaGaP Tracker with Telemetry Windows -->
                 <div class="seagap-panel" id="seagap-panel">
                     <div class="seagap-stations">

@@ -19,11 +19,11 @@ import type { Dataset, CostEstimate } from '../models/types.js';
  * @returns A CostEstimate object containing the breakdown and total.
  */
 export function costEstimate_calculate(datasets: Dataset[]): CostEstimate {
-    const dataAccess = datasets.reduce((sum, ds) => sum + ds.cost, 0);
+    const dataAccess: number = datasets.reduce((sum, ds) => sum + ds.cost, 0);
     // Mock compute cost factor: 2.5x data cost
-    const compute = dataAccess * 2.5;
+    const compute: number = dataAccess * 2.5;
     // Mock storage cost factor: 0.3x data cost
-    const storage = dataAccess * 0.3;
+    const storage: number = dataAccess * 0.3;
 
     return {
         dataAccess,

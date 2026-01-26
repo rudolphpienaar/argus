@@ -4,7 +4,7 @@ import type { Dataset } from '../models/types.js';
 
 describe('costEstimate_calculate', () => {
     it('should return zero costs for an empty dataset list', () => {
-        const result = costEstimate_calculate([]);
+        const result: ReturnType<typeof costEstimate_calculate> = costEstimate_calculate([]);
         expect(result).toEqual({
             dataAccess: 0,
             compute: 0,
@@ -27,7 +27,7 @@ describe('costEstimate_calculate', () => {
             thumbnail: 'thumb.jpg'
         };
 
-        const result = costEstimate_calculate([mockDataset]);
+        const result: ReturnType<typeof costEstimate_calculate> = costEstimate_calculate([mockDataset]);
 
         // dataAccess = 100
         // compute = 100 * 2.5 = 250
@@ -41,10 +41,10 @@ describe('costEstimate_calculate', () => {
     });
 
     it('should accumulate costs for multiple datasets', () => {
-        const ds1 = { cost: 10 } as Dataset;
-        const ds2 = { cost: 20 } as Dataset;
+        const ds1: Dataset = { cost: 10 } as Dataset;
+        const ds2: Dataset = { cost: 20 } as Dataset;
 
-        const result = costEstimate_calculate([ds1, ds2]);
+        const result: ReturnType<typeof costEstimate_calculate> = costEstimate_calculate([ds1, ds2]);
 
         // total data = 30
         expect(result.dataAccess).toBe(30);

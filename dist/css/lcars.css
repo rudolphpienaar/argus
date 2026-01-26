@@ -222,8 +222,9 @@ button:disabled {
     display: flex;
     margin-inline: auto;
     padding-left: 5px;
-    padding-right: 15px;
+    padding-right: 0; /* Reduced from 15px to prevent overflow */
     overflow: hidden;
+    max-width: 100vw; /* Ensure no overflow */
 }
 
 #gap {
@@ -320,6 +321,8 @@ button:disabled {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    flex: 0 0 auto; /* Do not grow or shrink */
+    min-width: 200px; /* Ensure sufficient space */
 }
 
 .banner {
@@ -1310,11 +1313,17 @@ body.state-locked .telemetry-wrapper {
     display: grid;
     grid-template-columns: 1fr 1fr 1.5fr;
     gap: 1rem;
-    width: 100%;
+    flex: 1; /* Changed from width: 100% */
+    min-width: 0; /* Prevent flex overflow */
     height: 184px; /* Match data-wrapper height */
     padding-top: 10px;
     padding-right: 2rem;
     padding-left: clamp(20px, 3vw, 50px);
+}
+
+/* Hide SeaGaP when Locked to make space */
+body.state-locked .seagap-panel {
+    display: none;
 }
 
 .tele-col {
