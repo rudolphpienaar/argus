@@ -257,8 +257,59 @@
                         <h1>Search Training Data</h1>
                         <p>Query the ATLAS catalog for annotated medical imaging datasets.</p>
 
-                        <div class="search-controls">
-                            <input type="text" id="search-query" placeholder="Search datasets...">
+                        <!-- AUTH PANEL -->
+                        <div id="search-auth-panel" style="margin-bottom: 2rem;">
+                            <div class="lcars-header-block" style="border-color: var(--october-sunset);">
+                                <h3 style="margin: 0; color: var(--october-sunset);">SECURITY CLEARANCE REQUIRED</h3>
+                            </div>
+                            <p>To access the AI Core, please input your operational parameters.</p>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>PROVIDER</label>
+                                    <select id="api-provider-select" style="height: 40px; border: 2px solid var(--orange); background: #222; color: var(--honey);">
+                                        <option value="gemini">Google Gemini</option>
+                                        <option value="openai">OpenAI</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>MODEL ID (OPTIONAL)</label>
+                                    <input type="text" id="api-model-input" placeholder="gemini-1.5-flash" style="height: 40px;">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>ENCRYPTION KEY</label>
+                                <div style="display: flex; gap: 1rem;">
+                                    <input type="password" id="api-key-input" placeholder="API Key..." style="flex: 1; height: 40px;">
+                                    <button onclick="lcarslm_auth()" class="pill-btn" style="height: 40px; background-color: var(--october-sunset); color: white; width: 150px;">AUTHENTICATE</button>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-top: 2rem; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+                                <span style="font-size: 0.8rem; color: var(--harvestgold);">OR BYPASS SYSTEM AUTHENTICATION</span>
+                                <button onclick="lcarslm_simulate()" class="pill-btn" style="height: 50px; background-color: var(--nebula); color: black; width: 100%; font-size: 1.1rem;">ACTIVATE SIMULATION MODE</button>
+                            </div>
+                        </div>
+
+                        <!-- QUERY PANEL -->
+                        <div id="search-query-panel" style="display: none; margin-bottom: 2rem;">
+                            <div class="lcars-header-block">
+                                <h3 style="margin: 0;">NATURAL LANGUAGE INTERFACE</h3>
+                            </div>
+                            <div style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+                                <input type="text" id="search-nl-input" placeholder="Computer, locate chest x-rays with pneumonia labels..." style="flex: 1; padding: 1rem; height: 60px;">
+                                <button onclick="catalog_search()" class="pill-btn next-pill" style="height: 60px; width: 120px; font-size: 1.2rem;">QUERY</button>
+                            </div>
+                            <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 0.5rem; gap: 0.5rem;">
+                                <button onclick="lcarslm_simulate()" class="pill-btn" style="height: 30px; background-color: var(--nebula); color: black; font-size: 0.8rem; width: auto; padding: 0 1.5rem;">SWITCH TO SIMULATION</button>
+                                <button onclick="lcarslm_reset()" class="pill-btn" style="height: 30px; background-color: var(--mars); color: white; font-size: 0.8rem; width: auto; padding: 0 1.5rem;">RESET KEY</button>
+                            </div>
+                            <div id="search-status" class="code-content" style="margin-top: 1rem; min-height: 2rem; color: var(--honey);"></div>
+                        </div>
+
+                        <!-- LEGACY CONTROLS (Fallback) -->
+                        <div class="search-controls" style="opacity: 0.5; transform: scale(0.95); transform-origin: top left;">
+                            <span style="width: 100%; color: var(--october-sunset); font-size: 0.8rem; margin-bottom: 0.5rem;">LEGACY DATABASE FILTERS</span>
+                            <input type="text" id="search-query" placeholder="Keyword filter...">
                             <select id="search-modality">
                                 <option value="">All Modalities</option>
                                 <option value="xray">X-Ray</option>
@@ -272,7 +323,7 @@
                                 <option value="classification">Classification</option>
                                 <option value="detection">Detection</option>
                             </select>
-                            <button onclick="catalog_search()">Search</button>
+                            <button onclick="catalog_search()" class="pill-btn" style="height: 40px; background-color: var(--harvestgold);">Filter</button>
                         </div>
 
                         <h2>Available Datasets</h2>

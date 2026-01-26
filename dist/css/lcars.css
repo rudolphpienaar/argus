@@ -1626,6 +1626,9 @@ body.state-locked .seagap-panel {
 }
 
 .pill-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background-color: var(--orange);
     color: black;
     padding: 0.5rem 1.25rem;

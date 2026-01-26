@@ -9,6 +9,10 @@
 
 import type { FileNode } from '../../core/models/types.js';
 
+/**
+ * A simulated terminal emulator styled for the LCARS interface.
+ * Supports basic file system navigation and process execution commands.
+ */
 export class LCARSTerminal {
     private container: HTMLElement;
     private output: HTMLElement;
@@ -46,6 +50,12 @@ export class LCARSTerminal {
         ]
     };
 
+    /**
+     * Creates a new LCARSTerminal instance.
+     * 
+     * @param elementId - The ID of the DOM element to mount the terminal in.
+     * @throws {Error} If the element is not found.
+     */
     constructor(elementId: string) {
         const el = document.getElementById(elementId);
         if (!el) throw new Error(`Terminal container ${elementId} not found`);
@@ -92,11 +102,13 @@ export class LCARSTerminal {
 
     /**
      * Mounts a gathered cohort into the VFS.
+     * 
+     * @param cohort - The FileNode representing the gathered data.
      */
     public mount(cohort: FileNode): void {
         this.fileSystem = cohort;
         // Find /home/developer and add 'data' folder
-        const devFolder = this.findNode(this.vfsRoot, ['home', 'developer']);
+        const devFolder: FileNode | undefined = this.findNode(this.vfsRoot, ['home', 'developer']);
         if (devFolder && devFolder.children) {
             // Remove existing data folder if any
             devFolder.children = devFolder.children.filter(c => c.name !== 'data');
@@ -115,9 +127,9 @@ export class LCARSTerminal {
     private bindEvents(): void {
         this.container.addEventListener('click', () => this.input.focus());
 
-        this.input.addEventListener('keydown', (e) => {
+        this.input.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Enter') {
-                const cmd = this.input.value.trim();
+                const cmd: string = this.input.value.trim();
                 this.history.push(cmd);
                 this.historyIndex = this.history.length;
                 this.println(`${this.getPrompt()} ${cmd}`);
@@ -145,9 +157,9 @@ export class LCARSTerminal {
 
     private execute(cmdStr: string): void {
         if (!cmdStr) return;
-        const parts = cmdStr.split(/\s+/);
-        const cmd = parts[0].toLowerCase();
-        const args = parts.slice(1);
+        const parts: string[] = cmdStr.split(/\s+/);
+        const cmd: string = parts[0].toLowerCase();
+        const args: string[] = parts.slice(1);
 
         switch (cmd) {
             case 'help':
@@ -346,14 +358,14 @@ export class LCARSTerminal {
     }
 
     private findNode(root: FileNode, pathParts: string[]): FileNode | undefined {
-        let current = root;
+        let current: FileNode = root;
         // Skip 'root' in path traversal if it's implicit, but my logic above uses 'home' as first part
         // The pathParts usually start after root. 
         // Logic: Root children are 'home'. pathParts[0] is 'home'.
         
         for (const part of pathParts) {
             if (!current.children) return undefined;
-            const next = current.children.find(c => c.name === part);
+            const next: FileNode | undefined = current.children.find(c => c.name === part);
             if (!next) return undefined;
             current = next;
         }

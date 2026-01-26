@@ -19,7 +19,9 @@ import type {
 
 import { costEstimate_calculate } from './core/logic/costs.js';
 import { filesystem_create } from './core/logic/filesystem.js';
+import { DATASETS } from './core/data/datasets.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
+import { LCARSEngine } from './lcarslm/engine.js';
 import { VERSION, GIT_HASH } from './generated/version.js';
 
 // ============================================================================
@@ -29,84 +31,31 @@ import { VERSION, GIT_HASH } from './generated/version.js';
 type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 type GutterStatus = 'idle' | 'active' | 'success' | 'error';
 
+declare global {
+    interface Window {
+        stage_advanceTo: typeof stage_advanceTo;
+        station_click: typeof station_click;
+        stage_next: typeof stage_next;
+        catalog_search: typeof catalog_search;
+        dataset_toggle: typeof dataset_toggle;
+        filePreview_show: typeof filePreview_show;
+        training_launch: typeof training_launch;
+        training_abort: typeof training_abort;
+        model_publish: typeof model_publish;
+        persona_switch: typeof persona_switch;
+        ui_toggleTopFrame: typeof ui_toggleTopFrame;
+        user_authenticate: typeof user_authenticate;
+        user_logout: typeof user_logout;
+        role_select: typeof role_select;
+        lcarslm_auth: typeof lcarslm_auth;
+        lcarslm_reset: typeof lcarslm_reset;
+        lcarslm_simulate: typeof lcarslm_simulate;
+    }
+}
+
 // ============================================================================
 // Mock Data
 // ============================================================================
-
-const MOCK_DATASETS: Dataset[] = [
-    {
-        id: 'ds-001',
-        name: 'BCH Chest X-ray Cohort',
-        description: 'Pediatric chest radiographs from Boston Children\'s Hospital',
-        modality: 'xray',
-        annotationType: 'classification',
-        imageCount: 293,
-        size: '1.2 GB',
-        cost: 45.00,
-        provider: 'Boston Children\'s Hospital',
-        thumbnail: 'data/BCH/BCH_001.jpg'
-    },
-    {
-        id: 'ds-002',
-        name: 'MGH COVID Collection',
-        description: 'Adult chest X-rays with COVID-19 annotations',
-        modality: 'xray',
-        annotationType: 'classification',
-        imageCount: 249,
-        size: '1.1 GB',
-        cost: 35.00,
-        provider: 'Mass General Hospital',
-        thumbnail: 'data/MGH/MGH_001.jpg'
-    },
-    {
-        id: 'ds-003',
-        name: 'BIDMC Pneumonia Set',
-        description: 'Emergency department chest films labeled for pneumonia',
-        modality: 'xray',
-        annotationType: 'detection',
-        imageCount: 177,
-        size: '0.8 GB',
-        cost: 25.00,
-        provider: 'Beth Israel Deaconess',
-        thumbnail: 'data/BIDMC/BIDMC_001.jpg'
-    },
-    {
-        id: 'ds-004',
-        name: 'BWH Thoracic Segments',
-        description: 'High-resolution chest X-rays with organ segmentation',
-        modality: 'xray',
-        annotationType: 'segmentation',
-        imageCount: 223,
-        size: '1.5 GB',
-        cost: 40.00,
-        provider: 'Brigham and Women\'s',
-        thumbnail: 'data/BWH/BWH_001.jpg'
-    },
-    {
-        id: 'ds-005',
-        name: 'Brain MRI Segmentation',
-        description: 'Brain Tumor MRI Dataset (Glioma) with generated masks',
-        modality: 'mri',
-        annotationType: 'segmentation',
-        imageCount: 20,
-        size: '18 MB',
-        cost: 15.00,
-        provider: 'Kaggle (Masoud Nickparvar)',
-        thumbnail: 'data/KaggleBrain/Training/glioma/Tr-gl_0010.jpg'
-    },
-    {
-        id: 'ds-006',
-        name: 'Histology Segmentation',
-        description: 'Microscopic white blood cell images with ground truth masks',
-        modality: 'pathology',
-        annotationType: 'segmentation',
-        imageCount: 20,
-        size: '15 MB',
-        cost: 5.00,
-        provider: 'Jiangxi University',
-        thumbnail: 'data/WBC/images/WBC_001.bmp'
-    }
-];
 
 const MOCK_NODES: TrustedDomainNode[] = [
     { id: 'td-001', name: 'BCH-TD-01', institution: "Boston Children's Hospital", status: 'initializing', progress: 0, samplesProcessed: 0, totalSamples: 293 },
@@ -130,6 +79,7 @@ const state: AppState & { currentPersona: Persona } = {
 };
 
 let terminal: LCARSTerminal | null = null;
+let lcarsEngine: LCARSEngine | null = null;
 let trainingInterval: number | null = null;
 let lossChart: { ctx: CanvasRenderingContext2D; data: number[] } | null = null;
 
@@ -858,19 +808,117 @@ function role_select(persona: Persona): void {
     stage_advanceTo('search');
 }
 
+/**
+ * Initializes the LCARSLM Engine if API key is present.
+ */
+function lcarslm_initialize(): void {
+    const apiKey: string | null = localStorage.getItem('ARGUS_API_KEY');
+    const provider: string | null = localStorage.getItem('ARGUS_PROVIDER');
+    const model: string | null = localStorage.getItem('ARGUS_MODEL') || 'default';
+    
+    if (apiKey && provider) {
+        lcarsEngine = new LCARSEngine({
+            apiKey,
+            model: model,
+            provider: provider as 'openai' | 'gemini'
+        });
+        searchUI_updateState('ready');
+    } else {
+        searchUI_updateState('auth-required');
+    }
+}
+
+/**
+ * Saves the API key and initializes the engine.
+ */
+function lcarslm_auth(): void {
+    const input: HTMLInputElement = document.getElementById('api-key-input') as HTMLInputElement;
+    const modelInput: HTMLInputElement = document.getElementById('api-model-input') as HTMLInputElement;
+    const providerSelect: HTMLSelectElement = document.getElementById('api-provider-select') as HTMLSelectElement;
+    
+    const key: string = input.value.trim();
+    const provider: string = providerSelect.value;
+    const model: string = modelInput.value.trim() || 'default';
+
+    if (key.length > 5) {
+        localStorage.setItem('ARGUS_API_KEY', key);
+        localStorage.setItem('ARGUS_PROVIDER', provider);
+        localStorage.setItem('ARGUS_MODEL', model);
+        lcarslm_initialize();
+    } else {
+        alert('Invalid Key Format.');
+    }
+}
+
+/**
+ * Resets the API key and UI state.
+ */
+function lcarslm_reset(): void {
+    localStorage.removeItem('ARGUS_API_KEY');
+    localStorage.removeItem('ARGUS_PROVIDER');
+    localStorage.removeItem('ARGUS_OPENAI_KEY'); // Clean legacy
+    lcarsEngine = null;
+    searchUI_updateState('auth-required');
+}
+
+/**
+ * Initializes the engine in simulation mode (no API key required).
+ */
+function lcarslm_simulate(): void {
+    lcarsEngine = new LCARSEngine(null);
+    searchUI_updateState('ready');
+}
+
+function searchUI_updateState(status: 'auth-required' | 'ready'): void {
+    const authPanel: HTMLElement | null = document.getElementById('search-auth-panel');
+    const queryPanel: HTMLElement | null = document.getElementById('search-query-panel');
+    
+    if (authPanel && queryPanel) {
+        if (status === 'ready') {
+            authPanel.style.display = 'none';
+            queryPanel.style.display = 'block';
+        } else {
+            authPanel.style.display = 'block';
+            queryPanel.style.display = 'none';
+        }
+    }
+}
+
 // ============================================================================
 // Search Stage Functions
 // ============================================================================
 
 /**
  * Searches the catalog and displays results.
+ * Supports both legacy filters and Natural Language (if enabled).
  */
-function catalog_search(): void {
+async function catalog_search(): Promise<void> {
+    const nlQuery: string = (document.getElementById('search-nl-input') as HTMLInputElement)?.value || '';
+    
+    // If Engine is active and NL query provided
+    if (lcarsEngine && nlQuery.trim().length > 0) {
+        // Show processing state
+        const statusEl: HTMLElement | null = document.getElementById('search-status');
+        if (statusEl) statusEl.textContent = 'COMPUTING...';
+        
+        try {
+            const response = await lcarsEngine.query(nlQuery);
+            datasetResults_render(response.relevantDatasets);
+            
+            if (statusEl) statusEl.innerHTML = `<span class="highlight">${response.answer}</span>`;
+        } catch (e: any) {
+            if (statusEl) statusEl.innerHTML = `<span class="error">ERROR: ${e.message || 'UNABLE TO CONNECT TO AI CORE'}</span>`;
+            console.error(e);
+        }
+        return;
+    }
+
+    // Fallback to legacy filters
     const query: string = (document.getElementById('search-query') as HTMLInputElement)?.value.toLowerCase() || '';
     const modality: string = (document.getElementById('search-modality') as HTMLSelectElement)?.value || '';
     const annotation: string = (document.getElementById('search-annotation') as HTMLSelectElement)?.value || '';
 
-    const filtered: Dataset[] = MOCK_DATASETS.filter(ds => {
+    const filtered: Dataset[] = DATASETS.filter(ds => {
         const matchesQuery: boolean = !query || ds.name.toLowerCase().includes(query) || ds.description.toLowerCase().includes(query);
         const matchesModality: boolean = !modality || ds.modality === modality;
         const matchesAnnotation: boolean = !annotation || ds.annotationType === annotation;
@@ -878,11 +926,6 @@ function catalog_search(): void {
     });
 
     datasetResults_render(filtered);
-
-    // Flash gutter on search
-    gutter_setStatus(1, 'active');
-    setTimeout(() => gutter_setStatus(1, 'success'), 200);
-    setTimeout(() => gutter_setStatus(1, 'idle'), 600);
 }
 
 /**
@@ -916,7 +959,7 @@ function datasetResults_render(datasets: Dataset[]): void {
  * @param datasetId - The dataset ID to toggle
  */
 function dataset_toggle(datasetId: string): void {
-    const dataset: Dataset | undefined = MOCK_DATASETS.find(ds => ds.id === datasetId);
+    const dataset: Dataset | undefined = DATASETS.find(ds => ds.id === datasetId);
     if (!dataset) return;
 
     const index: number = state.selectedDatasets.findIndex(ds => ds.id === datasetId);
@@ -1378,24 +1421,30 @@ function app_initialize(): void {
     // Set initial gutter state
     gutter_setStatus(1, 'active');
 
+    // Initialize LCARSLM
+    lcarslm_initialize();
+
     // Handle initial login state
     stage_advanceTo(state.currentStage);
 
     // Expose functions to window for onclick handlers
-    (window as unknown as Record<string, unknown>).stage_advanceTo = stage_advanceTo;
-    (window as unknown as Record<string, unknown>).station_click = station_click;
-    (window as unknown as Record<string, unknown>).stage_next = stage_next;
-    (window as unknown as Record<string, unknown>).catalog_search = catalog_search;
-    (window as unknown as Record<string, unknown>).dataset_toggle = dataset_toggle;
-    (window as unknown as Record<string, unknown>).filePreview_show = filePreview_show;
-    (window as unknown as Record<string, unknown>).training_launch = training_launch;
-    (window as unknown as Record<string, unknown>).training_abort = training_abort;
-    (window as unknown as Record<string, unknown>).model_publish = model_publish;
-    (window as unknown as Record<string, unknown>).persona_switch = persona_switch;
-    (window as unknown as Record<string, unknown>).ui_toggleTopFrame = ui_toggleTopFrame;
-    (window as unknown as Record<string, unknown>).user_authenticate = user_authenticate;
-    (window as unknown as Record<string, unknown>).user_logout = user_logout;
-    (window as unknown as Record<string, unknown>).role_select = role_select;
+    window.stage_advanceTo = stage_advanceTo;
+    window.station_click = station_click;
+    window.stage_next = stage_next;
+    window.catalog_search = catalog_search;
+    window.dataset_toggle = dataset_toggle;
+    window.filePreview_show = filePreview_show;
+    window.training_launch = training_launch;
+    window.training_abort = training_abort;
+    window.model_publish = model_publish;
+    window.persona_switch = persona_switch;
+    window.ui_toggleTopFrame = ui_toggleTopFrame;
+    window.user_authenticate = user_authenticate;
+    window.user_logout = user_logout;
+    window.role_select = role_select;
+    window.lcarslm_auth = lcarslm_auth;
+    window.lcarslm_reset = lcarslm_reset;
+    window.lcarslm_simulate = lcarslm_simulate;
 }
 
 // Initialize on DOM ready
