@@ -103,7 +103,7 @@ export class LCARSTerminal {
 
         this.bindEvents();
         this.println('ATLAS Resource Graphical User System [Version 1.4.0]');
-        this.println('Copyright (c) 2026 Federation Computer Systems');
+        this.println('Copyright (c) 2026 Federated Computer System');
         this.println('');
     }
 
@@ -170,7 +170,20 @@ export class LCARSTerminal {
 
         switch (cmd) {
             case 'help':
-                this.println('Available commands: ls, cd, pwd, cat, mkdir, touch, rm, whoami, date, echo, clear, python, mount');
+                this.println('<span class="highlight">ARGUS INTELLIGENCE CONSOLE - OPERATIONAL GUIDE</span>');
+                this.println('<span class="dim">================================================================</span>');
+                this.println('<span class="success">TERMINAL-DRIVEN WORKFLOW:</span>');
+                this.println('  <span class="highlight">search &lt;query&gt;</span>  - Scan catalog and display matching datasets.');
+                this.println('  <span class="highlight">add &lt;id&gt;</span>         - Toggle dataset selection into cohort buffer.');
+                this.println('  <span class="highlight">review</span>           - Switch to Gather view to inspect cohort/costs.');
+                this.println('  <span class="highlight">mount</span>            - Finalize cohort and mount Virtual Filesystem.');
+                this.println('');
+                this.println('<span class="success">SYSTEM COMMANDS:</span>');
+                this.println('  <span class="highlight">ls / cd / pwd</span>    - Navigate the Virtual Filesystem.');
+                this.println('  <span class="highlight">cat &lt;file&gt;</span>       - Read file contents.');
+                this.println('  <span class="highlight">python &lt;script&gt;</span>  - Execute processing scripts (e.g., train.py).');
+                this.println('  <span class="highlight">clear</span>            - Purge terminal buffer.');
+                this.println('<span class="dim">================================================================</span>');
                 break;
             case 'clear':
                 this.output.innerHTML = '';

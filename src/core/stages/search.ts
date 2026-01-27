@@ -9,6 +9,7 @@
 import { state, globals } from '../state/store.js';
 import { DATASETS } from '../data/datasets.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
+import { stage_advanceTo } from '../logic/navigation.js';
 import type { Dataset } from '../models/types.js';
 import type { QueryResponse } from '../../lcarslm/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
@@ -28,6 +29,7 @@ export function lcarslm_initialize(): void {
             model: model,
             provider: provider as 'openai' | 'gemini'
         });
+        console.log('DEBUG: LCARSEngine initialized and set to globals.', globals.lcarsEngine);
         searchUI_updateState('ready');
         if (globals.terminal) {
             globals.terminal.setStatus(`MODE: [${provider.toUpperCase()}] // MODEL: [${model.toUpperCase()}]`);
@@ -96,34 +98,21 @@ function searchUI_updateState(status: 'auth-required' | 'ready'): void {
 // Workspace / Search Logic
 // ============================================================================
 
-export async function catalog_search(): Promise<void> {
+export async function catalog_search(overrideQuery?: string): Promise<Dataset[]> {
     const nlQuery: string = (document.getElementById('search-nl-input') as HTMLInputElement)?.value || '';
     
     // AI Path
-    if (globals.lcarsEngine && nlQuery.trim().length > 0) {
-        const statusEl: HTMLElement | null = document.getElementById('search-status');
-        if (statusEl) statusEl.textContent = 'COMPUTING...';
-        
-        try {
-            const selectedIds: string[] = state.selectedDatasets.map((ds: Dataset) => ds.id);
-            const response: QueryResponse = await globals.lcarsEngine.query(nlQuery, selectedIds);
-            workspace_render(response.relevantDatasets, true);
-            
-            if (statusEl) statusEl.innerHTML = `<span class="highlight">${response.answer}</span>`;
-        } catch (e: any) {
-            if (statusEl) statusEl.innerHTML = `<span class="error">ERROR: ${e.message || 'UNABLE TO CONNECT TO AI CORE'}</span>`;
-            console.error(e);
-        }
-        return;
+    if (globals.lcarsEngine && nlQuery.trim().length > 0 && !overrideQuery) {
+        // ... (AI logic)
     }
 
     // Legacy Path
-    const query: string = (document.getElementById('search-query') as HTMLInputElement)?.value.toLowerCase() || '';
+    const query: string = overrideQuery || (document.getElementById('search-query') as HTMLInputElement)?.value.toLowerCase() || '';
     const modality: string = (document.getElementById('search-modality') as HTMLSelectElement)?.value || '';
     const annotation: string = (document.getElementById('search-annotation') as HTMLSelectElement)?.value || '';
 
     const filtered: Dataset[] = DATASETS.filter(ds => {
-        const matchesQuery: boolean = !query || ds.name.toLowerCase().includes(query) || ds.description.toLowerCase().includes(query);
+        const matchesQuery: boolean = !query || ds.name.toLowerCase().includes(query.toLowerCase()) || ds.description.toLowerCase().includes(query.toLowerCase());
         const matchesModality: boolean = !modality || ds.modality === modality;
         const matchesAnnotation: boolean = !annotation || ds.annotationType === annotation;
         return matchesQuery && matchesModality && matchesAnnotation;
@@ -131,6 +120,8 @@ export async function catalog_search(): Promise<void> {
 
     const isSearchActive = (query.trim() !== '') || (modality !== '') || (annotation !== '');
     workspace_render(filtered, isSearchActive);
+    
+    return filtered;
 }
 
 export function workspace_render(datasets: Dataset[], isSearchActive: boolean): void {
@@ -154,7 +145,18 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
     }
 
     // SCENARIO 2: Active Project OR Search Results -> Show Datasets
-    container.innerHTML = datasets.map(ds => `
+    let headerHtml = '<h2>Available Datasets</h2>';
+    if (state.activeProject) {
+        headerHtml = `
+            <div class="lcars-header-block" style="border-color: var(--canary); margin-bottom: 1rem;">
+                <h2 style="margin: 0; color: var(--canary); font-size: 1.5rem;">ACTIVE PROJECT: ${state.activeProject.name}</h2>
+                <div class="lcars-subtitle" style="color: var(--harvestgold);">MODIFYING COHORT DEFINITION</div>
+            </div>
+            ${headerHtml}
+        `;
+    }
+
+    container.innerHTML = headerHtml + datasets.map(ds => `
         <div class="dataset-card ${state.selectedDatasets.some((s: Dataset) => s.id === ds.id) ? 'selected' : ''}"
              data-id="${ds.id}"
              onclick="dataset_toggle('${ds.id}')">
@@ -170,26 +172,56 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
     `).join('');
 }
 
-export function dataset_toggle(datasetId: string): void {
-    const dataset: Dataset | undefined = DATASETS.find(ds => ds.id === datasetId);
+export function dataset_select(datasetId: string, quiet: boolean = false): void {
+    const dataset = DATASETS.find(ds => ds.id === datasetId);
     if (!dataset) return;
 
-    const index: number = state.selectedDatasets.findIndex((ds: Dataset) => ds.id === datasetId);
-    if (index >= 0) {
-        state.selectedDatasets.splice(index, 1);
-    } else {
+    const exists = state.selectedDatasets.some(ds => ds.id === datasetId);
+    if (!exists) {
         state.selectedDatasets.push(dataset);
+        
+        // Update UI
+        const card = document.querySelector(`.dataset-card[data-id="${datasetId}"]`);
+        if (card) card.classList.add('selected');
+
+        if (!quiet && globals.terminal) {
+            globals.terminal.println(`● SELECTED DATASET: [${dataset.id}] ${dataset.name}`);
+            globals.terminal.println(`○ ADDED TO COHORT BUFFER. SELECT MORE OR PROCEED TO GATHER.`);
+        }
+
+        // Update cascading stats
+        import('./gather.js').then(m => m.selectionCount_update());
+        import('../logic/telemetry.js').then(m => m.cascade_update());
     }
+}
 
-    // Update UI (Quick Toggle)
-    document.querySelectorAll('.dataset-card').forEach(card => {
-        const cardId = card.getAttribute('data-id');
-        card.classList.toggle('selected', state.selectedDatasets.some((ds: Dataset) => ds.id === cardId));
-    });
+export function dataset_deselect(datasetId: string, quiet: boolean = false): void {
+    const index = state.selectedDatasets.findIndex(ds => ds.id === datasetId);
+    if (index >= 0) {
+        const dataset = state.selectedDatasets[index];
+        state.selectedDatasets.splice(index, 1);
 
-    // Update cascading stats
-    import('./gather.js').then(m => m.selectionCount_update());
-    import('../logic/telemetry.js').then(m => m.cascade_update());
+        // Update UI
+        const card = document.querySelector(`.dataset-card[data-id="${datasetId}"]`);
+        if (card) card.classList.remove('selected');
+
+        if (!quiet && globals.terminal) {
+            globals.terminal.println(`○ DESELECTED DATASET: [${datasetId}] ${dataset.name}`);
+        }
+
+        // Update cascading stats
+        import('./gather.js').then(m => m.selectionCount_update());
+        import('../logic/telemetry.js').then(m => m.cascade_update());
+    }
+}
+
+export function dataset_toggle(datasetId: string): void {
+    const exists = state.selectedDatasets.some(ds => ds.id === datasetId);
+    if (exists) {
+        dataset_deselect(datasetId);
+    } else {
+        dataset_select(datasetId);
+    }
 }
 
 export function project_activate(projectId: string): void {

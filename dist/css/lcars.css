@@ -885,8 +885,24 @@ hr {
 }
 
 .dataset-card.selected {
-    border-color: var(--sky);
-    box-shadow: 0 0 10px var(--sky);
+    background: var(--canary);
+    border-color: white;
+    box-shadow: 0 0 25px var(--canary);
+    transform: scale(1.05);
+    z-index: 10;
+}
+
+.dataset-card.selected h4,
+.dataset-card.selected .meta,
+.dataset-card.selected .cost,
+.dataset-card.selected .meta span {
+    color: black !important;
+    text-shadow: none;
+    font-weight: bold;
+}
+
+.dataset-card.selected .thumbnail {
+    border: 2px solid black;
 }
 
 .dataset-card .thumbnail {
@@ -1221,8 +1237,9 @@ hr {
     50% { opacity: 1; }
 }
 
-.blink {
-    animation: blink 2s infinite;
+.status-alert {
+    color: var(--canary);
+    text-shadow: 0 0 5px var(--canary);
 }
 
 @keyframes pulse {
@@ -1361,7 +1378,7 @@ body.state-locked .seagap-panel {
 
 .tele-content {
     padding: 5px;
-    font-family: 'Courier New', monospace;
+    font-family: 'Share Tech Mono', monospace;
     font-size: 0.75rem;
     line-height: 1.2;
     color: var(--honey);
@@ -1768,7 +1785,7 @@ body.state-locked .next-pill {
     padding: 1.25rem;
     display: flex;
     flex-direction: column;
-    font-family: 'Antonio', sans-serif; /* Consistent LCARS font */
+    font-family: 'Share Tech Mono', monospace;
     color: var(--daybreak);
     overflow: hidden;
     transition: all 0.3s ease;
@@ -1776,7 +1793,6 @@ body.state-locked .next-pill {
 
 /* Developer Mode: Monofont and Mixed Case */
 .lcars-terminal-screen.developer-mode {
-    font-family: 'Inconsolata', 'Courier New', monospace;
     color: var(--canary);
 }
 
@@ -1803,7 +1819,6 @@ body.state-locked .next-pill {
     border-top: 1px solid var(--rich-pumpkin);
     padding-top: 0.75rem;
     font-weight: bold;
-    text-transform: uppercase; /* Prompt stays caps by default */
 }
 
 .lcars-terminal-screen.developer-mode .lcars-terminal-input-line {

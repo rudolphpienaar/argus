@@ -18,6 +18,7 @@ import type {
     AppState
 } from './core/models/types.js';
 
+import { state, globals } from './core/state/store.js';
 import { costEstimate_calculate } from './core/logic/costs.js';
 import { filesystem_create } from './core/logic/filesystem.js';
 import { DATASETS } from './core/data/datasets.js';
@@ -31,7 +32,7 @@ import { gutter_setStatus, gutter_resetAll } from './ui/gutters.js';
 import { monitor_initialize, training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
-import { catalog_search, dataset_toggle, workspace_render } from './core/stages/search.js';
+import { catalog_search, dataset_toggle, dataset_select, dataset_deselect, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize } from './core/stages/search.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
 import { LCARSEngine } from './lcarslm/engine.js';
 import type { QueryResponse } from './lcarslm/types.js';
@@ -71,20 +72,9 @@ declare global {
 // Application State
 // ============================================================================
 
-const state: AppState & { currentPersona: Persona } = {
-    currentPersona: 'developer',
-    currentStage: 'login',
-    selectedDatasets: [],
-    activeProject: null,
-    virtualFilesystem: null,
-    costEstimate: { dataAccess: 0, compute: 0, storage: 0, total: 0 },
-    trainingJob: null
-};
+// State is now imported from core/state/store.ts
 
 let terminal: LCARSTerminal | null = null;
-let lcarsEngine: LCARSEngine | null = null;
-let trainingInterval: number | null = null;
-let lossChart: { ctx: CanvasRenderingContext2D; data: number[] } | null = null;
 
 // ============================================================================
 // SeaGaP Station Functions
@@ -277,92 +267,11 @@ function ui_toggleTopFrame(event: Event): void {
 
 // Persona functions have been moved to core/stages/login.ts
 
-/**
- * Initializes the LCARSLM Engine if API key is present.
- */
-function lcarslm_initialize(): void {
-    const apiKey: string | null = localStorage.getItem('ARGUS_API_KEY');
-    const provider: string | null = localStorage.getItem('ARGUS_PROVIDER');
-    const model: string | null = localStorage.getItem('ARGUS_MODEL') || 'default';
-    
-    if (apiKey && provider) {
-        lcarsEngine = new LCARSEngine({
-            apiKey,
-            model: model,
-            provider: provider as 'openai' | 'gemini'
-        });
-        searchUI_updateState('ready');
-        if (terminal) {
-            terminal.setStatus(`MODE: [${provider.toUpperCase()}] // MODEL: [${model.toUpperCase()}]`);
-            terminal.println(`>> AI CORE LINK ESTABLISHED: PROVIDER [${provider.toUpperCase()}]`);
-        }
-    } else {
-        searchUI_updateState('auth-required');
-    }
-}
+// ============================================================================
+// AI / Auth Logic
+// ============================================================================
 
-/**
- * Saves the API key and initializes the engine.
- */
-function lcarslm_auth(): void {
-    const input: HTMLInputElement = document.getElementById('api-key-input') as HTMLInputElement;
-    const modelInput: HTMLInputElement = document.getElementById('api-model-input') as HTMLInputElement;
-    const providerSelect: HTMLSelectElement = document.getElementById('api-provider-select') as HTMLSelectElement;
-    
-    const key: string = input.value.trim();
-    const provider: string = providerSelect.value;
-    const model: string = modelInput.value.trim() || 'default';
-
-    if (key.length > 5) {
-        localStorage.setItem('ARGUS_API_KEY', key);
-        localStorage.setItem('ARGUS_PROVIDER', provider);
-        localStorage.setItem('ARGUS_MODEL', model);
-        lcarslm_initialize();
-    } else {
-        alert('Invalid Key Format.');
-    }
-}
-
-/**
- * Resets the API key and UI state.
- */
-function lcarslm_reset(): void {
-    localStorage.removeItem('ARGUS_API_KEY');
-    localStorage.removeItem('ARGUS_PROVIDER');
-    localStorage.removeItem('ARGUS_OPENAI_KEY'); // Clean legacy
-    lcarsEngine = null;
-    searchUI_updateState('auth-required');
-}
-
-/**
- * Initializes the engine in simulation mode (no API key required).
- */
-function lcarslm_simulate(): void {
-    lcarsEngine = new LCARSEngine(null);
-    searchUI_updateState('ready');
-    if (terminal) {
-        terminal.setStatus('MODE: [SIMULATION] // EMULATION ACTIVE');
-        terminal.println('>> AI CORE: SIMULATION MODE ACTIVE. EMULATING NEURAL RESPONSES.');
-    }
-}
-
-function searchUI_updateState(status: 'auth-required' | 'ready'): void {
-    const authPanel: HTMLElement | null = document.getElementById('search-auth-panel');
-    const queryPanel: HTMLElement | null = document.getElementById('search-query-panel');
-    const statusPanel: HTMLElement | null = document.getElementById('search-status-panel');
-    
-    if (authPanel && queryPanel) {
-        if (status === 'ready') {
-            authPanel.style.display = 'none';
-            queryPanel.style.display = 'block';
-            if (statusPanel) statusPanel.style.display = 'block';
-        } else {
-            authPanel.style.display = 'block';
-            queryPanel.style.display = 'none';
-            if (statusPanel) statusPanel.style.display = 'none';
-        }
-    }
-}
+// AI/Auth functions have been moved to core/stages/search.ts
 
 // ============================================================================
 // Search Stage Functions
@@ -407,29 +316,98 @@ function searchUI_updateState(status: 'auth-required' | 'ready'): void {
 async function terminal_handleCommand(cmd: string, args: string[]): Promise<void> {
     if (!terminal) return;
 
-    const query: string = [cmd, ...args].join(' ');
+    // Terminal-Driven Workflow Commands
+    if (cmd === 'search') {
+        const query = args.join(' ');
+        terminal.println(`○ SEARCHING CATALOG FOR: "${query}"...`);
+        stage_advanceTo('search');
+        const searchInput = document.getElementById('search-query') as HTMLInputElement;
+        if (searchInput) {
+            searchInput.value = query;
+            const results = await catalog_search(query);
+            
+            if (results && results.length > 0) {
+                terminal.println(`● FOUND ${results.length} MATCHING DATASETS:`);
+                results.forEach(ds => {
+                    if (terminal) terminal.println(`  [<span class="highlight">${ds.id}</span>] ${ds.name} (${ds.modality}/${ds.annotationType})`);
+                });
+            } else {
+                terminal.println(`○ NO MATCHING DATASETS FOUND.`);
+            }
+        }
+        return;
+    }
+
+    if (cmd === 'add') {
+        const targetId = args[0];
+        const dataset = DATASETS.find(ds => ds.id === targetId || ds.name.toLowerCase().includes(targetId.toLowerCase()));
+        if (dataset) {
+            dataset_toggle(dataset.id);
+        } else {
+            terminal.println(`<span class="error">>> ERROR: DATASET "${targetId}" NOT FOUND.</span>`);
+        }
+        return;
+    }
+
+    if (cmd === 'review' || cmd === 'gather') {
+        terminal.println(`● INITIATING COHORT REVIEW...`);
+        stage_advanceTo('gather');
+        return;
+    }
+
+    if (cmd === 'mount') {
+        terminal.println(`● MOUNTING VIRTUAL FILESYSTEM...`);
+        filesystem_build();
+        costs_calculate();
+        stage_advanceTo('process');
+        terminal.println(`<span class="success">>> MOUNT COMPLETE. FILESYSTEM READY.</span>`);
+        return;
+    }
+
+    if (cmd === 'simulate') {
+        terminal.println(`● ACTIVATING SIMULATION PROTOCOLS...`);
+        lcarslm_simulate();
+        return;
+    }
+
+    const query = [cmd, ...args].join(' ');
     
-    if (lcarsEngine) {
+    // Check local globals.lcarsEngine reference (managed by search.ts via store)
+    // Actually, we imported 'globals' from store.ts.
+    // 'lcarslm_initialize' in search.ts sets 'globals.lcarsEngine'.
+    // Here we should check 'globals.lcarsEngine'.
+    
+    if (globals.lcarsEngine) {
         terminal.println('○ CONTACTING AI CORE... PROCESSING...');
         try {
-            const selectedIds: string[] = state.selectedDatasets.map(ds => ds.id);
-            const response: QueryResponse = await lcarsEngine.query(query, selectedIds);
+            const selectedIds: string[] = state.selectedDatasets.map((ds: Dataset) => ds.id);
+            const response: QueryResponse = await globals.lcarsEngine.query(query, selectedIds);
             
             // 1. Process Intent: [SELECT: ds-xxx]
             const selectMatch = response.answer.match(/\[SELECT: (ds-[0-9]+)\]/);
             if (selectMatch) {
                 const datasetId = selectMatch[1];
-                dataset_toggle(datasetId);
+                
+                // If we are selecting a specific new dataset via AI, we should 
+                // probably clear the current selection if it's from a different project
+                // to prevent "Chest X-ray" contamination in a "Histology" request.
+                if (state.activeProject) {
+                    terminal.println(`○ RESETTING PROJECT CONTEXT [${state.activeProject.name}] FOR NEW SELECTION.`);
+                    state.activeProject = null;
+                    state.selectedDatasets = [];
+                    // Force UI to switch from "Project View" to "Dataset Grid"
+                    workspace_render(DATASETS, true);
+                }
+
+                dataset_select(datasetId);
                 terminal.println(`● AFFIRMATIVE. DATASET [${datasetId}] SELECTED AND ADDED TO SESSION BUFFER.`);
             }
 
-            // 2. Process Intent: [ACTION: PROCEED]
             if (response.answer.includes('[ACTION: PROCEED]')) {
                 terminal.println('● AFFIRMATIVE. PREPARING GATHER PROTOCOL.');
                 setTimeout(stage_next, 1000);
             }
 
-            // 3. Clean and Print the Response
             const cleanAnswer = response.answer
                 .replace(/\[SELECT: ds-[0-9]+\]/g, '')
                 .replace(/\[ACTION: PROCEED\]/g, '')
@@ -437,39 +415,23 @@ async function terminal_handleCommand(cmd: string, args: string[]): Promise<void
 
             terminal.println(`<span class="highlight">${cleanAnswer}</span>`);
             
-            // If we are in search stage and datasets were found, update readout
             if (state.currentStage === 'search') {
                 workspace_render(response.relevantDatasets, true);
             }
         } catch (e: any) {
-            terminal.println(`<span class="error">>> ERROR: UNABLE TO ESTABLISH LINK. ${e.message}</span>`);
+            const errorMsg = (e.message || 'UNKNOWN ERROR').toLowerCase();
+            
+            if (errorMsg.includes('quota') || errorMsg.includes('exceeded') || errorMsg.includes('429')) {
+                terminal.println(`<span class="error">>> ERROR: RESOURCE QUOTA EXCEEDED. RATE LIMIT ACTIVE.</span>`);
+                terminal.println(`<span class="warn">>> STANDBY. RETRY IN 30-60 SECONDS.</span>`);
+                terminal.println(`<span class="dim">   (Or type "simulate" to force offline mode)</span>`);
+            } else {
+                terminal.println(`<span class="error">>> ERROR: UNABLE TO ESTABLISH LINK. ${e.message}</span>`);
+            }
         }
     } else {
-        // Local Command Handling (Stub for now, expanded later)
-        if (cmd === 'cd') {
-            if (args[0] === '..') {
-                state.activeProject = null;
-                state.selectedDatasets = [];
-                terminal.setPrompt('ARGUS: SEARCH >');
-                catalog_search(); // Re-render root
-                terminal.println('● NAVIGATING TO ROOT WORKSPACE.');
-            } else {
-                const proj = MOCK_PROJECTS.find(p => p.name === args[0] || p.id === args[0]);
-                if (proj) {
-                    project_activate(proj.id);
-                } else {
-                    terminal.println(`<span class="error">>> ERROR: PROJECT '${args[0]}' NOT FOUND.</span>`);
-                }
-            }
-        } else if (cmd === 'ls') {
-            if (!state.activeProject) {
-                MOCK_PROJECTS.forEach(p => terminal!.println(`<span class="dir">${p.name}/</span>`));
-            } else {
-                state.activeProject.datasets.forEach(d => terminal!.println(`<span class="file">${d.name}</span>`));
-            }
-        } else {
-            terminal.println(`<span class="warn">>> COMMAND NOT RECOGNIZED. AI CORE OFFLINE.</span>`);
-        }
+        terminal.println(`<span class="warn">>> COMMAND NOT RECOGNIZED. AI CORE OFFLINE.</span>`);
+        terminal.println(`<span class="dim">>> SYSTEM UNINITIALIZED. PLEASE AUTHENTICATE OR TYPE "simulate".</span>`);
     }
 }
 
@@ -587,6 +549,7 @@ function app_initialize(): void {
 
     // Initialize Global Intelligence Console
     terminal = new LCARSTerminal('intelligence-console');
+    globals.terminal = terminal;
     terminal.onUnhandledCommand = terminal_handleCommand;
 
     // Listen for stage changes to update Terminal

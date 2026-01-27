@@ -138,13 +138,47 @@ export function filesystem_create(datasets: Dataset[]): FileNode {
                 name: 'validation',
                 type: 'folder',
                 path: '/cohort/validation',
-                children: [
-                    { name: 'images', type: 'folder' as const, path: '', children: [
-                        { name: 'val_001.jpg', type: 'image' as const, path: 'data/NIH/NIH_001.jpg' },
-                        { name: 'val_002.jpg', type: 'image' as const, path: 'data/NIH/NIH_002.jpg' }
-                    ]},
-                    { name: 'labels.csv', type: 'file' as const, path: '', size: '256 KB' }
-                ]
+                children: (() => {
+                    // Determine dominant modality
+                    const modalityCount: Record<string, number> = {};
+                    datasets.forEach(ds => {
+                        modalityCount[ds.modality] = (modalityCount[ds.modality] || 0) + 1;
+                    });
+                    const dominantModality = Object.keys(modalityCount).reduce((a, b) => modalityCount[a] > modalityCount[b] ? a : b, 'xray');
+
+                    if (dominantModality === 'mri') {
+                        return [
+                            { name: 'images', type: 'folder' as const, path: '', children: [
+                                { name: 'val_001.jpg', type: 'image' as const, path: 'data/KaggleBrain/Training/glioma/Tr-gl_0011.jpg' },
+                                { name: 'val_002.jpg', type: 'image' as const, path: 'data/KaggleBrain/Training/glioma/Tr-gl_0012.jpg' }
+                            ]},
+                            { name: 'masks', type: 'folder' as const, path: '', children: [
+                                { name: 'val_001_mask.png', type: 'image' as const, path: 'data/KaggleBrain/masks/Tr-gl_0011_mask.png' },
+                                { name: 'val_002_mask.png', type: 'image' as const, path: 'data/KaggleBrain/masks/Tr-gl_0012_mask.png' }
+                            ]}
+                        ];
+                    } else if (dominantModality === 'pathology') {
+                        return [
+                            { name: 'images', type: 'folder' as const, path: '', children: [
+                                { name: 'val_001.bmp', type: 'image' as const, path: 'data/WBC/images/WBC_010.bmp' },
+                                { name: 'val_002.bmp', type: 'image' as const, path: 'data/WBC/images/WBC_011.bmp' }
+                            ]},
+                            { name: 'masks', type: 'folder' as const, path: '', children: [
+                                { name: 'val_001_mask.png', type: 'image' as const, path: 'data/WBC/masks/WBC_010_mask.png' },
+                                { name: 'val_002_mask.png', type: 'image' as const, path: 'data/WBC/masks/WBC_011_mask.png' }
+                            ]}
+                        ];
+                    } else {
+                        // Default to X-Ray (NIH)
+                        return [
+                            { name: 'images', type: 'folder' as const, path: '', children: [
+                                { name: 'val_001.jpg', type: 'image' as const, path: 'data/NIH/NIH_001.jpg' },
+                                { name: 'val_002.jpg', type: 'image' as const, path: 'data/NIH/NIH_002.jpg' }
+                            ]},
+                            { name: 'labels.csv', type: 'file' as const, path: '', size: '256 KB' }
+                        ];
+                    }
+                })()
             }
         ]
     };

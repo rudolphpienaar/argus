@@ -61,16 +61,28 @@ The context provided to you contains a JSON list of available datasets. Use this
         }
 
         // 1. Context Preparation
-        const relevantDatasets: Dataset[] = DATASETS;
+        let relevantDatasets: Dataset[] = DATASETS;
 
         if (this.isSimulated) {
+            // In simulation, we must manually filter because there is no LLM to do it
+            relevantDatasets = this.retrieve(userText);
+            
             // Simulate processing delay
             await new Promise((resolve: (value: unknown) => void) => setTimeout(resolve, 800));
             
+            // Simple Intent Simulation
+            let intent = "";
+            const selectMatch = userText.match(/(?:select|add|choose)\s+(ds-\d{3})/i);
+            if (selectMatch) {
+                intent = `\n[SELECT: ${selectMatch[1].toLowerCase()}]`;
+            } else if (userText.match(/(?:proceed|next|gather|review)/i)) {
+                intent = `\n[ACTION: PROCEED]`;
+            }
+
             const count: number = relevantDatasets.length;
             const answer: string = count > 0 
-                ? `● AFFIRMATIVE. SCAN COMPLETE.\n○ IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS.\n○ DISPLAYING RESULTS.`
-                : `○ UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR.\n● PLEASE BROADEN SEARCH PARAMETERS.`;
+                ? `● AFFIRMATIVE. SCAN COMPLETE.\n○ IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS.\n○ DISPLAYING RESULTS.${intent}`
+                : `○ UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR.\n● PLEASE BROADEN SEARCH PARAMETERS.${intent}`;
             
             return { answer, relevantDatasets };
         }

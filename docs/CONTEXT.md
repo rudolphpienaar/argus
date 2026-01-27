@@ -9,6 +9,8 @@
 - **2026-01-26**: Removed leaked API keys from test scripts and advised key rotation.
 - **2026-01-26**: Fixed "Project View" visibility bug by forcing initial workspace render state.
 - **2026-01-26**: Completed full refactor of `argus.ts` into modular components.
+- **2026-01-26**: Implemented "Federation Sequence" overlay (Factory -> Distribute -> Train).
+- **2026-01-26**: Fixed terminal input case, search intent logic, and dataset selection UX.
 
 This document captures the development context for continuing work on ARGUS with minimal ramp-up.
 
