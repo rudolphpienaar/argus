@@ -1,0 +1,41 @@
+= ARGUS Architecture
+:toc:
+:toclevels: 3
+
+== 1. Core Philosophy: Robust Vanilla
+ARGUS avoids heavy frontend frameworks (React, Vue) to maintain maximum performance and "snap." However, to avoid state desynchronization issues common in imperative Vanilla JS, we employ a **Pub/Sub (Observer) Pattern**.
+
+== 2. State Management (Pub/Sub)
+
+The application state is centralized in a `Store` that acts as the single source of truth. Components do not mutate state directly; they dispatch **Actions**. The Store mutates the state and broadcasts **Events**. Components subscribe to these events to update the UI.
+
+=== The Flow
+1.  **User Action:** User clicks a dataset card.
+2.  **Action Dispatch:** UI calls `store.toggleDataset(id)`.
+3.  **State Mutation:** Store updates the `selectedDatasets` array.
+4.  **Event Broadcast:** Store emits `EVENTS.DATASET_SELECTION_CHANGED`.
+5.  **Reactivity:**
+    *   `search.ts` hears event -> Highlights the card.
+    *   `gather.ts` hears event -> Rebuilds the VFS tree.
+    *   `telemetry.ts` hears event -> Recalculates cost estimates.
+
+=== Key Components
+
+*   **`src/core/state/events.ts`**: The Event Emitter implementation and Event Type definitions.
+*   **`src/core/state/store.ts`**: The central Store class containing application state and business logic actions.
+
+== 3. Event Catalog
+
+| Event Name | Payload | Triggered By | Listeners (Impact) |
+|---|---|---|---|
+| `STATE_CHANGE` | `AppState` | Any state update | Telemetry (Cascade) |
+| `STAGE_CHANGE` | `newStage: string` | Navigation logic | UI panels, Terminal prompt |
+| `DATASET_SELECTION` | `datasets: Dataset[]` | Search/Terminal | Gather VFS, Cost calc, Search Grid |
+| `PROJECT_LOADED` | `project: Project` | Project selection | VFS mount, Process IDE population |
+| `FEDERATION_START` | `null` | Process 'Launch' | Federation Overlay |
+
+== 4. Virtual Filesystem (VFS)
+The VFS (`src/core/logic/vfs.ts`) is a persistent in-memory object graph representing the file structure.
+*   **Terminal:** Commands like `ls`, `cd` query the VFS directly.
+*   **IDE:** The "Process" stage visualizes the VFS state.
+*   **Sync:** The VFS is updated automatically when a Project is loaded or Datasets are gathered.

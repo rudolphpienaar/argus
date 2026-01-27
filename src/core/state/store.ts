@@ -1,16 +1,20 @@
 /**
- * @file Application State
+ * @file Application Store
  * 
- * Centralized state management for the ARGUS application.
+ * Centralized State Management using Pub/Sub pattern.
+ * Holds the Single Source of Truth and dispatches events on mutation.
  * 
  * @module
  */
 
-import type { AppState, Project, Dataset, TrustedDomainNode } from '../models/types.js';
+import type { AppState, Project, Dataset, TrustedDomainNode, TrainingJob } from '../models/types.js';
+import { VirtualFileSystem } from '../logic/vfs.js';
+import { events, Events } from './events.js';
 
 type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
-export const state: AppState & { currentPersona: Persona } = {
+// Initial State
+const initialState: AppState & { currentPersona: Persona } = {
     currentPersona: 'developer',
     currentStage: 'login',
     selectedDatasets: [],
@@ -20,13 +24,111 @@ export const state: AppState & { currentPersona: Persona } = {
     trainingJob: null
 };
 
-import { VirtualFileSystem } from '../logic/vfs.js';
+class Store {
+    private _state: AppState & { currentPersona: Persona };
+    
+    // Globals (Non-reactive references)
+    public globals = {
+        terminal: null as any,
+        lcarsEngine: null as any,
+        vfs: new VirtualFileSystem(),
+        trainingInterval: null as number | null,
+        lossChart: null as { ctx: CanvasRenderingContext2D; data: number[] } | null
+    };
 
-// Global References (to be populated by modules)
-export const globals = {
-    terminal: null as any, // Typed in usage
-    lcarsEngine: null as any,
-    vfs: new VirtualFileSystem(),
-    trainingInterval: null as number | null,
-    lossChart: null as { ctx: CanvasRenderingContext2D; data: number[] } | null
-};
+    constructor() {
+        this._state = { ...initialState };
+    }
+
+    // Read-only access to state
+    get state() {
+        return this._state;
+    }
+
+    // --- Actions ---
+
+    public setStage(stage: AppState['currentStage']) {
+        if (this._state.currentStage === stage) return;
+        this._state.currentStage = stage;
+        events.emit(Events.STAGE_CHANGED, stage);
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public setPersona(persona: Persona) {
+        this._state.currentPersona = persona;
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public toggleDataset(dataset: Dataset) {
+        const index = this._state.selectedDatasets.findIndex(ds => ds.id === dataset.id);
+        if (index >= 0) {
+            this._state.selectedDatasets.splice(index, 1);
+        } else {
+            this._state.selectedDatasets.push(dataset);
+        }
+        events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public selectDataset(dataset: Dataset) {
+        if (!this._state.selectedDatasets.some(ds => ds.id === dataset.id)) {
+            this._state.selectedDatasets.push(dataset);
+            events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
+            events.emit(Events.STATE_CHANGED, this._state);
+        }
+    }
+
+    public deselectDataset(datasetId: string) {
+        const index = this._state.selectedDatasets.findIndex(ds => ds.id === datasetId);
+        if (index >= 0) {
+            this._state.selectedDatasets.splice(index, 1);
+            events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
+            events.emit(Events.STATE_CHANGED, this._state);
+        }
+    }
+
+    public clearSelection() {
+        if (this._state.selectedDatasets.length > 0) {
+            this._state.selectedDatasets = [];
+            events.emit(Events.DATASET_SELECTION_CHANGED, []);
+            events.emit(Events.STATE_CHANGED, this._state);
+        }
+    }
+
+    public loadProject(project: Project) {
+        this._state.activeProject = project;
+        this._state.selectedDatasets = [...project.datasets];
+        
+        // Implicitly update VFS
+        // (Note: In a pure store, we might just emit PROJECT_LOADED and let vfs listen,
+        // but since vfs is in globals, we can do it here or let listeners handle it.
+        // For purity, we emit.)
+        
+        events.emit(Events.PROJECT_LOADED, project);
+        events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public unloadProject() {
+        this._state.activeProject = null;
+        this._state.selectedDatasets = [];
+        events.emit(Events.PROJECT_LOADED, null);
+        events.emit(Events.DATASET_SELECTION_CHANGED, []);
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public updateCost(estimate: any) {
+        this._state.costEstimate = estimate;
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public setTrainingJob(job: TrainingJob | null) {
+        this._state.trainingJob = job;
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+}
+
+export const store = new Store();
+// Backward compatibility exports for easier refactoring
+export const state = store.state;
+export const globals = store.globals;

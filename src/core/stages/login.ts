@@ -12,12 +12,6 @@ import { stage_advanceTo } from '../logic/navigation.js';
 
 type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
-// We need to access visitedStages to clear it on logout.
-// Since it's currently in argus.ts, we'll need to export it or move it to store.ts.
-// For this step, we'll assume it's being moved to store or managed via navigation.
-// FIXME: Temporary workaround until navigation.ts is extracted.
-const visitedStages: Set<string> = new Set(); 
-
 /**
  * Authenticates the user (mock).
  */

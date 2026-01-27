@@ -7,6 +7,7 @@
  */
 
 import { state } from '../state/store.js';
+import { events, Events } from '../state/events.js';
 import type { AppState, Dataset } from '../models/types.js';
 
 const STAGE_ORDER: readonly string[] = ['search', 'gather', 'process', 'monitor', 'post'] as const;
@@ -17,8 +18,9 @@ const STAGE_ORDER: readonly string[] = ['search', 'gather', 'process', 'monitor'
 
 /**
  * Updates the data cascade display with current metrics or system telemetry.
+ * Triggered automatically by STATE_CHANGED events.
  */
-export function cascade_update(): void {
+function cascade_update(): void {
     const datasetsEl: HTMLElement | null = document.getElementById('cascade-datasets');
     const imagesEl: HTMLElement | null = document.getElementById('cascade-images');
     const costEl: HTMLElement | null = document.getElementById('cascade-cost');
@@ -37,11 +39,8 @@ export function cascade_update(): void {
         if (label2) label2.textContent = 'JOBS';
         if (label3) label3.textContent = 'TRAFFIC';
         if (label4) label4.textContent = 'ACCESS';
-        // Labels 5/6 (GPU/MEM) are static in HTML for now or can be set here
         if (label5) label5.textContent = 'GPU';
         if (label6) label6.textContent = 'MEM';
-
-        // Values are updated via telemetry_update
     } else {
         // Workflow Mode
         if (label1) label1.textContent = 'DATASETS';
@@ -70,6 +69,13 @@ export function cascade_update(): void {
         }
     }
 }
+
+// Subscribe to state changes
+events.on(Events.STATE_CHANGED, () => {
+    cascade_update();
+});
+
+export { cascade_update }; // Keep export for legacy/init compatibility for now
 
 let telemetryCycle: number = 0;
 

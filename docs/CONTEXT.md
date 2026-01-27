@@ -8,6 +8,8 @@
 - **2026-01-26**: Extracting `navigation.ts` to resolve circular dependencies.
 - **2026-01-26**: Removed leaked API keys from test scripts and advised key rotation.
 - **2026-01-26**: Fixed "Project View" visibility bug by forcing initial workspace render state.
+- **2026-01-26**: Started architectural migration to Pub/Sub (Observer) pattern for robust state management.
+- **2026-01-26**: Created `docs/architecture.adoc` to define the new event-driven design.
 - **2026-01-26**: Completed full refactor of `argus.ts` into modular components.
 - **2026-01-26**: Implemented true `VirtualFileSystem` (VFS) with path parsing and terminal synchronization.
 - **2026-01-26**: Enhanced Terminal with Tab Completion, monospaced LCARS fonts, and robust intent handling.
