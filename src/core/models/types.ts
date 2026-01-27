@@ -66,6 +66,18 @@ export interface TrainingJob {
 }
 
 /**
+ * Represents a saved developer project/cohort.
+ */
+export interface Project {
+    id: string;
+    name: string;
+    description: string;
+    created: Date;
+    lastModified: Date;
+    datasets: Dataset[];
+}
+
+/**
  * Represents cost breakdown for a training job.
  */
 export interface CostEstimate {
@@ -81,6 +93,7 @@ export interface CostEstimate {
 export interface AppState {
     currentStage: 'login' | 'role-selection' | 'search' | 'gather' | 'process' | 'monitor' | 'post';
     selectedDatasets: Dataset[];
+    activeProject: Project | null;
     virtualFilesystem: FileNode | null;
     costEstimate: CostEstimate;
     trainingJob: TrainingJob | null;

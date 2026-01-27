@@ -1,6 +1,17 @@
 # ARGUS Development Context
 
+## Recent Refactoring Activity
+- **2026-01-26**: Extracted `telemetry.ts` to resolve circular dependencies.
+- **2026-01-26**: Extracting `monitor.ts` (Monitor stage logic) from `argus.ts`.
+- **2026-01-26**: Cleaning up `argus.ts` by removing extracted logic and adding imports.
+- **2026-01-26**: Extracting `post.ts` and `login.ts` to further decompose the monolith.
+- **2026-01-26**: Extracting `navigation.ts` to resolve circular dependencies.
+- **2026-01-26**: Removed leaked API keys from test scripts and advised key rotation.
+- **2026-01-26**: Fixed "Project View" visibility bug by forcing initial workspace render state.
+- **2026-01-26**: Completed full refactor of `argus.ts` into modular components.
+
 This document captures the development context for continuing work on ARGUS with minimal ramp-up.
+
 
 ## What is ARGUS?
 

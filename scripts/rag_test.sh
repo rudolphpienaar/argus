@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ARGUS RAG Proof-of-Concept Test (Fixed Payload)
-API_KEY="AIzaSyC9-4TzL3AG-EpgYYqiW6GJF_4QDDmPuFY"
+API_KEY="YOUR_API_KEY_HERE"
 MODEL="models/gemini-flash-latest"
 
 CONTEXT="BCH Chest X-ray (ds-001): Pediatric chest radiographs. Brain MRI (ds-005): Brain Tumor MRI Dataset."

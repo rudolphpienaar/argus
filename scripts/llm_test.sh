@@ -1,5 +1,5 @@
 #!/bin/bash
-API_KEY="AIzaSyC9-4TzL3AG-EpgYYqiW6GJF_4QDDmPuFY"
+API_KEY="YOUR_API_KEY_HERE"
 
 for MODEL in "models/gemini-flash-latest" "models/gemini-pro-latest"; do
     echo ">> TESTING FULL ID: $MODEL"
