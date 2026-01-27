@@ -196,6 +196,9 @@ export class LCARSTerminal {
             case 'echo':
                 this.println(args.join(' '));
                 break;
+            case 'python':
+                this.cmd_python(args);
+                break;
             default:
                 if (this.onUnhandledCommand) {
                     await this.onUnhandledCommand(cmd, args);
@@ -231,6 +234,27 @@ export class LCARSTerminal {
             this.updatePrompt();
         } catch (e: any) {
             this.println(`<span class="error">${e.message}</span>`);
+        }
+    }
+
+    private cmd_python(args: string[]): void {
+        if (args.length === 0) {
+            this.println('python: missing file operand');
+            return;
+        }
+        if (args[0] === 'train.py') {
+            this.println('<span class="warn">>> INITIALIZING FEDERATED TRAINING PROTOCOL...</span>');
+            this.println('>> CONTACTING NODES: BCH, MGH, BIDMC, BWH...');
+            setTimeout(() => {
+                const win = window as any;
+                if (typeof win.training_launch === 'function') {
+                    win.training_launch();
+                } else {
+                    this.println('<span class="error">>> ERROR: TRAINING_LAUNCH NOT FOUND.</span>');
+                }
+            }, 1000);
+        } else {
+            this.println(`python: can't open file '${args[0]}': [Errno 2] No such file or directory`);
         }
     }
 

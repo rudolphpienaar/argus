@@ -176,6 +176,7 @@ export function training_launch(): void {
  * Factory Build -> Containerization -> Distribution -> Handshake
  */
 async function federation_sequence(): Promise<void> {
+    console.log('DEBUG: federation_sequence triggered');
     const overlay = document.getElementById('federation-overlay');
     const factoryIcon = document.querySelector('.factory-icon');
     const spokesContainer = document.getElementById('fed-spokes');
