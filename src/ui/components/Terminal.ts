@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { FileNode } from '../../core/models/types.js';
+import { globals } from '../../core/state/store.js';
 
 /**
  * A simulated terminal emulator styled for the LCARS interface.
@@ -21,34 +21,6 @@ export class LCARSTerminal {
     
     private history: string[] = [];
     private historyIndex: number = -1;
-    
-    private fileSystem: FileNode | null = null;
-    private currentPath: string[] = ['home', 'developer']; // default path
-    
-    // Virtual File System State
-    private vfsRoot: FileNode = {
-        name: 'root',
-        type: 'folder',
-        path: '/',
-        children: [
-            {
-                name: 'home',
-                type: 'folder',
-                path: '/home',
-                children: [
-                    {
-                        name: 'developer',
-                        type: 'folder',
-                        path: '/home/developer',
-                        children: [
-                            { name: 'train.py', type: 'file', path: '/home/developer/train.py', size: '2.4 KB' },
-                            { name: 'README.md', type: 'file', path: '/home/developer/README.md', size: '1.1 KB' }
-                        ]
-                    }
-                ]
-            }
-        ]
-    };
 
     /** Callback for handling commands not recognized by the terminal. */
     public onUnhandledCommand: ((cmd: string, args: string[]) => Promise<void>) | null = null;
@@ -105,30 +77,7 @@ export class LCARSTerminal {
         this.println('ATLAS Resource Graphical User System [Version 1.4.0]');
         this.println('Copyright (c) 2026 Federated Computer System');
         this.println('');
-    }
-
-    /**
-     * Mounts a gathered cohort into the VFS.
-     * 
-     * @param cohort - The FileNode representing the gathered data.
-     */
-    public mount(cohort: FileNode): void {
-        this.fileSystem = cohort;
-        // Find /home/developer and add 'data' folder
-        const devFolder: FileNode | undefined = this.findNode(this.vfsRoot, ['home', 'developer']);
-        if (devFolder && devFolder.children) {
-            // Remove existing data folder if any
-            devFolder.children = devFolder.children.filter(c => c.name !== 'data');
-            
-            // Add new mount
-            devFolder.children.push({
-                name: 'data',
-                type: 'folder',
-                path: '/home/developer/data',
-                children: [cohort]
-            });
-        }
-        this.println(`<span class="success">>> MOUNT ESTABLISHED: /home/developer/data/${cohort.name}</span>`);
+        this.updatePrompt();
     }
 
     private bindEvents(): void {
@@ -158,8 +107,39 @@ export class LCARSTerminal {
                     this.historyIndex = this.history.length;
                     this.input.value = '';
                 }
+            } else if (e.key === 'Tab') {
+                e.preventDefault();
+                this.handleTabCompletion();
             }
         });
+    }
+
+    private handleTabCompletion(): void {
+        const value = this.input.value;
+        const parts = value.split(/\s+/);
+        const lastPart = parts[parts.length - 1];
+        if (!lastPart && parts.length > 1) return; // Nothing to complete
+
+        const targetNode = globals.vfs.getCwdNode();
+        if (!targetNode || !targetNode.children) return;
+
+        const matches = targetNode.children.filter(c => 
+            c.name.toLowerCase().startsWith(lastPart.toLowerCase())
+        );
+
+        if (matches.length === 1) {
+            const match = matches[0];
+            const suffix = match.type === 'folder' ? '/' : '';
+            parts[parts.length - 1] = match.name + suffix;
+            this.input.value = parts.join(' ');
+        } else if (matches.length > 1) {
+            // Print options if multiple matches
+            this.println('');
+            const matchNames = matches.map(m => m.name + (m.type === 'folder' ? '/' : ''));
+            this.println(`<span class="dim">MATCHES: ${matchNames.join('  ')}</span>`);
+            this.updatePrompt(); // Redraw prompt line simulation
+            this.println(`${this.getPrompt()} <span class="user-input">${value}</span>`);
+        }
     }
 
     private async execute(cmdStr: string): Promise<void> {
@@ -189,7 +169,7 @@ export class LCARSTerminal {
                 this.output.innerHTML = '';
                 break;
             case 'pwd':
-                this.println('/' + this.currentPath.join('/'));
+                this.println(globals.vfs.getCwd());
                 break;
             case 'ls':
                 this.cmd_ls(args);
@@ -197,17 +177,15 @@ export class LCARSTerminal {
             case 'cd':
                 this.cmd_cd(args);
                 break;
-            case 'cat':
-                this.cmd_cat(args);
-                break;
             case 'mkdir':
-                this.cmd_mkdir(args);
+                try { globals.vfs.mkdir(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
                 break;
             case 'touch':
-                this.cmd_touch(args);
+                try { globals.vfs.touch(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
                 break;
             case 'rm':
-                this.cmd_rm(args);
+                // Stub for rm if needed
+                this.println('<span class="dim">Command not implemented in VFS prototype.</span>');
                 break;
             case 'whoami':
                 this.println('developer');
@@ -217,9 +195,6 @@ export class LCARSTerminal {
                 break;
             case 'echo':
                 this.println(args.join(' '));
-                break;
-            case 'python':
-                this.cmd_python(args);
                 break;
             default:
                 if (this.onUnhandledCommand) {
@@ -231,7 +206,7 @@ export class LCARSTerminal {
     }
 
     private cmd_ls(args: string[]): void {
-        const targetNode = this.getCurrentNode();
+        const targetNode = globals.vfs.getCwdNode();
         if (!targetNode || !targetNode.children) return;
 
         const table = document.createElement('table');
@@ -251,149 +226,17 @@ export class LCARSTerminal {
 
     private cmd_cd(args: string[]): void {
         if (args.length === 0) return;
-        const target = args[0];
-
-        if (target === '..') {
-            if (this.currentPath.length > 0) {
-                this.currentPath.pop();
-            }
-        } else if (target === '~') {
-            this.currentPath = ['home', 'developer'];
-        } else {
-            // Simple relative navigation
-            const currentNode = this.getCurrentNode();
-            const child = currentNode?.children?.find(c => c.name === target && c.type === 'folder');
-            
-            if (child) {
-                this.currentPath.push(child.name);
-            } else {
-                this.println(`<span class="error">cd: ${target}: No such directory</span>`);
-            }
+        try {
+            globals.vfs.cd(args[0]);
+            this.updatePrompt();
+        } catch (e: any) {
+            this.println(`<span class="error">${e.message}</span>`);
         }
-        
-        this.updatePrompt();
     }
 
     private cmd_cat(args: string[]): void {
-        if (args.length === 0) {
-            this.println('cat: missing operand');
-            return;
-        }
-        const target = args[0];
-        const currentNode = this.getCurrentNode();
-        const file = currentNode?.children?.find(c => c.name === target && c.type !== 'folder');
-
-        if (file) {
-            if (file.name.endsWith('.py')) {
-                this.println('<span class="code">import atlas... # (file content hidden)</span>');
-            } else if (file.name.endsWith('.md')) {
-                this.println('# Project README\n\n Federated learning setup for chest x-ray analysis.');
-            } else {
-                this.println(`[Content of ${file.name}]`);
-            }
-        } else {
-            this.println(`cat: ${target}: No such file or directory`);
-        }
-    }
-
-    private cmd_mkdir(args: string[]): void {
-        if (args.length === 0) {
-            this.println('mkdir: missing operand');
-            return;
-        }
-        const target = args[0];
-        const currentNode = this.getCurrentNode();
-        
-        if (currentNode && currentNode.children) {
-            if (currentNode.children.some(c => c.name === target)) {
-                this.println(`mkdir: cannot create directory '${target}': File exists`);
-            } else {
-                currentNode.children.push({
-                    name: target,
-                    type: 'folder',
-                    path: `${currentNode.path === '/' ? '' : currentNode.path}/${target}`,
-                    children: []
-                });
-            }
-        }
-    }
-
-    private cmd_touch(args: string[]): void {
-        if (args.length === 0) {
-            this.println('touch: missing operand');
-            return;
-        }
-        const target = args[0];
-        const currentNode = this.getCurrentNode();
-        
-        if (currentNode && currentNode.children) {
-            if (!currentNode.children.some(c => c.name === target)) {
-                currentNode.children.push({
-                    name: target,
-                    type: 'file',
-                    path: `${currentNode.path === '/' ? '' : currentNode.path}/${target}`,
-                    size: '0 B'
-                });
-            }
-        }
-    }
-
-    private cmd_rm(args: string[]): void {
-        if (args.length === 0) {
-            this.println('rm: missing operand');
-            return;
-        }
-        const target = args[0];
-        const currentNode = this.getCurrentNode();
-        
-        if (currentNode && currentNode.children) {
-            const index = currentNode.children.findIndex(c => c.name === target);
-            if (index !== -1) {
-                const node = currentNode.children[index];
-                if (node.type === 'folder' && !args.includes('-r') && !args.includes('-rf')) {
-                    this.println(`rm: cannot remove '${target}': Is a directory`);
-                } else {
-                    currentNode.children.splice(index, 1);
-                }
-            } else {
-                this.println(`rm: cannot remove '${target}': No such file or directory`);
-            }
-        }
-    }
-
-    private cmd_python(args: string[]): void {
-        if (args[0] === 'train.py') {
-            this.println('<span class="warn">>> INITIALIZING FEDERATED TRAINING PROTOCOL...</span>');
-            this.println('>> CONTACTING NODES: BCH, MGH, BIDMC, BWH...');
-            setTimeout(() => {
-                // Trigger the global training launch function if it exists
-                const win = window as any;
-                if (typeof win.training_launch === 'function') {
-                    win.training_launch();
-                }
-            }, 1000);
-        } else {
-            this.println(`python: can't open file '${args[0]}': [Errno 2] No such file or directory`);
-        }
-    }
-
-    private getCurrentNode(): FileNode | undefined {
-        return this.findNode(this.vfsRoot, this.currentPath);
-    }
-
-    private findNode(root: FileNode, pathParts: string[]): FileNode | undefined {
-        let current: FileNode = root;
-        // Skip 'root' in path traversal if it's implicit, but my logic above uses 'home' as first part
-        // The pathParts usually start after root. 
-        // Logic: Root children are 'home'. pathParts[0] is 'home'.
-        
-        for (const part of pathParts) {
-            if (!current.children) return undefined;
-            const next: FileNode | undefined = current.children.find(c => c.name === part);
-            if (!next) return undefined;
-            current = next;
-        }
-        return current;
+        // Simple stub for now
+        this.println(`[Content of ${args[0]}]`);
     }
 
     /**
@@ -439,8 +282,8 @@ export class LCARSTerminal {
         this.scrollToBottom();
     }
 
-    private updatePrompt(): void {
-        let displayPath = '/' + this.currentPath.join('/');
+    public updatePrompt(): void {
+        let displayPath = globals.vfs.getCwd();
         if (displayPath.startsWith('/home/developer')) {
             displayPath = displayPath.replace('/home/developer', '~');
         }

@@ -6,11 +6,12 @@
  * @module
  */
 
-import { state } from '../state/store.js';
+import { state, globals } from '../state/store.js';
 import { cascade_update } from './telemetry.js';
 import { gutter_setStatus } from '../../ui/gutters.js';
 import { filesystem_build, costs_calculate } from '../stages/gather.js';
 import { monitor_initialize } from '../stages/monitor.js';
+import { populate_ide } from '../stages/process.js';
 import type { AppState } from '../models/types.js';
 
 /** Tracks which SeaGaP stages have been visited for back-navigation */
@@ -113,8 +114,11 @@ export function stage_advanceTo(stageName: AppState['currentStage']): void {
         filesystem_build();
         costs_calculate();
         gutter_setStatus(2, 'active');
+        if (globals.terminal) globals.terminal.updatePrompt();
     } else if (stageName === 'process') {
+        populate_ide();
         gutter_setStatus(3, 'active');
+        if (globals.terminal) globals.terminal.updatePrompt();
     } else if (stageName === 'monitor') {
         setTimeout(monitor_initialize, 50);
         gutter_setStatus(4, 'active');

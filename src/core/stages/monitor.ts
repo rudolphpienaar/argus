@@ -105,6 +105,20 @@ export function trainingStep_simulate(): void {
         }
     });
 
+    // Hacker Telemetry - Terminal Stream
+    if (Math.random() > 0.6 && globals.terminal) {
+        const events = [
+            `[NET] Syncing gradients with node-${Math.floor(Math.random()*4)+1}...`,
+            `[SEC] Verifying homomorphic encryption keys...`,
+            `[GPU] Tensor core utilization at 98%...`,
+            `[FED] Aggregating partial model weights (Round ${Math.floor(job.currentEpoch)})...`,
+            `[OPT] Adjusting learning rate: ${(0.001 * Math.random()).toFixed(5)}`,
+            `[MEM] VRAM Allocation: ${(Math.random() * 10 + 4).toFixed(1)} GB`,
+            `[ERR] Backward pass delta within tolerance.`
+        ];
+        globals.terminal.println(`<span class="dim">${events[Math.floor(Math.random() * events.length)]}</span>`);
+    }
+
     // Pulse gutter during training
     const gutterIndex: number = Math.floor(job.currentEpoch) % 5 + 1;
     gutter_resetAll();

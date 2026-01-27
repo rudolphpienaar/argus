@@ -17,9 +17,18 @@ export function filesystem_build(): void {
     state.virtualFilesystem = root;
     fileTree_render(root);
 
-    if (globals.terminal) {
-        globals.terminal.mount(root);
+    // Mount to global VFS
+    // Use project name or default 'current_cohort'
+    const projectName = state.activeProject ? state.activeProject.name : 'current_cohort';
+    globals.vfs.mountProject(projectName, root);
+    
+    // Auto-cd into the project directory
+    try {
+        globals.vfs.cd(`/home/developer/projects/${projectName}`);
+    } catch(e) {
+        console.error(e);
     }
+    if (globals.terminal) globals.terminal.updatePrompt();
 }
 
 function fileTree_render(node: FileNode): void {

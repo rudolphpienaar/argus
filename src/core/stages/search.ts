@@ -10,6 +10,8 @@ import { state, globals } from '../state/store.js';
 import { DATASETS } from '../data/datasets.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
 import { stage_advanceTo } from '../logic/navigation.js';
+import { filesystem_create } from '../logic/filesystem.js';
+import { populate_ide } from './process.js';
 import type { Dataset } from '../models/types.js';
 import type { QueryResponse } from '../../lcarslm/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
@@ -130,17 +132,22 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
 
     // SCENARIO 1: Root View (No Project, No Search) -> Show Projects
     if (!state.activeProject && !isSearchActive) {
-        container.innerHTML = MOCK_PROJECTS.map(p => `
-            <div class="dataset-card project-card" onclick="project_activate('${p.id}')" style="border-color: var(--honey);">
-                <div class="thumbnail" style="background: var(--honey); display: flex; align-items: center; justify-content: center; color: black; font-weight: bold; font-family: 'Antonio'; font-size: 2rem;">DIR</div>
-                <h4>${p.name}</h4>
-                <div class="meta">
-                    <span>PROJECT FOLDER</span>
-                    <span>${p.datasets.length} datasets</span>
-                    <span>Modified: ${p.lastModified.toLocaleDateString()}</span>
-                </div>
+        container.innerHTML = `
+            <h2>Available Projects</h2>
+            <div class="dataset-grid">
+                ${MOCK_PROJECTS.map(p => `
+                    <div class="dataset-card project-card" onclick="project_activate('${p.id}')" style="border-color: var(--honey);">
+                        <div class="thumbnail" style="background: var(--honey); display: flex; align-items: center; justify-content: center; color: black; font-weight: bold; font-family: 'Antonio'; font-size: 2rem;">DIR</div>
+                        <h4>${p.name}</h4>
+                        <div class="meta">
+                            <span>PROJECT FOLDER</span>
+                            <span>${p.datasets.length} datasets</span>
+                            <span>Modified: ${p.lastModified.toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                `).join('')}
             </div>
-        `).join('');
+        `;
         return;
     }
 
@@ -231,12 +238,20 @@ export function project_activate(projectId: string): void {
     state.activeProject = project;
     state.selectedDatasets = [...project.datasets];
     
+    // 1. Initialize VFS for this project
+    const root = filesystem_create(state.selectedDatasets);
+    globals.vfs.mountProject(project.name, root);
+    globals.vfs.cd(`/home/developer/projects/${project.name}`);
+
+    // 2. Update Terminal
     if (globals.terminal) {
-        globals.terminal.setPrompt(`ARGUS: ~/${project.name} >`);
+        globals.terminal.updatePrompt();
         globals.terminal.println(`● MOUNTING PROJECT: [${project.name.toUpperCase()}]`);
         globals.terminal.println(`○ LOADED ${project.datasets.length} DATASETS.`);
     }
 
-    workspace_render(DATASETS, false);
+    // 3. Jump straight to Process (IDE) stage
+    stage_advanceTo('process');
+    populate_ide();
     import('../logic/telemetry.js').then(m => m.cascade_update());
 }

@@ -27,12 +27,12 @@ import { MOCK_NODES } from './core/data/nodes.js';
 import { cascade_update, telemetry_update } from './core/logic/telemetry.js';
 import { stage_advanceTo, stage_next, station_click, stageIndicators_initialize, STAGE_ORDER, stageButton_setEnabled } from './core/logic/navigation.js';
 import { filesystem_build, filePreview_show, costs_calculate, selectionCount_update } from './core/stages/gather.js';
-import { training_launch, terminal_toggle } from './core/stages/process.js';
+import { training_launch, terminal_toggle, ide_openFile } from './core/stages/process.js';
 import { gutter_setStatus, gutter_resetAll } from './ui/gutters.js';
 import { monitor_initialize, training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
-import { catalog_search, dataset_toggle, dataset_select, dataset_deselect, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize } from './core/stages/search.js';
+import { catalog_search, dataset_toggle, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate, dataset_select } from './core/stages/search.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
 import { LCARSEngine } from './lcarslm/engine.js';
 import type { QueryResponse } from './lcarslm/types.js';
@@ -411,12 +411,24 @@ async function terminal_handleCommand(cmd: string, args: string[]): Promise<void
             const cleanAnswer = response.answer
                 .replace(/\[SELECT: ds-[0-9]+\]/g, '')
                 .replace(/\[ACTION: PROCEED\]/g, '')
+                .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
+                .replace(/\[FILTER:.*?\]/g, '')
                 .trim();
 
             terminal.println(`<span class="highlight">${cleanAnswer}</span>`);
             
-            if (state.currentStage === 'search') {
-                workspace_render(response.relevantDatasets, true);
+            // Only update the visual grid if the AI indicates a search/list intent
+            if (state.currentStage === 'search' && response.answer.includes('[ACTION: SHOW_DATASETS]')) {
+                let datasetsToShow = response.relevantDatasets;
+                
+                // Check for filter instruction
+                const filterMatch = response.answer.match(/\[FILTER: (.*?)\]/);
+                if (filterMatch) {
+                    const ids = filterMatch[1].split(',').map(s => s.trim());
+                    datasetsToShow = datasetsToShow.filter(ds => ids.includes(ds.id));
+                }
+                
+                workspace_render(datasetsToShow, true);
             }
         } catch (e: any) {
             const errorMsg = (e.message || 'UNKNOWN ERROR').toLowerCase();
@@ -433,30 +445,6 @@ async function terminal_handleCommand(cmd: string, args: string[]): Promise<void
         terminal.println(`<span class="warn">>> COMMAND NOT RECOGNIZED. AI CORE OFFLINE.</span>`);
         terminal.println(`<span class="dim">>> SYSTEM UNINITIALIZED. PLEASE AUTHENTICATE OR TYPE "simulate".</span>`);
     }
-}
-
-/**
- * Activates a project workspace.
- * 
- * @param projectId - The ID of the project to load.
- */
-function project_activate(projectId: string): void {
-    const project = MOCK_PROJECTS.find(p => p.id === projectId);
-    if (!project) return;
-
-    state.activeProject = project;
-    state.selectedDatasets = [...project.datasets]; // Copy datasets to active selection
-    
-    // Update Terminal
-    if (terminal) {
-        terminal.setPrompt(`ARGUS: ~/${project.name} >`);
-        terminal.println(`● MOUNTING PROJECT: [${project.name.toUpperCase()}]`);
-        terminal.println(`○ LOADED ${project.datasets.length} DATASETS.`);
-    }
-
-    // Update Visuals
-    workspace_render(DATASETS, false); // Render all, but selection state will match project
-    cascade_update();
 }
 
 // ============================================================================
@@ -533,6 +521,12 @@ function app_initialize(): void {
 
     // Initialize stage indicators
     stageIndicators_initialize();
+
+    // Initialize VFS with Mock Projects
+    MOCK_PROJECTS.forEach(project => {
+        const root = filesystem_create(project.datasets);
+        globals.vfs.mountProject(project.name, root);
+    });
 
     // Initial render: Force Project View (root workspace)
     workspace_render([], false);
@@ -625,6 +619,7 @@ function app_initialize(): void {
     window.lcarslm_simulate = lcarslm_simulate;
     window.terminal_toggle = terminal_toggle;
     (window as any).project_activate = project_activate;
+    (window as any).ide_openFile = ide_openFile;
 }
 
 // Initialize on DOM ready

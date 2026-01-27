@@ -58,9 +58,19 @@ export async function terminal_handleCommand(cmd: string, args: string[]): Promi
 
     if (cmd === 'mount') {
         globals.terminal.println(`● MOUNTING VIRTUAL FILESYSTEM...`);
-        filesystem_build();
+        filesystem_build(); // Populates gather tree
+        
+        // Also populate Process tree
+        // FIXME: filesystem_build targets 'file-tree'. We need it to target 'process-file-tree' too.
+        // For now, we will clone the content or call a render function if we refactor gather.ts.
+        // Let's modify filesystem_build in gather.ts to accept a target ID or just copy the HTML.
+        
         costs_calculate();
         stage_advanceTo('process');
+        
+        // Populate IDE
+        populate_ide();
+        
         globals.terminal.println(`<span class="success">>> MOUNT COMPLETE. FILESYSTEM READY.</span>`);
         return;
     }
@@ -156,6 +166,84 @@ export function terminal_initializeDraggable(): void {
     });
 }
 
+export function populate_ide(): void {
+    // 1. Render File Tree from VFS
+    const processTree = document.getElementById('process-file-tree');
+    const cwdNode = globals.vfs.getCwdNode(); 
+    
+    if (processTree && cwdNode) {
+        const buildHtml = (n: any): string => {
+            const typeClass = n.type;
+            if (n.children && n.children.length > 0) {
+                return `<li class="${typeClass}">${n.name}<ul>${n.children.map(buildHtml).join('')}</ul></li>`;
+            }
+            // Use ide_openFile for file clicks in Process stage
+            return `<li class="${typeClass}" onclick="ide_openFile('${n.name}', '${n.type}')">${n.name}</li>`;
+        };
+        processTree.innerHTML = `<ul>${buildHtml(cwdNode)}</ul>`;
+    } else if (processTree) {
+        processTree.innerHTML = '<span class="dim">No filesystem mounted.</span>';
+    }
+
+    // 2. Populate Code Editor (Default)
+    ide_openFile('train.py', 'file');
+}
+
+/**
+ * Loads file content into the IDE code editor.
+ * Exposed to window for onclick access.
+ */
+export function ide_openFile(filename: string, type: string): void {
+    const codeEl = document.getElementById('process-code-content');
+    if (!codeEl) return;
+
+    if (filename === 'train.py') {
+        codeEl.innerHTML = `
+<span class="comment"># ARGUS Federated Training Script</span>
+<span class="comment"># Target: ResNet50 on Distributed Cohorts</span>
+
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> meridian.federated <span class="keyword">as</span> fl
+<span class="keyword">from</span> atlas.models <span class="keyword">import</span> ResNet50
+
+<span class="keyword">def</span> <span class="function">train</span>(cohort_id):
+    <span class="comment"># Initialize local node context</span>
+    node = fl.Node(cohort_id)
+    
+    <span class="comment"># Load Data (Secure Mount)</span>
+    dataset = node.load_dataset(<span class="string">"/data/cohort/training"</span>)
+    
+    <span class="comment"># Define Model</span>
+    model = ResNet50(pretrained=<span class="keyword">True</span>)
+    
+    <span class="comment"># Federated Loop</span>
+    <span class="keyword">for</span> round <span class="keyword">in</span> <span class="function">range</span>(<span class="number">50</span>):
+        weights = model.train(dataset)
+        fl.aggregate(weights)
+        
+    <span class="keyword">return</span> model.save()
+`;
+    } else if (filename === 'README.md') {
+        codeEl.innerHTML = `
+<span class="comment"># Project Manifest</span>
+
+This project contains a federated learning cohort definition.
+
+**Topology:** Star Network
+**Aggregation:** FedAvg
+**Privacy:** Differential Privacy (epsilon=3.0)
+
+<span class="keyword">## Data Sources</span>
+- Boston Children's Hospital
+- Mass General Hospital
+`;
+    } else if (type === 'image') {
+        codeEl.innerHTML = `<div style="display:flex; justify-content:center; align-items:center; height:100%; color:var(--honey);">[IMAGE PREVIEW NOT AVAILABLE IN CODE EDITOR]</div>`;
+    } else {
+        codeEl.innerHTML = `<div style="padding:1rem; color:var(--font-color);">[Binary or Unknown File Type]</div>`;
+    }
+}
+
 /**
  * Launches federated training.
  */
@@ -187,9 +275,23 @@ async function federation_sequence(): Promise<void> {
     statusText.textContent = 'INITIALIZING ATLAS FACTORY...';
     
     // Ensure Terminal is visible for build logs
-    if (!document.getElementById('intelligence-console')?.classList.contains('open')) {
+    const consoleEl = document.getElementById('intelligence-console');
+    if (consoleEl && !consoleEl.classList.contains('open')) {
         globals.terminal.println('● EXTENDING CONSOLE FOR BUILD OUTPUT...');
-        document.getElementById('intelligence-console')?.classList.add('open');
+        consoleEl.classList.add('open');
+    }
+
+    // Dynamic Layout Adjustment: Push animation below terminal
+    if (consoleEl) {
+        // Wait for transition or force read
+        setTimeout(() => {
+            const terminalHeight = consoleEl.offsetHeight;
+            const container = overlay.querySelector('.fed-container') as HTMLElement;
+            if (container) {
+                // Add a buffer of 20px
+                container.style.marginTop = `${terminalHeight + 20}px`;
+            }
+        }, 50); // Small delay to allow 'open' class to expand height
     }
 
     // 2. Render Nodes (Spokes)

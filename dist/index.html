@@ -323,25 +323,9 @@
 
                         <!-- LEGACY CONTROLS (Fallback) -->
                         <div class="search-controls" style="opacity: 0.5; transform: scale(0.95); transform-origin: top left;">
-                            <span style="width: 100%; color: var(--october-sunset); font-size: 0.8rem; margin-bottom: 0.5rem;">LEGACY DATABASE FILTERS</span>
-                            <input type="text" id="search-query" placeholder="Keyword filter...">
-                            <select id="search-modality">
-                                <option value="">All Modalities</option>
-                                <option value="xray">X-Ray</option>
-                                <option value="ct">CT</option>
-                                <option value="mri">MRI</option>
-                                <option value="pathology">Pathology</option>
-                            </select>
-                            <select id="search-annotation">
-                                <option value="">All Annotations</option>
-                                <option value="segmentation">Segmentation</option>
-                                <option value="classification">Classification</option>
-                                <option value="detection">Detection</option>
-                            </select>
-                            <button onclick="catalog_search()" class="pill-btn" style="height: 40px; background-color: var(--harvestgold);">Filter</button>
+                            <!-- ... controls ... -->
                         </div>
 
-                        <h2>Available Datasets</h2>
                         <div class="dataset-grid" id="dataset-results">
                             <!-- Populated by JS -->
                         </div>
@@ -384,7 +368,34 @@
 
                     <!-- PROCESS Stage -->
                     <div class="stage-content" data-stage="process">
-                        <!-- Terminal content is now global -->
+                        <div style="display: flex; gap: 1.5rem; height: 100%; min-height: 500px;">
+                            <!-- Project Explorer -->
+                            <div style="flex: 0 0 250px; display: flex; flex-direction: column;">
+                                <h3 style="margin-top: 0; color: var(--orange);">PROJECT ASSETS</h3>
+                                <div class="file-tree" id="process-file-tree" style="flex: 1; border-color: var(--honey);">
+                                    <!-- Reused File Tree Logic -->
+                                </div>
+                            </div>
+
+                            <!-- Code Editor -->
+                            <div style="flex: 1; display: flex; flex-direction: column;">
+                                <h3 style="margin-top: 0; color: var(--honey);">TRAINING LOGIC (train.py)</h3>
+                                <div class="code-panel" style="flex: 1;">
+                                    <div class="code-header">
+                                        <span>python 3.11</span>
+                                        <span>UTF-8</span>
+                                    </div>
+                                    <div class="code-content" id="process-code-content">
+                                        <!-- Populated by JS -->
+                                    </div>
+                                </div>
+                                <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+                                    <button onclick="training_launch()" class="button-honey" style="width: auto; padding-inline: 2rem;">
+                                        LAUNCH FEDERATED TRAINING
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- MONITOR Stage -->

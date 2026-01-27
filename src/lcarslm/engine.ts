@@ -11,6 +11,7 @@ import { OpenAIClient } from './client.js';
 import { GeminiClient } from './gemini.js';
 import type { ChatMessage, QueryResponse, LCARSSystemConfig } from './types.js';
 import { DATASETS } from '../core/data/datasets.js';
+import { MOCK_PROJECTS } from '../core/data/projects.js';
 import type { Dataset } from '../core/models/types.js';
 
 /**
@@ -38,6 +39,7 @@ Your primary function is to query the medical imaging dataset catalog and manage
 2.  **Intent Identification**:
     *   If the user wants to select/get a dataset, include [SELECT: ds-ID] in your response.
     *   If the user wants to proceed to the next stage (Gather), include [ACTION: PROCEED] in your response.
+    *   If the user asks to search/list datasets, include [ACTION: SHOW_DATASETS]. If the result is a subset, also include [FILTER: ds-ID, ds-ID].
 3.  **Persona**: Star Trek Computer (concise, logical).
 
 ### DATA CONTEXT:
@@ -99,6 +101,13 @@ The context provided to you contains a JSON list of available datasets. Use this
             provider: ds.provider
         })));
 
+        const projectContext: string = JSON.stringify(MOCK_PROJECTS.map(p => ({
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            datasets: p.datasets.map(d => d.id)
+        })));
+
         const selectedContext: string = selectedIds.length > 0 
             ? `USER CURRENT SELECTION: ${selectedIds.join(', ')}`
             : "USER CURRENT SELECTION: NONE";
@@ -106,6 +115,7 @@ The context provided to you contains a JSON list of available datasets. Use this
         const messages: ChatMessage[] = [
             { role: 'system', content: this.systemPrompt },
             { role: 'system', content: `AVAILABLE DATASETS: ${context}` },
+            { role: 'system', content: `EXISTING USER PROJECTS: ${projectContext}` },
             { role: 'system', content: selectedContext },
             { role: 'user', content: userText }
         ];

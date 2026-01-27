@@ -20,10 +20,13 @@ export const state: AppState & { currentPersona: Persona } = {
     trainingJob: null
 };
 
+import { VirtualFileSystem } from '../logic/vfs.js';
+
 // Global References (to be populated by modules)
 export const globals = {
     terminal: null as any, // Typed in usage
     lcarsEngine: null as any,
+    vfs: new VirtualFileSystem(),
     trainingInterval: null as number | null,
     lossChart: null as { ctx: CanvasRenderingContext2D; data: number[] } | null
 };
