@@ -1655,6 +1655,8 @@ body.state-locked .seagap-panel {
     gap: 0.5rem;
     padding-right: 0.5rem;
     margin-bottom: 0.5rem;
+    position: relative;
+    z-index: 50; /* Stay above telemetry-wrapper */
 }
 
 .pill-btn {
@@ -1676,6 +1678,11 @@ body.state-locked .seagap-panel {
 .pill-btn:hover {
     filter: brightness(1.1);
     transform: scale(1.02);
+}
+
+.market-pill {
+    background-color: var(--sky);
+    color: black;
 }
 
 .logout-pill {

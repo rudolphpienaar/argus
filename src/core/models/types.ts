@@ -97,4 +97,6 @@ export interface AppState {
     virtualFilesystem: FileNode | null;
     costEstimate: CostEstimate;
     trainingJob: TrainingJob | null;
+    marketplaceOpen: boolean;
+    installedAssets: string[];
 }

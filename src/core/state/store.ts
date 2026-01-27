@@ -10,24 +10,32 @@
 import type { AppState, Project, Dataset, TrustedDomainNode, TrainingJob } from '../models/types.js';
 import { VirtualFileSystem } from '../logic/vfs.js';
 import { events, Events } from './events.js';
+import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../data/marketplace.js';
 
 type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
+interface ExtendedState extends AppState {
+    currentPersona: Persona;
+    marketplaceOpen: boolean;
+    installedAssets: string[];
+}
+
 // Initial State
-const initialState: AppState & { currentPersona: Persona } = {
+const initialState: ExtendedState = {
     currentPersona: 'developer',
     currentStage: 'login',
     selectedDatasets: [],
     activeProject: null,
     virtualFilesystem: null,
     costEstimate: { dataAccess: 0, compute: 0, storage: 0, total: 0 },
-    trainingJob: null
+    trainingJob: null,
+    marketplaceOpen: false,
+    installedAssets: []
 };
 
 class Store {
-    private _state: AppState & { currentPersona: Persona };
-    
-    // Globals (Non-reactive references)
+    private _state: ExtendedState;
+    // ...
     public globals = {
         terminal: null as any,
         lcarsEngine: null as any,
@@ -52,6 +60,26 @@ class Store {
         this._state.currentStage = stage;
         events.emit(Events.STAGE_CHANGED, stage);
         events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public toggleMarketplace(open?: boolean) {
+        console.log('DEBUG: Store.toggleMarketplace called. Current:', this._state.marketplaceOpen, 'Target:', open);
+        this._state.marketplaceOpen = open !== undefined ? open : !this._state.marketplaceOpen;
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    public installAsset(assetId: string) {
+        if (!this._state.installedAssets.includes(assetId)) {
+            this._state.installedAssets.push(assetId);
+            const asset = MARKETPLACE_ASSETS.find(a => a.id === assetId);
+            
+            // Re-mount binaries to VFS if it's a plugin
+            if (asset && asset.type === 'plugin') {
+                this.globals.vfs.touch(`/home/developer/bin/${asset.name}`);
+            }
+
+            events.emit(Events.STATE_CHANGED, this._state);
+        }
     }
 
     public setPersona(persona: Persona) {

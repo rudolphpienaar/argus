@@ -32,7 +32,8 @@ import { gutter_setStatus, gutter_resetAll } from './ui/gutters.js';
 import { monitor_initialize, training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
-import { catalog_search, dataset_toggle, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate, dataset_select } from './core/stages/search.js';
+import { marketplace_initialize } from './marketplace/view.js';
+import { catalog_search, dataset_toggle, dataset_select, dataset_deselect, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate } from './core/stages/search.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
 import { LCARSEngine } from './lcarslm/engine.js';
 import type { QueryResponse } from './lcarslm/types.js';
@@ -513,11 +514,10 @@ function app_initialize(): void {
     clock_update();
     setInterval(clock_update, 1000);
 
-    // Initialize persona buttons
-    personaButtons_initialize();
-
-    // Initialize stage indicators
+    // Initialize Stage Indicators
     stageIndicators_initialize();
+    personaButtons_initialize();
+    marketplace_initialize();
 
     // Initialize VFS with Mock Projects
     MOCK_PROJECTS.forEach(project => {
@@ -617,6 +617,7 @@ function app_initialize(): void {
     window.terminal_toggle = terminal_toggle;
     (window as any).project_activate = project_activate;
     (window as any).ide_openFile = ide_openFile;
+    (window as any).store = store;
 }
 
 // Initialize on DOM ready

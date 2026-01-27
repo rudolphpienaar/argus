@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/lcars.css">
     <link rel="stylesheet" href="css/federation.css">
+    <link rel="stylesheet" href="css/marketplace.css">
 </head>
 <body class="state-locked">
     <section class="wrap-all">
@@ -46,72 +47,14 @@
 
                 <!-- SeaGaP Tracker with Telemetry Windows -->
                 <div class="seagap-panel" id="seagap-panel">
-                    <div class="seagap-stations">
-                        <!-- SEARCH Station -->
-                        <div class="station" id="station-search" data-stage="search">
-                            <div class="station-header" onclick="station_click('search')">
-                                <div class="station-circle"></div>
-                                <div class="station-label">SEARCH</div>
-                            </div>
-                            <div class="station-telemetry" id="tele-search">
-                                <div class="tele-content monospace">Catalog ready...</div>
-                            </div>
-                        </div>
-                        <div class="station-line"></div>
-
-                        <!-- GATHER Station -->
-                        <div class="station" id="station-gather" data-stage="gather">
-                            <div class="station-header" onclick="station_click('gather')">
-                                <div class="station-circle"></div>
-                                <div class="station-label">GATHER</div>
-                            </div>
-                            <div class="station-telemetry" id="tele-gather">
-                                <div class="tele-content monospace">Awaiting selection...</div>
-                            </div>
-                        </div>
-                        <div class="station-line"></div>
-
-                        <!-- PROCESS Station -->
-                        <div class="station" id="station-process" data-stage="process">
-                            <div class="station-header" onclick="station_click('process')">
-                                <div class="station-circle"></div>
-                                <div class="station-label">PROCESS</div>
-                            </div>
-                            <div class="station-telemetry" id="tele-process">
-                                <div class="tele-content monospace">Config pending...</div>
-                            </div>
-                        </div>
-                        <div class="station-line"></div>
-
-                        <!-- MONITOR Station -->
-                        <div class="station" id="station-monitor" data-stage="monitor">
-                            <div class="station-header" onclick="station_click('monitor')">
-                                <div class="station-circle"></div>
-                                <div class="station-label">MONITOR</div>
-                            </div>
-                            <div class="station-telemetry" id="tele-monitor">
-                                <div class="tele-content monospace">Idle...</div>
-                            </div>
-                        </div>
-                        <div class="station-line"></div>
-
-                        <!-- POST Station -->
-                        <div class="station" id="station-post" data-stage="post">
-                            <div class="station-header" onclick="station_click('post')">
-                                <div class="station-circle"></div>
-                                <div class="station-label">POST</div>
-                            </div>
-                            <div class="station-telemetry" id="tele-post">
-                                <div class="tele-content monospace">Ready to publish...</div>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- ... -->
                 </div>
 
                 <!-- ARGUS Banner and Pills -->
                 <div class="argus-column">
                     <div class="banner">ARGUS</div>
                     <div class="pill-stack">
+                        <button onclick="store.toggleMarketplace()" class="pill-btn market-pill">MARKETPLACE</button>
                         <button onclick="user_logout()" class="pill-btn logout-pill">LOGOUT</button>
                         <button onclick="stage_next()" class="pill-btn next-pill" id="btn-next">NEXT</button>
                     </div>
@@ -149,6 +92,26 @@
             <div class="right-frame">
                 <!-- GLOBAL INTELLIGENCE CONSOLE (The Drawer) -->
                 <div id="intelligence-console" class="terminal-drawer"></div>
+
+                <!-- MARKETPLACE OVERLAY -->
+                <div id="marketplace-overlay" class="marketplace-overlay hidden">
+                    <div class="market-header">
+                        <div class="lcars-header-block" style="border-color: var(--sky);">
+                            <h2 style="margin: 0; color: var(--sky);">ATLAS MARKETPLACE</h2>
+                            <div class="lcars-subtitle">ChRIS PLUGIN & ASSET REGISTRY</div>
+                        </div>
+                        <button onclick="store.toggleMarketplace(false)" class="pill-btn" style="width: 100px; background: var(--mars);">CLOSE</button>
+                    </div>
+                    <div class="market-filters">
+                        <button class="filter-pill active">ALL</button>
+                        <button class="filter-pill">PLUGINS</button>
+                        <button class="filter-pill">DATASETS</button>
+                        <button class="filter-pill">MODELS</button>
+                    </div>
+                    <div class="market-grid" id="market-grid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
 
                 <!-- FEDERATION OVERLAY (Transition Animation) -->
                 <div id="federation-overlay" class="federation-overlay hidden">

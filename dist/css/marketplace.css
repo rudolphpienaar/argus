@@ -1,0 +1,127 @@
+/* ============================================================ */
+/* MARKETPLACE OVERLAY                                          */
+/* ============================================================ */
+
+.marketplace-overlay {
+    position: absolute;
+    top: var(--bar-height);
+    left: 0;
+    width: 100%;
+    height: calc(100% - var(--bar-height));
+    background-color: rgba(0, 0, 0, 0.98);
+    z-index: 200; /* Above terminal and everything */
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    animation: slide-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+}
+
+.marketplace-overlay.hidden {
+    display: none;
+}
+
+@keyframes slide-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+.market-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 2rem;
+}
+
+.market-filters {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.filter-pill {
+    background: transparent;
+    border: 2px solid var(--sky);
+    color: var(--sky);
+    border-radius: 20px;
+    padding: 0.5rem 1.5rem;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s ease;
+}
+
+.filter-pill.active, .filter-pill:hover {
+    background: var(--sky);
+    color: black;
+}
+
+.market-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    overflow-y: auto;
+}
+
+.market-card {
+    background: #111;
+    border-left: 15px solid var(--sky);
+    padding: 1.5rem;
+    position: relative;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.market-card:hover {
+    background: #222;
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(0, 200, 255, 0.2);
+}
+
+.market-card.installed {
+    border-left-color: var(--canary);
+}
+
+.market-card h4 {
+    margin: 0 0 0.5rem 0;
+    color: var(--sky);
+    font-size: 1.2rem;
+}
+
+.market-card .type {
+    font-size: 0.7rem;
+    color: var(--butter);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.market-card p {
+    font-size: 0.85rem;
+    color: #ccc;
+    line-height: 1.4;
+}
+
+.market-card .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+}
+
+.market-card .meta {
+    font-size: 0.7rem;
+    color: var(--sky);
+}
+
+.install-btn {
+    background: var(--sky);
+    border: none;
+    color: black;
+    font-weight: bold;
+    padding: 0.4rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.market-card.installed .install-btn {
+    background: var(--canary);
+}
