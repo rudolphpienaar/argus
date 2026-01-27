@@ -6,6 +6,8 @@ import { store, state, globals } from '../core/state/store.js';
 import { events, Events } from '../core/state/events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../core/data/marketplace.js';
 
+let currentFilter: string = 'all';
+
 /**
  * Initializes the marketplace view.
  */
@@ -23,6 +25,30 @@ export function marketplace_initialize(): void {
 
     // 2. Initial Render
     marketGrid_render();
+    
+    // 3. Expose filter to window
+    (window as any).market_filter = market_filter;
+}
+
+/**
+ * Filters the marketplace grid.
+ */
+export function market_filter(type: string): void {
+    currentFilter = type;
+    
+    // Update active state of pills
+    document.querySelectorAll('.filter-pill').forEach(btn => {
+        const text = btn.textContent?.toLowerCase() || '';
+        const isMatch = (type === 'all' && text === 'all') || 
+                        (type === 'plugin' && text === 'plugins') ||
+                        (type === 'dataset' && text === 'datasets') ||
+                        (type === 'model' && text === 'models') ||
+                        (type === 'annotation' && text === 'annotations');
+        
+        btn.classList.toggle('active', isMatch);
+    });
+
+    marketGrid_render();
 }
 
 /**
@@ -32,7 +58,9 @@ function marketGrid_render(): void {
     const container = document.getElementById('market-grid');
     if (!container) return;
 
-    container.innerHTML = MARKETPLACE_ASSETS.map(asset => {
+    const filtered = MARKETPLACE_ASSETS.filter(a => currentFilter === 'all' || a.type === currentFilter);
+
+    container.innerHTML = filtered.map(asset => {
         const isInstalled = state.installedAssets.includes(asset.id);
         return `
             <div class="market-card ${isInstalled ? 'installed' : ''}" onclick="asset_click('${asset.id}')">

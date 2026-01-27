@@ -103,10 +103,11 @@
                         <button onclick="store.toggleMarketplace(false)" class="pill-btn" style="width: 100px; background: var(--mars);">CLOSE</button>
                     </div>
                     <div class="market-filters">
-                        <button class="filter-pill active">ALL</button>
-                        <button class="filter-pill">PLUGINS</button>
-                        <button class="filter-pill">DATASETS</button>
-                        <button class="filter-pill">MODELS</button>
+                        <button class="filter-pill active" onclick="market_filter('all')">ALL</button>
+                        <button class="filter-pill" onclick="market_filter('plugin')">PLUGINS</button>
+                        <button class="filter-pill" onclick="market_filter('dataset')">DATASETS</button>
+                        <button class="filter-pill" onclick="market_filter('model')">MODELS</button>
+                        <button class="filter-pill" onclick="market_filter('annotation')">ANNOTATIONS</button>
                     </div>
                     <div class="market-grid" id="market-grid">
                         <!-- Populated by JS -->
