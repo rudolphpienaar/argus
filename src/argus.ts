@@ -18,7 +18,7 @@ import type {
     AppState
 } from './core/models/types.js';
 
-import { state, globals } from './core/state/store.js';
+import { state, globals, store } from './core/state/store.js';
 import { costEstimate_calculate } from './core/logic/costs.js';
 import { filesystem_create } from './core/logic/filesystem.js';
 import { DATASETS } from './core/data/datasets.js';
@@ -388,13 +388,10 @@ async function terminal_handleCommand(cmd: string, args: string[]): Promise<void
             if (selectMatch) {
                 const datasetId = selectMatch[1];
                 
-                // If we are selecting a specific new dataset via AI, we should 
-                // probably clear the current selection if it's from a different project
-                // to prevent "Chest X-ray" contamination in a "Histology" request.
+                // Use Store Action to clear context
                 if (state.activeProject) {
                     terminal.println(`○ RESETTING PROJECT CONTEXT [${state.activeProject.name}] FOR NEW SELECTION.`);
-                    state.activeProject = null;
-                    state.selectedDatasets = [];
+                    store.unloadProject();
                     // Force UI to switch from "Project View" to "Dataset Grid"
                     workspace_render(DATASETS, true);
                 }

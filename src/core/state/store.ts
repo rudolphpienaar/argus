@@ -126,6 +126,13 @@ class Store {
         this._state.trainingJob = job;
         events.emit(Events.STATE_CHANGED, this._state);
     }
+
+    public updateTrainingJob(updates: Partial<TrainingJob>) {
+        if (this._state.trainingJob) {
+            this._state.trainingJob = { ...this._state.trainingJob, ...updates };
+            events.emit(Events.STATE_CHANGED, this._state);
+        }
+    }
 }
 
 export const store = new Store();

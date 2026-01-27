@@ -6,7 +6,7 @@
  * @module
  */
 
-import { state } from '../state/store.js';
+import { state, store } from '../state/store.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 
@@ -28,8 +28,6 @@ export function user_authenticate(): void {
     }
 
     setTimeout(() => {
-        state.currentStage = 'role-selection';
-        
         // Navigation call
         stage_advanceTo('role-selection');
         
@@ -45,12 +43,8 @@ export function user_authenticate(): void {
  * Logs the user out and resets the application state.
  */
 export function user_logout(): void {
-    // Reset state
-    state.currentStage = 'login';
-    state.selectedDatasets = [];
-    state.virtualFilesystem = null;
-    state.costEstimate = { dataAccess: 0, compute: 0, storage: 0, total: 0 };
-    state.trainingJob = null;
+    // Use store action
+    store.unloadProject();
 
     // Reset UI components
     const loginUser = document.getElementById('login-user') as HTMLInputElement;
@@ -64,11 +58,6 @@ export function user_logout(): void {
         btn.classList.remove('pulse');
     }
     
-    // Clear visited stages - accessing the one in argus.ts is hard from here.
-    // We will rely on the fact that we are resetting the state and navigating to login.
-    // The navigation logic in argus.ts or navigation.ts should handle the visitedStages reset if possible,
-    // or we expose a method. For now, we'll emit an event or just let it be.
-
     // Reset gutters
     gutter_resetAll();
     gutter_setStatus(1, 'active');
@@ -87,8 +76,6 @@ export function role_select(persona: Persona): void {
     persona_switch(persona);
     
     // Advance to Search
-    state.currentStage = 'search';
-    
     stage_advanceTo('search');
 }
 
@@ -98,7 +85,7 @@ export function role_select(persona: Persona): void {
  * @param persona - The persona to switch to
  */
 export function persona_switch(persona: Persona): void {
-    state.currentPersona = persona;
+    store.setPersona(persona);
 
     // Update persona buttons
     document.querySelectorAll('.persona-btn').forEach(btn => {

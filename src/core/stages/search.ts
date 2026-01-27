@@ -6,7 +6,7 @@
  * @module
  */
 
-import { state, globals } from '../state/store.js';
+import { state, globals, store } from '../state/store.js';
 import { DATASETS } from '../data/datasets.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
 import { stage_advanceTo } from '../logic/navigation.js';
@@ -235,23 +235,21 @@ export function project_activate(projectId: string): void {
     const project = MOCK_PROJECTS.find(p => p.id === projectId);
     if (!project) return;
 
-    state.activeProject = project;
-    state.selectedDatasets = [...project.datasets];
+    // Use Store Action
+    store.loadProject(project);
     
-    // 1. Initialize VFS for this project
-    const root = filesystem_create(state.selectedDatasets);
+    // Initialize VFS
+    const root = filesystem_create(project.datasets);
     globals.vfs.mountProject(project.name, root);
     globals.vfs.cd(`/home/developer/projects/${project.name}`);
 
-    // 2. Update Terminal
     if (globals.terminal) {
         globals.terminal.updatePrompt();
         globals.terminal.println(`● MOUNTING PROJECT: [${project.name.toUpperCase()}]`);
         globals.terminal.println(`○ LOADED ${project.datasets.length} DATASETS.`);
     }
 
-    // 3. Jump straight to Process (IDE) stage
+    // View Transitions
     stage_advanceTo('process');
     populate_ide();
-    import('../logic/telemetry.js').then(m => m.cascade_update());
 }

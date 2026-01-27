@@ -6,7 +6,7 @@
  * @module
  */
 
-import { state, globals } from '../state/store.js';
+import { state, globals, store } from '../state/store.js';
 import { catalog_search, dataset_toggle, workspace_render, lcarslm_simulate } from './search.js';
 import { stage_next, stage_advanceTo, stageButton_setEnabled } from '../logic/navigation.js';
 import { filesystem_build, costs_calculate } from './gather.js';
@@ -287,9 +287,7 @@ async function federation_sequence(): Promise<void> {
         
         setTimeout(() => {
             overlay.classList.add('hidden');
-            
-            // Initialize training job
-            state.trainingJob = {
+            store.setTrainingJob({
                 id: `job-${Date.now()}`,
                 status: 'running',
                 currentEpoch: 0,
@@ -302,9 +300,7 @@ async function federation_sequence(): Promise<void> {
                 startTime: new Date(),
                 nodes: JSON.parse(JSON.stringify(MOCK_NODES)),
                 lossHistory: []
-            };
-
-            stageButton_setEnabled('monitor', true);
+            });
             stage_advanceTo('monitor');
         }, 2000);
 

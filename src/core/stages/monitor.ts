@@ -6,15 +6,13 @@
  * @module
  */
 
-import { state, globals } from '../state/store.js';
+import { state, globals, store } from '../state/store.js';
 import { MOCK_NODES } from '../data/nodes.js';
-import { cascade_update } from '../logic/telemetry.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import type { TrainingJob } from '../models/types.js';
 
-// Re-export specific UI updaters if needed by other modules, 
-// but mostly this module manages its own UI.
+// ... (imports remain same) ...
 
 /**
  * Initializes the monitor stage.
@@ -22,7 +20,7 @@ import type { TrainingJob } from '../models/types.js';
 export function monitor_initialize(): void {
     if (!state.trainingJob) {
         // Auto-initialize a job if none exists (e.g. direct navigation)
-        state.trainingJob = {
+        store.setTrainingJob({
             id: `job-${Date.now()}`,
             status: 'running',
             currentEpoch: 0,
@@ -35,9 +33,10 @@ export function monitor_initialize(): void {
             startTime: new Date(),
             nodes: JSON.parse(JSON.stringify(MOCK_NODES)),
             lossHistory: []
-        };
+        });
     }
 
+    // ... (canvas logic same) ...
     // Initialize loss chart
     const canvas: HTMLCanvasElement | null = document.getElementById('loss-canvas') as HTMLCanvasElement;
     if (canvas) {
@@ -63,7 +62,7 @@ export function monitor_initialize(): void {
 export function trainingStep_simulate(): void {
     if (!state.trainingJob || state.trainingJob.status !== 'running') return;
 
-    const job: TrainingJob = state.trainingJob;
+    const job: TrainingJob = { ...state.trainingJob }; // Shallow clone for mutation then dispatch
 
     // Simulate progress
     job.currentEpoch += 0.5;
@@ -105,6 +104,10 @@ export function trainingStep_simulate(): void {
         }
     });
 
+    // Update store
+    store.updateTrainingJob(job);
+
+    // ... (telemetry log logic same) ...
     // Hacker Telemetry - Terminal Stream
     if (Math.random() > 0.6 && globals.terminal) {
         const events = [
@@ -137,6 +140,7 @@ function monitorUI_update(): void {
     if (!state.trainingJob) return;
     const job = state.trainingJob;
 
+    // ... (DOM updates same) ...
     // Progress bar
     const progressFill = document.getElementById('progress-fill');
     if (progressFill) {
@@ -163,8 +167,7 @@ function monitorUI_update(): void {
     if (runningCost) runningCost.textContent = `$${job.runningCost.toFixed(2)}`;
     if (costProgress) costProgress.style.width = `${(job.runningCost / job.budgetLimit) * 100}%`;
 
-    // Update cascade
-    cascade_update();
+    // Note: cascade_update handled by event bus
 
     // Update loss chart
     lossChart_draw();
@@ -177,6 +180,7 @@ function monitorUI_update(): void {
  * Draws the loss chart.
  */
 function lossChart_draw(): void {
+    // ... (drawing logic same) ...
     if (!globals.lossChart || !state.trainingJob) return;
     const { ctx } = globals.lossChart;
     const history: number[] = state.trainingJob.lossHistory;
@@ -243,8 +247,8 @@ function nodeStatus_render(): void {
 export function training_complete(): void {
     if (!state.trainingJob) return;
 
-    state.trainingJob.status = 'complete';
-    state.trainingJob.nodes.forEach(n => n.status = 'complete');
+    const nodes = state.trainingJob.nodes.map(n => ({ ...n, status: 'complete' as const }));
+    store.updateTrainingJob({ status: 'complete', nodes });
 
     if (globals.trainingInterval) {
         clearInterval(globals.trainingInterval);
@@ -278,7 +282,7 @@ export function training_complete(): void {
 export function training_abort(): void {
     if (!state.trainingJob) return;
 
-    state.trainingJob.status = 'aborted';
+    store.updateTrainingJob({ status: 'aborted' });
 
     if (globals.trainingInterval) {
         clearInterval(globals.trainingInterval);

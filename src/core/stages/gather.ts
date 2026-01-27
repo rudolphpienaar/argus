@@ -6,7 +6,7 @@
  * @module
  */
 
-import { state, globals } from '../state/store.js';
+import { state, globals, store } from '../state/store.js';
 import { events, Events } from '../state/events.js';
 import { costEstimate_calculate } from '../logic/costs.js';
 import { filesystem_create } from '../logic/filesystem.js';
@@ -15,7 +15,7 @@ import type { FileNode } from '../models/types.js';
 export function filesystem_build(): void {
     // ... existing logic ...
     const root: FileNode = filesystem_create(state.selectedDatasets);
-    state.virtualFilesystem = root;
+    // state.virtualFilesystem = root; // Replaced with action if needed, but UI uses root directly here
     fileTree_render(root);
 
     // Mount to global VFS
@@ -28,7 +28,9 @@ export function filesystem_build(): void {
 // ... fileTree_render ...
 
 export function costs_calculate(): void {
-    state.costEstimate = costEstimate_calculate(state.selectedDatasets);
+    const estimate = costEstimate_calculate(state.selectedDatasets);
+    store.updateCost(estimate);
+
     // ... Update UI ...
     const costData = document.getElementById('cost-data');
     const costCompute = document.getElementById('cost-compute');
