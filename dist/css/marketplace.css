@@ -10,15 +10,22 @@
     height: calc(100% - var(--bar-height));
     background-color: rgba(0, 0, 0, 0.98);
     z-index: 200; /* Above terminal and everything */
-    padding: 2rem;
-    display: flex;
-    flex-direction: column;
     animation: slide-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     backdrop-filter: blur(10px);
+
+    /* Scroll entire content as one unit */
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .marketplace-overlay.hidden {
     display: none;
+}
+
+/* Content wrapper - provides padding and natural document flow */
+.market-content {
+    padding: 2rem;
+    min-height: 100%;
 }
 
 @keyframes slide-in {
@@ -33,10 +40,79 @@
     margin-bottom: 2rem;
 }
 
+/* Search & Sort Controls Row */
+.market-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.market-search-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.market-search-input {
+    flex: 1;
+    max-width: 400px;
+    padding: 0.75rem 1.25rem;
+    background: #111;
+    border: 2px solid var(--sky);
+    border-radius: 100vmax;
+    color: var(--sky);
+    font-family: 'Antonio', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.market-search-input::placeholder {
+    color: rgba(153, 204, 255, 0.5);
+}
+
+.market-search-input:focus {
+    outline: none;
+    box-shadow: 0 0 15px rgba(0, 200, 255, 0.3);
+    background: #0a0a0a;
+}
+
+.market-sort-select {
+    padding: 0.75rem 1.25rem;
+    background: #111;
+    border: 2px solid var(--sky);
+    border-radius: 100vmax;
+    color: var(--sky);
+    font-family: 'Antonio', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    min-width: 180px;
+}
+
+.market-sort-select:focus {
+    outline: none;
+    box-shadow: 0 0 15px rgba(0, 200, 255, 0.3);
+}
+
+.market-sort-select option {
+    background: #0a0a0a;
+    color: var(--sky);
+}
+
+.market-count {
+    font-family: 'Share Tech Mono', monospace;
+    color: #666;
+    font-size: 0.9rem;
+    margin-left: auto;
+}
+
 .market-filters {
     display: flex;
     gap: 1rem;
-    margin-bottom: 2rem;
+    flex-wrap: wrap;
 }
 
 .filter-pill {
@@ -44,14 +120,15 @@
     border: 2px solid var(--sky);
     color: var(--sky);
     border-radius: 100vmax;
-    padding: 0.6rem 1.5rem;
+    padding: 0.5rem 1.2rem;
     cursor: pointer;
     font-weight: bold;
     font-family: 'Antonio', sans-serif;
-    font-size: 1.1rem;
-    letter-spacing: 1px;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
     text-transform: uppercase;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
 .filter-pill.active, .filter-pill:hover {
@@ -64,21 +141,38 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 1.5rem;
-    overflow-y: auto;
     padding-bottom: 2rem;
 }
+
+/* ============================================================ */
+/* MARKET CARD - 5-Zone Grid Layout                             */
+/* ============================================================ */
+/*
+ * Layout zones (top to bottom):
+ *   1. Header  - type badge + stars badge (26px)
+ *   2. Title   - asset name (32px)
+ *   3. Desc    - description text (flexible)
+ *   4. Meta    - author + size info (36px)
+ *   5. Action  - install button (44px)
+ */
 
 .market-card {
     background: #0a0a0a;
     border: 1px solid #222;
     border-top: 4px solid var(--sky);
-    padding: 1.25rem;
     position: relative;
     transition: all 0.3s ease;
     cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    min-height: 220px;
+
+    /* 5-zone grid layout */
+    display: grid;
+    grid-template-rows: 26px 32px minmax(70px, 1fr) 36px 44px;
+    gap: 0.35rem;
+
+    height: 280px;
+    padding: 1rem;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .market-card:hover {
@@ -92,22 +186,52 @@
     border-top-color: var(--canary);
 }
 
-.market-card .header-row {
+/* FDA RST Tools - Special green accent */
+.market-card.fda {
+    border-top-color: #4CAF50;
+}
+
+.market-card.fda .badge {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4CAF50;
+    border-color: #4CAF50;
+}
+
+.market-card.fda .install-btn {
+    border-color: #4CAF50;
+    color: #4CAF50;
+}
+
+.market-card.fda .install-btn:hover {
+    background: rgba(76, 175, 80, 0.1);
+    box-shadow: 0 0 15px rgba(76, 175, 80, 0.3);
+}
+
+.market-card.fda .install-btn .btn-progress {
+    background: #4CAF50;
+}
+
+/* Zone 1: Header - badges */
+.market-card .card-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 0.75rem;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .market-card .badge {
-    font-size: 0.65rem;
-    padding: 2px 8px;
+    font-size: 0.6rem;
+    padding: 3px 8px;
     border-radius: 4px;
     background: rgba(0, 200, 255, 0.1);
     color: var(--sky);
     border: 1px solid var(--sky);
     font-weight: bold;
     text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
 }
 
 .market-card.installed .badge {
@@ -116,66 +240,207 @@
     border-color: var(--canary);
 }
 
-.market-card h4 {
-    margin: 0;
-    color: #eee;
-    font-size: 1.3rem;
-    font-family: 'Antonio', sans-serif;
-    line-height: 1.2;
-}
-
-.market-card p {
-    font-size: 0.9rem;
-    color: #888;
-    line-height: 1.4;
-    margin: 0.75rem 0;
-    flex: 1;
-}
-
-.market-card .footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid #222;
-}
-
-.market-card .meta {
-    font-size: 0.75rem;
-    color: #666;
+.market-card .stars-badge {
+    font-size: 0.65rem;
+    padding: 3px 8px;
+    background: rgba(255, 204, 0, 0.1);
+    color: var(--canary);
+    border: 1px solid var(--canary);
+    border-radius: 4px;
     font-family: 'Share Tech Mono', monospace;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.market-card .meta span {
+    font-weight: bold;
     white-space: nowrap;
 }
 
+/* Zone 2: Title */
+.market-card .card-title {
+    margin: 0;
+    color: #eee;
+    font-size: 1.1rem;
+    font-family: 'Antonio', sans-serif;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    align-self: center;
+}
+
+/* Zone 3: Description */
+.market-card .card-desc {
+    font-size: 0.75rem;
+    color: #666;
+    line-height: 1.5;
+    margin: 0;
+    padding: 0.25rem 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    text-overflow: ellipsis;
+    word-break: break-word;
+}
+
+/* Zone 4: Meta - author + size */
+.market-card .card-meta {
+    font-size: 0.7rem;
+    color: #555;
+    font-family: 'Share Tech Mono', monospace;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #333;
+    padding-top: 0.4rem;
+}
+
+.market-card .card-meta span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Zone 5: Action - install button */
+.market-card .card-action {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* LCARS Pill Install Button with Progress Bar */
 .install-btn {
-    background: var(--sky);
-    border: none;
-    color: black;
+    position: relative;
+    background: transparent;
+    border: 2px solid var(--sky);
+    color: var(--sky);
     font-weight: bold;
     font-family: 'Antonio', sans-serif;
-    font-size: 0.9rem;
-    padding: 0.4rem 1.2rem;
-    border-radius: 4px;
+    font-size: 0.85rem;
+    padding: 0.5rem 2rem;
+    border-radius: 100vmax;  /* LCARS pill shape */
     cursor: pointer;
     transition: all 0.2s ease;
     text-transform: uppercase;
+    white-space: nowrap;
+    width: 100%;
+    overflow: hidden;
+}
+
+.install-btn .btn-text {
+    position: relative;
+    z-index: 2;
+}
+
+.install-btn .btn-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0%;
+    background: var(--sky);
+    transition: width 0.1s linear;
+    z-index: 1;
 }
 
 .install-btn:hover {
-    filter: brightness(1.2);
+    background: rgba(153, 204, 255, 0.1);
+    box-shadow: 0 0 15px rgba(0, 200, 255, 0.3);
 }
 
+/* Installing state - progress bar animation */
+.install-btn.installing {
+    cursor: wait;
+    pointer-events: none;
+}
+
+.install-btn.installing .btn-progress {
+    animation: progress-fill 1.5s ease-out forwards;
+}
+
+.install-btn.installing .btn-text {
+    color: black;
+    mix-blend-mode: difference;
+}
+
+@keyframes progress-fill {
+    0% { width: 0%; }
+    20% { width: 15%; }
+    50% { width: 45%; }
+    80% { width: 85%; }
+    100% { width: 100%; }
+}
+
+/* Installed state */
+.install-btn.installed,
 .market-card.installed .install-btn {
     background: #333;
-    color: #aaa;
+    border-color: #555;
+    color: #888;
     cursor: default;
+    pointer-events: none;
 }
 
+.market-card.installed .install-btn .btn-progress {
+    display: none;
+}
+
+
+/* ============================================================ */
+/* ASSET DETAIL OVERLAY                                         */
+/* ============================================================ */
+/*
+ * Container for the LCARS detail panel.
+ * LCARS frame styling is handled by lcars-components.css
+ */
+
+.asset-detail-overlay {
+    position: absolute;
+    top: var(--bar-height);
+    left: 0;
+    width: 100%;
+    height: calc(100% - var(--bar-height));
+    background-color: rgba(0, 0, 0, 0.85);
+    z-index: 250;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 2rem;
+    box-sizing: border-box;
+    backdrop-filter: blur(10px);
+    overflow-y: auto;
+}
+
+.asset-detail-overlay.hidden {
+    display: none;
+}
+
+.detail-panel {
+    width: 100%;
+    max-width: 1000px;
+    height: calc(100% - 2rem);  /* Fill overlay minus padding */
+    animation: detail-slide-in 0.3s ease-out;
+}
+
+@keyframes detail-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Marketplace-specific LCARS frame overrides */
+.detail-panel .lcars-frame {
+    height: 100%;
+}
+
+.detail-panel .lcars-content {
+    /* Content scrolls within frame */
+    overflow-y: auto;
+}
+
+/* Note: LCARS frame styling (panels, colors, FDA variant) is handled by
+ * lcars-components.css using the --lcars-hue CSS custom property system.
+ * Set hue 200 for blue, 140 for green (FDA). */
 

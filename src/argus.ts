@@ -36,6 +36,7 @@ import { marketplace_initialize } from './marketplace/view.js';
 import { catalog_search, dataset_toggle, dataset_select, dataset_deselect, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate } from './core/stages/search.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
 import { LCARSEngine } from './lcarslm/engine.js';
+import './ui/components/LCARSFrame.js';  // LCARS procedural frame generator
 import type { QueryResponse } from './lcarslm/types.js';
 import { VERSION, GIT_HASH } from './generated/version.js';
 

@@ -55,8 +55,142 @@ ARGUS uses the **Antonio** font family with a selective casing strategy:
 * **The Data Voice (Mixed Case)**: Terminal output (AI responses, file contents) and user input allow mixed case to preserve technical precision and improve readability.
 * **Visual Polish**: Terminal readouts feature a soft text-shadow glow, simulating a high-density CRT display.
 
+== LCARS Component System
+
+ARGUS includes a procedural LCARS frame generator for creating consistent, themeable UI components. This system enables dynamic color theming via CSS custom properties and HSL color computation.
+
+=== Architecture
+
+The system consists of two parts:
+
+1. **TypeScript Generator** (`src/ui/components/LCARSFrame.ts`)
+   - Creates DOM structures for LCARS frames
+   - Handles panel configuration and layout
+   - Exposes utility functions to window for HTML event handlers
+
+2. **CSS Design System** (`dist/css/lcars-components.css`)
+   - Defines base styles using CSS custom properties
+   - Computes color shades via HSL
+   - Handles responsive breakpoints
+
+=== The Hue-Based Color System
+
+All LCARS component colors derive from a single `--lcars-hue` value (0-360). The CSS automatically computes four shade variants:
+
+[source,css]
+----
+.lcars-frame {
+    --lcars-hue: 200;           /* Blue family */
+    --lcars-sat: 70%;
+    --lcars-light-1: 75%;       /* Lightest */
+    --lcars-light-2: 65%;
+    --lcars-light-3: 55%;
+    --lcars-light-4: 45%;       /* Darkest */
+
+    /* Computed shades */
+    --lcars-shade-1: hsl(var(--lcars-hue), var(--lcars-sat), var(--lcars-light-1));
+    --lcars-shade-2: hsl(var(--lcars-hue), var(--lcars-sat), var(--lcars-light-2));
+    /* ... */
+}
+----
+
+.Predefined Hue Values
+[cols="1,1,2"]
+|===
+|Name |Hue |Usage
+
+|BLUE/SKY |200 |Default marketplace assets
+|ORANGE |30 |Main application frame
+|GREEN/FDA |140 |FDA regulatory tools
+|PURPLE/NEBULA |270 |Special categories
+|RED/MARS |0 |Alerts, warnings
+|GOLD |45 |Highlights
+|===
+
+=== LCARS Frame Structure
+
+A complete LCARS frame consists of four grid areas:
+
+----
+╭━━━━━━━━━━╮━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃  ELBOW   ┃  TOP BAR (title + actions)
+┣━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+┃ PANEL 1  ┃
+┃──────────┃  CONTENT AREA
+┃ PANEL 2  ┃  (scrollable)
+┃──────────┃
+┃ PANEL 3  ┃
+┃ [spacer] ┃
+┃ PANEL N  ┃  ← corner radius
+╰━━━━━━━━━━╯─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+----
+
+* **Elbow**: Curved corner piece connecting top bar to sidebar
+* **Top Bar**: Horizontal header with title, metadata, and action buttons
+* **Sidebar**: Vertical stack of navigation panels (same width, varying heights/shades)
+* **Content**: Main scrollable content area
+
+=== Panel Design Principles
+
+LCARS panels follow strict design rules:
+
+1. **Uniform Width**: All sidebar panels are the same width. Visual variety comes from color and height, not width.
+2. **Shade Cycling**: Panels alternate through shade variants (1-4) for visual rhythm
+3. **Height Variants**: Panels can have different heights (`tall`, `medium`, `short`)
+4. **Corner Radii**: Only the elbow (top-left) and bottom panel (bottom-left) have rounded corners
+5. **Text Alignment**: Panel labels align right (LCARS convention for left sidebars)
+6. **Spacer Element**: A colored spacer fills remaining height between panels and the bottom corner
+
+=== Usage Example
+
+**HTML Structure:**
+[source,html]
+----
+<div class="lcars-frame" style="--lcars-hue: 200;">
+    <div class="lcars-elbow"></div>
+    <div class="lcars-top-bar">
+        <h1>Title</h1>
+        <button class="close-btn">CLOSE</button>
+    </div>
+    <div class="lcars-sidebar">
+        <a class="lcars-panel" data-shade="1" data-height="tall">SECTION 1</a>
+        <a class="lcars-panel" data-shade="2">SECTION 2</a>
+        <a class="lcars-panel" data-shade="3">SECTION 3</a>
+        <div class="lcars-sidebar-spacer" data-shade="4"></div>
+        <a class="lcars-panel lcars-corner-bl" data-shade="1">SECTION N</a>
+    </div>
+    <div class="lcars-content">
+        <!-- Scrollable content -->
+    </div>
+</div>
+----
+
+**Dynamic Theming (TypeScript):**
+[source,typescript]
+----
+// Change color scheme at runtime
+const frame = document.getElementById('my-lcars-frame');
+frame.style.setProperty('--lcars-hue', '140');  // Switch to green
+----
+
+=== Marketplace Integration
+
+The Asset Detail Overlay uses the LCARS Component System:
+
+* Regular assets use `--lcars-hue: 200` (blue/sky)
+* FDA assets use `--lcars-hue: 140` (green)
+* The hue is set dynamically when opening an asset detail view
+
+[source,typescript]
+----
+// In marketplace/view.ts
+const hue = asset.type === 'fda' ? 140 : 200;
+lcarsFrame.style.setProperty('--lcars-hue', String(hue));
+----
+
 == Implementation Details
 
 * **Global Component**: The `LCARSTerminal` is a global singleton.
 * **Intent Parsing**: The `terminal_handleCommand` function intercepts LLM responses to trigger system actions (selecting data, transitioning stages).
 * **Contextual Awareness**: The AI engine receives the full dataset catalog and the user's current "Selection Buffer" with every query, ensuring high-fidelity RAG (Retrieval Augmented Generation) reasoning.
+* **LCARS Frame Generator**: The `lcarsFrame_create()` function and related utilities are exposed on the `window` object for use in HTML event handlers.
