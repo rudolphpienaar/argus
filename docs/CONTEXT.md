@@ -10,6 +10,8 @@
 - **2026-01-26**: Fixed "Project View" visibility bug by forcing initial workspace render state.
 ## Recent Refactoring Activity
 
+- **2026-01-26 (v3.1.0)**: Introduced the ATLAS Marketplace ecosystem for ChRIS plugins and reference assets.
+- **2026-01-26 (v3.1.0)**: Implemented high-density Marketplace UI with VFS integration.
 - **2026-01-26 (v3.0.0)**: Major release centering on the "Federalization" workflow.
 - **2026-01-26 (v3.0.0)**: Introduced `federate` command to replace local execution metaphor.
 - **2026-01-26 (v3.0.0)**: Established `docs/design.adoc` and finalized Pub/Sub migration.

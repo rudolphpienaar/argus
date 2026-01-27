@@ -1,0 +1,36 @@
+= ATLAS Marketplace Specification (v3.1.0)
+:toc:
+:toclevels: 3
+
+== 1. Overview
+The ATLAS Marketplace is a global asset registry providing ChRIS plugins (MERIDIAN apps), reference datasets, and pre-trained models. It serves as the primary distribution channel for extending the capabilities of an ARGUS instance.
+
+== 2. Asset Types
+
+|===
+| Type | Description | VFS Impact
+
+| `plugin`
+| Containerized MERIDIAN/ChRIS applications.
+| Symlinked to `/home/developer/bin/` upon installation.
+
+| `dataset`
+| Standalone reference cohorts for local validation.
+| Mounted to `/home/developer/projects/reference/`.
+
+| `model`
+| Pre-trained neural network weights (e.g. ResNet, UNet).
+| Downloaded to `/home/developer/models/`.
+|===
+
+== 3. Installation Lifecycle
+
+The Marketplace is a **Public Service** (accessible without authentication) but requires an active session for VFS integration.
+
+1.  **Browse:** Users explore the high-density grid.
+2.  **Install:** Clicking "INSTALL" triggers a background payload download.
+3.  **VFS Mount:** The `Store` dispatches an `ASSET_INSTALLED` event. The `VirtualFileSystem` creates the necessary file handles.
+4.  **Terminal Notification:** The Intelligence Console confirms availability and provides usage hints.
+
+== 4. Architectural Integration
+The Marketplace is decoupled from the SeaGaP workflow. It operates as a modal overlay driven by the central `Store` and `EventBus`, ensuring that assets installed while in the "Process" stage are immediately visible in the IDE asset tree.

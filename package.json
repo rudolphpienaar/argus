@@ -1,7 +1,7 @@
 {
   "name": "argus",
-  "version": "3.0.0",
-  "description": "ARGUS - ATLAS Resource Graphical User System",
+  "version": "3.1.0",
+  "description": "ATLAS Resource Graphical User System",
   "type": "module",
   "scripts": {
     "version:generate": "bash scripts/generate-version.sh",
