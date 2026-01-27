@@ -1,0 +1,30 @@
+= ARGUS Design Specification (v3.0.0)
+:toc:
+:toclevels: 3
+
+== 1. The SeaGaP-MP Paradigm
+ARGUS implements the **Search, Gather, Process, Monitor, Post** workflow, specifically tailored for the **ATLAS/MERIDIAN** federated learning ecosystem.
+
+== 2. Architectural Structure (Pub/Sub)
+To maintain a high-performance Vanilla TypeScript frontend while ensuring state synchronization, the application uses an **Event-Driven Observer Pattern**.
+
+=== 2.1 Central Store (`src/core/state/store.ts`)
+The `Store` class encapsulates the application state and provides discrete **Actions** for mutation. It maintains a reference to the `VirtualFileSystem`.
+
+=== 2.2 Event Bus (`src/core/state/events.ts`)
+A lightweight `EventEmitter` facilitates communication between decoupled modules.
+*   **Decoupling:** `navigation.ts` doesn't need to know about `process.ts`. It simply dispatches `STAGE_CHANGED`.
+*   **Reactivity:** Modules like `telemetry.ts` and `gather.ts` subscribe to events to update their respective UI components.
+
+== 3. The Federalization Model
+The transition from local development (**Process**) to distributed execution (**Monitor**) is mediated by the **Federalization Sequence**.
+
+=== 3.1 The Factory Concept
+Raw code assets (`train.py`) are not executed locally. Instead, the `federate` command triggers a build process:
+1.  **Ingestion:** Assets are sent to the ATLAS Hub.
+2.  **Containerization:** The ATLAS Factory wraps the code into a MERIDIAN App.
+3.  **Distribution:** Container images are dispatched to Trusted Domains (BCH, MGH, etc.).
+4.  **Synchronization:** Training only begins once all nodes verify the payload.
+
+== 4. Virtual Filesystem (VFS)
+A robust in-memory VFS (`src/core/logic/vfs.ts`) ensures that the **Terminal** and **IDE** share a consistent view of the project structure. This grounds the "Hollywood Set" simulation in a deterministic data model.

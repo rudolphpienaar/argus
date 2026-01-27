@@ -161,7 +161,7 @@ export class LCARSTerminal {
                 this.println('<span class="success">SYSTEM COMMANDS:</span>');
                 this.println('  <span class="highlight">ls / cd / pwd</span>    - Navigate the Virtual Filesystem.');
                 this.println('  <span class="highlight">cat &lt;file&gt;</span>       - Read file contents.');
-                this.println('  <span class="highlight">python &lt;script&gt;</span>  - Execute processing scripts (e.g., train.py).');
+                this.println('  <span class="highlight">federate &lt;script&gt;</span> - Transform script into MERIDIAN app and launch.');
                 this.println('  <span class="highlight">clear</span>            - Purge terminal buffer.');
                 this.println('<span class="dim">================================================================</span>');
                 break;
@@ -196,8 +196,8 @@ export class LCARSTerminal {
             case 'echo':
                 this.println(args.join(' '));
                 break;
-            case 'python':
-                this.cmd_python(args);
+            case 'federate':
+                this.cmd_federate(args);
                 break;
             default:
                 if (this.onUnhandledCommand) {
@@ -237,24 +237,25 @@ export class LCARSTerminal {
         }
     }
 
-    private cmd_python(args: string[]): void {
+    private cmd_federate(args: string[]): void {
         if (args.length === 0) {
-            this.println('python: missing file operand');
+            this.println('federate: missing script operand');
             return;
         }
         if (args[0] === 'train.py') {
-            this.println('<span class="warn">>> INITIALIZING FEDERATED TRAINING PROTOCOL...</span>');
-            this.println('>> CONTACTING NODES: BCH, MGH, BIDMC, BWH...');
+            this.println('<span class="warn">>> INITIATING FEDERALIZATION PROTOCOL...</span>');
+            this.println('>> UPLOADING ASSETS TO ATLAS FACTORY...');
+            this.println('>> RESOLVING MERIDIAN DEPENDENCIES...');
             setTimeout(() => {
                 const win = window as any;
                 if (typeof win.training_launch === 'function') {
                     win.training_launch();
                 } else {
-                    this.println('<span class="error">>> ERROR: TRAINING_LAUNCH NOT FOUND.</span>');
+                    this.println('<span class="error">>> ERROR: FEDERALIZATION ENGINE OFFLINE.</span>');
                 }
-            }, 1000);
+            }, 1500);
         } else {
-            this.println(`python: can't open file '${args[0]}': [Errno 2] No such file or directory`);
+            this.println(`federate: '${args[0]}' is not a valid MERIDIAN training script.`);
         }
     }
 
