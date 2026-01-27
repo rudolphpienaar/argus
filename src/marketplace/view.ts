@@ -36,11 +36,16 @@ function marketGrid_render(): void {
         const isInstalled = state.installedAssets.includes(asset.id);
         return `
             <div class="market-card ${isInstalled ? 'installed' : ''}" onclick="asset_click('${asset.id}')">
-                <div class="type">${asset.type} v${asset.version}</div>
+                <div class="header-row">
+                    <div class="badge">${asset.type} v${asset.version}</div>
+                </div>
                 <h4>${asset.name}</h4>
                 <p>${asset.description}</p>
                 <div class="footer">
-                    <div class="meta">${asset.author} · ${asset.size}</div>
+                    <div class="meta">
+                        <span>BY ${asset.author.toUpperCase()}</span>
+                        <span>SIZE: ${asset.size}</span>
+                    </div>
                     <button class="install-btn">
                         ${isInstalled ? 'INSTALLED' : 'INSTALL'}
                     </button>

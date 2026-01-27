@@ -43,61 +43,93 @@
     background: transparent;
     border: 2px solid var(--sky);
     color: var(--sky);
-    border-radius: 20px;
-    padding: 0.5rem 1.5rem;
+    border-radius: 100vmax;
+    padding: 0.6rem 1.5rem;
     cursor: pointer;
     font-weight: bold;
+    font-family: 'Antonio', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
     transition: all 0.2s ease;
 }
 
 .filter-pill.active, .filter-pill:hover {
     background: var(--sky);
     color: black;
+    box-shadow: 0 0 15px rgba(0, 200, 255, 0.3);
 }
 
 .market-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 1.5rem;
     overflow-y: auto;
+    padding-bottom: 2rem;
 }
 
 .market-card {
-    background: #111;
-    border-left: 15px solid var(--sky);
-    padding: 1.5rem;
+    background: #0a0a0a;
+    border: 1px solid #222;
+    border-top: 4px solid var(--sky);
+    padding: 1.25rem;
     position: relative;
     transition: all 0.3s ease;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    min-height: 220px;
 }
 
 .market-card:hover {
-    background: #222;
-    transform: translateY(-5px);
-    box-shadow: 0 5px 15px rgba(0, 200, 255, 0.2);
+    background: #111;
+    border-color: var(--sky);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
 .market-card.installed {
-    border-left-color: var(--canary);
+    border-top-color: var(--canary);
+}
+
+.market-card .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.market-card .badge {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(0, 200, 255, 0.1);
+    color: var(--sky);
+    border: 1px solid var(--sky);
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.market-card.installed .badge {
+    background: rgba(255, 255, 0, 0.1);
+    color: var(--canary);
+    border-color: var(--canary);
 }
 
 .market-card h4 {
-    margin: 0 0 0.5rem 0;
-    color: var(--sky);
-    font-size: 1.2rem;
-}
-
-.market-card .type {
-    font-size: 0.7rem;
-    color: var(--butter);
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    margin: 0;
+    color: #eee;
+    font-size: 1.3rem;
+    font-family: 'Antonio', sans-serif;
+    line-height: 1.2;
 }
 
 .market-card p {
-    font-size: 0.85rem;
-    color: #ccc;
+    font-size: 0.9rem;
+    color: #888;
     line-height: 1.4;
+    margin: 0.75rem 0;
+    flex: 1;
 }
 
 .market-card .footer {
@@ -105,11 +137,21 @@
     justify-content: space-between;
     align-items: center;
     margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #222;
 }
 
 .market-card .meta {
-    font-size: 0.7rem;
-    color: var(--sky);
+    font-size: 0.75rem;
+    color: #666;
+    font-family: 'Share Tech Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.market-card .meta span {
+    white-space: nowrap;
 }
 
 .install-btn {
@@ -117,11 +159,23 @@
     border: none;
     color: black;
     font-weight: bold;
-    padding: 0.4rem 1rem;
+    font-family: 'Antonio', sans-serif;
+    font-size: 0.9rem;
+    padding: 0.4rem 1.2rem;
     border-radius: 4px;
     cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+}
+
+.install-btn:hover {
+    filter: brightness(1.2);
 }
 
 .market-card.installed .install-btn {
-    background: var(--canary);
+    background: #333;
+    color: #aaa;
+    cursor: default;
 }
+
+
