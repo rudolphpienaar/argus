@@ -1,0 +1,895 @@
+= ARGUS Virtual Computer System (VCS) Specification
+:author: ATLAS Project Team
+:revdate: 2026-01-28
+:toc:
+:toclevels: 3
+:sectnums:
+
+== Overview
+
+The Virtual Computer System (VCS) is the stateful runtime environment underlying the ARGUS Intelligence Terminal. It provides a POSIX-like in-memory filesystem with file content, a shell interpreter with environment variables, and a provider system that populates the filesystem from application context (datasets, projects, marketplace installs).
+
+=== Purpose
+
+The VCS replaces the current `VirtualFileSystem` class (`src/core/logic/vfs.ts`), which provides directory navigation but no file content, no shell abstraction, and no integration with the application lifecycle. The current implementation has the following deficiencies:
+
+[cols="1,2"]
+|===
+| Deficiency | Impact
+
+| `FileNode` has no `content` field
+| `cat` cannot work. IDE content is hardcoded HTML in `process.ts`.
+
+| Prompt is set by string literals
+| Terminal prompt and VFS CWD are out of sync after stage transitions.
+
+| No `cat`, `rm`, `cp`, `mv`
+| Users cannot read, delete, copy, or move files.
+
+| Stage transitions don't call `cd`
+| Process stage claims `~/src/project` but CWD remains `/home/developer`.
+
+| Marketplace installs create name-only nodes
+| `vfs.touch('/home/developer/bin/x')` creates an entry with no content or metadata.
+
+| Filesystem rebuilt from scratch each Gather
+| No persistence across the session. No accumulation of artifacts.
+|===
+
+The VCS resolves all of these by providing a complete, stateful mini-computer that the terminal interacts with as a real shell environment.
+
+=== Design Principles
+
+1. **Single Source of Truth.** The VCS owns the current working directory, the filesystem tree, and all file content. The terminal prompt reads from the VCS. Stage transitions issue real `cd` commands through the Shell. The IDE reads file content from the VCS.
+
+2. **POSIX Familiarity.** Users who know Unix will feel at home. `ls`, `cd`, `cat`, `pwd`, `mkdir`, `touch`, `rm`, `cp`, `mv`, `echo`, `env` work as expected. Paths are `/`-separated. `~` expands to `$HOME`.
+
+3. **Content-Aware Files.** Every file in the VCS can have content — a string (for text files) or a metadata descriptor (for binary stubs like images). The content is generated on demand by Providers and cached in the filesystem.
+
+4. **Provider Architecture.** The VCS does not know about datasets, projects, or marketplace assets. Providers are responsible for translating application domain objects into filesystem trees with content. This keeps the VCS pure and the domain logic encapsulated.
+
+5. **Event-Driven Integration.** The VCS emits events on mutation (`VFS_CHANGED`, `CWD_CHANGED`). The Store, terminal, and UI components subscribe to these events. The VCS never reaches into the DOM.
+
+== Architecture
+
+=== Component Diagram
+
+----
+┌──────────────────────────────────────────────────────────┐
+│                     Terminal (UI)                        │
+│              Sends keystrokes, renders output            │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│                      Shell                               │
+│  Command parsing, builtin dispatch, env vars, prompt     │
+│  $HOME, $USER, $PWD, $PATH, exit codes, history          │
+└──────────────────────┬───────────────────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────────────────┐
+│                 VirtualFileSystem                        │
+│  Tree storage, content storage, path resolution          │
+│  read(), write(), rm(), cp(), mv(), stat(), ls(), cd()   │
+│  mount(), unmount(), event emission                      │
+└───────────┬──────────────────────────┬───────────────────┘
+            │                          │
+            ▼                          ▼
+┌───────────────────┐     ┌────────────────────────────────┐
+│  ContentRegistry  │     │          Providers             │
+│  Templates &      │     │  DatasetProvider               │
+│  generators for   │◄────│  ProjectProvider               │
+│  file bodies      │     │  MarketplaceProvider           │
+└───────────────────┘     └────────────────────────────────┘
+----
+
+=== Data Flow
+
+1. **User types `cat train.py`** in the terminal.
+2. **Terminal** sends the raw input string to the **Shell**.
+3. **Shell** parses the command (`cat`) and argument (`train.py`), resolves the path relative to `$PWD`.
+4. **Shell** calls `vfs.read('/home/developer/src/project/train.py')`.
+5. **VirtualFileSystem** looks up the node. If `content` is `null`, it calls the **ContentRegistry** to generate content on demand.
+6. **ContentRegistry** finds the registered template for `train.py`, invokes it with the current project context, and returns the content string.
+7. **VirtualFileSystem** caches the content on the node and returns it.
+8. **Shell** wraps the content in a `ShellResult` (`{ stdout, stderr, exitCode }`).
+9. **Terminal** renders `stdout` to the screen.
+
+== Filesystem Layout
+
+=== Root Structure
+
+----
+/
+├── home/
+│   └── <username>/          # $HOME — one per authenticated user
+│       ├── data/
+│       │   ├── cohort/      # Current gathered datasets (populated by DatasetProvider)
+│       │   └── cache/       # Intermediate processing artifacts
+│       ├── src/
+│       │   └── project/     # Active project workspace (populated by ProjectProvider)
+│       ├── models/          # Training outputs + installed models
+│       ├── results/         # Post-stage published artifacts
+│       ├── bin/             # User-local scripts and tools
+│       └── .config/
+│           └── argus.yaml   # User preferences, API keys
+│
+├── bin/                     # System-wide executables (marketplace plugin installs)
+├── data/
+│   ├── catalog/             # Read-only ATLAS catalog mirror
+│   │   ├── datasets.json
+│   │   └── models.json
+│   ├── sets/                # Marketplace dataset installs
+│   └── annotations/         # Marketplace annotation tool installs
+│
+└── etc/
+    └── atlas/
+        ├── nodes.json       # Trusted Domain registry
+        └── federation.yaml  # Default federation parameters
+----
+
+=== Well-Known Paths Under `$HOME`
+
+These paths are scaffolded at login by the `ProjectProvider`. They are conventions, not enforced — the user can remove or rename them. Stage transitions `cd` to the relevant path but do not require it to exist.
+
+[cols="1,2"]
+|===
+| Path | Purpose
+
+| `~/data/cohort/`
+| Gathered datasets for the current session. Populated by `DatasetProvider` during the Gather stage. Contains one subdirectory per contributing institution (e.g., `BCH/`, `MGH/`), each with `images/`, `masks/`, and annotation files.
+
+| `~/data/cache/`
+| Intermediate artifacts from processing. Cleared between sessions.
+
+| `~/src/project/`
+| Active project workspace. Contains `train.py`, `config.yaml`, `requirements.txt`, `README.md`, and a `.meridian/` directory for federation manifests.
+
+| `~/models/`
+| Training outputs (weights, metrics) and marketplace model installs.
+
+| `~/results/`
+| Post-stage published artifacts. Populated after `model_publish()`.
+
+| `~/bin/`
+| User-local scripts and tools. Distinct from `/bin/` (system-wide).
+
+| `~/.config/argus.yaml`
+| User preferences, stored API keys, shell configuration.
+
+| `~/.history`
+| Shell command history. Persisted across sessions (localStorage-backed).
+|===
+
+=== System Paths
+
+These paths are managed by the VCS and Providers. They are writable only through Provider APIs, not directly by the user.
+
+[cols="1,2"]
+|===
+| Path | Purpose
+
+| `/bin/`
+| Marketplace plugin installs. Each plugin is an executable stub with metadata content (name, version, description, usage).
+
+| `/data/catalog/`
+| Read-only mirror of the ATLAS catalog. Contains `datasets.json` and `models.json` generated from `core/data/datasets.ts` and `core/data/marketplace.ts`.
+
+| `/data/sets/`
+| Marketplace dataset installs. Each dataset is a directory with a `manifest.json`.
+
+| `/data/annotations/`
+| Marketplace annotation tool installs. Each tool is a directory with a `manifest.json`.
+
+| `/etc/atlas/nodes.json`
+| Trusted Domain registry. Generated from `core/data/nodes.ts`.
+
+| `/etc/atlas/federation.yaml`
+| Default federation parameters.
+|===
+
+== Persona System
+
+=== `$HOME` Per User
+
+`$HOME` is always `/home/<username>`. The username is determined at login. In the current prototype, the username matches the persona name (`developer`, `annotator`, etc.). In a production system, this would be the authenticated user's ID.
+
+=== Landing Directory Per Persona
+
+After login, the Shell `cd`s to the persona's landing directory. This is where the user's session begins — analogous to a desktop environment opening a specific folder.
+
+[cols="1,1,2"]
+|===
+| Persona | Landing Directory | Rationale
+
+| Developer
+| `~/src/project`
+| Ready to code. Project files immediately visible.
+
+| Annotator
+| `~/workspace`
+| Ready to label. Annotation queue visible.
+
+| Clinician
+| `~/cases`
+| Ready to review. Patient cases visible.
+
+| Scientist
+| `~/experiments`
+| Ready to analyze. Experiment notebooks visible.
+
+| Provider
+| `~/data`
+| Ready to manage contributed data.
+
+| Admin
+| `~/system`
+| Ready to manage users and nodes.
+
+| FDA / Regulatory
+| `~/audits`
+| Ready to review compliance artifacts.
+|===
+
+=== Home Directory Scaffolding
+
+At login, the `ProjectProvider` scaffolds the well-known subdirectory structure under `$HOME`. The scaffolding is additive — it creates directories that don't exist but never overwrites existing content. This preserves any user modifications from a previous session (if session persistence is implemented).
+
+== VirtualFileSystem API
+
+=== FileNode Interface
+
+[source,typescript]
+----
+interface FileNode {
+    name: string;
+    type: 'file' | 'folder';
+    path: string;                          // Absolute path
+    size: string;                          // Human-readable (e.g., '4.2 KB')
+    content: string | null;                // Text content, null if not yet generated
+    contentGenerator: string | null;       // ContentRegistry key for lazy generation
+    permissions: 'rw' | 'ro';             // Read-write or read-only
+    modified: Date;                        // Last modification timestamp
+    children: FileNode[] | null;           // null for files, array for folders
+    metadata: Record<string, string>;      // Arbitrary key-value pairs (DICOM headers, etc.)
+}
+----
+
+=== Core Methods
+
+All methods follow the project RPN naming convention: `<subject>_<verb>`.
+
+[cols="2,2,3"]
+|===
+| Method | Signature | Behavior
+
+| `node_read`
+| `(path: string): string \| null`
+| Returns file content. If `content` is null and `contentGenerator` is set, invokes the ContentRegistry to generate content on demand. Returns null for folders. Throws if path does not exist.
+
+| `node_write`
+| `(path: string, content: string): void`
+| Writes content to a file. Creates the file if it does not exist (parent must exist). Updates `modified` timestamp and `size`. Emits `VFS_CHANGED`.
+
+| `node_remove`
+| `(path: string): void`
+| Removes a file or empty folder. Throws if folder is not empty (unless `recursive: true`). Emits `VFS_CHANGED`.
+
+| `node_copy`
+| `(src: string, dest: string): void`
+| Copies a file or folder tree. Deep copy — new nodes, same content. Emits `VFS_CHANGED`.
+
+| `node_move`
+| `(src: string, dest: string): void`
+| Moves a file or folder. Reparents the node in the tree. Updates `path` recursively. Emits `VFS_CHANGED`.
+
+| `node_stat`
+| `(path: string): FileNode \| null`
+| Returns the FileNode at the given path without reading content. Returns null if not found.
+
+| `dir_list`
+| `(path: string): FileNode[]`
+| Returns the children of a directory. Throws if path is not a folder.
+
+| `dir_create`
+| `(path: string): void`
+| Creates a directory. Creates intermediate directories if needed (like `mkdir -p`). Emits `VFS_CHANGED`.
+
+| `file_create`
+| `(path: string, content?: string): void`
+| Creates an empty file (like `touch`). Optionally with initial content. Emits `VFS_CHANGED`.
+
+| `path_resolve`
+| `(input: string): string`
+| Resolves a relative path against `$PWD`. Expands `~` to `$HOME`. Normalizes `.` and `..`.
+
+| `cwd_get`
+| `(): string`
+| Returns the current working directory as an absolute path.
+
+| `cwd_set`
+| `(path: string): void`
+| Changes the current working directory. Throws if path does not exist or is not a folder. Emits `CWD_CHANGED`.
+
+| `tree_mount`
+| `(path: string, root: FileNode): void`
+| Mounts a subtree at the given path. Used by Providers to attach generated trees. Emits `VFS_CHANGED`.
+
+| `tree_unmount`
+| `(path: string): void`
+| Removes a previously mounted subtree. Emits `VFS_CHANGED`.
+|===
+
+=== Events
+
+[cols="1,2,2"]
+|===
+| Event | Payload | Emitted By
+
+| `VFS_CHANGED`
+| `{ path: string, operation: string }`
+| Any mutation method (`node_write`, `node_remove`, `dir_create`, etc.)
+
+| `CWD_CHANGED`
+| `{ oldPath: string, newPath: string }`
+| `cwd_set()`
+|===
+
+== Shell
+
+The Shell is the command interpreter layer between the Terminal UI and the VirtualFileSystem. It is the "computer" the user talks to. The Terminal becomes a dumb I/O surface: it sends keystrokes to the Shell and renders whatever the Shell returns.
+
+=== ShellResult Interface
+
+[source,typescript]
+----
+interface ShellResult {
+    stdout: string;      // Standard output (rendered by terminal)
+    stderr: string;      // Standard error (rendered in red by terminal)
+    exitCode: number;    // 0 = success, non-zero = error
+}
+----
+
+=== Environment Variables
+
+[cols="1,1,2"]
+|===
+| Variable | Default | Description
+
+| `$HOME`
+| `/home/developer`
+| User's home directory. Set at login.
+
+| `$USER`
+| `developer`
+| Current username. Set at login.
+
+| `$PWD`
+| `$HOME`
+| Current working directory. Updated by `cd`. Synonym for `vfs.cwd_get()`.
+
+| `$PATH`
+| `/bin:~/bin`
+| Executable search path. Used by Shell to resolve commands.
+
+| `$PERSONA`
+| `developer`
+| Current persona. Set at role selection.
+
+| `$STAGE`
+| `search`
+| Current SeaGaP stage. Updated on stage transitions.
+
+| `$PS1`
+| `$USER@argus:$PWD $`
+| Prompt format string. Evaluated by Shell for each prompt render.
+|===
+
+=== Builtin Commands
+
+[cols="1,2,2"]
+|===
+| Command | Usage | Behavior
+
+| `cd`
+| `cd [path]`
+| Change directory. No args = `cd $HOME`. Calls `vfs.cwd_set()`.
+
+| `pwd`
+| `pwd`
+| Print working directory. Reads `$PWD`.
+
+| `ls`
+| `ls [path]`
+| List directory contents. Defaults to `$PWD`. Colorized output (folders in blue, executables in green).
+
+| `cat`
+| `cat <file>`
+| Print file content. Calls `vfs.node_read()`.
+
+| `mkdir`
+| `mkdir [-p] <path>`
+| Create directory. `-p` creates intermediate directories.
+
+| `touch`
+| `touch <file>`
+| Create empty file or update timestamp.
+
+| `rm`
+| `rm [-r] <path>`
+| Remove file or directory. `-r` for recursive.
+
+| `cp`
+| `cp <src> <dest>`
+| Copy file or directory.
+
+| `mv`
+| `mv <src> <dest>`
+| Move or rename file or directory.
+
+| `echo`
+| `echo [text...]`
+| Print text to stdout. Supports `$VARIABLE` expansion.
+
+| `env`
+| `env`
+| Print all environment variables.
+
+| `export`
+| `export KEY=VALUE`
+| Set an environment variable.
+
+| `whoami`
+| `whoami`
+| Print `$USER`.
+
+| `date`
+| `date`
+| Print current date and time.
+
+| `clear`
+| `clear`
+| Clear terminal output buffer.
+
+| `help`
+| `help`
+| List available commands with descriptions.
+
+| `history`
+| `history`
+| Show command history.
+|===
+
+=== Prompt Generation
+
+The Shell owns prompt generation. The prompt is computed by evaluating the `$PS1` format string against the current environment. This replaces all hardcoded `terminal.setPrompt()` calls throughout the codebase.
+
+[source,typescript]
+----
+// $PS1 = '$USER@argus:$PWD $ '
+// After cd /home/developer/src/project:
+// Rendered: 'developer@argus:~/src/project $ '
+----
+
+The `~` substitution is cosmetic: if `$PWD` starts with `$HOME`, the Shell replaces that prefix with `~` in the rendered prompt.
+
+=== Stage Transitions
+
+When the application transitions between SeaGaP stages, the Shell receives a `stage_enter` call:
+
+[source,typescript]
+----
+shell.stage_enter('process');
+// 1. Sets $STAGE = 'process'
+// 2. cd to the persona's landing directory for that stage
+// 3. Prompt auto-updates via $PS1 evaluation
+----
+
+This replaces the current pattern of hardcoded `terminal.setPrompt()` and `consoleEl.classList.add('open')` in the stage-change listener.
+
+== Content System
+
+=== ContentRegistry
+
+The ContentRegistry maps file paths (or path patterns) to content generators. When the VFS needs to read a file whose `content` is null, it consults the ContentRegistry.
+
+[source,typescript]
+----
+interface ContentGenerator {
+    pattern: string | RegExp;        // Path match (e.g., '~/src/project/train.py')
+    generate: (context: ContentContext) => string;
+}
+
+interface ContentContext {
+    filePath: string;
+    persona: string;
+    selectedDatasets: Dataset[];
+    activeProject: Project | null;
+    installedAssets: string[];
+}
+----
+
+=== Templates
+
+Templates are pure functions that generate file content strings. They live in `src/vfs/content/templates/`.
+
+[cols="1,2"]
+|===
+| Template | Generates
+
+| `train.ts`
+| `train.py` — Python federated training script. Adapts to selected datasets (imports, data paths, model architecture).
+
+| `readme.ts`
+| `README.md` — Project documentation. Lists datasets, topology, privacy settings.
+
+| `config.ts`
+| `config.yaml` — Training configuration. Epochs, learning rate, aggregation strategy.
+
+| `requirements.ts`
+| `requirements.txt` — Python dependencies.
+
+| `manifest.ts`
+| `.meridian/manifest.json` — MERIDIAN federation manifest with node assignments.
+
+| `catalog.ts`
+| `/data/catalog/datasets.json` and `models.json` — Serialized catalog from `core/data/`.
+
+| `nodeRegistry.ts`
+| `/etc/atlas/nodes.json` — Serialized Trusted Domain registry from `core/data/nodes.ts`.
+|===
+
+=== Lazy Content Generation
+
+Content is generated lazily on first `node_read()`. This avoids generating content for files the user never opens. Once generated, content is cached on the `FileNode.content` field and served directly on subsequent reads.
+
+If the application state changes (e.g., a new dataset is selected), Providers can call `node_invalidate(path)` to clear cached content, forcing regeneration on the next read.
+
+== Providers
+
+Providers are responsible for translating application domain objects into filesystem trees. They are the bridge between the ARGUS application state and the VCS filesystem.
+
+=== DatasetProvider
+
+Populates `~/data/cohort/` from the selected datasets.
+
+**Triggered by:** `DATASET_SELECTION_CHANGED` event (during Gather stage).
+
+**Behavior:**
+
+1. Unmounts the existing `~/data/cohort/` tree (if any).
+2. For each selected dataset, creates:
++
+----
+~/data/cohort/
+└── <institution>/           # e.g., BCH, MGH, BIDMC
+    ├── images/
+    │   ├── img_0001.dcm
+    │   ├── img_0002.dcm
+    │   └── ...
+    ├── masks/
+    │   ├── mask_0001.png
+    │   └── ...
+    ├── annotations.json
+    └── manifest.json        # Dataset metadata (id, modality, cost, provenance)
+----
+3. Each file has a `contentGenerator` registered for on-demand content (e.g., DICOM header summaries for `.dcm` files, annotation schema for `.json` files).
+4. Mounts the tree at `~/data/cohort/`.
+5. Creates `~/data/cohort/manifest.json` with aggregated cohort metadata (total cost, dataset IDs, provenance chain).
+
+=== ProjectProvider
+
+Populates `~/src/project/` and scaffolds the home directory structure.
+
+**Triggered by:** Login (scaffolding) and stage transitions (project population).
+
+**Behavior at login:**
+
+1. Creates `$HOME` and all well-known subdirectories.
+2. Creates `~/.config/argus.yaml` with default preferences.
+3. Calls `shell.cwd_set()` to the persona's landing directory.
+
+**Behavior at Process stage entry:**
+
+1. Populates `~/src/project/` with:
++
+----
+~/src/project/
+├── train.py              # contentGenerator: train template
+├── config.yaml           # contentGenerator: config template
+├── requirements.txt      # contentGenerator: requirements template
+├── README.md             # contentGenerator: readme template
+└── .meridian/
+    └── manifest.json     # contentGenerator: meridian manifest template
+----
+2. All files use lazy content generation via the ContentRegistry.
+
+=== MarketplaceProvider
+
+Installs marketplace assets into the appropriate system paths.
+
+**Triggered by:** `store.installAsset(assetId)`.
+
+**Behavior by asset type:**
+
+[cols="1,2,2"]
+|===
+| Asset Type | Install Path | Content
+
+| Plugin
+| `/bin/<plugin-name>`
+| Executable stub with name, version, description, usage instructions, dependencies.
+
+| Dataset
+| `/data/sets/<dataset-name>/manifest.json`
+| Dataset metadata, sample count, modality, license.
+
+| Model
+| `~/models/<model-name>/README.md`
+| Model card with architecture, training data, metrics, usage.
+
+| Annotation Tool
+| `/data/annotations/<tool-name>/manifest.json`
+| Tool metadata, supported formats, label schema.
+
+| FDA Tool
+| `/bin/<tool-name>` + `/data/annotations/<tool-name>/`
+| Both executable and data components.
+|===
+
+== Integration Points
+
+=== VCS ↔ Store
+
+The VCS is stored as a global singleton on `store.globals.vcs` (replacing the current `store.globals.vfs`). The Store does not reach into the VCS; it emits events that Providers listen to.
+
+[cols="1,2"]
+|===
+| Store Event | VCS Response
+
+| `STAGE_CHANGED`
+| Shell calls `stage_enter()` — updates `$STAGE`, `cd`s to landing directory.
+
+| `DATASET_SELECTION_CHANGED`
+| DatasetProvider rebuilds `~/data/cohort/`.
+
+| `PROJECT_LOADED`
+| ProjectProvider scaffolds `~/src/project/`.
+
+| `STATE_CHANGED` (marketplace install)
+| MarketplaceProvider installs asset to appropriate path.
+|===
+
+=== VCS ↔ Terminal
+
+The Terminal sends raw input strings to `shell.command_execute(line)` and receives `ShellResult` objects. The Terminal is responsible only for:
+
+- Rendering `stdout` (default color) and `stderr` (error color)
+- Displaying the prompt (from `shell.prompt_render()`)
+- Managing input focus, history navigation (arrow keys), and tab completion
+
+The Terminal no longer registers individual commands. All command registration moves to the Shell.
+
+=== VCS ↔ IDE (Process Stage)
+
+The IDE code viewer calls `vfs.node_read(path)` to display file content. When the user selects a file in the project explorer, the IDE reads its content from the VFS — not from a hardcoded template.
+
+The project explorer tree is built by calling `vfs.dir_list('~/src/project/')` recursively.
+
+=== VCS ↔ Marketplace
+
+`assetDetail_install()` in `marketplace/view.ts` calls `store.installAsset(id)`. The Store emits `STATE_CHANGED`. The `MarketplaceProvider` listens and writes the asset into the VFS at the appropriate system path.
+
+== Source Structure
+
+----
+src/
+└── vfs/
+    ├── VirtualFileSystem.ts      # Core: tree + content + CWD + events
+    ├── Shell.ts                  # Command interpreter + env vars + prompt
+    ├── types.ts                  # FileNode, ShellResult, ContentContext, etc.
+    │
+    ├── content/
+    │   ├── ContentRegistry.ts    # Path → generator mapping + lazy evaluation
+    │   └── templates/
+    │       ├── train.ts          # train.py generator
+    │       ├── readme.ts         # README.md generator
+    │       ├── config.ts         # config.yaml generator
+    │       ├── requirements.ts   # requirements.txt generator
+    │       ├── manifest.ts       # .meridian/manifest.json generator
+    │       ├── catalog.ts        # /data/catalog/*.json generators
+    │       └── nodeRegistry.ts   # /etc/atlas/nodes.json generator
+    │
+    └── providers/
+        ├── DatasetProvider.ts    # Builds ~/data/cohort/ from selected datasets
+        ├── ProjectProvider.ts    # Scaffolds $HOME + populates ~/src/project/
+        └── MarketplaceProvider.ts # Installs assets to /bin, /data/sets, etc.
+----
+
+== Migration Path
+
+=== Files to Retire
+
+[cols="1,2"]
+|===
+| Current File | Replaced By
+
+| `src/core/logic/vfs.ts`
+| `src/vfs/VirtualFileSystem.ts` — complete rewrite with content support.
+
+| `src/core/logic/filesystem.ts`
+| `src/vfs/providers/DatasetProvider.ts` — the `filesystem_create()` function moves into the provider.
+
+| Hardcoded `train.py` HTML in `src/core/stages/process.ts:117-141`
+| `src/vfs/content/templates/train.ts` — generates plain text, not HTML.
+
+| Hardcoded `README.md` HTML in `src/core/stages/process.ts:143-155`
+| `src/vfs/content/templates/readme.ts`.
+
+| `terminal.setPrompt()` calls in `src/argus.ts:497-514`
+| `shell.stage_enter()` + `$PS1` evaluation.
+
+| Command registration in `src/ui/components/Terminal.ts:36-117`
+| `src/vfs/Shell.ts` — all builtins move to the Shell.
+
+| `store.globals.vfs`
+| `store.globals.vcs` — rename to reflect the expanded scope.
+|===
+
+=== Files to Modify
+
+[cols="1,2"]
+|===
+| File | Changes
+
+| `src/core/state/store.ts`
+| Replace `globals.vfs` with `globals.vcs`. Add `VFS_CHANGED` and `CWD_CHANGED` events.
+
+| `src/core/state/events.ts`
+| Add new event types for VFS and CWD changes.
+
+| `src/argus.ts`
+| Initialize VCS instead of VFS. Wire Shell to Terminal. Remove hardcoded prompt/stage logic.
+
+| `src/ui/components/Terminal.ts`
+| Simplify to I/O surface. Remove command registration. Delegate to Shell.
+
+| `src/lcars-framework/ui/Terminal.ts`
+| Remove command map. Add `shell` integration point.
+
+| `src/core/stages/gather.ts`
+| Replace `filesystem_build()` with DatasetProvider call.
+
+| `src/core/stages/process.ts`
+| Replace `populate_ide()` with VFS reads. Remove hardcoded file content.
+
+| `src/marketplace/view.ts`
+| Replace `store.installAsset()` inline VFS touch with MarketplaceProvider call.
+|===
+
+== Implementation Status
+
+This section is a living checklist. Update it with each implementation iteration.
+
+=== Phase 1: Core VFS (Not Started)
+
+[cols="1,1,2"]
+|===
+| Item | Status | Notes
+
+| `src/vfs/types.ts`
+| [ ] Pending
+| FileNode with content, ShellResult, ContentContext interfaces.
+
+| `src/vfs/VirtualFileSystem.ts`
+| [ ] Pending
+| Full rewrite. Tree, content, CWD, path resolution, events.
+
+| Unit tests for VFS
+| [ ] Pending
+| `node_read`, `node_write`, `node_remove`, `cwd_set`, `path_resolve`.
+
+| Retire `src/core/logic/vfs.ts`
+| [ ] Pending
+| Only after all consumers migrated.
+|===
+
+=== Phase 2: Shell (Not Started)
+
+[cols="1,1,2"]
+|===
+| Item | Status | Notes
+
+| `src/vfs/Shell.ts`
+| [ ] Pending
+| Command parsing, builtins, env vars, prompt generation.
+
+| Wire Shell to Terminal
+| [ ] Pending
+| Terminal sends input to Shell, renders ShellResult.
+
+| Remove command registration from Terminal.ts
+| [ ] Pending
+| Commands move to Shell.
+
+| Unit tests for Shell
+| [ ] Pending
+| Command parsing, `cd`, `cat`, env var expansion.
+|===
+
+=== Phase 3: Content System (Not Started)
+
+[cols="1,1,2"]
+|===
+| Item | Status | Notes
+
+| `src/vfs/content/ContentRegistry.ts`
+| [ ] Pending
+| Path-to-generator mapping with lazy evaluation.
+
+| `src/vfs/content/templates/*.ts`
+| [ ] Pending
+| All template generators (train, readme, config, etc.).
+
+| IDE integration
+| [ ] Pending
+| Process stage reads from VFS instead of hardcoded HTML.
+|===
+
+=== Phase 4: Providers (Not Started)
+
+[cols="1,1,2"]
+|===
+| Item | Status | Notes
+
+| `src/vfs/providers/ProjectProvider.ts`
+| [ ] Pending
+| Home scaffolding + project population.
+
+| `src/vfs/providers/DatasetProvider.ts`
+| [ ] Pending
+| Cohort tree from selected datasets.
+
+| `src/vfs/providers/MarketplaceProvider.ts`
+| [ ] Pending
+| Asset installation by type.
+
+| Retire `src/core/logic/filesystem.ts`
+| [ ] Pending
+| After DatasetProvider replaces `filesystem_create()`.
+|===
+
+=== Phase 5: Integration (Not Started)
+
+[cols="1,1,2"]
+|===
+| Item | Status | Notes
+
+| Store migration (`vfs` → `vcs`)
+| [ ] Pending
+| Rename global, add new events.
+
+| Stage transition integration
+| [ ] Pending
+| `shell.stage_enter()` replaces hardcoded prompt/cd logic.
+
+| Marketplace integration
+| [ ] Pending
+| `MarketplaceProvider` replaces inline `vfs.touch()`.
+
+| Remove all hardcoded `setPrompt()` calls
+| [ ] Pending
+| Shell + `$PS1` is sole prompt authority.
+|===
+
+== Changelog
+
+[cols="1,1,3"]
+|===
+| Date | Version | Changes
+
+| 2026-01-28
+| 0.1.0
+| Initial specification. Defines architecture, filesystem layout, APIs, providers, migration path, and implementation phases.
+|===
