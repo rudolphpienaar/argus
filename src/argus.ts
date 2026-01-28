@@ -24,7 +24,7 @@ import { filesystem_create } from './core/logic/filesystem.js';
 import { DATASETS } from './core/data/datasets.js';
 import { MOCK_PROJECTS } from './core/data/projects.js';
 import { MOCK_NODES } from './core/data/nodes.js';
-import { cascade_update, telemetry_update } from './core/logic/telemetry.js';
+import { cascade_update } from './core/logic/telemetry.js';
 import { stage_advanceTo, stage_next, station_click, stageIndicators_initialize, STAGE_ORDER, stageButton_setEnabled } from './core/logic/navigation.js';
 import { filesystem_build, filePreview_show, costs_calculate, selectionCount_update } from './core/stages/gather.js';
 import { training_launch, terminal_toggle, ide_openFile } from './core/stages/process.js';
@@ -34,6 +34,8 @@ import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
 import { marketplace_initialize } from './marketplace/view.js';
 import { catalog_search, dataset_toggle, dataset_select, dataset_deselect, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate } from './core/stages/search.js';
+import { telemetry_start } from './telemetry/manager.js';
+import { WorkflowTracker } from './lcars-framework/ui/WorkflowTracker.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
 import { LCARSEngine } from './lcarslm/engine.js';
 import './ui/components/LCARSFrame.js';  // LCARS procedural frame generator
@@ -77,102 +79,27 @@ declare global {
 // State is now imported from core/state/store.ts
 
 let terminal: LCARSTerminal | null = null;
+let workflowTracker: WorkflowTracker | null = null;
 
 // ============================================================================
 // SeaGaP Station Functions
 // ============================================================================
 
-// Station functions have been moved to core/logic/navigation.ts
-
-/** Telemetry ticker state */
-let telemetryTickerInterval: number | null = null;
-let telemetryTickCount: number = 0;
-
 /**
- * Initializes and starts the global telemetry ticker for SeaGaP stations.
+ * Initializes the SeaGaP workflow tracker.
  */
-function stationTelemetry_start(): void {
-    if (telemetryTickerInterval) return;
-
-    telemetryTickerInterval = window.setInterval(() => {
-        telemetryTickCount++;
-        STAGE_ORDER.forEach((stage: string) => {
-            stationTelemetry_tick(stage as AppState['currentStage']);
-        });
-    }, 800);
+function workflow_initialize(): void {
+    console.log('[ARGUS] Initializing WorkflowTracker...', STAGE_ORDER);
+    workflowTracker = new WorkflowTracker({
+        elementId: 'seagap-panel',
+        stations: STAGE_ORDER.map(stage => ({
+            id: stage,
+            label: stage.toUpperCase(),
+            hasTelemetry: true
+        })),
+        onStationClick: (stageId) => station_click(stageId)
+    });
 }
-
-/**
- * Generates dynamic telemetry content for a station.
- *
- * @param stageName - The stage to generate content for
- */
-function stationTelemetry_tick(stageName: AppState['currentStage']): void {
-    const stationEl: HTMLElement | null = document.getElementById(`station-${stageName}`);
-    if (!stationEl || (!stationEl.classList.contains('active') && !stationEl.classList.contains('visited'))) {
-        return;
-    }
-
-    const teleEl: HTMLElement | null = document.getElementById(`tele-${stageName}`);
-    if (!teleEl) return;
-
-    const contentEl: Element | null = teleEl.querySelector('.tele-content');
-    if (!contentEl) return;
-
-    const isActive: boolean = stationEl.classList.contains('active');
-    const t: number = telemetryTickCount + (STAGE_ORDER.indexOf(stageName) * 10); // Offset for variety
-    const timeStr: string = String(t % 10000).padStart(4, '0');
-
-    // Dynamic content generators for each stage
-    const generators: Record<string, () => string> = {
-        search: () => {
-            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">SCAN COMPLETE</span><br>HITS: 42<br>STATUS: IDLE`;
-            const queries: string[] = ['chest xray', 'pneumonia', 'covid-19', 'thoracic', 'lung nodule'];
-            const query: string = queries[t % queries.length];
-            return `<span class="dim">[${timeStr}]</span> SCAN: <span class="highlight">XRAY</span><br>` +
-                   `QUERY: "<span class="warn">${query}</span>"<br>` +
-                   `HITS: <span class="highlight">${Math.floor(Math.random() * 50 + 10)}</span><br>` +
-                   `LATENCY: ${Math.floor(Math.random() * 50 + 5)}ms`;
-        },
-        gather: () => {
-            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">GATHERED</span><br>IMG: ${state.selectedDatasets.reduce((sum, d) => sum + d.imageCount, 0)}<br>STATUS: SYNCED`;
-            const ops: string[] = ['INDEXING', 'HASHING', 'VALIDATING', 'CACHING', 'SYNCING'];
-            return `<span class="dim">[${timeStr}]</span> <span class="warn">${ops[t % ops.length]}</span><br>` +
-                   `DATASETS: <span class="highlight">${state.selectedDatasets.length}</span><br>` +
-                   `IMAGES: ${state.selectedDatasets.reduce((sum, d) => sum + d.imageCount, 0).toLocaleString()}<br>` +
-                   `COST: <span class="highlight">$${state.costEstimate.total.toFixed(2)}</span>`;
-        },
-        process: () => {
-            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">COMPILED</span><br>MODEL: ResNet50<br>READY: YES`;
-            const tasks: string[] = ['COMPILING', 'LINKING', 'VALIDATING', 'OPTIMIZING', 'STAGING'];
-            return `<span class="dim">[${timeStr}]</span> <span class="warn">${tasks[t % tasks.length]}</span><br>` +
-                   `MODEL: ResNet50<br>` +
-                   `PARAMS: <span class="highlight">25.6M</span><br>` +
-                   `GPU MEM: ${(Math.random() * 4 + 8).toFixed(1)} GB`;
-        },
-        monitor: () => {
-            const epoch = state.trainingJob?.currentEpoch ?? 0;
-            const loss = state.trainingJob?.loss?.toFixed(4) ?? (2.5 - (t % 100) * 0.02).toFixed(4);
-            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">FINISHED</span><br>EPOCH: 50/50<br>LOSS: 0.0231`;
-            return `<span class="dim">[${timeStr}]</span> <span class="warn">TRAINING</span><br>` +
-                   `EPOCH: <span class="highlight">${Math.floor(epoch)}/50</span><br>` +
-                   `LOSS: <span class="warn">${loss}</span><br>` +
-                   `THROUGHPUT: ${Math.floor(Math.random() * 100 + 150)} img/s`;
-        },
-        post: () => {
-            if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">PUBLISHED</span><br>VER: 1.0.0`;
-            const actions: string[] = ['CHECKSUMMING', 'PACKAGING', 'SIGNING', 'REGISTERING', 'PUBLISHING'];
-            return `<span class="dim">[${timeStr}]</span> <span class="warn">${actions[t % actions.length]}</span><br>` +
-                   `MODEL: ChestXRay-v1<br>` +
-                   `SIZE: <span class="highlight">98.2 MB</span><br>` +
-                   `ACC: 94.2%  AUC: 0.967`;
-        }
-    };
-
-    const generator: (() => string) | undefined = generators[stageName];
-    contentEl.innerHTML = generator ? generator() : 'Initializing...';
-}
-
 
 // ============================================================================
 // Clock & Version Functions
@@ -482,7 +409,7 @@ function terminal_initializeDraggable(): void {
         if (!isDragging) return;
         
         const deltaY: number = e.clientY - startY;
-        const newHeight: number = Math.max(0, Math.min(window.innerHeight - 400, startHeight + deltaY));
+        const newHeight: number = Math.max(0, startHeight + deltaY);
         
         consoleEl.style.height = `${newHeight}px`;
         consoleEl.style.transition = 'none'; // Disable transition during drag
@@ -533,8 +460,9 @@ function app_initialize(): void {
     cascade_update();
 
     // Start Telemetry
-    setInterval(telemetry_update, 500);
-    stationTelemetry_start();
+    telemetry_start();
+    workflow_initialize();
+
 
     // Set initial gutter state
     gutter_setStatus(1, 'active');

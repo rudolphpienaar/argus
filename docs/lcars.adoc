@@ -13,20 +13,21 @@ The terminal is the primary command and control hub for ARGUS. It functions as a
 The terminal is conceptually positioned **between** the Status Header (top panel) and the Operational Workspace (bottom panel). It is designed as a "retractable drawer" that unfurls from behind the main workspace.
 
 .Key Design Principles:
+* **Framework Integration**: The terminal is powered by the `LCARSTerminal` component from the `lcars-framework`. It is decoupled from application logic, using a command-registration API.
 * **Frameless Integration**: To avoid visual clutter, the terminal does not have its own left-side LCARS framing. Instead, it sits flush against the primary `left-frame` (sidebar), which acts as a "rail" for the drawer.
 * **The Workspace Lid**: The horizontal `bar-panel` (containing bars 6-10) functions as the physical "lid" of the bottom panel.
 * **Retraction Logic**:
-  - **Closed**: The lid sits at the top of the right-frame; the terminal is hidden.
+  - **Closed**: The lid sits at the top of the right-frame; the terminal is hidden (height: 0).
   - **Open**: The lid slides downward, revealing the terminal screen above it.
-* **Dynamic Elbows**: The LCARS corner elbows are attached to the sliding "lid" rather than the frame, ensuring a flush join at any deployment height.
+* **Dynamic Elbows**: The LCARS corner elbows are attached to the sliding "lid" rather than the frame, ensuring a flush join at any deployment height. These elbows have a high z-index (300) to sit above overlays like the Marketplace.
 
 === Interaction Metaphor: The Pullable Access Strip
 
 The primary method for adjusting the terminal's height is the **Access Strip**.
 
-* **The Handle**: A horizontal bar sitting precisely on the workspace lid.
-* **Draggable Workspace**: By "grabbing" this handle, the user physically pulls the entire workspace down, increasing the terminal's visibility.
-* **Visual Feedback**: The handle changes color from `october-sunset` to `canary` and glows when active, providing tactile confirmation.
+* **The Handle**: A horizontal orange bar (`october-sunset`) floating 5px above the workspace lid.
+* **Draggable Workspace**: By "grabbing" this handle, the user physically pulls the entire workspace down, increasing the terminal's visibility. The height limit has been removed to allow full-screen console expansion.
+* **Visual Feedback**: The handle glows when active, providing tactile confirmation.
 * **Integrated Toggles**:
   - **Tactical Close**: A glowing `mars` red pill at the top-right of the terminal header for quick retraction.
   - **Primary Toggle**: The leftmost orange bar (`bar-6`) of the workstation lid acts as a large-target toggle switch.
@@ -57,7 +58,19 @@ ARGUS uses the **Antonio** font family with a selective casing strategy:
 
 == LCARS Component System
 
-ARGUS includes a procedural LCARS frame generator for creating consistent, themeable UI components. This system enables dynamic color theming via CSS custom properties and HSL color computation.
+ARGUS is built on a reusable **LCARS Framework** (`src/lcars-framework/`) that decouples data simulation from UI rendering.
+
+=== Telemetry Service
+The telemetry system uses a provider-renderer pattern:
+* **Generators**: Pure logic classes (e.g., `ProcessGenerator`, `NetworkGenerator`) that produce data objects.
+* **Renderers**: Visual components (e.g., `ListRenderer`, `LogRenderer`) that take data and update the DOM.
+* **Service**: A central orchestrator that manages registration and the 800ms "flicker" update loop.
+
+=== Workflow Tracker
+The `WorkflowTracker` procedurally generates linear pipelines (like SeaGaP) with:
+* **Stations**: Circular "stops" with associated labels and status classes (`active`, `visited`).
+* **Connectors**: Dynamic line segments between stops.
+* **Integrated Telemetry**: Each station includes a "hanging" telemetry window that populates via the `TelemetryService`.
 
 === Architecture
 

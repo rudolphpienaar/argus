@@ -1,0 +1,68 @@
+= LCARS Framework Modularization Plan
+:toc:
+:icons: font
+
+== Overview
+The goal of this initiative is to transition the ARGUS prototype from a monolithic, tightly-coupled application to a modular, reusable **LCARS Framework**. This framework will provide components and services that can be easily dropped into other medical imaging or federated learning projects.
+
+== Core Philosophy
+1. **Separation of Concerns**: Decouple simulation logic (data generation) from rendering logic (DOM manipulation).
+2. **Dependency Injection**: Components should receive their data and configuration (IDs, labels, state) rather than reaching out to global stores.
+3. **Registry Pattern**: Services should allow dynamic registration of data sources and views.
+4. **Framework Agnostic**: The core logic should remain Vanilla TypeScript, making it compatible with any future environment.
+
+== Target Components
+
+=== 1. Telemetry System
+Refactor the current hardcoded telemetry into a generic service.
+
+* **Status**: In Progress (Refactoring ARGUS-native telemetry)
+* **Architecture**:
+** `TelemetryGenerator`: Interface for data providers (e.g., CPU, Network, Stage-specific metrics).
+** `TelemetryRenderer`: Interface for UI views (e.g., Tables, Scrolling Logs, Status Boxes).
+** `TelemetryService`: Orchestrates the `tick` loop and maps generators to renderers.
+
+=== 2. Intelligent Terminal
+Refactor `LCARSTerminal` to be a standalone component.
+
+* **Status**: Planned
+* **Architecture**:
+** Configurable prompts and styling.
+** Command registry for custom application logic.
+** Plug-and-play AI backends (e.g., LCARSLM Engine).
+
+=== 3. Procedural Frame System
+Solidify `LCARSFrame.ts` into a stable library component.
+
+* **Status**: Partially Complete
+* **Architecture**:
+** Configurable panel stacks and curves.
+** Standardized color palettes (LCARS_HUES).
+
+== Roadmap
+
+=== Phase 1: Telemetry Decoupling [COMPLETE]
+- [x] Create `src/lcars-framework/` directory structure.
+- [x] Extract "Simulators" from `src/telemetry/system.ts` into pure `TelemetryGenerator` classes.
+- [x] Implement generic `TelemetryRenderer` for common LCARS layouts.
+- [x] Update `TelemetryManager` to use the new service pattern.
+
+=== Phase 2: Terminal Refactor [COMPLETE]
+- [x] Remove ARGUS-specific commands from the core Terminal component.
+- [x] Implement a clean registration API for new terminal commands.
+- [x] Decouple the prompt and response handling from the application state.
+
+=== Phase 3: Layout & Navigation [COMPLETE]
+- [x] Refactor SeaGaP stations into a configurable `WorkflowTracker` component.
+- [x] Standardize event-based communication between components using the `EventBus`.
+
+== Final Framework Structure
+The resulting framework resides in `src/lcars-framework/` and provides:
+* **Telemetry**: Data-agnostic simulators and LCARS renderers.
+* **Terminal**: A flexible, command-driven console.
+* **Workflow**: Procedural station tracker for linear pipelines.
+
+== Implementation Notes
+* All new framework code should reside in `src/lcars-framework/`.
+* Avoid importing from `src/core/` or `src/argus.ts` inside the framework.
+* Use interfaces to define contracts between the framework and the application.

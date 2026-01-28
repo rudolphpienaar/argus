@@ -19,9 +19,18 @@ export function marketplace_initialize(): void {
     events.on(Events.STATE_CHANGED, (s: any) => {
         const overlay = document.getElementById('marketplace-overlay');
         if (overlay) {
-            overlay.classList.toggle('hidden', !s.marketplaceOpen);
             if (s.marketplaceOpen) {
+                overlay.classList.remove('hidden', 'closing');
                 marketGrid_render();
+            } else {
+                // If visible, animate out
+                if (!overlay.classList.contains('hidden')) {
+                    overlay.classList.add('closing');
+                    overlay.addEventListener('animationend', () => {
+                        overlay.classList.add('hidden');
+                        overlay.classList.remove('closing');
+                    }, { once: true });
+                }
             }
         }
     });

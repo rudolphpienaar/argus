@@ -665,7 +665,6 @@ nav button.active {
 
 .main-bar-panel {
     position: relative;
-    isolation: isolate;
 }
 
 .main-bar-panel::before {
@@ -677,7 +676,8 @@ nav button.active {
     position: absolute;
     left: 0;
     top: var(--bar-height);
-    z-index: -1;
+    z-index: 300;
+    pointer-events: none;
 }
 
 .main-bar-panel::after {
@@ -690,7 +690,8 @@ nav button.active {
     position: absolute;
     left: 0;
     top: var(--bar-height);
-    z-index: -1;
+    z-index: 300;
+    pointer-events: none;
 }
 
 main {
@@ -1854,12 +1855,12 @@ body.state-locked .next-pill {
     width: var(--bar-cut-out-width);
     height: 10px;
     background-color: var(--october-sunset);
-    top: -10px; 
+    top: -15px; 
     left: 0;
     cursor: ns-resize;
     transition: all 0.2s ease;
-    border-radius: 5px 5px 0 0;
-    z-index: 100;
+    border-radius: 5px;
+    z-index: 1000;
 }
 
 .lcars-access-strip:hover,

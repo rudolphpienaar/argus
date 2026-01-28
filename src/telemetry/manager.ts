@@ -1,31 +1,33 @@
 /**
  * @file Telemetry Manager
  * Orchestrates the dashboard updates based on the current application stage.
+ * Now powered by the LCARS Framework Telemetry Service.
  */
 
 import type { AppState, Dataset, CostEstimate } from '../core/models/types.js';
-import * as SystemTelemetry from './system.js';
 import * as MetricsDashboard from './metrics.js';
+import { telemetryService } from '../lcars-framework/telemetry/service.js';
+import { telemetry_setup } from './setup.js';
 
-let updateInterval: number | null = null;
 let currentStage: AppState['currentStage'] = 'login';
+let initialized = false;
 
 /**
  * Starts the telemetry loop.
  */
 export function telemetry_start(): void {
-    if (updateInterval) return;
-    updateInterval = window.setInterval(tick, 500);
+    if (!initialized) {
+        telemetry_setup();
+        initialized = true;
+    }
+    telemetryService.start(800);
 }
 
 /**
  * Stops the telemetry loop.
  */
 export function telemetry_stop(): void {
-    if (updateInterval) {
-        clearInterval(updateInterval);
-        updateInterval = null;
-    }
+    telemetryService.stop();
     MetricsDashboard.ticker_stop();
 }
 
@@ -36,20 +38,6 @@ export function telemetry_stop(): void {
 export function stage_set(stage: AppState['currentStage']): void {
     currentStage = stage;
     viewVisibility_update();
-}
-
-/**
- * Main update loop.
- */
-function tick(): void {
-    // Only run high-frequency updates (System Telemetry) if the view is visible
-    if (['login', 'role-selection', 'process', 'monitor'].includes(currentStage)) {
-        const isProcess: boolean = currentStage === 'process';
-        SystemTelemetry.processList_render(isProcess);
-        SystemTelemetry.networkStats_render();
-        SystemTelemetry.systemLogs_render();
-    }
-    // Metrics dashboard has its own internal ticker for the "Search" stage managed in metrics.ts
 }
 
 /**
@@ -67,9 +55,6 @@ function viewVisibility_update(): void {
         // Show Metrics
         if (viewMetrics) viewMetrics.classList.remove('hidden');
         if (viewTelemetry) viewTelemetry.classList.add('hidden');
-        
-        // Trigger initial render for static/low-freq metric views
-        // Note: Search stage has an internal ticker started by searchMetrics_render
     }
 }
 

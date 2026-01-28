@@ -25,12 +25,22 @@
 /* Content wrapper - provides padding and natural document flow */
 .market-content {
     padding: 2rem;
+    padding-left: 80px;
     min-height: 100%;
 }
 
 @keyframes slide-in {
     from { transform: translateX(100%); }
     to { transform: translateX(0); }
+}
+
+@keyframes slide-out {
+    from { transform: translateX(0); }
+    to { transform: translateX(100%); }
+}
+
+.marketplace-overlay.closing {
+    animation: slide-out 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 .market-header {
