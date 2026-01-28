@@ -39,6 +39,7 @@ import { WorkflowTracker } from './lcars-framework/ui/WorkflowTracker.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
 import { LCARSEngine } from './lcarslm/engine.js';
 import './ui/components/LCARSFrame.js';  // LCARS procedural frame generator
+import { FrameSlot } from './ui/components/FrameSlot.js';
 import type { QueryResponse } from './lcarslm/types.js';
 import { VERSION, GIT_HASH } from './generated/version.js';
 
@@ -428,6 +429,11 @@ function terminal_initializeDraggable(): void {
         strip.classList.remove('active');
         document.body.style.cursor = 'default';
         consoleEl.style.transition = ''; // Restore transition
+
+        // Sync FrameSlot slide state after drag completes
+        if (globals.frameSlot) {
+            globals.frameSlot.state_syncAfterDrag();
+        }
     });
 }
 
@@ -472,6 +478,31 @@ function app_initialize(): void {
     globals.terminal = terminal;
     terminal.onUnhandledCommand = terminal_handleCommand;
 
+    // Initialize Frame Slot for two-phase terminal animation
+    const consoleBootEl: HTMLElement | null = document.getElementById('intelligence-console');
+    const terminalWrapper: HTMLElement | null = consoleBootEl?.querySelector('.lcars-terminal-wrapper') as HTMLElement;
+    const bar10El: HTMLElement | null = document.querySelector('.bar-10');
+    if (consoleBootEl && terminalWrapper) {
+        globals.frameSlot = new FrameSlot({
+            frameElement: consoleBootEl,
+            contentElement: terminalWrapper,
+            frameDuration: 600,
+            slideDuration: 400,
+            openHeight: '600px',
+            onOpen: () => {
+                // Stop beckoning bar-10 when the terminal is open
+                if (bar10El) bar10El.classList.remove('lcars-beckon');
+            },
+            onClose: () => {
+                // Resume beckoning bar-10 when the terminal is closed
+                if (bar10El) bar10El.classList.add('lcars-beckon');
+            },
+        });
+
+        // Bar-10 starts beckoning (terminal starts closed)
+        if (bar10El) bar10El.classList.add('lcars-beckon');
+    }
+
     // Listen for stage changes to update Terminal
     document.addEventListener('argus:stage-change', ((event: CustomEvent) => {
         const stageName = event.detail.stage;
@@ -496,7 +527,9 @@ function app_initialize(): void {
             // Contextual Prompt
             if (stageName === 'search') {
                 terminal.setPrompt('ARGUS: SEARCH >');
-                setTimeout(() => consoleEl.classList.add('open'), 10);
+                if (globals.frameSlot) {
+                    setTimeout(() => globals.frameSlot.frame_open(), 10);
+                }
             } else if (stageName === 'gather') {
                 terminal.setPrompt('ARGUS: COHORT >');
             } else if (stageName === 'process') {
@@ -509,7 +542,9 @@ function app_initialize(): void {
                 terminal.println('○ ENVIRONMENT: BASH 5.2.15 // ARGUS CORE v1.4.5');
                 terminal.println('● PROJECT MOUNTED AT /home/developer/src/project');
                 terminal.println('○ RUN "ls" TO VIEW ASSETS OR "python train.py" TO INITIATE FEDERATION.');
-                consoleEl.classList.add('open');
+                if (globals.frameSlot) {
+                    globals.frameSlot.frame_open();
+                }
             } else {
                 terminal.setPrompt('dev@argus:~/ $');
             }

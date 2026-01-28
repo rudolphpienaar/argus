@@ -1,0 +1,149 @@
+= ARGUS: Visual Language Specification
+:author: ATLAS Project Team
+:revdate: 2026-01-28
+:toc:
+:sectnums:
+
+== Introduction
+
+ARGUS draws its visual identity from Star Trek's LCARS (Library Computer Access/Retrieval System), designed by Michael Okuda for The Next Generation. Where LCARS was created for television cameras, ARGUS adapts its design language for responsive, interactive web use. This document codifies the motion and layout patterns that give ARGUS its cinematic, mechanical feel.
+
+The visual language is built on a central metaphor: ARGUS is a physical console. Frames are structural members that separate and rejoin. Content panels are equipment trays that slide into exposed bays. Nothing simply appears or disappears -- everything moves with deliberate, mechanical purpose.
+
+== Core Structural Elements
+
+=== The LCARS Frame
+
+Bar panels form the structural skeleton of the interface. The primary frame consists of two horizontal bar rows (bars 1-5 at top, bars 6-10 at bottom) connected by a vertical left sidebar. These bars are not decorative chrome -- they are load-bearing members that define content regions and, critically, can separate to expose functional surfaces beneath them.
+
+The frame uses rounded "elbows" at connection points between horizontal and vertical members, achieved through a combination of `border-radius` and pseudo-element geometry. These curves are the most recognizable LCARS signature and must be preserved at all viewport sizes.
+
+=== The Content Region
+
+The area enclosed by bars and sidebar is the active workspace. Content within this region changes based on the current SeaGaP-MP stage. The region scrolls vertically but never horizontally.
+
+=== The Slot
+
+When bars separate, the space between them becomes a slot -- a bay into which content panels can be inserted. The Intelligence Console occupies the primary slot between the lower bar panel and the main content area. The slot concept is generalizable: any region where frame members can part to accept a content panel is a slot.
+
+== Animation Patterns
+
+ARGUS uses three distinct animation patterns, each appropriate to different interaction contexts. All animations use the same easing curve (`cubic-bezier(0.4, 0, 0.2, 1)`) for visual consistency.
+
+=== Pattern 1: Frame Separation
+
+Frame members move apart to create space. This is a vertical height transition where a collapsed region expands to a target height.
+
+[cols="1,3"]
+|===
+| Duration | 600ms (`--frame-transition-duration`)
+| Easing | `cubic-bezier(0.4, 0, 0.2, 1)` (`--lcars-easing`)
+| CSS mechanism | `transition: height` on the slot container
+| Trigger | Class toggle (`.open`)
+| Used by | Intelligence Console frame, terminal drawer
+|===
+
+Frame Separation alone does not introduce content. It exposes empty space -- a bay waiting to receive a panel. When used in isolation, the frame region would contain static content already present in the DOM that is revealed by the expansion.
+
+=== Pattern 2: Slide-In Overlay
+
+A full-surface overlay enters from the right edge of the viewport and covers the content region entirely. This is used for modal or near-modal experiences that temporarily replace the active workspace.
+
+[cols="1,3"]
+|===
+| Duration | 400ms (`--slide-transition-duration`)
+| Easing | `cubic-bezier(0.4, 0, 0.2, 1)` (`--lcars-easing`)
+| CSS mechanism | `@keyframes` with `translateX(100%)` to `translateX(0)`
+| Trigger | State change via Store (`marketplaceOpen`)
+| Close | Reverse animation via `.closing` class, then `display: none` on `animationend`
+| Used by | Marketplace overlay, Asset detail overlay
+|===
+
+The slide-in overlay implies a separate system or context. The marketplace is not part of the SeaGaP workflow -- it is an adjacent resource. The rightward origin reinforces this: it arrives from outside the console's workspace.
+
+=== Pattern 3: Frame-then-Slide (The Double Whammy)
+
+This is the signature ARGUS interaction pattern, combining Frame Separation with a content slide-in to create a two-phase mechanical animation:
+
+==== Opening Sequence
+
+. **Phase 1 -- Frame Separation** (600ms): The slot container expands vertically. Bar panels move apart. The bay is now exposed but empty.
+. **Phase 2 -- Content Slide-In** (400ms): After the frame finishes expanding, the content panel slides in from the right edge of the slot, filling the bay.
+
+Total opening time: ~1000ms. The sequential phasing is intentional for the opening -- the user should perceive two distinct mechanical actions: "bay opens" then "equipment slides in."
+
+==== Closing Sequence
+
+. **Simultaneous**: The content panel begins sliding out to the right AND the frame begins collapsing at the same time. Both animations run in parallel.
+
+Total closing time: ~600ms. The overlapped closing is intentional -- closing should feel snappier than opening. The visual effect is the content being retracted as the bay shuts, like a drawer closing with its tray still retracting.
+
+==== Timing Constants
+
+[cols="2,1,1"]
+|===
+| Constant | Value | CSS Variable
+| Frame transition duration | 600ms | `--frame-transition-duration`
+| Slide transition duration | 400ms | `--slide-transition-duration`
+| Easing curve | cubic-bezier(0.4, 0, 0.2, 1) | `--lcars-easing`
+|===
+
+==== Used By
+
+* Intelligence Console (terminal)
+* Future: any panel that occupies a frame slot (diagnostics, settings, inline help)
+
+== The Frame Slot System
+
+The Frame-then-Slide pattern is implemented as a composable system with two components:
+
+=== SlidePanel
+
+A reusable primitive that manages the slide-in and slide-out animation of a single DOM element. The SlidePanel knows nothing about frames or slots -- it only knows how to move its content element horizontally using CSS transitions.
+
+The SlidePanel applies the `.frame-slot-panel` CSS class to its managed element. This class sets the initial state (`translateX(100%)`, `opacity: 0`) and defines the transition properties. The `.active` class triggers the slide-in; the `.exiting` class triggers the slide-out.
+
+CSS transitions are used rather than `@keyframes` animations because transitions can be interrupted and reversed mid-animation. This is essential for the draggable access strip, which allows users to manually resize the terminal bay.
+
+=== FrameSlot
+
+An orchestrator that coordinates the two-phase sequence by combining a frame element (the expandable container) with a SlidePanel (the sliding content). The FrameSlot manages the timing between phases and provides guards against rapid-fire toggling that could leave the animation in a broken state.
+
+The FrameSlot is the integration point. To add a new pluggable panel to a frame slot in the future, one creates a new SlidePanel instance and registers it with the FrameSlot. The frame expansion logic remains unchanged -- only the content that slides in differs.
+
+== Design Rationale
+
+=== Why Two Phases on Open?
+
+A single combined animation (frame expands while content slides) would be faster but would read as a single event. Two distinct phases create a narrative: something mechanical happened (the bay opened), and then something was delivered (the panel arrived). This maps to the physical console metaphor and gives the user's attention two anchor points rather than one.
+
+=== Why Overlap on Close?
+
+Opening is a reveal -- it deserves ceremony. Closing is a dismissal -- it should be efficient. Users who close a panel want it gone; making them wait through a sequential reverse animation creates frustration. The overlapped close respects the user's intent to dismiss while still maintaining visual coherence.
+
+=== Why Slide from the Right?
+
+The left edge of the ARGUS interface is occupied by the LCARS sidebar -- a fixed structural member. Content entering from the right implies arrival from outside the current context, which is semantically correct for both the marketplace (an external registry) and the terminal (a system-level tool that exists below the application surface). The rightward origin also follows natural left-to-right reading flow: the workspace is read first, then the arriving panel draws attention as it enters the visual field.
+
+== Pattern Selection Guide
+
+[cols="2,3,2"]
+|===
+| Scenario | Pattern | Rationale
+
+| System tool appearing within the console frame
+| Frame-then-Slide
+| Mechanical feel; tool is "inserted" into the console
+
+| External resource browser or modal overlay
+| Slide-In Overlay
+| Full takeover; content is from outside the workflow
+
+| Revealing static content within the layout
+| Frame Separation only
+| No new content arrives; existing content is exposed
+
+| Future: swapping one tool for another in an open bay
+| Slide-out then Slide-in (no frame animation)
+| Bay is already open; only the content changes
+|===

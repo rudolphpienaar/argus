@@ -2,6 +2,7 @@
 
 ## Recent Refactoring Activity
 
+- **2026-01-28 (v3.4.0)**: **"The Visual Language Update"** - Introduced the Frame Slot system: a two-phase "double whammy" animation where LCARS panels open, then content slides in from the right. Added the Beckon Pulse pattern for interactive affordances. Documented the emerging visual language in `docs/visual_language.adoc`. New components: `SlidePanel`, `FrameSlot`.
 - **2026-01-28 (v3.3.0)**: **"The Modularization Update"** - Decoupled core UI components (Terminal, Telemetry, Workflow) into a reusable `lcars-framework`. Replaced hardcoded HTML stations with a procedural `WorkflowTracker`.
 - **2026-01-26 (v3.2.1)**: **"The Telemetry Restore"** - Fixed a regression where SeaGaP telemetry windows were missing due to placeholder comments. Unified telemetry logic into a registry-based service.
 - **2026-01-26 (v3.1.0)**: **"The Marketplace Update"** - Scaled the registry to 400+ "Pro-ified" assets (Plugins, Datasets, Annotations, Models) with functional category filtering.
@@ -72,7 +73,7 @@ src/
 ├── lcarslm/          # AI Core / RAG Engine
 ├── marketplace/      # Marketplace View and Logic
 ├── telemetry/        # App-specific Telemetry Setup
-├── ui/               # ARGUS-specific UI wrappers
+├── ui/               # ARGUS-specific UI wrappers (SlidePanel, FrameSlot)
 └── argus.ts          # Main entry point and window orchestration
 ```
 
@@ -84,4 +85,4 @@ npm run serve      # http://localhost:8080 (or 'make serve')
 ```
 
 ---
-*Last updated: 2026-01-28*
+*Last updated: 2026-01-28 (v3.4.0)*

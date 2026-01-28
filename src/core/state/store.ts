@@ -41,7 +41,8 @@ class Store {
         lcarsEngine: null as any,
         vfs: new VirtualFileSystem(),
         trainingInterval: null as number | null,
-        lossChart: null as { ctx: CanvasRenderingContext2D; data: number[] } | null
+        lossChart: null as { ctx: CanvasRenderingContext2D; data: number[] } | null,
+        frameSlot: null as any
     };
 
     constructor() {

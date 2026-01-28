@@ -29,8 +29,9 @@ The primary method for adjusting the terminal's height is the **Access Strip**.
 * **Draggable Workspace**: By "grabbing" this handle, the user physically pulls the entire workspace down, increasing the terminal's visibility. The height limit has been removed to allow full-screen console expansion.
 * **Visual Feedback**: The handle glows when active, providing tactile confirmation.
 * **Integrated Toggles**:
-  - **Tactical Close**: A glowing `mars` red pill at the top-right of the terminal header for quick retraction.
-  - **Primary Toggle**: The leftmost orange bar (`bar-6`) of the workstation lid acts as a large-target toggle switch.
+  - **Tactical Close**: A glowing `mars` red pill at the top-right of the terminal header for quick retraction. Pulses with `lcars-beckon-mars` to signal interactivity.
+  - **Primary Toggle**: The rightmost bar segment (`bar-10`) of the workstation lid acts as the toggle switch. Pulses with `lcars-beckon-orange` when the terminal is closed; stops pulsing when open.
+  - **Resize Handle**: The Access Strip pulses with `lcars-beckon-orange` when the terminal is open, indicating drag-to-resize capability.
 
 == Operational Modes
 
@@ -226,6 +227,73 @@ Action buttons are removed from the internal content area and placed in a dedica
 // In marketplace/view.ts
 const hue = asset.type === 'fda' ? 140 : 200;
 lcarsFrame.style.setProperty('--lcars-hue', String(hue));
+----
+
+== Interactive Affordances: The Beckon Pulse
+
+In Michael Okuda's original LCARS designs for The Next Generation, instrument panels were never entirely static. Panels flickered, shifted, and cycled through subtle brightness changes to suggest ongoing background system activity. This visual "life" served a dual purpose: it made the interface feel like a living system, and it drew attention to active controls without explicit labels or iconography.
+
+ARGUS adopts this principle as a formal visual language pattern called the **Beckon Pulse**. Any interactive element that lacks an obvious affordance (no label, no icon, no conventional button shape) uses a slow brightness oscillation to signal "interact with me."
+
+=== The Pattern
+
+The Beckon Pulse is a `3-3.5s` CSS animation that oscillates `filter: brightness()` between `1.0` and `1.15-1.25`, with an optional `box-shadow` glow. The effect is subtle enough to register in peripheral vision without demanding attention. On hover, the animation stops and the element shows a static highlight, confirming interactivity.
+
+=== Variants
+
+[cols="1,2,2"]
+|===
+| Variant | Animation | Usage
+
+| `lcars-beckon-orange`
+| brightness 1.0 → 1.15, soft orange glow
+| Open/activate controls (e.g., `bar-6` terminal opener)
+
+| `lcars-beckon-mars`
+| brightness 1.0 → 1.25, red glow intensifies
+| Close/dismiss controls (e.g., terminal close pill)
+
+| `.lcars-beckon` (utility class)
+| Applies `lcars-beckon-orange` by default
+| Any generic interactive element
+|===
+
+=== Contextual Activation
+
+Beckon animations are **context-sensitive**: they only pulse when the affordance is relevant. For example, `bar-6` (the terminal opener) beckons only when the terminal is closed. Once the terminal is open, bar-6 stops pulsing — the user's attention should shift to the terminal content and its close control, which now takes over the beckon duty.
+
+This prevents **pulse fatigue**: the visual rhythm of the interface changes as the user navigates, with different elements beckoning at different moments rather than everything pulsing simultaneously.
+
+=== CSS Usage
+
+[source,css]
+----
+/* Apply via utility class */
+.my-interactive-element {
+    /* ... */
+}
+.my-interactive-element.lcars-beckon {
+    animation: lcars-beckon-orange 3.5s ease-in-out infinite;
+}
+.my-interactive-element.lcars-beckon:hover {
+    animation: none;
+}
+
+/* Or apply a specific variant directly */
+.my-close-button {
+    animation: lcars-beckon-mars 3s ease-in-out infinite;
+}
+----
+
+=== Toggling via JavaScript
+
+[source,typescript]
+----
+// Start beckoning
+element.classList.add('lcars-beckon');
+
+// Stop beckoning (e.g., when the associated panel is open)
+element.classList.remove('lcars-beckon');
 ----
 
 == Implementation Details

@@ -22,19 +22,13 @@ async function handleProjectNavigation(cmd: string, args: string[]): Promise<voi
     // I will implement it fully in the next step to ensure clean imports.
 }
 
+/**
+ * Toggles the Intelligence Console via the Frame Slot orchestrator.
+ * Delegates to FrameSlot for the two-phase open/close animation.
+ */
 export function terminal_toggle(): void {
-    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
-    if (consoleEl) {
-        const isOpen: boolean = consoleEl.classList.contains('open');
-        if (isOpen) {
-            consoleEl.classList.remove('open');
-            consoleEl.style.height = '';
-        } else {
-            consoleEl.classList.add('open');
-            if (!consoleEl.style.height) {
-                consoleEl.style.height = '600px';
-            }
-        }
+    if (globals.frameSlot) {
+        globals.frameSlot.frame_toggle();
     }
 }
 
@@ -193,9 +187,9 @@ async function federation_sequence(): Promise<void> {
     
     // Ensure Terminal is visible for build logs
     const consoleEl = document.getElementById('intelligence-console');
-    if (consoleEl && !consoleEl.classList.contains('open')) {
+    if (globals.frameSlot && !globals.frameSlot.state_isOpen()) {
         globals.terminal.println('● EXTENDING CONSOLE FOR BUILD OUTPUT...');
-        consoleEl.classList.add('open');
+        globals.frameSlot.frame_open();
     }
 
     // Dynamic Layout Adjustment: Push animation below terminal
