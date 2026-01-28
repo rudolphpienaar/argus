@@ -175,11 +175,38 @@ frame.style.setProperty('--lcars-hue', '140');  // Switch to green
 
 === Marketplace Integration
 
-The Asset Detail Overlay uses the LCARS Component System:
+The Asset Detail Overlay demonstrates the "Floating Command Module" pattern, where critical actions are decoupled from the information display to maximize screen real estate and mimic hardware controls.
 
-* Regular assets use `--lcars-hue: 200` (blue/sky)
-* FDA assets use `--lcars-hue: 140` (green)
-* The hue is set dynamically when opening an asset detail view
+==== Visual Style: PADD Aesthetic
+The asset tiles and detail frames use an asymmetrical "PADD" (Personal Access Display Device) geometry:
+* **Thick Top Bar:** 10px solid accent bar (Sky Blue or FDA Green).
+* **Rounded Corner:** Bottom-right corner has a 24px radius (`border-radius: 0 0 24px 0`), creating a distinct physical shape.
+* **No Borders:** Replaced thin outlines with deep contrast backgrounds and shadow glows.
+
+==== Floating Command Pills
+Action buttons are removed from the internal content area and placed in a dedicated **Command Column** to the right of the main panel.
+
+* **Structure:**
+  [source,html]
+  ----
+  <div class="detail-layout">
+      <!-- Main Information Display -->
+      <div class="detail-panel">...</div>
+
+      <!-- Floating Command Column -->
+      <div class="detail-command-column">
+          <button class="pill-btn close-pill">CLOSE</button>
+          <button class="pill-btn install-pill">INSTALL</button>
+      </div>
+  </div>
+  ----
+* **Dynamic Coloring:** The INSTALL pill automatically inherits the asset's hue (Blue vs. FDA Green) via CSS variables.
+* **Status Feedback:** The INSTALL pill contains a progress bar overlay and status text (`READY` -> `INSTALLING` -> `INSTALLED`).
+
+==== Color Coding
+* **Standard Assets:** `--lcars-hue: 200` (Sky Blue)
+* **FDA Regulatory Tools:** `--lcars-hue: 140` (Green)
+* **Close Actions:** `var(--mars)` (Red)
 
 [source,typescript]
 ----

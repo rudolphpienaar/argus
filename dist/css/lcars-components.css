@@ -27,11 +27,11 @@
     --lcars-hue: 200;
 
     /* Saturation and lightness for shade variants */
-    --lcars-sat: 70%;
+    --lcars-sat: 85%;
     --lcars-light-1: 75%;   /* lightest */
-    --lcars-light-2: 65%;
-    --lcars-light-3: 55%;
-    --lcars-light-4: 45%;   /* darkest */
+    --lcars-light-2: 60%;   /* standard */
+    --lcars-light-3: 50%;
+    --lcars-light-4: 35%;   /* darkest */
 
     /* Computed shade colors */
     --lcars-shade-1: hsl(var(--lcars-hue), var(--lcars-sat), var(--lcars-light-1));
@@ -41,14 +41,14 @@
 
     /* Layout dimensions */
     --lcars-elbow-size: 30px;
-    --lcars-gap: 3px;
-    --lcars-sidebar-width: 120px;
+    --lcars-gap: 0.4rem;
+    --lcars-sidebar-width: 140px;
     --lcars-top-bar-height: 50px;
     --lcars-radius: 30px;
 
     /* Text colors */
     --lcars-text: #000;
-    --lcars-text-muted: rgba(0, 0, 0, 0.6);
+    --lcars-text-muted: rgba(0, 0, 0, 0.7);
 }
 
 /* ============================================================ */
@@ -77,6 +77,8 @@
     min-height: 100%;  /* Fill container height */
     height: 100%;
     background: #000;  /* gaps show as black */
+    border-radius: var(--lcars-radius); /* Clip corners for PADD look */
+    overflow: hidden;
 }
 
 /* ============================================================ */
@@ -104,6 +106,7 @@
     justify-content: space-between;
     padding: 0 1.5rem;
     gap: 1rem;
+    border-radius: 0 var(--lcars-radius) 0 0; /* Top-right rounded */
 }
 
 /* Title block inside top bar */
@@ -160,50 +163,7 @@
 
 /* Actions in top bar */
 .lcars-top-bar .detail-actions {
-    display: flex;
-    gap: 0.5rem;
-    flex-shrink: 0;
-}
-
-/* Buttons inside LCARS top bar */
-.lcars-top-bar .install-btn {
-    background: transparent;
-    border: 2px solid var(--lcars-text);
-    color: var(--lcars-text);
-    min-width: 100px;
-}
-
-.lcars-top-bar .install-btn:hover {
-    background: rgba(0, 0, 0, 0.1);
-    box-shadow: none;
-}
-
-.lcars-top-bar .install-btn .btn-progress {
-    background: var(--lcars-text);
-}
-
-.lcars-top-bar .install-btn.installed {
-    background: rgba(0, 0, 0, 0.1);
-    border-color: rgba(0, 0, 0, 0.3);
-    color: rgba(0, 0, 0, 0.5);
-}
-
-.lcars-top-bar .close-btn {
-    background: transparent;
-    border: 2px solid var(--lcars-text);
-    color: var(--lcars-text);
-    font-family: 'Antonio', sans-serif;
-    font-size: 0.75rem;
-    font-weight: bold;
-    padding: 0.35rem 0.9rem;
-    border-radius: 100vmax;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    text-transform: uppercase;
-}
-
-.lcars-top-bar .close-btn:hover {
-    background: rgba(0, 0, 0, 0.15);
+    display: none; /* Deprecated: Actions moved to content body */
 }
 
 /* ============================================================ */
@@ -302,6 +262,7 @@
     padding: 1.5rem 2rem;
     overflow-y: auto;
     /* No max-height - fills available grid space */
+    border-radius: 0 0 var(--lcars-radius) 0; /* Bottom-right rounded */
 }
 
 /* Section styling inside content */

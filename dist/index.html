@@ -139,120 +139,126 @@
 
                 <!-- ASSET DETAIL OVERLAY -->
                 <div id="asset-detail-overlay" class="asset-detail-overlay hidden" onclick="if(event.target === this) assetDetail_close()">
-                    <div class="detail-panel">
-                        <!-- LCARS Frame with procedural component system -->
-                        <div id="detail-lcars-frame" class="lcars-frame" style="--lcars-hue: 200;">
-                            <!-- Elbow (curved corner) -->
-                            <div class="lcars-elbow"></div>
+                    <div class="detail-layout">
+                        <!-- MAIN DATA PANEL -->
+                        <div class="detail-panel">
+                            <!-- LCARS Frame with procedural component system -->
+                            <div id="detail-lcars-frame" class="lcars-frame" style="--lcars-hue: 200;">
+                                <!-- Elbow (curved corner) -->
+                                <div class="lcars-elbow"></div>
 
-                            <!-- Top bar with title and actions -->
-                            <div class="lcars-top-bar">
-                                <div class="detail-title-block">
-                                    <h1 id="detail-name">Asset Name</h1>
-                                    <div class="detail-subtitle">
-                                        <span id="detail-type-badge" class="badge">TYPE</span>
-                                        <span id="detail-version">v1.0.0</span>
-                                        <span class="detail-stars" id="detail-stars">★ 0</span>
-                                        <span class="detail-author" id="detail-author">BY AUTHOR</span>
+                                <!-- Top bar with title -->
+                                <div class="lcars-top-bar">
+                                    <div class="detail-title-block">
+                                        <h1 id="detail-name">Asset Name</h1>
+                                        <div class="detail-subtitle">
+                                            <span id="detail-type-badge" class="badge">TYPE</span>
+                                            <span id="detail-version">v1.0.0</span>
+                                            <span class="detail-stars" id="detail-stars">★ 0</span>
+                                            <span class="detail-author" id="detail-author">BY AUTHOR</span>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="detail-actions">
-                                    <button id="detail-install-btn" class="install-btn detail-install" onclick="event.stopPropagation(); assetDetail_install()">
-                                        <span class="btn-progress"></span>
-                                        <span class="btn-text">INSTALL</span>
-                                    </button>
-                                    <button class="close-btn" onclick="assetDetail_close()">CLOSE</button>
+
+                                <!-- Left sidebar with LCARS panels -->
+                                <div class="lcars-sidebar">
+                                    <a href="#detail-sec-overview" class="lcars-panel active" data-shade="1" data-height="tall" data-panel-id="overview">OVERVIEW</a>
+                                    <a href="#detail-sec-specs" class="lcars-panel" data-shade="2" data-panel-id="specs">SPECS</a>
+                                    <a href="#detail-sec-usage" class="lcars-panel" data-shade="3" data-panel-id="usage">USAGE</a>
+                                    <a href="#detail-sec-deps" class="lcars-panel" data-shade="1" data-panel-id="deps">DEPS</a>
+                                    <a href="#detail-sec-changelog" class="lcars-panel" data-shade="2" data-height="tall" data-panel-id="changelog">CHANGELOG</a>
+                                    <!-- Spacer fills remaining height -->
+                                    <div class="lcars-sidebar-spacer" data-shade="4"></div>
+                                    <!-- Bottom corner panel -->
+                                    <a href="#detail-sec-related" class="lcars-panel lcars-corner-bl" data-shade="3" data-panel-id="related">RELATED</a>
+                                </div>
+
+                                <!-- Main content area -->
+                                <div class="lcars-content">
+                                    <!-- Overview Section -->
+                                    <section id="detail-sec-overview" class="detail-section">
+                                        <h2>OVERVIEW</h2>
+                                        <p id="detail-description">Full description goes here...</p>
+                                    </section>
+
+                                    <!-- Specifications Section -->
+                                    <section id="detail-sec-specs" class="detail-section">
+                                        <h2>SPECIFICATIONS</h2>
+                                        <div class="spec-grid">
+                                            <div class="spec-item">
+                                                <span class="spec-label">TYPE</span>
+                                                <span class="spec-value" id="detail-spec-type">Plugin</span>
+                                            </div>
+                                            <div class="spec-item">
+                                                <span class="spec-label">VERSION</span>
+                                                <span class="spec-value" id="detail-spec-version">1.0.0</span>
+                                            </div>
+                                            <div class="spec-item">
+                                                <span class="spec-label">SIZE</span>
+                                                <span class="spec-value" id="detail-spec-size">0 MB</span>
+                                            </div>
+                                            <div class="spec-item">
+                                                <span class="spec-label">LICENSE</span>
+                                                <span class="spec-value" id="detail-spec-license">MIT</span>
+                                            </div>
+                                            <div class="spec-item">
+                                                <span class="spec-label">UPDATED</span>
+                                                <span class="spec-value" id="detail-spec-updated">2026-01-01</span>
+                                            </div>
+                                            <div class="spec-item">
+                                                <span class="spec-label">DOWNLOADS</span>
+                                                <span class="spec-value" id="detail-spec-downloads">0</span>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <!-- Usage Section -->
+                                    <section id="detail-sec-usage" class="detail-section">
+                                        <h2>USAGE</h2>
+                                        <div class="code-block" id="detail-usage">
+                                            <code>$ command --help</code>
+                                        </div>
+                                    </section>
+
+                                    <!-- Dependencies Section -->
+                                    <section id="detail-sec-deps" class="detail-section">
+                                        <h2>DEPENDENCIES</h2>
+                                        <ul class="dep-list" id="detail-dependencies">
+                                            <li>Dependency 1</li>
+                                        </ul>
+                                    </section>
+
+                                    <!-- Changelog Section -->
+                                    <section id="detail-sec-changelog" class="detail-section">
+                                        <h2>CHANGELOG</h2>
+                                        <div class="changelog" id="detail-changelog">
+                                            <div class="changelog-entry">
+                                                <span class="cl-version">v1.0.0</span>
+                                                <span class="cl-date">2026-01-01</span>
+                                                <span class="cl-notes">Initial release</span>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <!-- Related Assets Section -->
+                                    <section id="detail-sec-related" class="detail-section">
+                                        <h2>RELATED ASSETS</h2>
+                                        <div class="related-assets" id="detail-related">
+                                            <!-- Populated by JS -->
+                                        </div>
+                                    </section>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- Left sidebar with LCARS panels -->
-                            <div class="lcars-sidebar">
-                                <a href="#detail-sec-overview" class="lcars-panel active" data-shade="1" data-height="tall" data-panel-id="overview">OVERVIEW</a>
-                                <a href="#detail-sec-specs" class="lcars-panel" data-shade="2" data-panel-id="specs">SPECS</a>
-                                <a href="#detail-sec-usage" class="lcars-panel" data-shade="3" data-panel-id="usage">USAGE</a>
-                                <a href="#detail-sec-deps" class="lcars-panel" data-shade="1" data-panel-id="deps">DEPS</a>
-                                <a href="#detail-sec-changelog" class="lcars-panel" data-shade="2" data-height="tall" data-panel-id="changelog">CHANGELOG</a>
-                                <!-- Spacer fills remaining height -->
-                                <div class="lcars-sidebar-spacer" data-shade="4"></div>
-                                <!-- Bottom corner panel -->
-                                <a href="#detail-sec-related" class="lcars-panel lcars-corner-bl" data-shade="3" data-panel-id="related">RELATED</a>
-                            </div>
+                        <!-- RIGHT COMMAND COLUMN (Floating Pills) -->
+                        <div class="detail-command-column">
+                            <button class="pill-btn close-pill" onclick="assetDetail_close()">CLOSE</button>
 
-                            <!-- Main content area -->
-                            <div class="lcars-content">
-                                <!-- Overview Section -->
-                                <section id="detail-sec-overview" class="detail-section">
-                                    <h2>OVERVIEW</h2>
-                                    <p id="detail-description">Full description goes here...</p>
-                                </section>
-
-                                <!-- Specifications Section -->
-                                <section id="detail-sec-specs" class="detail-section">
-                                    <h2>SPECIFICATIONS</h2>
-                                    <div class="spec-grid">
-                                        <div class="spec-item">
-                                            <span class="spec-label">TYPE</span>
-                                            <span class="spec-value" id="detail-spec-type">Plugin</span>
-                                        </div>
-                                        <div class="spec-item">
-                                            <span class="spec-label">VERSION</span>
-                                            <span class="spec-value" id="detail-spec-version">1.0.0</span>
-                                        </div>
-                                        <div class="spec-item">
-                                            <span class="spec-label">SIZE</span>
-                                            <span class="spec-value" id="detail-spec-size">0 MB</span>
-                                        </div>
-                                        <div class="spec-item">
-                                            <span class="spec-label">LICENSE</span>
-                                            <span class="spec-value" id="detail-spec-license">MIT</span>
-                                        </div>
-                                        <div class="spec-item">
-                                            <span class="spec-label">UPDATED</span>
-                                            <span class="spec-value" id="detail-spec-updated">2026-01-01</span>
-                                        </div>
-                                        <div class="spec-item">
-                                            <span class="spec-label">DOWNLOADS</span>
-                                            <span class="spec-value" id="detail-spec-downloads">0</span>
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <!-- Usage Section -->
-                                <section id="detail-sec-usage" class="detail-section">
-                                    <h2>USAGE</h2>
-                                    <div class="code-block" id="detail-usage">
-                                        <code>$ command --help</code>
-                                    </div>
-                                </section>
-
-                                <!-- Dependencies Section -->
-                                <section id="detail-sec-deps" class="detail-section">
-                                    <h2>DEPENDENCIES</h2>
-                                    <ul class="dep-list" id="detail-dependencies">
-                                        <li>Dependency 1</li>
-                                    </ul>
-                                </section>
-
-                                <!-- Changelog Section -->
-                                <section id="detail-sec-changelog" class="detail-section">
-                                    <h2>CHANGELOG</h2>
-                                    <div class="changelog" id="detail-changelog">
-                                        <div class="changelog-entry">
-                                            <span class="cl-version">v1.0.0</span>
-                                            <span class="cl-date">2026-01-01</span>
-                                            <span class="cl-notes">Initial release</span>
-                                        </div>
-                                    </div>
-                                </section>
-
-                                <!-- Related Assets Section -->
-                                <section id="detail-sec-related" class="detail-section">
-                                    <h2>RELATED ASSETS</h2>
-                                    <div class="related-assets" id="detail-related">
-                                        <!-- Populated by JS -->
-                                    </div>
-                                </section>
-                            </div>
+                            <button id="detail-install-btn" class="pill-btn install-pill" onclick="event.stopPropagation(); assetDetail_install()">
+                                <span class="btn-text">INSTALL</span>
+                                <div class="btn-progress"></div>
+                            </button>
                         </div>
                     </div>
                 </div>

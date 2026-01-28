@@ -251,6 +251,11 @@ export function assetDetail_open(id: string): void {
     const hue = asset.type === 'fda' ? 140 : 200;
     lcarsFrame.style.setProperty('--lcars-hue', String(hue));
 
+    // Set Module Color for floating buttons
+    const moduleColor = asset.type === 'fda' ? 'hsl(140, 80%, 50%)' : 'var(--sky)';
+    const commandCol = overlay.querySelector('.detail-command-column') as HTMLElement;
+    if (commandCol) commandCol.style.setProperty('--module-color', moduleColor);
+
     // Populate header
     const nameEl = document.getElementById('detail-name');
     const typeBadge = document.getElementById('detail-type-badge');
@@ -267,6 +272,7 @@ export function assetDetail_open(id: string): void {
     // Update install button state
     const installBtn = document.getElementById('detail-install-btn');
     const btnText = installBtn?.querySelector('.btn-text');
+
     if (installBtn && btnText) {
         const isInstalled = state.installedAssets.includes(id);
         installBtn.classList.toggle('installed', isInstalled);
@@ -369,6 +375,7 @@ export function assetDetail_install(): void {
     // Start progress animation
     installBtn.classList.add('installing');
     const textEl = installBtn.querySelector('.btn-text');
+
     if (textEl) textEl.textContent = 'INSTALLING...';
 
     globals.terminal.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
