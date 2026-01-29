@@ -126,5 +126,7 @@ MIT
 
 ## Acknowledgments
 
-- LCARS theme based on work by Jim Robertus ([theLCARS.com](https://www.thelcars.com))
-- Sample chest X-ray images from [COVID Chest X-ray Dataset](https://github.com/ieee8023/covid-chestxray-dataset) and Wikimedia Commons
+- **Architect & Lead Developer:** Rudolph Pienaar (System Architecture, Source Layout, Design).
+- **AI Assistance:** Implementation support and boilerplate generation provided by **Claude Code** (Anthropic), **Codex** (OpenAI), and **Gemini CLI** (Google), developed under the direction and review of the lead developer.
+- **LCARS Theme:** Based on work by Jim Robertus ([theLCARS.com](https://www.thelcars.com)).
+- **Data:** Sample chest X-ray images from [COVID Chest X-ray Dataset](https://github.com/ieee8023/covid-chestxray-dataset) and Wikimedia Commons.
