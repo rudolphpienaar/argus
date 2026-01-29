@@ -2,29 +2,21 @@
 
 **ATLAS Resource Graphical User System**
 
-ARGUS is the primary user interface for the [ATLAS](https://github.com/FNNDSC/ATLAS) federated medical imaging platform. The name draws from Greek mythology—Argus Panoptes, the hundred-eyed giant whose vigilance made him the perfect guardian. ARGUS provides comprehensive visibility into distributed resources across federated Trusted Domains.
+ARGUS is a functional mock-up — bordering on prototype — for rapidly exploring interface ideas for the [ATLAS](https://github.com/FNNDSC/ATLAS) federated medical imaging platform. The name draws from Greek mythology: Argus Panoptes, the hundred-eyed giant whose vigilance made him the perfect guardian.
 
-## Overview
+ARGUS is not a production UI. It is a design and interaction laboratory built to answer questions about how developers, annotators, and other personas might interact with federated medical imaging resources through an AI-enhanced Intelligent Terminal.
 
-ARGUS implements the **SeaGaP-MP** workflow framework:
+## What It Explores
 
-| Stage | Description |
-|-------|-------------|
-| **Search** | Query the ATLAS catalog for datasets, models, or services |
-| **Gather** | Assemble selected resources into a virtual filesystem cohort |
-| **Process** | Perform work (train models, annotate, run inference) |
-| **Monitor** | Track progress, costs, and node status in real-time |
-| **Post** | Publish results to the ATLAS marketplace |
+The current focus is the **Developer persona** — a federated ML developer who searches for datasets, assembles cohorts, launches distributed training across Trusted Domains, and monitors results. The primary interaction surface is the **Intelligence Console**: a hybrid terminal that blends Unix-like shell commands with natural language AI queries in a single stream.
 
-## Current Status
-
-This repository contains a **prototype** of the Developer vertical—demonstrating the workflow for training federated ML models on distributed medical imaging data.
+The **SeaGaP-MP** workflow (Search, Gather, Process, Monitor, Post) informs the underlying narrative thread, but the interface is responsive and exploratory rather than a rigid stage-gate pipeline.
 
 ### Features
 
 - LCARS-themed UI (Star Trek inspired interface)
-- Virtual Computer System (VCS) with Shell, content-aware filesystem, and providers
-- Intelligence Console with AI (OpenAI/Gemini) and 15 Unix-like builtins
+- AI-enhanced Intelligence Console (OpenAI/Gemini) with 15 Unix-like builtins
+- Virtual Computer System (VCS) — in-memory POSIX-like filesystem, Shell, content-aware providers
 - Marketplace with 400+ medical AI assets (plugins, datasets, models, annotations)
 - Simulated federated training across 5 Trusted Domains
 - Real-time training progress with loss charts
@@ -87,16 +79,15 @@ argus/
 └── package.json
 ```
 
-## User Personas
+## Personas (Planned)
 
-ARGUS serves multiple user types:
+The Developer persona is the current focus. Future exploration may include:
 
-- **Developer** - Build and train ML models (current prototype)
-- **Annotator** - Label medical images
-- **User** - Run inference with existing models
-- **Data Provider** - Manage contributed datasets
-- **App Developer** - Build MERIDIAN-compliant applications
-- **Administrator** - Platform governance
+- **Annotator** — Label medical images
+- **User** — Run inference with existing models
+- **Data Provider** — Manage contributed datasets
+- **App Developer** — Build MERIDIAN-compliant applications
+- **Administrator** — Platform governance
 
 ## Technology
 
