@@ -1,0 +1,430 @@
+/**
+ * @file Shell Unit Tests
+ *
+ * Covers command parsing, builtins (cd, ls, cat, mkdir, touch, rm, cp, mv,
+ * echo, env, export, whoami, date, history, help), environment variables,
+ * prompt generation, stage transitions, and external handler delegation.
+ *
+ * @module
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualFileSystem } from './VirtualFileSystem.js';
+import { Shell } from './Shell.js';
+import type { ShellResult } from './types.js';
+
+describe('Shell', () => {
+    let vfs: VirtualFileSystem;
+    let shell: Shell;
+
+    beforeEach(() => {
+        vfs = new VirtualFileSystem('developer');
+        shell = new Shell(vfs, 'developer');
+    });
+
+    // ─── Environment Variables ──────────────────────────────────
+
+    describe('environment variables', () => {
+        it('should initialize default env vars', () => {
+            expect(shell.env_get('HOME')).toBe('/home/developer');
+            expect(shell.env_get('USER')).toBe('developer');
+            expect(shell.env_get('PERSONA')).toBe('developer');
+            expect(shell.env_get('STAGE')).toBe('search');
+            expect(shell.env_get('PATH')).toBe('/bin:/home/developer/bin');
+            expect(shell.env_get('PS1')).toBe('$USER@argus:$PWD $ ');
+        });
+
+        it('should return synced $PWD from VFS', () => {
+            vfs.dir_create('/home/developer/src');
+            vfs.cwd_set('/home/developer/src');
+            expect(shell.env_get('PWD')).toBe('/home/developer/src');
+        });
+
+        it('should set and get custom vars', () => {
+            shell.env_set('CUSTOM', 'value');
+            expect(shell.env_get('CUSTOM')).toBe('value');
+        });
+
+        it('should return all vars via env_all()', () => {
+            const all: Map<string, string> = shell.env_all();
+            expect(all.get('HOME')).toBe('/home/developer');
+            expect(all.get('PWD')).toBe('/home/developer');
+        });
+    });
+
+    // ─── Prompt Generation ──────────────────────────────────────
+
+    describe('prompt_render', () => {
+        it('should render default prompt with ~ substitution', () => {
+            const prompt: string = shell.prompt_render();
+            expect(prompt).toBe('developer@argus:~ $ ');
+        });
+
+        it('should render prompt with subdirectory', () => {
+            vfs.dir_create('/home/developer/src/project');
+            vfs.cwd_set('/home/developer/src/project');
+            const prompt: string = shell.prompt_render();
+            expect(prompt).toBe('developer@argus:~/src/project $ ');
+        });
+
+        it('should render absolute path outside $HOME', () => {
+            vfs.dir_create('/tmp');
+            vfs.cwd_set('/tmp');
+            const prompt: string = shell.prompt_render();
+            expect(prompt).toBe('developer@argus:/tmp $ ');
+        });
+
+        it('should reflect custom $PS1', () => {
+            shell.env_set('PS1', '[$USER] $ ');
+            const prompt: string = shell.prompt_render();
+            expect(prompt).toBe('[developer] $ ');
+        });
+    });
+
+    // ─── Command Parsing ────────────────────────────────────────
+
+    describe('command_execute', () => {
+        it('should return empty result for blank input', () => {
+            const result: ShellResult = shell.command_execute('');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toBe('');
+        });
+
+        it('should return error for unknown command', () => {
+            const result: ShellResult = shell.command_execute('foobar');
+            expect(result.exitCode).toBe(127);
+            expect(result.stderr).toContain('command not found');
+        });
+
+        it('should record commands in history', () => {
+            shell.command_execute('pwd');
+            shell.command_execute('ls');
+            const history: string[] = shell.history_get();
+            expect(history).toEqual(['pwd', 'ls']);
+        });
+    });
+
+    // ─── Builtin: cd ────────────────────────────────────────────
+
+    describe('cd', () => {
+        it('should change to $HOME with no args', () => {
+            vfs.dir_create('/tmp');
+            vfs.cwd_set('/tmp');
+            const result: ShellResult = shell.command_execute('cd');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.cwd_get()).toBe('/home/developer');
+        });
+
+        it('should change to specified path', () => {
+            vfs.dir_create('/home/developer/src');
+            const result: ShellResult = shell.command_execute('cd ~/src');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.cwd_get()).toBe('/home/developer/src');
+        });
+
+        it('should update $PWD', () => {
+            vfs.dir_create('/home/developer/src');
+            shell.command_execute('cd ~/src');
+            expect(shell.env_get('PWD')).toBe('/home/developer/src');
+        });
+
+        it('should return error for non-existent path', () => {
+            const result: ShellResult = shell.command_execute('cd /nonexistent');
+            expect(result.exitCode).toBe(1);
+            expect(result.stderr).toContain('No such file or directory');
+        });
+    });
+
+    // ─── Builtin: pwd ───────────────────────────────────────────
+
+    describe('pwd', () => {
+        it('should print working directory', () => {
+            const result: ShellResult = shell.command_execute('pwd');
+            expect(result.stdout).toBe('/home/developer');
+        });
+    });
+
+    // ─── Builtin: ls ────────────────────────────────────────────
+
+    describe('ls', () => {
+        it('should list CWD contents', () => {
+            vfs.file_create('/home/developer/test.txt');
+            vfs.dir_create('/home/developer/subdir');
+            const result: ShellResult = shell.command_execute('ls');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('test.txt');
+            expect(result.stdout).toContain('subdir/');
+        });
+
+        it('should list specified directory', () => {
+            vfs.dir_create('/home/developer/mydir');
+            vfs.file_create('/home/developer/mydir/inner.py');
+            const result: ShellResult = shell.command_execute('ls ~/mydir');
+            expect(result.stdout).toContain('inner.py');
+        });
+
+        it('should return error for non-existent path', () => {
+            const result: ShellResult = shell.command_execute('ls /nonexistent');
+            expect(result.exitCode).toBe(1);
+        });
+    });
+
+    // ─── Builtin: cat ───────────────────────────────────────────
+
+    describe('cat', () => {
+        it('should print file content', () => {
+            vfs.file_create('/home/developer/hello.txt', 'Hello World');
+            const result: ShellResult = shell.command_execute('cat hello.txt');
+            expect(result.stdout).toBe('Hello World');
+        });
+
+        it('should return error for missing operand', () => {
+            const result: ShellResult = shell.command_execute('cat');
+            expect(result.exitCode).toBe(1);
+            expect(result.stderr).toContain('missing operand');
+        });
+
+        it('should return error for directory', () => {
+            const result: ShellResult = shell.command_execute('cat .');
+            expect(result.exitCode).toBe(1);
+        });
+
+        it('should return error for non-existent file', () => {
+            const result: ShellResult = shell.command_execute('cat nope.txt');
+            expect(result.exitCode).toBe(1);
+        });
+    });
+
+    // ─── Builtin: mkdir ─────────────────────────────────────────
+
+    describe('mkdir', () => {
+        it('should create a directory', () => {
+            const result: ShellResult = shell.command_execute('mkdir newdir');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/developer/newdir')).not.toBeNull();
+        });
+
+        it('should return error for missing operand', () => {
+            const result: ShellResult = shell.command_execute('mkdir');
+            expect(result.exitCode).toBe(1);
+        });
+    });
+
+    // ─── Builtin: touch ─────────────────────────────────────────
+
+    describe('touch', () => {
+        it('should create an empty file', () => {
+            const result: ShellResult = shell.command_execute('touch newfile.txt');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/developer/newfile.txt')).not.toBeNull();
+        });
+
+        it('should return error for missing operand', () => {
+            const result: ShellResult = shell.command_execute('touch');
+            expect(result.exitCode).toBe(1);
+        });
+    });
+
+    // ─── Builtin: rm ────────────────────────────────────────────
+
+    describe('rm', () => {
+        it('should remove a file', () => {
+            vfs.file_create('/home/developer/del.txt');
+            const result: ShellResult = shell.command_execute('rm del.txt');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/developer/del.txt')).toBeNull();
+        });
+
+        it('should fail on non-empty dir without -r', () => {
+            vfs.dir_create('/home/developer/full');
+            vfs.file_create('/home/developer/full/inner.txt');
+            const result: ShellResult = shell.command_execute('rm full');
+            expect(result.exitCode).toBe(1);
+            expect(result.stderr).toContain('not empty');
+        });
+
+        it('should remove non-empty dir with -r', () => {
+            vfs.dir_create('/home/developer/full');
+            vfs.file_create('/home/developer/full/inner.txt');
+            const result: ShellResult = shell.command_execute('rm -r full');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/developer/full')).toBeNull();
+        });
+    });
+
+    // ─── Builtin: cp ────────────────────────────────────────────
+
+    describe('cp', () => {
+        it('should copy a file', () => {
+            vfs.file_create('/home/developer/src.txt', 'data');
+            const result: ShellResult = shell.command_execute('cp src.txt dst.txt');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_read('/home/developer/dst.txt')).toBe('data');
+        });
+
+        it('should return error for missing operand', () => {
+            const result: ShellResult = shell.command_execute('cp src.txt');
+            expect(result.exitCode).toBe(1);
+        });
+    });
+
+    // ─── Builtin: mv ────────────────────────────────────────────
+
+    describe('mv', () => {
+        it('should move a file', () => {
+            vfs.file_create('/home/developer/old.txt', 'data');
+            const result: ShellResult = shell.command_execute('mv old.txt new.txt');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/developer/old.txt')).toBeNull();
+            expect(vfs.node_read('/home/developer/new.txt')).toBe('data');
+        });
+
+        it('should return error for missing operand', () => {
+            const result: ShellResult = shell.command_execute('mv old.txt');
+            expect(result.exitCode).toBe(1);
+        });
+    });
+
+    // ─── Builtin: echo ──────────────────────────────────────────
+
+    describe('echo', () => {
+        it('should print text', () => {
+            const result: ShellResult = shell.command_execute('echo hello world');
+            expect(result.stdout).toBe('hello world');
+        });
+
+        it('should expand $VARIABLE references', () => {
+            const result: ShellResult = shell.command_execute('echo $USER@$HOME');
+            expect(result.stdout).toBe('developer@/home/developer');
+        });
+
+        it('should leave unknown variables as-is', () => {
+            const result: ShellResult = shell.command_execute('echo $UNDEFINED');
+            expect(result.stdout).toBe('$UNDEFINED');
+        });
+    });
+
+    // ─── Builtin: env ───────────────────────────────────────────
+
+    describe('env', () => {
+        it('should print all environment variables', () => {
+            const result: ShellResult = shell.command_execute('env');
+            expect(result.stdout).toContain('HOME=/home/developer');
+            expect(result.stdout).toContain('USER=developer');
+            expect(result.stdout).toContain('PWD=');
+        });
+    });
+
+    // ─── Builtin: export ────────────────────────────────────────
+
+    describe('export', () => {
+        it('should set a variable', () => {
+            const result: ShellResult = shell.command_execute('export FOO=bar');
+            expect(result.exitCode).toBe(0);
+            expect(shell.env_get('FOO')).toBe('bar');
+        });
+
+        it('should return error for invalid format', () => {
+            const result: ShellResult = shell.command_execute('export invalid');
+            expect(result.exitCode).toBe(1);
+        });
+    });
+
+    // ─── Builtin: whoami ────────────────────────────────────────
+
+    describe('whoami', () => {
+        it('should print username', () => {
+            const result: ShellResult = shell.command_execute('whoami');
+            expect(result.stdout).toBe('developer');
+        });
+    });
+
+    // ─── Builtin: date ──────────────────────────────────────────
+
+    describe('date', () => {
+        it('should print a date string', () => {
+            const result: ShellResult = shell.command_execute('date');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout.length).toBeGreaterThan(0);
+        });
+    });
+
+    // ─── Builtin: history ───────────────────────────────────────
+
+    describe('history', () => {
+        it('should show command history', () => {
+            shell.command_execute('pwd');
+            shell.command_execute('ls');
+            const result: ShellResult = shell.command_execute('history');
+            expect(result.stdout).toContain('pwd');
+            expect(result.stdout).toContain('ls');
+            expect(result.stdout).toContain('history');
+        });
+    });
+
+    // ─── Builtin: help ──────────────────────────────────────────
+
+    describe('help', () => {
+        it('should list all builtins', () => {
+            const result: ShellResult = shell.command_execute('help');
+            expect(result.stdout).toContain('cd');
+            expect(result.stdout).toContain('ls');
+            expect(result.stdout).toContain('cat');
+            expect(result.stdout).toContain('rm');
+            expect(result.stdout).toContain('cp');
+            expect(result.stdout).toContain('mv');
+        });
+    });
+
+    // ─── Stage Transitions ──────────────────────────────────────
+
+    describe('stage_enter', () => {
+        it('should update $STAGE', () => {
+            shell.stage_enter('process');
+            expect(shell.env_get('STAGE')).toBe('process');
+        });
+
+        it('should cd to process landing directory', () => {
+            shell.stage_enter('process');
+            expect(vfs.cwd_get()).toBe('/home/developer/src/project');
+        });
+
+        it('should cd to gather landing directory', () => {
+            shell.stage_enter('gather');
+            expect(vfs.cwd_get()).toBe('/home/developer/data/cohort');
+        });
+
+        it('should cd to post landing directory', () => {
+            shell.stage_enter('post');
+            expect(vfs.cwd_get()).toBe('/home/developer/results');
+        });
+
+        it('should cd to $HOME for search stage', () => {
+            vfs.dir_create('/tmp');
+            vfs.cwd_set('/tmp');
+            shell.stage_enter('search');
+            expect(vfs.cwd_get()).toBe('/home/developer');
+        });
+    });
+
+    // ─── External Handler ───────────────────────────────────────
+
+    describe('externalHandler', () => {
+        it('should delegate to external handler for unknown commands', () => {
+            shell.externalHandler_set((cmd: string, _args: string[]): ShellResult | null => {
+                if (cmd === 'federate') {
+                    return { stdout: 'federating...', stderr: '', exitCode: 0 };
+                }
+                return null;
+            });
+            const result: ShellResult = shell.command_execute('federate train.py');
+            expect(result.stdout).toBe('federating...');
+        });
+
+        it('should return command-not-found if handler returns null', () => {
+            shell.externalHandler_set((_cmd: string, _args: string[]): ShellResult | null => null);
+            const result: ShellResult = shell.command_execute('unknown');
+            expect(result.exitCode).toBe(127);
+        });
+    });
+});

@@ -1,4 +1,4 @@
-= ARGUS Design Specification (v3.0.0)
+= ARGUS Design Specification (v3.5.0)
 :toc:
 :toclevels: 3
 
@@ -9,12 +9,13 @@ ARGUS implements the **Search, Gather, Process, Monitor, Post** workflow, specif
 To maintain a high-performance Vanilla TypeScript frontend while ensuring state synchronization, the application uses an **Event-Driven Observer Pattern**.
 
 === 2.1 Central Store (`src/core/state/store.ts`)
-The `Store` class encapsulates the application state and provides discrete **Actions** for mutation. It maintains a reference to the `VirtualFileSystem`.
+The `Store` class encapsulates the application state and provides discrete **Actions** for mutation. All Store methods follow the RPN naming convention (e.g., `stage_set()`, `dataset_toggle()`, `marketplace_toggle()`, `asset_install()`). It maintains references to global singletons including the `VirtualFileSystem`, `Shell`, `LCARSTerminal`, and `FrameSlot`.
 
 === 2.2 Event Bus (`src/core/state/events.ts`)
-A lightweight `EventEmitter` facilitates communication between decoupled modules.
+A lightweight, typed `EventEmitter` facilitates communication between decoupled modules.
 *   **Decoupling:** `navigation.ts` doesn't need to know about `process.ts`. It simply dispatches `STAGE_CHANGED`.
 *   **Reactivity:** Modules like `telemetry.ts` and `gather.ts` subscribe to events to update their respective UI components.
+*   **Type Safety:** Each event maps to a specific payload type via `EventPayloads` interface.
 
 == 3. The Federalization Model
 The transition from local development (**Process**) to distributed execution (**Monitor**) is mediated by the **Federalization Sequence**.
@@ -26,5 +27,17 @@ Raw code assets (`train.py`) are not executed locally. Instead, the `federate` c
 3.  **Distribution:** Container images are dispatched to Trusted Domains (BCH, MGH, etc.).
 4.  **Synchronization:** Training only begins once all nodes verify the payload.
 
-== 4. Virtual Filesystem (VFS)
-A robust in-memory VFS (`src/core/logic/vfs.ts`) ensures that the **Terminal** and **IDE** share a consistent view of the project structure. This grounds the "Hollywood Set" simulation in a deterministic data model.
+The sequence is orchestrated by `federation_sequence()` in `process.ts`, decomposed into four phases: `federationOverlay_initialize()`, `federationBuild_run()`, `federationDistribution_run()`, and `federationHandshake_run()`.
+
+== 4. Virtual Computer System (VCS)
+A complete Virtual Computer System (`src/vfs/`) provides the stateful runtime environment underlying the ARGUS Intelligence Terminal. The VCS comprises:
+
+*   **VirtualFileSystem** (`src/vfs/VirtualFileSystem.ts`): In-memory POSIX-like filesystem with content-aware files, path resolution, lazy content generation, and event emission.
+*   **Shell** (`src/vfs/Shell.ts`): Command interpreter with 15 builtins, environment variables, `$PS1` prompt generation, and stage transitions.
+*   **ContentRegistry** (`src/vfs/content/ContentRegistry.ts`): Maps file paths to content generators. 14 templates generate file bodies on demand.
+*   **Providers**: Three providers translate application domain objects into filesystem trees:
+    - `DatasetProvider` — builds `~/data/cohort/` from selected datasets
+    - `ProjectProvider` — scaffolds `$HOME` and populates `~/src/project/`
+    - `MarketplaceProvider` — installs assets to `/bin/`, `/data/sets/`, `~/models/`, etc.
+
+This ensures that the **Terminal**, **IDE**, and **Marketplace** share a consistent, content-rich view of the project structure. See `docs/vcs.adoc` for the full specification.

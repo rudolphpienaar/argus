@@ -234,7 +234,7 @@ export class VirtualFileSystem {
         const parentPath: string = path_parent(resolved);
         const parent: FileNode | null = this.node_at(parentPath);
         if (parent && parent.children) {
-            parent.children = parent.children.filter(c => c.path !== resolved);
+            parent.children = parent.children.filter((c: FileNode): boolean => c.path !== resolved);
         }
 
         this.event_emit(resolved, 'remove');
@@ -287,7 +287,7 @@ export class VirtualFileSystem {
         const oldParentPath: string = path_parent(srcResolved);
         const oldParent: FileNode | null = this.node_at(oldParentPath);
         if (oldParent && oldParent.children) {
-            oldParent.children = oldParent.children.filter(c => c.path !== srcResolved);
+            oldParent.children = oldParent.children.filter((c: FileNode): boolean => c.path !== srcResolved);
         }
 
         // Add to new parent
@@ -354,7 +354,7 @@ export class VirtualFileSystem {
                 current.children = [];
             }
 
-            let child: FileNode | undefined = current.children.find(c => c.name === seg);
+            let child: FileNode | undefined = current.children.find((c: FileNode): boolean => c.name === seg);
             if (!child) {
                 child = node_create(seg, 'folder', childPath);
                 current.children.push(child);
@@ -444,7 +444,7 @@ export class VirtualFileSystem {
 
         // Remove existing node at this path if any
         if (parent.children) {
-            parent.children = parent.children.filter(c => c.name !== subtree.name);
+            parent.children = parent.children.filter((c: FileNode): boolean => c.name !== subtree.name);
         }
 
         // Repath the subtree to match the mount point
@@ -467,7 +467,7 @@ export class VirtualFileSystem {
         const name: string = path_basename(resolved);
 
         if (parent && parent.children) {
-            parent.children = parent.children.filter(c => c.name !== name);
+            parent.children = parent.children.filter((c: FileNode): boolean => c.name !== name);
         }
 
         this.event_emit(resolved, 'unmount');
@@ -489,7 +489,7 @@ export class VirtualFileSystem {
 
         for (const seg of segments) {
             if (!current.children) return null;
-            const child: FileNode | undefined = current.children.find(c => c.name === seg);
+            const child: FileNode | undefined = current.children.find((c: FileNode): boolean => c.name === seg);
             if (!child) return null;
             current = child;
         }
@@ -610,36 +610,3 @@ function size_format(bytes: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// ─── Legacy Migration ───────────────────────────────────────────
-
-/**
- * Normalizes a legacy FileNode (from core/models/types.ts) into the
- * VCS FileNode format. Recursively processes children.
- *
- * Maps the legacy 'image' type to 'file'. Fills in default values for
- * fields absent from the legacy interface (content, contentGenerator,
- * permissions, modified, metadata).
- *
- * This bridge function exists for Phase 1 migration only and will be
- * removed when Providers (Phase 4) replace all legacy FileNode creators.
- *
- * @param node - A legacy FileNode (or any object with name/type/path/children/size).
- * @returns A fully-populated VCS FileNode.
- */
-export function legacyNode_normalize(node: any): FileNode {
-    const type: 'file' | 'folder' = node.type === 'folder' ? 'folder' : 'file';
-    return {
-        name: node.name ?? '',
-        type,
-        path: node.path ?? '',
-        size: node.size ?? (type === 'folder' ? '-' : '0 B'),
-        content: node.content ?? null,
-        contentGenerator: node.contentGenerator ?? null,
-        permissions: node.permissions ?? 'rw',
-        modified: node.modified ?? new Date(),
-        children: Array.isArray(node.children)
-            ? node.children.map((child: any): FileNode => legacyNode_normalize(child))
-            : (type === 'folder' ? [] : null),
-        metadata: node.metadata ?? {}
-    };
-}

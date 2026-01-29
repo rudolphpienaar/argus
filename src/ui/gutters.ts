@@ -15,7 +15,7 @@ export type GutterStatus = 'idle' | 'active' | 'success' | 'error';
  * @param status - The status to set
  */
 export function gutter_setStatus(section: number, status: GutterStatus): void {
-    const gutter = document.getElementById(`gutter-${section}`);
+    const gutter: HTMLElement | null = document.getElementById(`gutter-${section}`);
     if (gutter) {
         gutter.setAttribute('data-status', status);
     }
@@ -25,7 +25,7 @@ export function gutter_setStatus(section: number, status: GutterStatus): void {
  * Resets all gutter sections to idle.
  */
 export function gutter_resetAll(): void {
-    for (let i = 1; i <= 5; i++) {
+    for (let i: number = 1; i <= 5; i++) {
         gutter_setStatus(i, 'idle');
     }
 }

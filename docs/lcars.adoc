@@ -299,6 +299,6 @@ element.classList.remove('lcars-beckon');
 == Implementation Details
 
 * **Global Component**: The `LCARSTerminal` is a global singleton.
-* **Intent Parsing**: The `terminal_handleCommand` function intercepts LLM responses to trigger system actions (selecting data, transitioning stages).
+* **Intent Parsing**: The `terminalCommand_handle()` dispatcher in `argus.ts` routes commands to `workflowCommand_handle()` (search/add/review/mount/simulate) and `aiQuery_handle()` (LLM queries). AI responses are parsed by `aiResponse_process()` to trigger system actions (selecting data, transitioning stages).
 * **Contextual Awareness**: The AI engine receives the full dataset catalog and the user's current "Selection Buffer" with every query, ensuring high-fidelity RAG (Retrieval Augmented Generation) reasoning.
 * **LCARS Frame Generator**: The `lcarsFrame_create()` function and related utilities are exposed on the `window` object for use in HTML event handlers.

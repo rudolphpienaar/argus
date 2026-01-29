@@ -1,37 +1,36 @@
 /**
  * @file Login and Persona Logic
- * 
+ *
  * Manages user authentication, session state, and persona switching.
- * 
+ *
  * @module
  */
 
-import { state, store } from '../state/store.js';
+import { store } from '../state/store.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 
 type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
+// ============================================================================
+// Authentication
+// ============================================================================
+
 /**
  * Authenticates the user (mock).
+ * Accepts any input and transitions to the role-selection stage
+ * after a brief animation.
  */
 export function user_authenticate(): void {
-    const user: string = (document.getElementById('login-user') as HTMLInputElement)?.value ?? '';
-    const pass: string = (document.getElementById('login-pass') as HTMLInputElement)?.value ?? '';
-
-    // For prototype, accept any non-empty input or just let them through
-    // Simple "animation" of success
     const btn: HTMLButtonElement | null = document.querySelector('.login-form button') as HTMLButtonElement;
     if (btn) {
         btn.textContent = 'ACCESS GRANTED';
         btn.classList.add('pulse');
     }
 
-    setTimeout(() => {
-        // Navigation call
+    setTimeout((): void => {
         stage_advanceTo('role-selection');
-        
-        // Reset button
+
         if (btn) {
             btn.textContent = 'AUTHENTICATE';
             btn.classList.remove('pulse');
@@ -41,79 +40,75 @@ export function user_authenticate(): void {
 
 /**
  * Logs the user out and resets the application state.
+ * Clears form inputs, resets gutters, and navigates to login.
  */
 export function user_logout(): void {
-    // Use store action
-    store.unloadProject();
+    store.project_unload();
 
-    // Reset UI components
-    const loginUser = document.getElementById('login-user') as HTMLInputElement;
-    const loginPass = document.getElementById('login-pass') as HTMLInputElement;
+    const loginUser: HTMLInputElement | null = document.getElementById('login-user') as HTMLInputElement;
+    const loginPass: HTMLInputElement | null = document.getElementById('login-pass') as HTMLInputElement;
     if (loginUser) loginUser.value = '';
     if (loginPass) loginPass.value = '';
 
-    const btn = document.querySelector('.login-form button') as HTMLButtonElement;
+    const btn: HTMLButtonElement | null = document.querySelector('.login-form button') as HTMLButtonElement;
     if (btn) {
         btn.textContent = 'INITIATE SESSION';
         btn.classList.remove('pulse');
     }
-    
-    // Reset gutters
+
     gutter_resetAll();
     gutter_setStatus(1, 'active');
 
-    // Navigate to login
     stage_advanceTo('login');
 }
 
+// ============================================================================
+// Persona / Role
+// ============================================================================
+
 /**
  * Selects the user persona/role and initializes the workflow.
- * 
- * @param persona - The selected persona
+ *
+ * @param persona - The selected persona.
  */
 export function role_select(persona: Persona): void {
-    // Set persona
     persona_switch(persona);
-    
-    // Advance to Search
     stage_advanceTo('search');
 }
 
 /**
- * Switches to a new persona.
+ * Switches to a new persona. Updates persona buttons, the left-frame
+ * persona display, and flashes the gutter.
  *
- * @param persona - The persona to switch to
+ * @param persona - The persona to switch to.
  */
 export function persona_switch(persona: Persona): void {
-    store.setPersona(persona);
+    store.persona_set(persona);
 
-    // Update persona buttons
-    document.querySelectorAll('.persona-btn').forEach(btn => {
-        const btnPersona = btn.getAttribute('data-persona');
+    document.querySelectorAll('.persona-btn').forEach((btn: Element): void => {
+        const btnPersona: string | null = btn.getAttribute('data-persona');
         btn.classList.toggle('active', btnPersona === persona);
     });
 
-    // Update left frame persona display
-    const personaEl = document.getElementById('current-persona');
+    const personaEl: HTMLElement | null = document.getElementById('current-persona');
     if (personaEl) {
         personaEl.textContent = persona.toUpperCase();
     }
 
-    // Flash gutter to indicate change
     gutter_setStatus(1, 'active');
-    setTimeout(() => gutter_setStatus(1, 'success'), 300);
-    setTimeout(() => gutter_setStatus(1, 'idle'), 800);
+    setTimeout((): void => gutter_setStatus(1, 'success'), 300);
+    setTimeout((): void => gutter_setStatus(1, 'idle'), 800);
 }
 
 /**
- * Initializes persona button click handlers.
+ * Initializes persona button click handlers on role-selection cards.
  */
 export function personaButtons_initialize(): void {
-    document.querySelectorAll('.persona-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const persona = btn.getAttribute('data-persona') as Persona;
+    document.querySelectorAll('.persona-btn').forEach((btn: Element): void => {
+        btn.addEventListener('click', (): void => {
+            const persona: string | null = btn.getAttribute('data-persona');
             if (persona) {
-                persona_switch(persona);
+                persona_switch(persona as Persona);
             }
         });
     });

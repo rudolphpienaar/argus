@@ -2,15 +2,17 @@
 
 ## Recent Refactoring Activity
 
+- **2026-01-29 (v3.5.0)**: **"The Style Sweep"** - Comprehensive codebase audit against the TypeScript Style Guide. Eliminated all `any` types from core application code (~35 instances). Renamed 20+ functions to RPN convention. Added JSDoc to ~50+ functions. Decomposed 3 long methods (130-line `terminalCommand_handle`, 165-line `app_initialize`, 103-line `assetDetail_open`). Replaced all `(window as any)` casts with typed `declare global { interface Window }` extensions. Changed all `catch (e: any)` to `catch (e: unknown)` with `instanceof Error` narrowing. Typed all lambda parameters and local variables across 14 source files.
+- **2026-01-29 (v3.4.1)**: **"The VCS Update"** - Completed the 5-phase Virtual Computer System implementation. Replaced the hollow VFS with a content-aware filesystem, Shell interpreter, ContentRegistry with 14 template generators, and 3 Providers (Dataset, Project, Marketplace). 134 tests across VFS (64), Shell (51), ContentRegistry (16), and Costs (3).
 - **2026-01-28 (v3.4.0)**: **"The Visual Language Update"** - Introduced the Frame Slot system: a two-phase "double whammy" animation where LCARS panels open, then content slides in from the right. Added the Beckon Pulse pattern for interactive affordances. Documented the emerging visual language in `docs/visual_language.adoc`. New components: `SlidePanel`, `FrameSlot`.
 - **2026-01-28 (v3.3.0)**: **"The Modularization Update"** - Decoupled core UI components (Terminal, Telemetry, Workflow) into a reusable `lcars-framework`. Replaced hardcoded HTML stations with a procedural `WorkflowTracker`.
 - **2026-01-26 (v3.2.1)**: **"The Telemetry Restore"** - Fixed a regression where SeaGaP telemetry windows were missing due to placeholder comments. Unified telemetry logic into a registry-based service.
 - **2026-01-26 (v3.1.0)**: **"The Marketplace Update"** - Scaled the registry to 400+ "Pro-ified" assets (Plugins, Datasets, Annotations, Models) with functional category filtering.
-- **2026-01-26 (v3.1.0)**: **Virtual Filesystem Integration** - Marketplace installs now dynamically populate `/home/developer/bin/` in the VFS.
+- **2026-01-26 (v3.1.0)**: **Virtual Filesystem Integration** - Marketplace installs now dynamically populate the VCS at `/bin/`, `/data/sets/`, `~/models/`, etc.
 - **2026-01-26 (v3.0.0)**: **"The Federalization Update"** - Pivoted to the ATLAS Factory execution model. Replaced local metaphors with `federate` command and build-sequence animations.
 - **2026-01-26 (v3.0.0)**: **Architectural Overhaul** - Migrated to a **Pub/Sub (Observer)** pattern. Centralized state in a `Store` with an `EventBus` for decoupled, reactive Vanilla JS.
 - **2026-01-26**: **Modularization Complete** - Fully decomposed the monolithic `argus.ts` into stage-specific modules in `src/core/stages/`.
-- **2026-01-26**: **VFS Implementation** - Created a true in-memory Virtual Filesystem with path parsing (`cd`, `ls`, `mkdir`, `touch`) and terminal sync.
+- **2026-01-26**: **VCS Implementation** - Created a true in-memory Virtual Computer System with Shell, ContentRegistry, and Providers.
 - **2026-01-26**: **Terminal Enhancements** - Added Tab Completion, monospaced alignment, and high-fidelity intent parsing for AI commands.
 
 ## What is ARGUS?
@@ -45,35 +47,58 @@ All user interactions follow the **SeaGaP-MP** workflow:
 ### Implemented (Developer Vertical)
 
 - **Marketplace**: High-density registry of 400+ unique, technically nuanced medical AI assets.
-- **VFS**: Robust in-memory filesystem handling multi-segment paths and binary symlinking.
-- **Terminal**: Intelligence Console with AI (Gemini/OpenAI) and local command modes. Supports Tab Completion.
+- **VCS**: Full Virtual Computer System — in-memory POSIX-like filesystem with content-aware files, Shell interpreter (15 builtins, env vars, `$PS1` prompt), ContentRegistry with 14 lazy-evaluated template generators, and 3 Providers (Dataset, Project, Marketplace).
+- **Terminal**: Intelligence Console with AI (Gemini/OpenAI) and local command modes. Shell-backed with tab completion.
 - **Search**: Dynamic project/dataset catalog with AI-driven filtering.
-- **Gather**: VFS tree view, expert file previews, and cost estimation.
-- **Process**: Split-pane IDE with synced file explorer and `federate` workflow.
+- **Gather**: VCS tree view, expert file previews, and cost estimation.
+- **Process**: Split-pane IDE with synced file explorer, syntax highlighting, and `federate` workflow.
 - **Federalization Overlay**: Animated "Factory" build and distribution sequence.
 - **Monitor**: Real-time training simulation with Loss Charts and Hacker Telemetry.
 
 ### Key Technical Decisions
 
 - **Pure Vanilla TS**: No frontend frameworks (React/Vue). Reactivity is achieved via a custom Pub/Sub `Store`.
-- **RPN Naming**: Functions use `<object>_<method>` pattern (e.g., `store.toggleMarketplace()`).
+- **RPN Naming**: Functions use `<subject>_<verb>` pattern (e.g., `store.marketplace_toggle()`, `catalog_search()`, `dataset_select()`).
 - **LCARS Theme**: Star Trek-inspired high-fidelity interface with modern CSS variables.
+- **Typed Window Bindings**: `declare global { interface Window }` extensions replace `(window as any)` casts for onclick handler exposure.
+- **Explicit Typing**: Every const, lambda, parameter, and return type has explicit annotations. `any` is eliminated from core code; `unknown` with `instanceof` narrowing is used for catch blocks.
+
+### Test Coverage
+
+| Suite | Tests | Module |
+|-------|-------|--------|
+| VirtualFileSystem | 64 | Path resolution, CWD, CRUD, mount/unmount, lazy content, events |
+| Shell | 51 | Env vars, prompt, builtins, stage transitions, external handlers |
+| ContentRegistry | 16 | Registration, resolution, VFS integration, 8 template generators |
+| Costs | 3 | Cost estimation engine |
+| **Total** | **134** | |
 
 ## Source Structure
 
 ```text
 src/
-├── lcars-framework/  # Reusable Library (Terminal, Telemetry, UI)
+├── lcars-framework/  # Reusable Library (Terminal, Telemetry, Workflow, UI)
 ├── core/
-│   ├── data/         # Mock registries (datasets, projects, marketplace)
-│   ├── logic/        # Navigation, VFS, Costs
-│   ├── models/       # TypeScript Interfaces
-│   ├── stages/       # Modular SeaGaP stage implementations
-│   └── state/        # Store and EventBus (Pub/Sub)
-├── lcarslm/          # AI Core / RAG Engine
+│   ├── data/         # Mock registries (datasets, projects, marketplace, nodes)
+│   ├── logic/        # Navigation, Costs, Telemetry
+│   ├── models/       # TypeScript Interfaces (AppState, Dataset, Project, etc.)
+│   ├── stages/       # SeaGaP stage implementations (search, gather, process, monitor, login)
+│   └── state/        # Store (centralized state) and EventBus (Pub/Sub)
+├── lcarslm/          # AI Core / RAG Engine (OpenAI, Gemini clients)
 ├── marketplace/      # Marketplace View and Logic
 ├── telemetry/        # App-specific Telemetry Setup
-├── ui/               # ARGUS-specific UI wrappers (SlidePanel, FrameSlot)
+├── ui/               # ARGUS-specific UI wrappers (Terminal, FrameSlot, SlidePanel, LCARSFrame, Gutters)
+├── vfs/              # Virtual Computer System
+│   ├── VirtualFileSystem.ts   # Core: tree + content + CWD + events
+│   ├── Shell.ts               # Command interpreter + env vars + prompt
+│   ├── types.ts               # FileNode, ShellResult, ContentContext
+│   ├── content/
+│   │   ├── ContentRegistry.ts # Path → generator mapping + lazy evaluation
+│   │   └── templates/         # 14 content generators (train, readme, config, etc.)
+│   └── providers/
+│       ├── DatasetProvider.ts     # Builds ~/data/cohort/
+│       ├── ProjectProvider.ts     # Scaffolds $HOME + ~/src/project/
+│       └── MarketplaceProvider.ts # Installs assets to /bin, /data/sets, etc.
 └── argus.ts          # Main entry point and window orchestration
 ```
 
@@ -82,7 +107,8 @@ src/
 ```bash
 npm run build      # Compile TypeScript
 npm run serve      # http://localhost:8080 (or 'make serve')
+npm run test       # Run 134 unit tests
 ```
 
 ---
-*Last updated: 2026-01-28 (v3.4.0)*
+*Last updated: 2026-01-29 (v3.5.0)*

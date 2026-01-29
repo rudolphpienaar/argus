@@ -1,8 +1,8 @@
 /**
  * @file Monitor Stage Logic
- * 
+ *
  * Handles the federated training simulation, progress tracking, and visualization.
- * 
+ *
  * @module
  */
 
@@ -10,17 +10,20 @@ import { state, globals, store } from '../state/store.js';
 import { MOCK_NODES } from '../data/nodes.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
-import type { TrainingJob } from '../models/types.js';
+import type { TrainingJob, TrustedDomainNode } from '../models/types.js';
 
-// ... (imports remain same) ...
+// ============================================================================
+// Initialization
+// ============================================================================
 
 /**
  * Initializes the monitor stage.
+ * Creates a training job if none exists, sets up the loss chart canvas,
+ * renders initial node status, and starts the training simulation interval.
  */
 export function monitor_initialize(): void {
     if (!state.trainingJob) {
-        // Auto-initialize a job if none exists (e.g. direct navigation)
-        store.setTrainingJob({
+        store.trainingJob_set({
             id: `job-${Date.now()}`,
             status: 'running',
             currentEpoch: 0,
@@ -31,13 +34,11 @@ export function monitor_initialize(): void {
             runningCost: 0,
             budgetLimit: 500,
             startTime: new Date(),
-            nodes: JSON.parse(JSON.stringify(MOCK_NODES)),
+            nodes: JSON.parse(JSON.stringify(MOCK_NODES)) as TrustedDomainNode[],
             lossHistory: []
         });
     }
 
-    // ... (canvas logic same) ...
-    // Initialize loss chart
     const canvas: HTMLCanvasElement | null = document.getElementById('loss-canvas') as HTMLCanvasElement;
     if (canvas) {
         const ctx: CanvasRenderingContext2D | null = canvas.getContext('2d');
@@ -48,48 +49,44 @@ export function monitor_initialize(): void {
         }
     }
 
-    // Render initial node status
     nodeStatus_render();
 
-    // Start training simulation
     if (globals.trainingInterval) clearInterval(globals.trainingInterval);
     globals.trainingInterval = window.setInterval(trainingStep_simulate, 500);
 }
 
+// ============================================================================
+// Training Simulation
+// ============================================================================
+
 /**
- * Simulates a training step.
+ * Simulates a single training step: advances the epoch, recalculates
+ * loss/accuracy/AUC, updates node statuses, and refreshes the UI.
  */
 export function trainingStep_simulate(): void {
     if (!state.trainingJob || state.trainingJob.status !== 'running') return;
 
-    const job: TrainingJob = { ...state.trainingJob }; // Shallow clone for mutation then dispatch
+    const job: TrainingJob = { ...state.trainingJob };
 
-    // Simulate progress
     job.currentEpoch += 0.5;
     if (job.currentEpoch > job.totalEpochs) {
         training_complete();
         return;
     }
 
-    // Simulate loss decrease with noise
     const baseLoss: number = 2.5 * Math.exp(-job.currentEpoch / 15);
     job.loss = baseLoss + (Math.random() - 0.5) * 0.1;
     job.lossHistory.push(job.loss);
 
-    // Simulate accuracy increase
     job.accuracy = Math.min(98, 50 + (job.currentEpoch / job.totalEpochs) * 48 + (Math.random() - 0.5) * 2);
     job.auc = Math.min(0.99, 0.5 + (job.currentEpoch / job.totalEpochs) * 0.49);
 
-    // Simulate cost
     job.runningCost = (job.currentEpoch / job.totalEpochs) * state.costEstimate.total;
 
-    // Update node statuses
-    job.nodes.forEach((node, i) => {
+    job.nodes.forEach((node: TrustedDomainNode, i: number): void => {
         if (i === job.nodes.length - 1) {
-            // Aggregator
             node.status = job.currentEpoch % 5 < 1 ? 'active' : 'waiting';
         } else {
-            // Training nodes
             const nodeProgress: number = (job.currentEpoch / job.totalEpochs) * 100;
             node.progress = Math.min(100, nodeProgress + (Math.random() - 0.5) * 10);
             node.samplesProcessed = Math.floor((node.progress / 100) * node.totalSamples);
@@ -104,14 +101,11 @@ export function trainingStep_simulate(): void {
         }
     });
 
-    // Update store
-    store.updateTrainingJob(job);
+    store.trainingJob_update(job);
 
-    // ... (telemetry log logic same) ...
-    // Hacker Telemetry - Terminal Stream
     if (Math.random() > 0.6 && globals.terminal) {
-        const events = [
-            `[NET] Syncing gradients with node-${Math.floor(Math.random()*4)+1}...`,
+        const telemetryEvents: readonly string[] = [
+            `[NET] Syncing gradients with node-${Math.floor(Math.random() * 4) + 1}...`,
             `[SEC] Verifying homomorphic encryption keys...`,
             `[GPU] Tensor core utilization at 98%...`,
             `[FED] Aggregating partial model weights (Round ${Math.floor(job.currentEpoch)})...`,
@@ -119,10 +113,9 @@ export function trainingStep_simulate(): void {
             `[MEM] VRAM Allocation: ${(Math.random() * 10 + 4).toFixed(1)} GB`,
             `[ERR] Backward pass delta within tolerance.`
         ];
-        globals.terminal.println(`<span class="dim">${events[Math.floor(Math.random() * events.length)]}</span>`);
+        globals.terminal.println(`<span class="dim">${telemetryEvents[Math.floor(Math.random() * telemetryEvents.length)]}</span>`);
     }
 
-    // Pulse gutter during training
     const gutterIndex: number = Math.floor(job.currentEpoch) % 5 + 1;
     gutter_resetAll();
     gutter_setStatus(4, 'active');
@@ -133,54 +126,53 @@ export function trainingStep_simulate(): void {
     monitorUI_update();
 }
 
+// ============================================================================
+// UI Updates
+// ============================================================================
+
 /**
- * Updates the monitor UI with current training state.
+ * Updates the monitor UI with current training state:
+ * progress bar, epoch display, metrics, cost tracker, loss chart, and node status.
  */
 function monitorUI_update(): void {
     if (!state.trainingJob) return;
-    const job = state.trainingJob;
+    const job: TrainingJob = state.trainingJob;
 
-    // ... (DOM updates same) ...
-    // Progress bar
-    const progressFill = document.getElementById('progress-fill');
+    const progressFill: HTMLElement | null = document.getElementById('progress-fill');
     if (progressFill) {
         progressFill.style.width = `${(job.currentEpoch / job.totalEpochs) * 100}%`;
     }
 
-    // Epoch display
-    const currentEpoch = document.getElementById('current-epoch');
-    const epochStatus = document.getElementById('epoch-status');
+    const currentEpoch: HTMLElement | null = document.getElementById('current-epoch');
+    const epochStatus: HTMLElement | null = document.getElementById('epoch-status');
     if (currentEpoch) currentEpoch.textContent = Math.floor(job.currentEpoch).toString();
     if (epochStatus) epochStatus.textContent = job.status === 'running' ? 'Training...' : job.status;
 
-    // Metrics
-    const metricLoss = document.getElementById('metric-loss');
-    const metricAccuracy = document.getElementById('metric-accuracy');
-    const metricAuc = document.getElementById('metric-auc');
+    const metricLoss: HTMLElement | null = document.getElementById('metric-loss');
+    const metricAccuracy: HTMLElement | null = document.getElementById('metric-accuracy');
+    const metricAuc: HTMLElement | null = document.getElementById('metric-auc');
     if (metricLoss) metricLoss.textContent = job.loss.toFixed(4);
     if (metricAccuracy) metricAccuracy.textContent = `${job.accuracy.toFixed(1)}%`;
     if (metricAuc) metricAuc.textContent = job.auc.toFixed(3);
 
-    // Cost tracker
-    const runningCost = document.getElementById('running-cost');
-    const costProgress = document.getElementById('cost-progress');
+    const runningCost: HTMLElement | null = document.getElementById('running-cost');
+    const costProgress: HTMLElement | null = document.getElementById('cost-progress');
     if (runningCost) runningCost.textContent = `$${job.runningCost.toFixed(2)}`;
     if (costProgress) costProgress.style.width = `${(job.runningCost / job.budgetLimit) * 100}%`;
 
-    // Note: cascade_update handled by event bus
-
-    // Update loss chart
     lossChart_draw();
-
-    // Update node status
     nodeStatus_render();
 }
 
+// ============================================================================
+// Loss Chart
+// ============================================================================
+
 /**
- * Draws the loss chart.
+ * Draws the loss chart on the canvas.
+ * Renders a grid and the loss history as a line plot.
  */
 function lossChart_draw(): void {
-    // ... (drawing logic same) ...
     if (!globals.lossChart || !state.trainingJob) return;
     const { ctx } = globals.lossChart;
     const history: number[] = state.trainingJob.lossHistory;
@@ -190,10 +182,9 @@ function lossChart_draw(): void {
 
     if (history.length < 2) return;
 
-    // Draw grid
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
-    for (let i = 0; i < 5; i++) {
+    for (let i: number = 0; i < 5; i++) {
         const y: number = (canvas.height / 5) * i;
         ctx.beginPath();
         ctx.moveTo(0, y);
@@ -201,7 +192,6 @@ function lossChart_draw(): void {
         ctx.stroke();
     }
 
-    // Draw loss line
     ctx.strokeStyle = '#f91';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -209,7 +199,7 @@ function lossChart_draw(): void {
     const maxLoss: number = Math.max(...history, 0.1);
     const xStep: number = canvas.width / Math.max(history.length - 1, 1);
 
-    history.forEach((loss, i) => {
+    history.forEach((loss: number, i: number): void => {
         const x: number = i * xStep;
         const y: number = canvas.height - (loss / maxLoss) * canvas.height * 0.9;
         if (i === 0) {
@@ -222,15 +212,20 @@ function lossChart_draw(): void {
     ctx.stroke();
 }
 
+// ============================================================================
+// Node Status
+// ============================================================================
+
 /**
- * Renders the node status cards.
+ * Renders the federated node status cards showing per-node
+ * progress and sample counts.
  */
 function nodeStatus_render(): void {
     if (!state.trainingJob) return;
-    const container = document.getElementById('node-status');
+    const container: HTMLElement | null = document.getElementById('node-status');
     if (!container) return;
 
-    container.innerHTML = state.trainingJob.nodes.map((node) => `
+    container.innerHTML = state.trainingJob.nodes.map((node: TrustedDomainNode): string => `
         <div class="node-card">
             <div class="name">${node.name}</div>
             <div class="status ${node.status}">${node.status}</div>
@@ -241,61 +236,64 @@ function nodeStatus_render(): void {
     `).join('');
 }
 
+// ============================================================================
+// Training Lifecycle
+// ============================================================================
+
 /**
- * Completes the training job.
+ * Completes the training job: marks all nodes as complete,
+ * stops the simulation interval, sets gutters to success,
+ * and auto-advances to the Post stage.
  */
 export function training_complete(): void {
     if (!state.trainingJob) return;
 
-    const nodes = state.trainingJob.nodes.map(n => ({ ...n, status: 'complete' as const }));
-    store.updateTrainingJob({ status: 'complete', nodes });
+    const nodes: TrustedDomainNode[] = state.trainingJob.nodes.map(
+        (n: TrustedDomainNode): TrustedDomainNode => ({ ...n, status: 'complete' as const })
+    );
+    store.trainingJob_update({ status: 'complete', nodes });
 
     if (globals.trainingInterval) {
         clearInterval(globals.trainingInterval);
         globals.trainingInterval = null;
     }
 
-    // Set all gutters to success
-    for (let i = 1; i <= 5; i++) {
+    for (let i: number = 1; i <= 5; i++) {
         gutter_setStatus(i, 'success');
     }
 
     monitorUI_update();
-    
-    // Enable post stage
-    const postIndicator = document.querySelector(`.stage-indicator[data-stage="post"]`) as HTMLElement;
+
+    const postIndicator: HTMLElement | null = document.querySelector(`.stage-indicator[data-stage="post"]`) as HTMLElement;
     if (postIndicator) {
         postIndicator.classList.remove('disabled');
     }
 
-    // Update epoch status
-    const epochStatus = document.getElementById('epoch-status');
+    const epochStatus: HTMLElement | null = document.getElementById('epoch-status');
     if (epochStatus) epochStatus.textContent = 'Complete!';
 
-    // Auto-advance to post after a moment
-    setTimeout(() => stage_advanceTo('post'), 2000);
+    setTimeout((): void => stage_advanceTo('post'), 2000);
 }
 
 /**
- * Aborts the training job.
+ * Aborts the training job: stops the simulation interval,
+ * sets the gutter to error, and resets the cost display.
  */
 export function training_abort(): void {
     if (!state.trainingJob) return;
 
-    store.updateTrainingJob({ status: 'aborted' });
+    store.trainingJob_update({ status: 'aborted' });
 
     if (globals.trainingInterval) {
         clearInterval(globals.trainingInterval);
         globals.trainingInterval = null;
     }
 
-    // Set gutter to error
     gutter_setStatus(4, 'error');
 
     const epochStatus: HTMLElement | null = document.getElementById('epoch-status');
     if (epochStatus) epochStatus.textContent = 'Aborted - No charge';
 
-    // Reset cost
-    const runningCost: HTMLElement | null = document.getElementById('running-cost');
-    if (runningCost) runningCost.textContent = '$0.00';
+    const runningCostEl: HTMLElement | null = document.getElementById('running-cost');
+    if (runningCostEl) runningCostEl.textContent = '$0.00';
 }

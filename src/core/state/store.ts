@@ -1,16 +1,21 @@
 /**
  * @file Application Store
- * 
+ *
  * Centralized State Management using Pub/Sub pattern.
  * Holds the Single Source of Truth and dispatches events on mutation.
- * 
+ *
  * @module
  */
 
-import type { AppState, Project, Dataset, TrustedDomainNode, TrainingJob } from '../models/types.js';
+import type { AppState, Project, Dataset, CostEstimate, TrainingJob } from '../models/types.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { events, Events } from './events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../data/marketplace.js';
+import { asset_install } from '../../vfs/providers/MarketplaceProvider.js';
+import type { LCARSTerminal } from '../../ui/components/Terminal.js';
+import type { LCARSEngine } from '../../lcarslm/engine.js';
+import type { Shell } from '../../vfs/Shell.js';
+import type { FrameSlot } from '../../ui/components/FrameSlot.js';
 
 type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
@@ -20,7 +25,7 @@ interface ExtendedState extends AppState {
     installedAssets: string[];
 }
 
-// Initial State
+/** Initial application state with all defaults zeroed. */
 const initialState: ExtendedState = {
     currentPersona: 'developer',
     currentStage: 'login',
@@ -33,64 +38,110 @@ const initialState: ExtendedState = {
     installedAssets: []
 };
 
+/**
+ * Centralized application store.
+ * Manages all mutable state and emits events on mutation via the EventBus.
+ */
 class Store {
     private _state: ExtendedState;
-    // ...
-    public globals = {
-        terminal: null as any,
-        lcarsEngine: null as any,
-        vfs: new VirtualFileSystem(),
-        trainingInterval: null as number | null,
-        lossChart: null as { ctx: CanvasRenderingContext2D; data: number[] } | null,
-        frameSlot: null as any
+
+    /** Global singletons shared across modules. */
+    public globals: {
+        terminal: LCARSTerminal | null;
+        lcarsEngine: LCARSEngine | null;
+        vcs: VirtualFileSystem;
+        shell: Shell | null;
+        trainingInterval: number | null;
+        lossChart: { ctx: CanvasRenderingContext2D; data: number[] } | null;
+        frameSlot: FrameSlot | null;
+    } = {
+        terminal: null,
+        lcarsEngine: null,
+        vcs: new VirtualFileSystem(),
+        shell: null,
+        trainingInterval: null,
+        lossChart: null,
+        frameSlot: null
     };
 
     constructor() {
         this._state = { ...initialState };
     }
 
-    // Read-only access to state
-    get state() {
+    /**
+     * Provides read-only access to the application state.
+     *
+     * @returns The current extended application state.
+     */
+    get state(): ExtendedState {
         return this._state;
     }
 
-    // --- Actions ---
+    // ─── Actions ────────────────────────────────────────────────
 
-    public setStage(stage: AppState['currentStage']) {
+    /**
+     * Transitions the application to a new SeaGaP stage.
+     *
+     * @param stage - The target stage name.
+     */
+    public stage_set(stage: AppState['currentStage']): void {
         if (this._state.currentStage === stage) return;
         this._state.currentStage = stage;
         events.emit(Events.STAGE_CHANGED, stage);
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public toggleMarketplace(open?: boolean) {
-        console.log('DEBUG: Store.toggleMarketplace called. Current:', this._state.marketplaceOpen, 'Target:', open);
+    /**
+     * Toggles the marketplace overlay open or closed.
+     *
+     * @param open - If provided, forces the marketplace to this state.
+     */
+    public marketplace_toggle(open?: boolean): void {
         this._state.marketplaceOpen = open !== undefined ? open : !this._state.marketplaceOpen;
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public installAsset(assetId: string) {
+    /**
+     * Installs a marketplace asset by ID.
+     * Delegates VFS population to the MarketplaceProvider.
+     *
+     * @param assetId - The marketplace asset identifier.
+     */
+    public asset_install(assetId: string): void {
         if (!this._state.installedAssets.includes(assetId)) {
             this._state.installedAssets.push(assetId);
-            const asset = MARKETPLACE_ASSETS.find(a => a.id === assetId);
-            
-            // Re-mount binaries to VFS if it's a plugin
-            if (asset && asset.type === 'plugin') {
-                this.globals.vfs.dir_create('/home/developer/bin');
-                this.globals.vfs.file_create(`/home/developer/bin/${asset.name}`);
+            const asset: MarketplaceAsset | undefined = MARKETPLACE_ASSETS.find(
+                (a: MarketplaceAsset): boolean => a.id === assetId
+            );
+
+            if (asset) {
+                asset_install(this.globals.vcs, asset);
             }
 
             events.emit(Events.STATE_CHANGED, this._state);
         }
     }
 
-    public setPersona(persona: Persona) {
+    /**
+     * Sets the active user persona.
+     *
+     * @param persona - The persona to activate.
+     */
+    public persona_set(persona: Persona): void {
         this._state.currentPersona = persona;
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public toggleDataset(dataset: Dataset) {
-        const index = this._state.selectedDatasets.findIndex(ds => ds.id === dataset.id);
+    /**
+     * Toggles a dataset's selection state.
+     * If selected, deselects it; if unselected, selects it.
+     *
+     * @param dataset - The dataset to toggle.
+     */
+    public dataset_toggle(dataset: Dataset): void {
+        const index: number = this._state.selectedDatasets.findIndex(
+            (ds: Dataset): boolean => ds.id === dataset.id
+        );
         if (index >= 0) {
             this._state.selectedDatasets.splice(index, 1);
         } else {
@@ -100,16 +151,28 @@ class Store {
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public selectDataset(dataset: Dataset) {
-        if (!this._state.selectedDatasets.some(ds => ds.id === dataset.id)) {
+    /**
+     * Selects a dataset (no-op if already selected).
+     *
+     * @param dataset - The dataset to select.
+     */
+    public dataset_select(dataset: Dataset): void {
+        if (!this._state.selectedDatasets.some((ds: Dataset): boolean => ds.id === dataset.id)) {
             this._state.selectedDatasets.push(dataset);
             events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
             events.emit(Events.STATE_CHANGED, this._state);
         }
     }
 
-    public deselectDataset(datasetId: string) {
-        const index = this._state.selectedDatasets.findIndex(ds => ds.id === datasetId);
+    /**
+     * Deselects a dataset by ID.
+     *
+     * @param datasetId - The ID of the dataset to deselect.
+     */
+    public dataset_deselect(datasetId: string): void {
+        const index: number = this._state.selectedDatasets.findIndex(
+            (ds: Dataset): boolean => ds.id === datasetId
+        );
         if (index >= 0) {
             this._state.selectedDatasets.splice(index, 1);
             events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
@@ -117,7 +180,10 @@ class Store {
         }
     }
 
-    public clearSelection() {
+    /**
+     * Clears all dataset selections.
+     */
+    public selection_clear(): void {
         if (this._state.selectedDatasets.length > 0) {
             this._state.selectedDatasets = [];
             events.emit(Events.DATASET_SELECTION_CHANGED, []);
@@ -125,21 +191,24 @@ class Store {
         }
     }
 
-    public loadProject(project: Project) {
+    /**
+     * Loads a project, setting it as active and populating datasets.
+     *
+     * @param project - The project to load.
+     */
+    public project_load(project: Project): void {
         this._state.activeProject = project;
         this._state.selectedDatasets = [...project.datasets];
-        
-        // Implicitly update VFS
-        // (Note: In a pure store, we might just emit PROJECT_LOADED and let vfs listen,
-        // but since vfs is in globals, we can do it here or let listeners handle it.
-        // For purity, we emit.)
-        
+
         events.emit(Events.PROJECT_LOADED, project);
         events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public unloadProject() {
+    /**
+     * Unloads the active project and clears dataset selections.
+     */
+    public project_unload(): void {
         this._state.activeProject = null;
         this._state.selectedDatasets = [];
         events.emit(Events.PROJECT_LOADED, null);
@@ -147,17 +216,32 @@ class Store {
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public updateCost(estimate: any) {
+    /**
+     * Updates the cost estimate.
+     *
+     * @param estimate - The new cost breakdown.
+     */
+    public cost_update(estimate: CostEstimate): void {
         this._state.costEstimate = estimate;
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public setTrainingJob(job: TrainingJob | null) {
+    /**
+     * Sets or clears the active training job.
+     *
+     * @param job - The training job, or null to clear.
+     */
+    public trainingJob_set(job: TrainingJob | null): void {
         this._state.trainingJob = job;
         events.emit(Events.STATE_CHANGED, this._state);
     }
 
-    public updateTrainingJob(updates: Partial<TrainingJob>) {
+    /**
+     * Partially updates the active training job.
+     *
+     * @param updates - Fields to merge into the current job.
+     */
+    public trainingJob_update(updates: Partial<TrainingJob>): void {
         if (this._state.trainingJob) {
             this._state.trainingJob = { ...this._state.trainingJob, ...updates };
             events.emit(Events.STATE_CHANGED, this._state);
@@ -165,7 +249,8 @@ class Store {
     }
 }
 
-export const store = new Store();
-// Backward compatibility exports for easier refactoring
-export const state = store.state;
-export const globals = store.globals;
+export const store: Store = new Store();
+/** Backward compatibility export for direct state access. */
+export const state: ExtendedState = store.state;
+/** Backward compatibility export for global singletons. */
+export const globals: Store['globals'] = store.globals;

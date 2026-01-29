@@ -7,6 +7,8 @@
  * @module
  */
 
+import type { Dataset, Project } from '../core/models/types.js';
+
 /**
  * Represents a file or folder in the virtual filesystem.
  * Unlike the legacy FileNode, this carries content, permissions, and metadata.
@@ -39,8 +41,8 @@ export interface ShellResult {
 export interface ContentContext {
     filePath: string;
     persona: string;
-    selectedDatasets: any[];
-    activeProject: any | null;
+    selectedDatasets: Dataset[];
+    activeProject: Project | null;
     installedAssets: string[];
 }
 

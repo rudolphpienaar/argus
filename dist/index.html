@@ -53,7 +53,7 @@
                 <div class="argus-column">
                     <div class="banner">ARGUS</div>
                     <div class="pill-stack">
-                        <button onclick="store.toggleMarketplace()" class="pill-btn market-pill">MARKETPLACE</button>
+                        <button onclick="store.marketplace_toggle()" class="pill-btn market-pill">MARKETPLACE</button>
                         <button onclick="user_logout()" class="pill-btn logout-pill">LOGOUT</button>
                         <button onclick="stage_next()" class="pill-btn next-pill" id="btn-next">NEXT</button>
                     </div>
@@ -100,7 +100,7 @@
                                 <h2 style="margin: 0; color: var(--sky);">ATLAS MARKETPLACE</h2>
                                 <div class="lcars-subtitle">ChRIS PLUGIN & ASSET REGISTRY</div>
                             </div>
-                            <button onclick="store.toggleMarketplace(false)" class="pill-btn" style="width: 100px; background: var(--mars);">CLOSE</button>
+                            <button onclick="store.marketplace_toggle(false)" class="pill-btn" style="width: 100px; background: var(--mars);">CLOSE</button>
                         </div>
                         <div class="market-controls">
                             <div class="market-search-row">

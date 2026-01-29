@@ -1,6 +1,6 @@
 = ARGUS Developer Notes
 :author: ATLAS Project Team
-:revdate: 2026-01-25
+:revdate: 2026-01-29
 :toc:
 :toclevels: 3
 
@@ -178,12 +178,22 @@ When the HTML structure changes, the TypeScript must be updated to match:
 
 ==== Exposing Functions to Window
 
-For `onclick` handlers in HTML, functions must be exposed to the window object:
+For `onclick` handlers in HTML, functions must be exposed to the window object using typed `declare global` extensions:
 
 [source,typescript]
 ----
-(window as unknown as Record<string, unknown>).functionName = functionName;
+// In the module that defines the functions:
+declare global {
+    interface Window {
+        myFunction: typeof myFunction;
+    }
+}
+
+// Assign to window (type-safe, no 'any' cast):
+window.myFunction = myFunction;
 ----
+
+This pattern replaces the legacy `(window as any).functionName = functionName` approach. All modules that expose window bindings now use typed Window interface extensions: `argus.ts`, `marketplace/view.ts`, `ui/components/LCARSFrame.ts`.
 
 === File Mapping: ARGUS to LCARS Reference
 
@@ -200,7 +210,7 @@ For `onclick` handlers in HTML, functions must be exposed to the window object:
 
 | `src/argus.ts`
 | N/A (ARGUS-specific)
-| Application logic
+| Application entry point and orchestration
 |===
 
 === Debugging LCARS Layout Issues
@@ -229,6 +239,9 @@ make serve
 
 # Watch mode (auto-rebuild on changes)
 make watch
+
+# Run all tests (134 tests)
+npm run test
 ----
 
 == Top Frame Redesign: SeaGaP Tracker (v1.2.0 - v1.3.0)
@@ -265,21 +278,49 @@ The initial top frame design used a horizontal accordion. While functional, it l
 }
 ----
 
-== Testing Strategy (v1.3.0)
+== Testing Strategy
 
-With v1.3.0, we introduced a formal testing harness to ensure logic stability as the prototype grows.
+=== Framework
 
-* **Framework:** Vitest (chosen for native ESM/TypeScript support and speed).
-* **Scope:** Unit tests for pure logic extracted from the monolithic `argus.ts`.
-* **Current Coverage:** Cost calculation engine (`src/core/logic/costs.ts`).
+Vitest — chosen for native ESM/TypeScript support and speed.
+
+=== Test Suites
+
+[cols="2,1,3"]
+|===
+| Suite | Tests | Scope
+
+| `src/vfs/VirtualFileSystem.test.ts`
+| 64
+| Path resolution, CWD, directory/file CRUD, node read/write/copy/move/remove, mount/unmount, lazy content generation, invalidation, event emission.
+
+| `src/vfs/Shell.test.ts`
+| 51
+| Environment variables, prompt generation with ~ substitution, command parsing, all 15 builtins (cd, pwd, ls, cat, mkdir, touch, rm, cp, mv, echo, env, export, whoami, date, history, help), stage transitions, external handler delegation.
+
+| `src/vfs/content/ContentRegistry.test.ts`
+| 16
+| Generator registration, path resolution, VFS integration (lazy generation + caching), all 8 core template generators.
+
+| `src/core/logic/costs.test.ts`
+| 3
+| Cost estimation engine.
+
+| **Total**
+| **134**
+|
+|===
 
 [source,bash]
 ----
-# Run tests
+# Run all tests
 npm run test
+
+# Run specific suite
+npx vitest run src/vfs/Shell.test.ts
 ----
 
-=== Version History
+== Version History
 
 |===
 | Version | Date | Changes
@@ -307,4 +348,32 @@ npm run test
 | 1.3.0
 | 2026-01-25
 | "Hanging Subway" layout, multi-window telemetry, Monitor stage fix, Vitest integration
+
+| 3.0.0
+| 2026-01-26
+| "The Federalization Update" — Pub/Sub architecture, Store + EventBus, `federate` command, full modularization
+
+| 3.1.0
+| 2026-01-26
+| "The Marketplace Update" — 400+ assets, category filtering, VFS integration
+
+| 3.2.1
+| 2026-01-26
+| "The Telemetry Restore" — Fixed telemetry regression, unified registry-based service
+
+| 3.3.0
+| 2026-01-28
+| "The Modularization Update" — Decoupled `lcars-framework`, procedural WorkflowTracker
+
+| 3.4.0
+| 2026-01-28
+| "The Visual Language Update" — Frame Slot system, Beckon Pulse, SlidePanel
+
+| 3.4.1
+| 2026-01-29
+| "The VCS Update" — Complete Virtual Computer System: VirtualFileSystem, Shell (15 builtins), ContentRegistry (14 generators), 3 Providers, 134 tests
+
+| 3.5.0
+| 2026-01-29
+| "The Style Sweep" — Comprehensive code audit: eliminated `any` from core, RPN-renamed 20+ functions, JSDoc on 50+ functions, decomposed long methods, typed all lambdas/params, `declare global` Window extensions
 |===

@@ -1,26 +1,22 @@
 /**
  * @file Process Stage Logic
- * 
- * Manages the developer terminal interactions and environment.
- * 
+ *
+ * Manages the developer terminal interactions, IDE environment,
+ * and federated training launch sequence.
+ *
  * @module
  */
 
 import { state, globals, store } from '../state/store.js';
-import { catalog_search, dataset_toggle, workspace_render, lcarslm_simulate } from './search.js';
-import { stage_next, stage_advanceTo, stageButton_setEnabled } from '../logic/navigation.js';
-import { filesystem_build, costs_calculate } from './gather.js';
-import type { QueryResponse } from '../../lcarslm/types.js';
-import type { Dataset } from '../models/types.js';
+import { stage_advanceTo } from '../logic/navigation.js';
 import { MOCK_NODES } from '../data/nodes.js';
-import { DATASETS } from '../data/datasets.js';
+import type { TrustedDomainNode } from '../models/types.js';
+import type { FileNode as VfsFileNode } from '../../vfs/types.js';
+import type { LCARSTerminal } from '../../ui/components/Terminal.js';
 
-// Terminal handle command moved to argus.ts locally to fix scope issues.
-
-async function handleProjectNavigation(cmd: string, args: string[]): Promise<void> {
-    // This logic needs to be moved from argus.ts.
-    // I will implement it fully in the next step to ensure clean imports.
-}
+// ============================================================================
+// Terminal Controls
+// ============================================================================
 
 /**
  * Toggles the Intelligence Console via the Frame Slot orchestrator.
@@ -32,201 +28,225 @@ export function terminal_toggle(): void {
     }
 }
 
-export function terminal_initializeDraggable(): void {
-    const strip: HTMLElement | null = document.getElementById('access-strip');
-    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
-    
-    if (!strip || !consoleEl) return;
+// ============================================================================
+// IDE / File Tree
+// ============================================================================
 
-    let isDragging: boolean = false;
-    let startY: number = 0;
-    let startHeight: number = 0;
-
-    strip.addEventListener('mousedown', (e: MouseEvent) => {
-        isDragging = true;
-        startY = e.clientY;
-        startHeight = consoleEl.offsetHeight;
-        strip.classList.add('active');
-        document.body.style.cursor = 'ns-resize';
-        if (!consoleEl.classList.contains('open')) {
-            consoleEl.classList.add('open');
-        }
-    });
-
-    window.addEventListener('mousemove', (e: MouseEvent) => {
-        if (!isDragging) return;
-        const deltaY: number = e.clientY - startY;
-        const newHeight: number = Math.max(0, Math.min(window.innerHeight - 400, startHeight + deltaY));
-        consoleEl.style.height = `${newHeight}px`;
-        consoleEl.style.transition = 'none';
-        
-        if (newHeight > 50) {
-            consoleEl.classList.add('open');
-        } else {
-            consoleEl.classList.remove('open');
-        }
-    });
-
-    window.addEventListener('mouseup', () => {
-        if (!isDragging) return;
-        isDragging = false;
-        strip.classList.remove('active');
-        document.body.style.cursor = 'default';
-        consoleEl.style.transition = '';
-    });
-}
-
+/**
+ * Populates the Process stage IDE: renders the VFS file tree
+ * in the sidebar and opens the default file in the code editor.
+ */
 export function populate_ide(): void {
-    // 1. Render File Tree from VFS
-    const processTree = document.getElementById('process-file-tree');
-    const cwdNode = globals.vfs.node_stat(globals.vfs.cwd_get());
-    
+    const processTree: HTMLElement | null = document.getElementById('process-file-tree');
+    const cwdNode: VfsFileNode | null = globals.vcs.node_stat(globals.vcs.cwd_get());
+
     if (processTree && cwdNode) {
-        const buildHtml = (n: any): string => {
-            const typeClass = n.type;
+        const nodeHtml_build = (n: VfsFileNode): string => {
+            const typeClass: string = n.type;
             if (n.children && n.children.length > 0) {
-                return `<li class="${typeClass}">${n.name}<ul>${n.children.map(buildHtml).join('')}</ul></li>`;
+                return `<li class="${typeClass}">${n.name}<ul>${n.children.map(nodeHtml_build).join('')}</ul></li>`;
             }
-            // Use ide_openFile for file clicks in Process stage
             return `<li class="${typeClass}" onclick="ide_openFile('${n.name}', '${n.type}')">${n.name}</li>`;
         };
-        processTree.innerHTML = `<ul>${buildHtml(cwdNode)}</ul>`;
+        processTree.innerHTML = `<ul>${nodeHtml_build(cwdNode)}</ul>`;
     } else if (processTree) {
         processTree.innerHTML = '<span class="dim">No filesystem mounted.</span>';
     }
 
-    // 2. Populate Code Editor (Default)
     ide_openFile('train.py', 'file');
 }
 
 /**
  * Loads file content into the IDE code editor.
- * Exposed to window for onclick access.
+ * Reads content from the VCS (triggering lazy generation if needed).
+ * Falls back to type-based placeholders for binary/image files.
+ *
+ * @param filename - The file name to open.
+ * @param type - The file type ('file', 'folder', 'image').
  */
 export function ide_openFile(filename: string, type: string): void {
-    const codeEl = document.getElementById('process-code-content');
+    const codeEl: HTMLElement | null = document.getElementById('process-code-content');
     if (!codeEl) return;
 
-    if (filename === 'train.py') {
-        codeEl.innerHTML = `
-<span class="comment"># ARGUS Federated Training Script</span>
-<span class="comment"># Target: ResNet50 on Distributed Cohorts</span>
-
-<span class="keyword">import</span> torch
-<span class="keyword">import</span> meridian.federated <span class="keyword">as</span> fl
-<span class="keyword">from</span> atlas.models <span class="keyword">import</span> ResNet50
-
-<span class="keyword">def</span> <span class="function">train</span>(cohort_id):
-    <span class="comment"># Initialize local node context</span>
-    node = fl.Node(cohort_id)
-    
-    <span class="comment"># Load Data (Secure Mount)</span>
-    dataset = node.load_dataset(<span class="string">"/data/cohort/training"</span>)
-    
-    <span class="comment"># Define Model</span>
-    model = ResNet50(pretrained=<span class="keyword">True</span>)
-    
-    <span class="comment"># Federated Loop</span>
-    <span class="keyword">for</span> round <span class="keyword">in</span> <span class="function">range</span>(<span class="number">50</span>):
-        weights = model.train(dataset)
-        fl.aggregate(weights)
-        
-    <span class="keyword">return</span> model.save()
-`;
-    } else if (filename === 'README.md') {
-        codeEl.innerHTML = `
-<span class="comment"># Project Manifest</span>
-
-This project contains a federated learning cohort definition.
-
-**Topology:** Star Network
-**Aggregation:** FedAvg
-**Privacy:** Differential Privacy (epsilon=3.0)
-
-<span class="keyword">## Data Sources</span>
-- Boston Children's Hospital
-- Mass General Hospital
-`;
-    } else if (type === 'image') {
+    if (type === 'image') {
         codeEl.innerHTML = `<div style="display:flex; justify-content:center; align-items:center; height:100%; color:var(--honey);">[IMAGE PREVIEW NOT AVAILABLE IN CODE EDITOR]</div>`;
-    } else {
-        codeEl.innerHTML = `<div style="padding:1rem; color:var(--font-color);">[Binary or Unknown File Type]</div>`;
+        return;
     }
+
+    const cwdPath: string = globals.vcs.cwd_get();
+    const filePath: string = `${cwdPath}/${filename}`;
+    try {
+        const content: string | null = globals.vcs.node_read(filePath);
+        if (content !== null) {
+            const highlighted: string = syntax_highlight(content, filename);
+            codeEl.innerHTML = `<pre>${highlighted}</pre>`;
+            return;
+        }
+    } catch (_e: unknown) {
+        // File not found in VCS — fall through to placeholder
+    }
+
+    codeEl.innerHTML = `<div style="padding:1rem; color:var(--font-color);">[Binary or Unknown File Type]</div>`;
 }
 
 /**
+ * Applies basic syntax highlighting to plain-text file content.
+ * Uses semantic span classes matching the existing LCARS CSS
+ * (.comment, .keyword, .string, .function, .number).
+ *
+ * @param content - Raw file content string.
+ * @param filename - Filename used to determine language.
+ * @returns HTML string with syntax-highlighted spans.
+ */
+function syntax_highlight(content: string, filename: string): string {
+    let escaped: string = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    const ext: string = filename.split('.').pop()?.toLowerCase() || '';
+
+    if (ext === 'py') {
+        escaped = escaped.replace(/(#[^\n]*)/g, '<span class="comment">$1</span>');
+        escaped = escaped.replace(/\b(import|from|as|def|class|return|if|elif|else|for|while|in|not|and|or|True|False|None|with|try|except|raise|yield|lambda|pass|break|continue)\b/g,
+            '<span class="keyword">$1</span>');
+        escaped = escaped.replace(/(&quot;[^&]*?&quot;|"[^"]*?")/g, '<span class="string">$1</span>');
+        escaped = escaped.replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>');
+    } else if (ext === 'yaml' || ext === 'yml') {
+        escaped = escaped.replace(/(#[^\n]*)/g, '<span class="comment">$1</span>');
+        escaped = escaped.replace(/^(\s*[\w_.-]+):/gm, '<span class="keyword">$1</span>:');
+        escaped = escaped.replace(/(".*?")/g, '<span class="string">$1</span>');
+        escaped = escaped.replace(/\b(true|false|null)\b/gi, '<span class="keyword">$1</span>');
+        escaped = escaped.replace(/\b(\d+\.?\d*(?:e[+-]?\d+)?)\b/g, '<span class="number">$1</span>');
+    } else if (ext === 'json') {
+        escaped = escaped.replace(/("(?:[^"\\]|\\.)*?")\s*:/g, '<span class="keyword">$1</span>:');
+        escaped = escaped.replace(/:\s*("(?:[^"\\]|\\.)*?")/g, ': <span class="string">$1</span>');
+        escaped = escaped.replace(/\b(true|false|null)\b/g, '<span class="keyword">$1</span>');
+        escaped = escaped.replace(/\b(\d+\.?\d*(?:e[+-]?\d+)?)\b/g, '<span class="number">$1</span>');
+    } else if (ext === 'md') {
+        escaped = escaped.replace(/^(#{1,6}\s+.*$)/gm, '<span class="keyword">$1</span>');
+        escaped = escaped.replace(/(\*\*.*?\*\*)/g, '<span class="function">$1</span>');
+        escaped = escaped.replace(/(```[\s\S]*?```)/g, '<span class="string">$1</span>');
+        escaped = escaped.replace(/(`[^`]+`)/g, '<span class="string">$1</span>');
+    } else if (ext === 'txt') {
+        escaped = escaped.replace(/(#[^\n]*)/g, '<span class="comment">$1</span>');
+        escaped = escaped.replace(/^([\w-]+)/gm, '<span class="function">$1</span>');
+        escaped = escaped.replace(/([><=!]+[\d.]+)/g, '<span class="number">$1</span>');
+    }
+
+    return escaped;
+}
+
+// ============================================================================
+// Federated Training Launch
+// ============================================================================
+
+/**
  * Launches federated training.
+ * Ignored if a training job is already running.
  */
 export function training_launch(): void {
-    // If already running, ignore
     if (state.trainingJob && state.trainingJob.status === 'running') return;
-
-    // Start the Federation Sequence instead of jumping straight to Monitor
     federation_sequence();
 }
 
 /**
- * Orchestrates the "Federalization" sequence:
- * Factory Build -> Containerization -> Distribution -> Handshake
+ * Orchestrates the full "Federalization" sequence:
+ * Factory Build -> Containerization -> Distribution -> Handshake.
+ * Delegates each phase to a dedicated sub-function.
  */
 async function federation_sequence(): Promise<void> {
-    console.log('DEBUG: federation_sequence triggered');
-    const overlay = document.getElementById('federation-overlay');
-    const factoryIcon = document.querySelector('.factory-icon');
-    const spokesContainer = document.getElementById('fed-spokes');
-    const statusText = document.getElementById('fed-status-text');
-    const progressBar = document.getElementById('fed-progress-bar');
+    const t: LCARSTerminal | null = globals.terminal;
+    const overlay: HTMLElement | null = document.getElementById('federation-overlay');
+    const factoryIcon: Element | null = document.querySelector('.factory-icon');
+    const spokesContainer: HTMLElement | null = document.getElementById('fed-spokes');
+    const statusText: HTMLElement | null = document.getElementById('fed-status-text');
+    const progressBar: HTMLElement | null = document.getElementById('fed-progress-bar');
 
     if (!overlay || !spokesContainer || !statusText || !progressBar) return;
 
-    // 1. Initialize Overlay
+    federationOverlay_initialize(overlay, spokesContainer, statusText, progressBar, t);
+
+    const nodes: TrustedDomainNode[] = MOCK_NODES.filter((n: TrustedDomainNode): boolean => n.name !== 'MOC-HUB');
+
+    federationNodes_render(nodes, spokesContainer);
+    federationBuild_run(t, factoryIcon, statusText, progressBar);
+    federationDistribution_run(t, factoryIcon, nodes, statusText, progressBar);
+    federationHandshake_run(t, nodes, overlay, statusText, progressBar);
+}
+
+/**
+ * Initializes the federation overlay: clears previous state,
+ * opens the terminal console, and adjusts layout.
+ *
+ * @param overlay - The federation overlay element.
+ * @param spokesContainer - The container for node spoke elements.
+ * @param statusText - The status text element.
+ * @param progressBar - The progress bar element.
+ * @param t - The terminal instance (may be null).
+ */
+function federationOverlay_initialize(
+    overlay: HTMLElement,
+    spokesContainer: HTMLElement,
+    statusText: HTMLElement,
+    progressBar: HTMLElement,
+    t: LCARSTerminal | null
+): void {
     overlay.classList.remove('hidden');
-    spokesContainer.innerHTML = ''; // Clear previous
+    spokesContainer.innerHTML = '';
     progressBar.style.width = '0%';
     statusText.textContent = 'INITIALIZING ATLAS FACTORY...';
-    
-    // Ensure Terminal is visible for build logs
-    const consoleEl = document.getElementById('intelligence-console');
+
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
     if (globals.frameSlot && !globals.frameSlot.state_isOpen()) {
-        globals.terminal.println('● EXTENDING CONSOLE FOR BUILD OUTPUT...');
+        if (t) t.println('\u25CF EXTENDING CONSOLE FOR BUILD OUTPUT...');
         globals.frameSlot.frame_open();
     }
 
-    // Dynamic Layout Adjustment: Push animation below terminal
     if (consoleEl) {
-        // Wait for transition or force read
-        setTimeout(() => {
-            const terminalHeight = consoleEl.offsetHeight;
-            const container = overlay.querySelector('.fed-container') as HTMLElement;
+        setTimeout((): void => {
+            const terminalHeight: number = consoleEl.offsetHeight;
+            const container: HTMLElement | null = overlay.querySelector('.fed-container') as HTMLElement;
             if (container) {
-                // Add a buffer of 20px
                 container.style.marginTop = `${terminalHeight + 20}px`;
             }
-        }, 50); // Small delay to allow 'open' class to expand height
+        }, 50);
     }
+}
 
-    // 2. Render Nodes (Spokes)
-    const centerX = spokesContainer.offsetWidth / 2;
-    const centerY = spokesContainer.offsetHeight / 2;
-    
-    // Use MOCK_NODES but filter out the hub if present
-    const nodes = MOCK_NODES.filter(n => n.name !== 'MOC-HUB'); 
-    
-    nodes.forEach((node, i) => {
-        const nodeDiv = document.createElement('div');
+/**
+ * Renders the node spoke icons into the federation overlay.
+ *
+ * @param nodes - The trusted domain nodes to render.
+ * @param spokesContainer - The container element for spokes.
+ */
+function federationNodes_render(nodes: TrustedDomainNode[], spokesContainer: HTMLElement): void {
+    nodes.forEach((node: TrustedDomainNode, i: number): void => {
+        const nodeDiv: HTMLDivElement = document.createElement('div');
         nodeDiv.className = `fed-node-container node-pos-${i}`;
         nodeDiv.innerHTML = `<div class="fed-node-icon" id="node-icon-${i}">${node.name.split('-')[0]}</div>`;
         spokesContainer.appendChild(nodeDiv);
-
-        // Draw Line (Calculated roughly for the animation visual)
-        // Note: Exact line drawing in CSS grid is tricky, simplified here for prototype
-        // We will just animate the packet from center to the node's position class
     });
+}
 
-    // 3. PHASE 1: BUILD (Simulated Logs)
+/**
+ * Runs PHASE 1: Build. Simulates factory build logs with staggered
+ * timeouts and progress bar updates (0–50%).
+ *
+ * @param t - The terminal instance (may be null).
+ * @param factoryIcon - The factory icon element.
+ * @param statusText - The status text element.
+ * @param progressBar - The progress bar element.
+ */
+function federationBuild_run(
+    t: LCARSTerminal | null,
+    factoryIcon: Element | null,
+    statusText: HTMLElement,
+    progressBar: HTMLElement
+): void {
     if (factoryIcon) factoryIcon.classList.add('building');
-    
-    const buildSteps = [
+
+    const buildSteps: readonly { readonly msg: string; readonly time: number }[] = [
         { msg: 'Resolving dependencies...', time: 500 },
         { msg: 'Pulling base image: meridian/python:3.11-cuda11.8...', time: 1200 },
         { msg: 'Compiling model architecture (ResNet50)...', time: 2000 },
@@ -238,51 +258,74 @@ async function federation_sequence(): Promise<void> {
     ];
 
     for (const step of buildSteps) {
-        setTimeout(() => {
-            globals.terminal.println(`> ${step.msg}`);
-            const progress = (step.time / 6000) * 50; // First 50% is build
+        setTimeout((): void => {
+            if (t) t.println(`> ${step.msg}`);
+            const progress: number = (step.time / 6000) * 50;
             progressBar.style.width = `${progress}%`;
             statusText.textContent = `FACTORY: ${step.msg.toUpperCase()}`;
         }, step.time);
     }
+}
 
-    // 4. PHASE 2: DISTRIBUTION (Animation)
-    setTimeout(() => {
+/**
+ * Runs PHASE 2: Distribution. Dispatches payloads to trusted domain
+ * nodes with staggered arrival animations.
+ *
+ * @param t - The terminal instance (may be null).
+ * @param factoryIcon - The factory icon element.
+ * @param nodes - The trusted domain nodes.
+ * @param statusText - The status text element.
+ * @param progressBar - The progress bar element.
+ */
+function federationDistribution_run(
+    t: LCARSTerminal | null,
+    factoryIcon: Element | null,
+    nodes: TrustedDomainNode[],
+    statusText: HTMLElement,
+    _progressBar: HTMLElement
+): void {
+    setTimeout((): void => {
         if (factoryIcon) factoryIcon.classList.remove('building');
         statusText.textContent = 'DISPATCHING PAYLOADS TO TRUSTED DOMAINS...';
-        globals.terminal.println('● INITIATING SECURE DISTRIBUTION WAVE...');
-        
-        nodes.forEach((node, i) => {
-            // Create packet
-            const packet = document.createElement('div');
-            packet.className = 'fed-packet';
-            
-            // Calculate vector from center to node
-            // Since we use classes for positions, we simulate the travel by
-            // appending the packet to the node container and animating it 'from' center?
-            // Easier: Just use a centralized packet that moves to the node's offset.
-            // For this prototype, we'll iterate through nodes and flash them 'Received'
-            
-            setTimeout(() => {
-                const nodeIcon = document.getElementById(`node-icon-${i}`);
+        if (t) t.println('\u25CF INITIATING SECURE DISTRIBUTION WAVE...');
+
+        nodes.forEach((node: TrustedDomainNode, i: number): void => {
+            setTimeout((): void => {
+                const nodeIcon: HTMLElement | null = document.getElementById(`node-icon-${i}`);
                 if (nodeIcon) {
                     nodeIcon.classList.add('received');
-                    globals.terminal.println(`○ [${node.name}] >> PAYLOAD RECEIVED. VERIFIED.`);
+                    if (t) t.println(`\u25CB [${node.name}] >> PAYLOAD RECEIVED. VERIFIED.`);
                 }
-            }, 1000 + (i * 600)); // Staggered arrival
+            }, 1000 + (i * 600));
         });
-
     }, 6000);
+}
 
-    // 5. PHASE 3: HANDSHAKE & TRANSITION
-    setTimeout(() => {
+/**
+ * Runs PHASE 3: Handshake. Finalizes the federation, creates the
+ * training job, and transitions to the Monitor stage.
+ *
+ * @param t - The terminal instance (may be null).
+ * @param nodes - The trusted domain nodes.
+ * @param overlay - The federation overlay element.
+ * @param statusText - The status text element.
+ * @param progressBar - The progress bar element.
+ */
+function federationHandshake_run(
+    t: LCARSTerminal | null,
+    nodes: TrustedDomainNode[],
+    overlay: HTMLElement,
+    statusText: HTMLElement,
+    progressBar: HTMLElement
+): void {
+    setTimeout((): void => {
         statusText.textContent = 'ALL NODES READY. STARTING FEDERATED SESSION.';
         progressBar.style.width = '100%';
-        globals.terminal.println('● NETWORK SYNCHRONIZED. HANDING OFF TO MONITOR.');
-        
-        setTimeout(() => {
+        if (t) t.println('\u25CF NETWORK SYNCHRONIZED. HANDING OFF TO MONITOR.');
+
+        setTimeout((): void => {
             overlay.classList.add('hidden');
-            store.setTrainingJob({
+            store.trainingJob_set({
                 id: `job-${Date.now()}`,
                 status: 'running',
                 currentEpoch: 0,
@@ -293,11 +336,10 @@ async function federation_sequence(): Promise<void> {
                 runningCost: 0,
                 budgetLimit: 500,
                 startTime: new Date(),
-                nodes: JSON.parse(JSON.stringify(MOCK_NODES)),
+                nodes: JSON.parse(JSON.stringify(MOCK_NODES)) as TrustedDomainNode[],
                 lossHistory: []
             });
             stage_advanceTo('monitor');
         }, 2000);
-
     }, 6000 + (nodes.length * 600) + 1000);
 }

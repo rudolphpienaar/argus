@@ -257,9 +257,18 @@ export const LCARS_HUES = {
 // WINDOW EXPORTS
 // ============================================================
 
-// Expose to window for HTML onclick handlers
-(window as any).lcarsFrame_create = lcarsFrame_create;
-(window as any).lcarsTopBar_create = lcarsTopBar_create;
-(window as any).lcarsSidebar_setActive = lcarsSidebar_setActive;
-(window as any).lcarsFrame_setHue = lcarsFrame_setHue;
-(window as any).LCARS_HUES = LCARS_HUES;
+declare global {
+    interface Window {
+        lcarsFrame_create: typeof lcarsFrame_create;
+        lcarsTopBar_create: typeof lcarsTopBar_create;
+        lcarsSidebar_setActive: typeof lcarsSidebar_setActive;
+        lcarsFrame_setHue: typeof lcarsFrame_setHue;
+        LCARS_HUES: typeof LCARS_HUES;
+    }
+}
+
+window.lcarsFrame_create = lcarsFrame_create;
+window.lcarsTopBar_create = lcarsTopBar_create;
+window.lcarsSidebar_setActive = lcarsSidebar_setActive;
+window.lcarsFrame_setHue = lcarsFrame_setHue;
+window.LCARS_HUES = LCARS_HUES;

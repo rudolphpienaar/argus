@@ -1,6 +1,7 @@
 = ARGUS Architecture
 :toc:
 :toclevels: 3
+:sectnums:
 
 == 1. Core Philosophy: Robust Vanilla
 ARGUS avoids heavy frontend frameworks (React, Vue) to maintain maximum performance and "snap." However, to avoid state desynchronization issues common in imperative Vanilla JS, we employ a **Pub/Sub (Observer) Pattern**.
@@ -11,31 +12,106 @@ The application state is centralized in a `Store` that acts as the single source
 
 === The Flow
 1.  **User Action:** User clicks a dataset card.
-2.  **Action Dispatch:** UI calls `store.toggleDataset(id)`.
+2.  **Action Dispatch:** UI calls `store.dataset_toggle(id)`.
 3.  **State Mutation:** Store updates the `selectedDatasets` array.
-4.  **Event Broadcast:** Store emits `EVENTS.DATASET_SELECTION_CHANGED`.
+4.  **Event Broadcast:** Store emits `Events.DATASET_SELECTION_CHANGED`.
 5.  **Reactivity:**
     *   `search.ts` hears event -> Highlights the card.
-    *   `gather.ts` hears event -> Rebuilds the VFS tree.
+    *   `gather.ts` hears event -> Rebuilds the VCS tree.
     *   `telemetry.ts` hears event -> Recalculates cost estimates.
 
 === Key Components
 
 *   **`src/core/state/events.ts`**: The Event Emitter implementation and Event Type definitions.
-*   **`src/core/state/store.ts`**: The central Store class containing application state and business logic actions.
+*   **`src/core/state/store.ts`**: The central Store class containing application state and business logic actions. All methods follow RPN naming (e.g., `stage_set()`, `marketplace_toggle()`, `asset_install()`).
 
 == 3. Event Catalog
 
-| Event Name | Payload | Triggered By | Listeners (Impact) |
-|---|---|---|---|
-| `STATE_CHANGE` | `AppState` | Any state update | Telemetry (Cascade) |
-| `STAGE_CHANGE` | `newStage: string` | Navigation logic | UI panels, Terminal prompt |
-| `DATASET_SELECTION` | `datasets: Dataset[]` | Search/Terminal | Gather VFS, Cost calc, Search Grid |
-| `PROJECT_LOADED` | `project: Project` | Project selection | VFS mount, Process IDE population |
-| `FEDERATION_START` | `null` | Process 'Launch' | Federation Overlay |
+[cols="2,2,2,3"]
+|===
+| Event Name | Payload | Triggered By | Listeners (Impact)
 
-== 4. Virtual Filesystem (VFS)
-The VFS (`src/core/logic/vfs.ts`) is a persistent in-memory object graph representing the file structure.
-*   **Terminal:** Commands like `ls`, `cd` query the VFS directly.
-*   **IDE:** The "Process" stage visualizes the VFS state.
-*   **Sync:** The VFS is updated automatically when a Project is loaded or Datasets are gathered.
+| `STATE_CHANGED`
+| `AppState`
+| Any state update
+| Telemetry (Cascade), Marketplace overlay
+
+| `STAGE_CHANGED`
+| `AppState['currentStage']`
+| `store.stage_set()`
+| UI panels, Terminal prompt, Shell `stage_enter()`, Gutters
+
+| `DATASET_SELECTION_CHANGED`
+| `Dataset[]`
+| `store.dataset_select()` / `store.dataset_deselect()`
+| Gather VFS, Cost calc, Search Grid, Selection count
+
+| `PROJECT_LOADED`
+| `Project \| null`
+| `store.project_load()`
+| VCS mount, Process IDE population
+
+| `VFS_CHANGED`
+| `{ path: string, operation: string }`
+| VirtualFileSystem mutations
+| IDE tree refresh (future)
+
+| `CWD_CHANGED`
+| `{ oldPath: string, newPath: string }`
+| `vfs.cwd_set()`
+| Shell prompt update
+|===
+
+== 4. Virtual Computer System (VCS)
+
+The VCS (`src/vfs/`) is ARGUS's stateful runtime environment. It provides a POSIX-like in-memory filesystem with content-aware files, a Shell interpreter, and a Provider architecture.
+
+=== Components
+
+[cols="1,2"]
+|===
+| Component | Location
+
+| VirtualFileSystem
+| `src/vfs/VirtualFileSystem.ts` — Tree storage, content storage, path resolution, CWD, events.
+
+| Shell
+| `src/vfs/Shell.ts` — Command interpreter with 15 builtins, env vars (`$HOME`, `$USER`, `$PWD`, `$PS1`, `$STAGE`, `$PERSONA`), prompt generation.
+
+| ContentRegistry
+| `src/vfs/content/ContentRegistry.ts` — Maps file paths to content generators. Lazy evaluation + caching.
+
+| Templates
+| `src/vfs/content/templates/*.ts` — 14 generators for train.py, config.yaml, README.md, manifest.json, catalog, etc.
+
+| DatasetProvider
+| `src/vfs/providers/DatasetProvider.ts` — Builds `~/data/cohort/` from selected datasets.
+
+| ProjectProvider
+| `src/vfs/providers/ProjectProvider.ts` — Scaffolds `$HOME` + populates `~/src/project/`.
+
+| MarketplaceProvider
+| `src/vfs/providers/MarketplaceProvider.ts` — Installs assets to `/bin/`, `/data/sets/`, `~/models/`, etc.
+|===
+
+=== Data Flow
+
+1.  **User types `cat train.py`** in the terminal.
+2.  **Terminal** sends the raw input to the **Shell**.
+3.  **Shell** parses the command, resolves the path against `$PWD`.
+4.  **Shell** calls `vfs.node_read()`.
+5.  **VFS** looks up the node. If `content` is null, calls the **ContentRegistry**.
+6.  **ContentRegistry** finds the template, invokes it with `ContentContext`, returns content.
+7.  **VFS** caches content on the node, returns it.
+8.  **Shell** wraps content in `ShellResult { stdout, stderr, exitCode }`.
+9.  **Terminal** renders `stdout`.
+
+=== Integration
+
+*   The VCS is stored as `globals.vcs` (a `VirtualFileSystem` instance).
+*   The Shell is stored as `globals.shell` (a `Shell` instance).
+*   The Terminal delegates all input to `shell.command_execute()`.
+*   Stage transitions call `shell.stage_enter()` for CWD/env updates.
+*   The IDE reads file content from the VCS via `node_read()`.
+
+See `docs/vcs.adoc` for the full specification.

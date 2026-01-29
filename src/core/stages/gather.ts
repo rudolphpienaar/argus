@@ -1,55 +1,69 @@
 /**
  * @file Gather Stage Logic
- * 
- * Handles VFS generation and cost estimation.
- * 
+ *
+ * Handles VFS generation, cost estimation, and file preview
+ * for the Gather stage of the SeaGaP workflow.
+ *
  * @module
  */
 
 import { state, globals, store } from '../state/store.js';
 import { events, Events } from '../state/events.js';
 import { costEstimate_calculate } from '../logic/costs.js';
-import { filesystem_create } from '../logic/filesystem.js';
-import { legacyNode_normalize } from '../../vfs/VirtualFileSystem.js';
-import type { FileNode } from '../models/types.js';
+import { cohortTree_build } from '../../vfs/providers/DatasetProvider.js';
 import type { FileNode as VcsFileNode } from '../../vfs/types.js';
+import type { CostEstimate } from '../models/types.js';
 
+// ============================================================================
+// Filesystem Generation
+// ============================================================================
+
+/**
+ * Builds the VFS cohort tree from the currently selected datasets.
+ * Renders the tree in the Gather stage UI and mounts it to the VCS.
+ */
 export function filesystem_build(): void {
-    // ... existing logic ...
-    const legacyRoot: FileNode = filesystem_create(state.selectedDatasets);
-    // state.virtualFilesystem = root; // Replaced with action if needed, but UI uses root directly here
-    fileTree_render(legacyRoot);
+    const cohortRoot: VcsFileNode = cohortTree_build(state.selectedDatasets);
 
-    // Mount to global VFS
-    const projectName: string = state.activeProject ? state.activeProject.name : 'current_cohort';
-    const root: VcsFileNode = legacyNode_normalize(legacyRoot);
-    globals.vfs.tree_mount(`/home/developer/projects/${projectName}`, root);
-    
-    // We only auto-cd if we are in the gather/process stage context, handled by navigation mostly.
+    fileTree_render(cohortRoot);
+
+    globals.vcs.tree_unmount('/home/developer/data/cohort');
+    globals.vcs.tree_mount('/home/developer/data/cohort', cohortRoot);
 }
 
-// ... fileTree_render ...
+// ============================================================================
+// Cost Estimation
+// ============================================================================
 
+/**
+ * Calculates and displays the cost estimate for the current dataset selection.
+ * Updates the Store and renders cost values into the Gather stage UI.
+ */
 export function costs_calculate(): void {
-    const estimate = costEstimate_calculate(state.selectedDatasets);
-    store.updateCost(estimate);
+    const estimate: CostEstimate = costEstimate_calculate(state.selectedDatasets);
+    store.cost_update(estimate);
 
-    // ... Update UI ...
-    const costData = document.getElementById('cost-data');
-    const costCompute = document.getElementById('cost-compute');
-    const costStorage = document.getElementById('cost-storage');
-    const costTotal = document.getElementById('cost-total');
+    const costData: HTMLElement | null = document.getElementById('cost-data');
+    const costCompute: HTMLElement | null = document.getElementById('cost-compute');
+    const costStorage: HTMLElement | null = document.getElementById('cost-storage');
+    const costTotal: HTMLElement | null = document.getElementById('cost-total');
 
     if (costData) costData.textContent = `$${state.costEstimate.dataAccess.toFixed(2)}`;
     if (costCompute) costCompute.textContent = `$${state.costEstimate.compute.toFixed(2)}`;
     if (costStorage) costStorage.textContent = `$${state.costEstimate.storage.toFixed(2)}`;
     if (costTotal) costTotal.textContent = `$${state.costEstimate.total.toFixed(2)}`;
 
-    // Note: cascade_update is now handled by store event listener in telemetry.ts
-    // Button enabling
     stageButton_setEnabled('process', true);
 }
 
+// ============================================================================
+// Selection Count
+// ============================================================================
+
+/**
+ * Updates the selection count display and enables/disables
+ * the Gather stage navigation button based on selection state.
+ */
 export function selectionCount_update(): void {
     const count: number = state.selectedDatasets.length;
     const countEl: HTMLElement | null = document.getElementById('selection-count');
@@ -66,25 +80,33 @@ export function selectionCount_update(): void {
     stageButton_setEnabled('gather', count > 0);
 }
 
-// Subscribe to selection changes
-events.on(Events.DATASET_SELECTION_CHANGED, () => {
-    // If we are in the Gather stage, or just generally keeping state valid:
+// ============================================================================
+// Event Subscriptions
+// ============================================================================
+
+events.on(Events.DATASET_SELECTION_CHANGED, (): void => {
     selectionCount_update();
-    // We don't rebuild filesystem on every click unless in Gather?
-    // Actually, cost calc and selection count should update always.
     if (state.currentStage === 'gather') {
         filesystem_build();
         costs_calculate();
     }
 });
 
-// ... helpers ...
-function fileTree_render(node: FileNode): void {
-    const container = document.getElementById('file-tree');
+// ============================================================================
+// File Tree Rendering
+// ============================================================================
+
+/**
+ * Renders a VFS file tree into the Gather stage file-tree container.
+ *
+ * @param node - The root VCS FileNode to render.
+ */
+function fileTree_render(node: VcsFileNode): void {
+    const container: HTMLElement | null = document.getElementById('file-tree');
     if (!container) return;
 
-    function nodeHtml_build(n: FileNode): string {
-        const typeClass = n.type;
+    function nodeHtml_build(n: VcsFileNode): string {
+        const typeClass: string = n.type;
         if (n.children && n.children.length > 0) {
             return `
                 <li class="${typeClass}">${n.name}
@@ -98,8 +120,19 @@ function fileTree_render(node: FileNode): void {
     container.innerHTML = `<ul>${nodeHtml_build(node)}</ul>`;
 }
 
+// ============================================================================
+// File Preview
+// ============================================================================
+
+/**
+ * Displays a file preview in the Gather stage preview panel.
+ * Shows image thumbnails for image files and placeholder text for others.
+ *
+ * @param path - The VFS path of the file to preview.
+ * @param type - The file type ('file', 'folder', 'image').
+ */
 export function filePreview_show(path: string, type: string): void {
-    const preview = document.getElementById('file-preview');
+    const preview: HTMLElement | null = document.getElementById('file-preview');
     if (!preview) return;
 
     if (type === 'image' && path) {
@@ -111,8 +144,18 @@ export function filePreview_show(path: string, type: string): void {
     }
 }
 
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Enables or disables a stage indicator button.
+ *
+ * @param stageName - The stage to enable/disable.
+ * @param enabled - Whether to enable the indicator.
+ */
 function stageButton_setEnabled(stageName: string, enabled: boolean): void {
-    const indicator = document.querySelector(`.stage-indicator[data-stage="${stageName}"]`) as HTMLElement;
+    const indicator: HTMLElement | null = document.querySelector(`.stage-indicator[data-stage="${stageName}"]`) as HTMLElement;
     if (indicator) {
         indicator.classList.toggle('disabled', !enabled);
     }

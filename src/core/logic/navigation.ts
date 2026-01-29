@@ -1,8 +1,8 @@
 /**
  * @file Navigation Logic
- * 
+ *
  * Manages the SeaGaP-MP workflow state and stage transitions.
- * 
+ *
  * @module
  */
 
@@ -14,26 +14,25 @@ import { monitor_initialize } from '../stages/monitor.js';
 import { populate_ide } from '../stages/process.js';
 import type { AppState } from '../models/types.js';
 
-/** Tracks which SeaGaP stages have been visited for back-navigation */
+/** Tracks which SeaGaP stages have been visited for back-navigation. */
 export const visitedStages: Set<string> = new Set();
 
-/** Ordered list of SeaGaP stages for navigation logic */
+/** Ordered list of SeaGaP stages for navigation logic. */
 export const STAGE_ORDER: readonly string[] = ['search', 'gather', 'process', 'monitor', 'post'] as const;
 
-// --- Event Listeners ---
+// ============================================================================
+// Event Listeners
+// ============================================================================
 
-events.on(Events.STAGE_CHANGED, (newStage) => {
-    // 1. Visual Updates
-    updateStageIndicators(newStage);
-    updateStageContent(newStage);
-    updateLockState(newStage);
+events.on(Events.STAGE_CHANGED, (newStage: AppState['currentStage']): void => {
+    stageIndicators_update(newStage);
+    stageContent_update(newStage);
+    lockState_update(newStage);
     stations_update(newStage);
-    
-    // 2. Terminal Updates
-    document.dispatchEvent(new CustomEvent('argus:stage-change', { detail: { stage: newStage } }));
-    if (globals.terminal) globals.terminal.updatePrompt();
 
-    // 3. Stage-Specific Logic
+    document.dispatchEvent(new CustomEvent('argus:stage-change', { detail: { stage: newStage } }));
+    if (globals.terminal) globals.terminal.prompt_sync();
+
     if (newStage === 'gather') {
         filesystem_build();
         costs_calculate();
@@ -51,30 +50,50 @@ events.on(Events.STAGE_CHANGED, (newStage) => {
     }
 });
 
-// --- Helper Functions ---
+// ============================================================================
+// Helper Functions
+// ============================================================================
 
-function updateStageIndicators(stageName: string) {
-    document.querySelectorAll('.stage-indicator').forEach((indicator: Element) => {
+/**
+ * Toggles the 'active' class on stage indicator elements
+ * to highlight the current stage.
+ *
+ * @param stageName - The active stage identifier.
+ */
+function stageIndicators_update(stageName: string): void {
+    document.querySelectorAll('.stage-indicator').forEach((indicator: Element): void => {
         const indicatorStage: string | null = indicator.getAttribute('data-stage');
         indicator.classList.toggle('active', indicatorStage === stageName);
     });
 }
 
-function updateStageContent(stageName: string) {
-    document.querySelectorAll('.stage-content').forEach((content: Element) => {
+/**
+ * Toggles the 'active' class on stage content panels
+ * to show the current stage's UI.
+ *
+ * @param stageName - The active stage identifier.
+ */
+function stageContent_update(stageName: string): void {
+    document.querySelectorAll('.stage-content').forEach((content: Element): void => {
         const contentStage: string | null = content.getAttribute('data-stage');
         content.classList.toggle('active', contentStage === stageName);
     });
 }
 
-function updateLockState(stageName: string) {
+/**
+ * Manages the body lock state and lock panel element.
+ * Locks the UI during login/role-selection stages.
+ *
+ * @param stageName - The active stage identifier.
+ */
+function lockState_update(stageName: string): void {
     const isUnlocked: boolean = stageName !== 'login' && stageName !== 'role-selection';
     if (isUnlocked) {
         document.body.classList.remove('state-locked');
     } else {
         document.body.classList.add('state-locked');
     }
-    
+
     const sidebarStages: HTMLElement | null = document.querySelector('.sidebar-panels') as HTMLElement;
     let lockPanel: HTMLElement | null = document.getElementById('lock-panel');
     if (!isUnlocked) {
@@ -92,13 +111,16 @@ function updateLockState(stageName: string) {
 
 /**
  * Updates the visual state of all SeaGaP stations.
+ * Marks the current station as active and previously visited ones as visited.
+ *
+ * @param currentStage - The current SeaGaP stage.
  */
 function stations_update(currentStage: AppState['currentStage']): void {
     if (STAGE_ORDER.includes(currentStage)) {
         visitedStages.add(currentStage);
     }
 
-    STAGE_ORDER.forEach((stageName: string) => {
+    STAGE_ORDER.forEach((stageName: string): void => {
         const station: HTMLElement | null = document.getElementById(`station-${stageName}`);
         if (!station) return;
 
@@ -110,21 +132,27 @@ function stations_update(currentStage: AppState['currentStage']): void {
     });
 }
 
+// ============================================================================
+// Exported Navigation Functions
+// ============================================================================
+
 /**
  * Advances to a specific SeaGaP-MP stage.
  * Uses the Store to trigger the state change event.
+ *
+ * @param stageName - The target stage.
  */
 export function stage_advanceTo(stageName: AppState['currentStage']): void {
-    store.setStage(stageName);
+    store.stage_set(stageName);
 }
 
 /**
  * Handles click on a station for back-navigation.
+ * Only allows navigation to previously visited stages.
  *
- * @param stageName - The stage to navigate to
+ * @param stageName - The stage to navigate to.
  */
 export function station_click(stageName: string): void {
-    // Only allow navigation to visited stages (back-navigation)
     if (visitedStages.has(stageName)) {
         stage_advanceTo(stageName as AppState['currentStage']);
     }
@@ -142,27 +170,27 @@ export function stage_next(): void {
 }
 
 /**
- * Enables or disables a stage indicator.
+ * Enables or disables a stage indicator button.
  *
- * @param stageName - The stage to enable/disable
- * @param enabled - Whether to enable the indicator
+ * @param stageName - The stage to enable/disable.
+ * @param enabled - Whether to enable the indicator.
  */
 export function stageButton_setEnabled(stageName: string, enabled: boolean): void {
-    const indicator = document.querySelector(`.stage-indicator[data-stage="${stageName}"]`) as HTMLElement;
+    const indicator: HTMLElement | null = document.querySelector(`.stage-indicator[data-stage="${stageName}"]`) as HTMLElement;
     if (indicator) {
         indicator.classList.toggle('disabled', !enabled);
     }
 }
 
 /**
- * Initializes stage indicator click handlers.
+ * Initializes click handlers on all stage indicator elements.
  */
 export function stageIndicators_initialize(): void {
-    document.querySelectorAll('.stage-indicator').forEach(indicator => {
-        indicator.addEventListener('click', () => {
-            const stage = indicator.getAttribute('data-stage') as AppState['currentStage'];
+    document.querySelectorAll('.stage-indicator').forEach((indicator: Element): void => {
+        indicator.addEventListener('click', (): void => {
+            const stage: string | null = indicator.getAttribute('data-stage');
             if (stage && !indicator.classList.contains('disabled')) {
-                stage_advanceTo(stage);
+                stage_advanceTo(stage as AppState['currentStage']);
             }
         });
     });

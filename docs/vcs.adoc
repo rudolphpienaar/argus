@@ -1,6 +1,6 @@
 = ARGUS Virtual Computer System (VCS) Specification
 :author: ATLAS Project Team
-:revdate: 2026-01-28
+:revdate: 2026-01-29
 :toc:
 :toclevels: 3
 :sectnums:
@@ -609,7 +609,7 @@ Populates `~/src/project/` and scaffolds the home directory structure.
 
 Installs marketplace assets into the appropriate system paths.
 
-**Triggered by:** `store.installAsset(assetId)`.
+**Triggered by:** `store.asset_install(assetId)`.
 
 **Behavior by asset type:**
 
@@ -679,7 +679,7 @@ The project explorer tree is built by calling `vfs.dir_list('~/src/project/')` r
 
 === VCS ↔ Marketplace
 
-`assetDetail_install()` in `marketplace/view.ts` calls `store.installAsset(id)`. The Store emits `STATE_CHANGED`. The `MarketplaceProvider` listens and writes the asset into the VFS at the appropriate system path.
+`assetDetail_install()` in `marketplace/view.ts` calls `store.asset_install(id)`. The Store emits `STATE_CHANGED`. The `MarketplaceProvider` listens and writes the asset into the VFS at the appropriate system path.
 
 == Source Structure
 
@@ -765,7 +765,7 @@ src/
 | Replace `populate_ide()` with VFS reads. Remove hardcoded file content.
 
 | `src/marketplace/view.ts`
-| Replace `store.installAsset()` inline VFS touch with MarketplaceProvider call.
+| Replace `store.asset_install()` inline VFS touch with MarketplaceProvider call.
 |===
 
 == Implementation Status
@@ -784,7 +784,7 @@ This section is a living checklist. Update it with each implementation iteration
 
 | `src/vfs/VirtualFileSystem.ts`
 | [x] Done
-| Full rewrite. Tree, content, CWD, path resolution (~, .., relative), lazy content generation, events via EventBus. Includes `legacyNode_normalize()` bridge for Phase 4 migration.
+| Full rewrite. Tree, content, CWD, path resolution (~, .., relative), lazy content generation, events via EventBus. `legacyNode_normalize()` bridge removed in Phase 4.
 
 | VCS events in EventBus
 | [x] Done
@@ -799,92 +799,112 @@ This section is a living checklist. Update it with each implementation iteration
 | Old VFS class deleted. All consumers migrated to new API: `store.ts`, `Terminal.ts`, `search.ts`, `gather.ts`, `process.ts`, `argus.ts`. Legacy FileNode trees bridge via `legacyNode_normalize()`.
 |===
 
-=== Phase 2: Shell (Not Started)
+=== Phase 2: Shell (Complete)
 
 [cols="1,1,2"]
 |===
 | Item | Status | Notes
 
 | `src/vfs/Shell.ts`
-| [ ] Pending
-| Command parsing, builtins, env vars, prompt generation.
+| [x] Done
+| 15 builtins (cd, pwd, ls, cat, mkdir, touch, rm, cp, mv, echo, env, export, whoami, date, history, help), env vars ($HOME, $USER, $PWD, $PATH, $PERSONA, $STAGE, $PS1), prompt generation with ~ substitution, stage transitions with landing directories, external handler delegation.
 
 | Wire Shell to Terminal
-| [ ] Pending
-| Terminal sends input to Shell, renders ShellResult.
+| [x] Done
+| Terminal delegates all input to Shell via `onUnhandledCommand`. Shell exit code 127 falls through to async fallback handler (AI/workflow commands). `shell_connect()` + `fallback_set()` APIs. Shell created in `argus.ts`, stored in `globals.shell`.
 
 | Remove command registration from Terminal.ts
-| [ ] Pending
-| Commands move to Shell.
+| [x] Done
+| All filesystem commands moved to Shell builtins. Terminal only registers `clear` (DOM access) and overrides base `help` to delegate to Shell. AI/workflow commands (search, add, review, mount, simulate, LLM fallback) handled via fallback handler.
 
 | Unit tests for Shell
-| [ ] Pending
-| Command parsing, `cd`, `cat`, env var expansion.
+| [x] Done
+| 51 tests covering env vars, prompt generation, command parsing, all 15 builtins, stage transitions, external handler delegation. 124 total tests passing.
+
+| Stage-change listener updated
+| [x] Done
+| `argus.ts` stage listener calls `shell.stage_enter()` for CWD/env updates. Process/default stages use Shell $PS1 via `prompt_sync()`. Search/gather retain command-console prompts.
 |===
 
-=== Phase 3: Content System (Not Started)
+=== Phase 3: Content System (Complete)
 
 [cols="1,1,2"]
 |===
 | Item | Status | Notes
 
 | `src/vfs/content/ContentRegistry.ts`
-| [ ] Pending
-| Path-to-generator mapping with lazy evaluation.
+| [x] Done
+| Path-to-generator mapping with lazy evaluation. `generator_register()`, `generators_registerAll()`, `vfs_connect()`, `content_resolve()`. Builds `ContentContext` from live application state.
 
 | `src/vfs/content/templates/*.ts`
-| [ ] Pending
-| All template generators (train, readme, config, etc.).
+| [x] Done
+| 8 generators: train (Python script adapts to datasets/modality), readme (Markdown with topology), config (YAML training config), requirements (pip deps), manifest (MERIDIAN JSON), catalog-datasets (serialized DATASETS), catalog-models (model architectures), node-registry (Trusted Domain nodes).
 
 | IDE integration
-| [ ] Pending
-| Process stage reads from VFS instead of hardcoded HTML.
+| [x] Done
+| `ide_openFile()` in process.ts now reads from VFS via `node_read()`, triggering lazy content generation. Added `syntax_highlight()` for .py, .yaml, .json, .md, .txt with semantic CSS classes. Removed all hardcoded HTML templates.
+
+| Unit tests
+| [x] Done
+| 16 tests covering registration, resolution, VFS integration (lazy gen + caching), and all 8 template generators. 140 total tests passing.
+
+| Wiring
+| [x] Done
+| `ContentRegistry` created in `argus.ts`, all generators registered via `ALL_GENERATORS`, connected to VFS before Shell init.
 |===
 
-=== Phase 4: Providers (Not Started)
+=== Phase 4: Providers (Complete)
 
 [cols="1,1,2"]
 |===
 | Item | Status | Notes
 
 | `src/vfs/providers/ProjectProvider.ts`
-| [ ] Pending
-| Home scaffolding + project population.
+| [x] Done
+| `homeDir_scaffold()` creates ~/bin, ~/data, ~/src, /etc/atlas, /bin, /tmp, config files with content generators. `projectDir_populate()` creates ~/src/project/ with train, config, requirements, readme, manifest generators.
 
 | `src/vfs/providers/DatasetProvider.ts`
-| [ ] Pending
-| Cohort tree from selected datasets.
+| [x] Done
+| `cohortTree_build()` replaces `filesystem_create()`. Builds VCS FileNode trees directly with proper provider codes, image/mask nodes, validation dirs. Helper functions: `datasetDir_build()`, `imageNodes_build()`, `maskNodes_build()`, `validationDir_build()`, `node_file()`.
 
 | `src/vfs/providers/MarketplaceProvider.ts`
-| [ ] Pending
-| Asset installation by type.
+| [x] Done
+| `asset_install()` dispatches to type-specific installers (plugin, dataset, model, annotation, fda, workflow). Each creates dirs, files, metadata, and content generator keys. 6 new asset manifest generators added.
 
 | Retire `src/core/logic/filesystem.ts`
-| [ ] Pending
-| After DatasetProvider replaces `filesystem_create()`.
+| [x] Done
+| Deleted `filesystem.ts` and `filesystem.test.ts`. Removed `legacyNode_normalize()` from `VirtualFileSystem.ts`. All consumers migrated to providers.
+
+| Template expansion
+| [x] Done
+| 6 new generators: `argus-config`, `plugin-executable`, `dataset-manifest`, `model-readme`, `annotation-manifest`, `workflow-manifest`, `cohort-manifest`. Total: 14 generators registered.
+
+| Store + Stage wiring
+| [x] Done
+| `store.asset_install()` calls `asset_install()` via MarketplaceProvider. `gather.ts` and `search.ts` use `cohortTree_build()`. `argus.ts` calls `homeDir_scaffold()` at init and `projectDir_populate()` on process stage entry.
 |===
 
-=== Phase 5: Integration (Not Started)
+=== Phase 5: Integration (Complete)
 
 [cols="1,1,2"]
 |===
 | Item | Status | Notes
 
 | Store migration (`vfs` → `vcs`)
-| [ ] Pending
-| Rename global, add new events.
+| [x] Done
+| Renamed `globals.vfs` → `globals.vcs` in store definition and all 7 consumer files. Property key in Store.globals renamed.
 
 | Stage transition integration
-| [ ] Pending
-| `shell.stage_enter()` replaces hardcoded prompt/cd logic.
+| [x] Done
+| `shell.stage_enter()` already wired in Phase 2. Unified all stages to use `prompt_sync()` after stage_enter. Removed redundant `updatePrompt()` call from navigation.ts (method didn't exist on Terminal).
 
 | Marketplace integration
-| [ ] Pending
-| `MarketplaceProvider` replaces inline `vfs.touch()`.
+| [x] Done
+| `store.asset_install()` delegates to `asset_install()` via MarketplaceProvider (wired in Phase 4). Marketplace view (`view.ts`) has no inline VFS calls — clean separation.
 
 | Remove all hardcoded `setPrompt()` calls
-| [ ] Pending
-| Shell + `$PS1` is sole prompt authority.
+| [x] Done
+| Removed `terminal.setPrompt('ARGUS: SEARCH >')` and `terminal.setPrompt('ARGUS: COHORT >')` from argus.ts stage-change listener. All stages now use `terminal.prompt_sync()` which reads Shell's `$PS1`. Shell is sole prompt authority.
 |===
 
 == Changelog
@@ -900,4 +920,24 @@ This section is a living checklist. Update it with each implementation iteration
 | 2026-01-28
 | 0.2.0
 | Phase 1 complete: `types.ts`, `VirtualFileSystem.ts`, VCS events in EventBus, 64 unit tests, old VFS retired. All consumers migrated. Legacy bridge `legacyNode_normalize()` added for filesystem.ts compatibility.
+
+| 2026-01-28
+| 0.3.0
+| Phase 2 complete: `Shell.ts` with 15 builtins, env vars, $PS1 prompt generation, stage transitions, external handler delegation. Terminal rewritten as dumb I/O surface with Shell → fallback handler chain. 51 Shell tests (124 total). Shell wired into `argus.ts` via `globals.shell`. Stage listener updated to use `shell.stage_enter()`.
+
+| 2026-01-28
+| 0.4.0
+| Phase 3 complete: `ContentRegistry.ts` with lazy evaluation and VFS integration. 8 template generators (train, readme, config, requirements, manifest, catalog-datasets, catalog-models, node-registry). IDE reads from VFS with `syntax_highlight()` for .py/.yaml/.json/.md/.txt. Hardcoded HTML templates removed from process.ts. 16 content tests (140 total).
+
+| 2026-01-29
+| 0.5.0
+| Phase 4 complete: Three providers created — `DatasetProvider.ts` (`cohortTree_build()`), `ProjectProvider.ts` (`homeDir_scaffold()`, `projectDir_populate()`), `MarketplaceProvider.ts` (`asset_install()` with 6 type-specific installers). 6 new asset manifest generators + `argusConfig` generator (14 total). Store, gather, search, argus.ts migrated to providers. Legacy `filesystem.ts` and `filesystem.test.ts` deleted. `legacyNode_normalize()` removed from VirtualFileSystem.ts. 134 tests.
+
+| 2026-01-29
+| 0.6.0
+| Phase 5 complete: `globals.vfs` renamed to `globals.vcs` across store and all 7 consumers. Hardcoded `setPrompt()` calls removed from search/gather stages — Shell `$PS1` via `prompt_sync()` is sole prompt authority. Dead `updatePrompt()` call removed from navigation.ts. Marketplace integration verified clean (no inline VFS calls). All 5 phases complete. 134 tests.
+
+| 2026-01-29
+| 0.7.0
+| Style guide compliance sweep. All VCS/Provider/Store code now uses RPN naming (e.g., `store.asset_install()`, `detailHeader_populate()`), explicit type annotations on all consts/lambdas, JSDoc on all public/private functions, `catch (e: unknown)` with `instanceof Error` narrowing, and typed `declare global { interface Window }` extensions replacing `(window as any)` casts. Typed filter lambda parameters throughout VirtualFileSystem.ts and Shell.ts. 134 tests passing.
 |===

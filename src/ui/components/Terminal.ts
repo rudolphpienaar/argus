@@ -1,14 +1,51 @@
 /**
  * @file ARGUS Terminal Implementation
- * 
- * Wraps the generic LCARS Framework Terminal with ARGUS-specific commands
- * and Virtual Filesystem (VFS) integration.
+ *
+ * Wraps the generic LCARS Framework Terminal with VCS Shell integration.
+ * The Terminal is a dumb I/O surface: it sends raw input to the Shell
+ * and renders the ShellResult (stdout in default color, stderr in red).
+ *
+ * Command resolution order:
+ *   1. Base terminal commands (clear)
+ *   2. Shell builtins (cd, ls, cat, etc.)
+ *   3. Shell external handler (federate)
+ *   4. Fallback handler (AI/workflow commands: search, add, review, etc.)
+ *
+ * @module
  */
 
 import { LCARSTerminal as BaseTerminal } from '../../lcars-framework/ui/Terminal.js';
 import { globals } from '../../core/state/store.js';
+import type { Shell } from '../../vfs/Shell.js';
+import type { ShellResult, FileNode } from '../../vfs/types.js';
 
+// Window.terminal_toggle and Window.training_launch are declared in argus.ts
+
+/**
+ * Async fallback handler for commands not recognized by the Shell.
+ * Used for AI/workflow commands (search, add, review, mount, simulate, LLM queries).
+ *
+ * @param cmd - The command name.
+ * @param args - The parsed arguments.
+ */
+type FallbackHandler = (cmd: string, args: string[]) => Promise<void>;
+
+/**
+ * ARGUS-specific terminal that delegates all command execution to the VCS Shell.
+ * Commands the Shell does not recognize (exit code 127) are forwarded to an
+ * optional async fallback handler for AI/workflow processing.
+ *
+ * @example
+ * ```typescript
+ * const terminal = new LCARSTerminal('intelligence-console');
+ * terminal.shell_connect(shell);
+ * terminal.fallback_set(async (cmd, args) => { ... });
+ * ```
+ */
 export class LCARSTerminal extends BaseTerminal {
+    private shell: Shell | null = null;
+    private fallbackHandler: FallbackHandler | null = null;
+
     constructor(elementId: string) {
         super({
             elementId,
@@ -19,185 +56,216 @@ export class LCARSTerminal extends BaseTerminal {
                 ''
             ],
             prompt: 'dev@argus:~/ $',
-            onToggle: () => {
-                const win = window as any;
-                if (typeof win.terminal_toggle === 'function') {
-                    win.terminal_toggle();
+            onToggle: (): void => {
+                if (typeof window.terminal_toggle === 'function') {
+                    window.terminal_toggle();
                 }
             }
         });
 
-        this.registerArgusCommands();
-        this.setupVfsIntegration();
-        this.updatePrompt();
+        this.shellIntegration_setup();
+        this.tabCompletion_setup();
     }
 
-    private registerArgusCommands(): void {
+    /**
+     * Connects the Shell to this terminal. Must be called after both
+     * the terminal and shell are initialized.
+     *
+     * Registers domain-specific external commands (federate) via the
+     * Shell's external handler, re-registers `help` to delegate to
+     * the Shell (overriding the base terminal's help), and syncs the
+     * prompt from $PS1.
+     *
+     * @param shell - The VCS Shell instance.
+     */
+    public shell_connect(shell: Shell): void {
+        this.shell = shell;
 
-        // VFS Commands
-        this.registerCommand({
-            name: 'pwd',
-            description: 'Print working directory',
-            execute: () => this.println(globals.vfs.cwd_get())
+        // Register domain-specific commands as external handler
+        shell.externalHandler_set((cmd: string, args: string[]): ShellResult | null => {
+            return this.externalCommand_handle(cmd, args);
         });
 
-        this.registerCommand({
-            name: 'ls',
-            description: 'List directory contents',
-            execute: (args: string[]) => this.cmd_ls(args)
-        });
-
-        this.registerCommand({
-            name: 'cd',
-            description: 'Change directory',
-            execute: (args: string[]) => this.cmd_cd(args)
-        });
-
-        this.registerCommand({
-            name: 'mkdir',
-            description: 'Create directory',
-            execute: (args: string[]) => {
-                try { globals.vfs.dir_create(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
-            }
-        });
-
-        this.registerCommand({
-            name: 'touch',
-            description: 'Create empty file',
-            execute: (args: string[]) => {
-                try { globals.vfs.file_create(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
-            }
-        });
-
-        // Workflow Commands
-        this.registerCommand({
-            name: 'federate',
-            description: 'Transform script into MERIDIAN app and launch',
-            execute: (args) => this.cmd_federate(args)
-        });
-
-        this.registerCommand({
-            name: 'whoami',
-            description: 'Display current user',
-            execute: () => this.println('developer')
-        });
-
-        this.registerCommand({
-            name: 'date',
-            description: 'Display current date',
-            execute: () => this.println(new Date().toString())
-        });
-
-        this.registerCommand({
-            name: 'echo',
-            description: 'Display a line of text',
-            execute: (args) => this.println(args.join(' '))
-        });
-
-        // Override help to include ARGUS workflow info
+        // Override base terminal's `help` to delegate to Shell's richer help
         this.registerCommand({
             name: 'help',
-            description: 'Display available commands',
-            execute: () => {
-                this.println('<span class="highlight">ARGUS INTELLIGENCE CONSOLE - OPERATIONAL GUIDE</span>');
-                this.println('<span class="dim">================================================================</span>');
-                this.println('<span class="success">TERMINAL-DRIVEN WORKFLOW:</span>');
-                this.println('  <span class="highlight">search &lt;query&gt;</span>  - Scan catalog and display matching datasets.');
-                this.println('  <span class="highlight">add &lt;id&gt;</span>         - Toggle dataset selection into cohort buffer.');
-                this.println('  <span class="highlight">review</span>           - Switch to Gather view to inspect cohort/costs.');
-                this.println('  <span class="highlight">mount</span>            - Finalize cohort and mount Virtual Filesystem.');
-                this.println('');
-                this.println('<span class="success">SYSTEM COMMANDS:</span>');
-                this.println('  <span class="highlight">ls / cd / pwd</span>    - Navigate the Virtual Filesystem.');
-                this.println('  <span class="highlight">cat &lt;file&gt;</span>       - Read file contents.');
-                this.println('  <span class="highlight">federate &lt;script&gt;</span> - Transform script into MERIDIAN app and launch.');
-                this.println('  <span class="highlight">clear</span>            - Purge terminal buffer.');
-                this.println('<span class="dim">================================================================</span>');
+            description: 'List available commands',
+            execute: (): void => {
+                const result: ShellResult = shell.command_execute('help');
+                if (result.stdout) {
+                    const lines: string[] = result.stdout.split('\n');
+                    for (const l of lines) {
+                        this.println(l);
+                    }
+                }
             }
         });
+
+        // Sync prompt from Shell's $PS1
+        this.prompt_sync();
     }
 
-    private setupVfsIntegration(): void {
+    /**
+     * Sets the async fallback handler for commands not recognized by the Shell.
+     * Called when the Shell returns exit code 127 (command not found).
+     *
+     * @param handler - Async callback for AI/workflow command processing.
+     */
+    public fallback_set(handler: FallbackHandler): void {
+        this.fallbackHandler = handler;
+    }
+
+    /**
+     * Syncs the terminal prompt from the Shell's $PS1 evaluation.
+     * Call this after any operation that may change CWD or env vars.
+     */
+    public prompt_sync(): void {
+        if (this.shell) {
+            this.setPrompt(this.shell.prompt_render());
+        }
+    }
+
+    // ─── Shell Integration ──────────────────────────────────────
+
+    /**
+     * Hooks into the base terminal's command execution pipeline.
+     * Intercepts all input and delegates to the Shell. If the Shell
+     * returns exit code 127 (command not found), the fallback handler
+     * is invoked for AI/workflow processing.
+     */
+    private shellIntegration_setup(): void {
+        // Register 'clear' in the base terminal since it needs
+        // DOM access the Shell doesn't have.
+        this.registerCommand({
+            name: 'clear',
+            description: 'Clear the terminal buffer',
+            execute: (): void => this.clear()
+        });
+
+        // All other commands go through the Shell via unhandled handler
+        this.onUnhandledCommand = async (cmd: string, args: string[]): Promise<void> => {
+            if (!this.shell) {
+                // Shell not yet connected — try fallback directly
+                if (this.fallbackHandler) {
+                    await this.fallbackHandler(cmd, args);
+                } else {
+                    this.println(`<span class="error">Shell not connected</span>`);
+                }
+                return;
+            }
+
+            // Reconstruct the full command line for the Shell
+            const line: string = [cmd, ...args].join(' ');
+            const result: ShellResult = this.shell.command_execute(line);
+
+            // If Shell doesn't recognize the command, try fallback handler
+            if (result.exitCode === 127 && this.fallbackHandler) {
+                await this.fallbackHandler(cmd, args);
+                this.prompt_sync();
+                return;
+            }
+
+            // Render Shell result
+            this.result_render(result);
+
+            // Sync prompt after any command (cd, export, etc. may change it)
+            this.prompt_sync();
+        };
+    }
+
+    /**
+     * Renders a ShellResult to the terminal output.
+     * Stdout lines are printed in default color; stderr in error styling.
+     *
+     * @param result - The ShellResult to render.
+     */
+    private result_render(result: ShellResult): void {
+        if (result.stdout) {
+            const lines: string[] = result.stdout.split('\n');
+            for (const l of lines) {
+                this.println(l);
+            }
+        }
+        if (result.stderr) {
+            this.println(`<span class="error">${result.stderr}</span>`);
+        }
+    }
+
+    /**
+     * Sets up VFS-aware tab completion.
+     * Completes file and directory names relative to the current working directory.
+     */
+    private tabCompletion_setup(): void {
         this.onTabComplete = (value: string): string | string[] | null => {
             const parts: string[] = value.split(/\s+/);
             const lastPart: string = parts[parts.length - 1];
             if (!lastPart && parts.length > 1) return null;
 
-            const cwdPath: string = globals.vfs.cwd_get();
-            const targetNode = globals.vfs.node_stat(cwdPath);
+            const cwdPath: string = globals.vcs.cwd_get();
+            const targetNode: FileNode | null = globals.vcs.node_stat(cwdPath);
             if (!targetNode || !targetNode.children) return null;
 
-            const matches = targetNode.children.filter(c =>
-                c.name.toLowerCase().startsWith(lastPart.toLowerCase())
+            const matches: FileNode[] = targetNode.children.filter(
+                (c: FileNode): boolean => c.name.toLowerCase().startsWith(lastPart.toLowerCase())
             );
 
             if (matches.length === 1) {
-                const match = matches[0];
+                const match: FileNode = matches[0];
                 const suffix: string = match.type === 'folder' ? '/' : '';
                 parts[parts.length - 1] = match.name + suffix;
                 return parts.join(' ');
             } else if (matches.length > 1) {
-                return matches.map(m => m.name + (m.type === 'folder' ? '/' : ''));
+                return matches.map((m: FileNode): string => m.name + (m.type === 'folder' ? '/' : ''));
             }
             return null;
         };
     }
 
-    private cmd_ls(args: string[]): void {
-        const cwdPath: string = globals.vfs.cwd_get();
-        const targetNode = globals.vfs.node_stat(cwdPath);
-        if (!targetNode || !targetNode.children) return;
+    // ─── External Command Handling ──────────────────────────────
 
-        targetNode.children.forEach(child => {
-            let colorClass: string = 'file';
-            if (child.type === 'folder') colorClass = 'dir';
-            else if (child.name.endsWith('.py')) colorClass = 'exec';
-
-            const size: string = child.size || '4 KB';
-            const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
-
-            this.println(`<span class="${colorClass}">${name.padEnd(20)}</span> <span class="dim">${size}</span>`);
-        });
-    }
-
-    private cmd_cd(args: string[]): void {
-        if (args.length === 0) return;
-        try {
-            globals.vfs.cwd_set(args[0]);
-            this.updatePrompt();
-        } catch (e: any) {
-            this.println(`<span class="error">${e.message}</span>`);
+    /**
+     * Handles domain-specific commands that the Shell doesn't own.
+     * Returns null for truly unknown commands (Shell will report "not found",
+     * then fallback handler is invoked).
+     *
+     * @param cmd - Command name.
+     * @param args - Parsed arguments.
+     * @returns ShellResult for handled commands, null otherwise.
+     */
+    private externalCommand_handle(cmd: string, args: string[]): ShellResult | null {
+        switch (cmd) {
+            case 'federate':
+                return this.cmd_federate(args);
+            default:
+                return null;
         }
     }
 
-    private cmd_federate(args: string[]): void {
+    /**
+     * Handles the `federate` command — transforms a script into a
+     * MERIDIAN app and launches the training pipeline.
+     *
+     * @param args - Command arguments (expects script filename).
+     * @returns ShellResult with status messages.
+     */
+    private cmd_federate(args: string[]): ShellResult {
         if (args.length === 0) {
-            this.println('federate: missing script operand');
-            return;
+            return { stdout: '', stderr: 'federate: missing script operand', exitCode: 1 };
         }
         if (args[0] === 'train.py') {
+            // Print the sequencing messages directly (they appear before the async launch)
             this.println('<span class="warn">>> INITIATING FEDERALIZATION PROTOCOL...</span>');
             this.println('>> UPLOADING ASSETS TO ATLAS FACTORY...');
             this.println('>> RESOLVING MERIDIAN DEPENDENCIES...');
-            setTimeout(() => {
-                const win = window as any;
-                if (typeof win.training_launch === 'function') {
-                    win.training_launch();
+            setTimeout((): void => {
+                if (typeof window.training_launch === 'function') {
+                    window.training_launch();
                 } else {
                     this.println('<span class="error">>> ERROR: FEDERALIZATION ENGINE OFFLINE.</span>');
                 }
             }, 1500);
-        } else {
-            this.println(`federate: '${args[0]}' is not a valid MERIDIAN training script.`);
+            return { stdout: '', stderr: '', exitCode: 0 };
         }
-    }
-
-    public updatePrompt(): void {
-        let displayPath: string = globals.vfs.cwd_get();
-        const homePath: string = globals.vfs.home_get();
-        if (displayPath.startsWith(homePath)) {
-            displayPath = displayPath.replace(homePath, '~');
-        }
-        this.setPrompt(`dev@argus:${displayPath} $`);
+        return { stdout: '', stderr: `federate: '${args[0]}' is not a valid MERIDIAN training script.`, exitCode: 1 };
     }
 }

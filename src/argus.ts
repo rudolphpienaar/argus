@@ -8,49 +8,39 @@
  * @module
  */
 
-import type {
-    Dataset,
-    Project,
-    FileNode,
-    TrustedDomainNode,
-    TrainingJob,
-    CostEstimate,
-    AppState
-} from './core/models/types.js';
+import type { Dataset } from './core/models/types.js';
 
 import { state, globals, store } from './core/state/store.js';
-import { costEstimate_calculate } from './core/logic/costs.js';
-import { filesystem_create } from './core/logic/filesystem.js';
-import { legacyNode_normalize } from './vfs/VirtualFileSystem.js';
+import { Shell } from './vfs/Shell.js';
+import { ContentRegistry } from './vfs/content/ContentRegistry.js';
+import { ALL_GENERATORS } from './vfs/content/templates/index.js';
+import { homeDir_scaffold, projectDir_populate } from './vfs/providers/ProjectProvider.js';
+import { cohortTree_build } from './vfs/providers/DatasetProvider.js';
 import type { FileNode as VcsFileNode } from './vfs/types.js';
 import { DATASETS } from './core/data/datasets.js';
 import { MOCK_PROJECTS } from './core/data/projects.js';
-import { MOCK_NODES } from './core/data/nodes.js';
 import { cascade_update } from './core/logic/telemetry.js';
-import { stage_advanceTo, stage_next, station_click, stageIndicators_initialize, STAGE_ORDER, stageButton_setEnabled } from './core/logic/navigation.js';
-import { filesystem_build, filePreview_show, costs_calculate, selectionCount_update } from './core/stages/gather.js';
+import { stage_advanceTo, stage_next, station_click, stageIndicators_initialize, STAGE_ORDER } from './core/logic/navigation.js';
+import { filesystem_build, filePreview_show, costs_calculate } from './core/stages/gather.js';
 import { training_launch, terminal_toggle, ide_openFile } from './core/stages/process.js';
-import { gutter_setStatus, gutter_resetAll } from './ui/gutters.js';
+import { gutter_setStatus } from './ui/gutters.js';
 import { monitor_initialize, training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
 import { marketplace_initialize } from './marketplace/view.js';
-import { catalog_search, dataset_toggle, dataset_select, dataset_deselect, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate } from './core/stages/search.js';
+import { catalog_search, dataset_toggle, dataset_select, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate } from './core/stages/search.js';
 import { telemetry_start } from './telemetry/manager.js';
 import { WorkflowTracker } from './lcars-framework/ui/WorkflowTracker.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
-import { LCARSEngine } from './lcarslm/engine.js';
-import './ui/components/LCARSFrame.js';  // LCARS procedural frame generator
+import './ui/components/LCARSFrame.js';
 import { FrameSlot } from './ui/components/FrameSlot.js';
 import type { QueryResponse } from './lcarslm/types.js';
 import { VERSION, GIT_HASH } from './generated/version.js';
+import type { Project } from './core/models/types.js';
 
 // ============================================================================
-// Types
+// Global Window Extensions
 // ============================================================================
-
-type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
-type GutterStatus = 'idle' | 'active' | 'success' | 'error';
 
 declare global {
     interface Window {
@@ -72,419 +62,77 @@ declare global {
         lcarslm_reset: typeof lcarslm_reset;
         lcarslm_simulate: typeof lcarslm_simulate;
         terminal_toggle: typeof terminal_toggle;
+        project_activate: typeof project_activate;
+        ide_openFile: typeof ide_openFile;
+        store: typeof store;
     }
 }
 
 // ============================================================================
-// Application State
+// Module State
 // ============================================================================
-
-// State is now imported from core/state/store.ts
 
 let terminal: LCARSTerminal | null = null;
 let workflowTracker: WorkflowTracker | null = null;
 
 // ============================================================================
-// SeaGaP Station Functions
+// Initialization Helpers
 // ============================================================================
 
 /**
- * Initializes the SeaGaP workflow tracker.
+ * Initializes the SeaGaP workflow tracker panel.
  */
 function workflow_initialize(): void {
-    console.log('[ARGUS] Initializing WorkflowTracker...', STAGE_ORDER);
     workflowTracker = new WorkflowTracker({
         elementId: 'seagap-panel',
-        stations: STAGE_ORDER.map(stage => ({
+        stations: STAGE_ORDER.map((stage: string): { id: string; label: string; hasTelemetry: boolean } => ({
             id: stage,
             label: stage.toUpperCase(),
             hasTelemetry: true
         })),
-        onStationClick: (stageId) => station_click(stageId)
-    });
-}
-
-// ============================================================================
-// Clock & Version Functions
-// ============================================================================
-
-/**
- * Updates the LCARS clock display.
- */
-function clock_update(): void {
-    const now: Date = new Date();
-    const time: string = now.toLocaleTimeString('en-US', { hour12: false });
-    const date: string = now.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    });
-
-    const dateEl: HTMLElement | null = document.getElementById('lcars-date');
-    const timeEl: HTMLElement | null = document.getElementById('lcars-time');
-
-    if (dateEl) dateEl.textContent = date;
-    if (timeEl) timeEl.textContent = time;
-}
-
-/**
- * Displays the application version in the UI.
- */
-function version_display(): void {
-    const versionEl: HTMLElement | null = document.getElementById('app-version');
-    if (versionEl) {
-        versionEl.textContent = `v${VERSION}-${GIT_HASH}`;
-    }
-}
-
-// ============================================================================
-// UI Functions
-// ============================================================================
-
-/**
- * Toggles the visibility of the top frame.
- *
- * @param event - The click event
- */
-function ui_toggleTopFrame(event: Event): void {
-    event.preventDefault();
-    const topFrame: HTMLElement | null = document.getElementById('top-frame');
-    const topBtn: HTMLElement | null = document.getElementById('topBtn');
-
-    if (topFrame && topBtn) {
-        topFrame.classList.toggle('collapsed');
-        const isCollapsed: boolean = topFrame.classList.contains('collapsed');
-        const spanEl: Element | null = topBtn.querySelector('span.hop');
-        if (spanEl) {
-            spanEl.textContent = isCollapsed ? 'show' : 'hide';
-        }
-    }
-}
-
-// ============================================================================
-// Persona Functions
-// ============================================================================
-
-// Persona functions have been moved to core/stages/login.ts
-
-// ============================================================================
-// Stage Navigation Functions
-// ============================================================================
-
-// Navigation functions have been moved to core/logic/navigation.ts
-
-// ============================================================================
-// Data Cascade Functions
-// ============================================================================
-
-// Cascade functions have been moved to core/logic/telemetry.ts
-
-// Telemetry update function moved to core/logic/telemetry.ts
-
-// ============================================================================
-// Gutter Functions
-// ============================================================================
-
-// Gutter functions have been moved to ui/gutters.ts
-
-// ============================================================================
-// Login Stage Functions
-// ============================================================================
-
-// Login functions have been moved to core/stages/login.ts
-
-// ============================================================================
-// Persona Functions
-// ============================================================================
-
-// Persona functions have been moved to core/stages/login.ts
-
-// ============================================================================
-// AI / Auth Logic
-// ============================================================================
-
-// AI/Auth functions have been moved to core/stages/search.ts
-
-// ============================================================================
-// Search Stage Functions
-// ============================================================================
-
-// Search functions have been moved to core/stages/search.ts
-
-// ============================================================================
-// Gather Stage Functions
-// ============================================================================
-
-// Gather functions have been moved to core/stages/gather.ts
-
-// ============================================================================
-// Process Stage Functions
-// ============================================================================
-
-// Process functions have been moved to core/stages/process.ts
-
-// ============================================================================
-// Monitor Stage Functions
-// ============================================================================
-
-// Monitor functions have been moved to core/stages/monitor.ts
-
-// ============================================================================
-// Post Stage Functions
-// ============================================================================
-
-// Post functions have been moved to core/stages/post.ts
-
-// ============================================================================
-// Initialization
-// ============================================================================
-
-/**
- * Handles unrecognized terminal commands by routing them to the AI core.
- * 
- * @param cmd - The base command or natural language string.
- * @param args - The arguments.
- */
-async function terminal_handleCommand(cmd: string, args: string[]): Promise<void> {
-    if (!terminal) return;
-
-    // Terminal-Driven Workflow Commands
-    if (cmd === 'search') {
-        const query = args.join(' ');
-        terminal.println(`○ SEARCHING CATALOG FOR: "${query}"...`);
-        stage_advanceTo('search');
-        const searchInput = document.getElementById('search-query') as HTMLInputElement;
-        if (searchInput) {
-            searchInput.value = query;
-            const results = await catalog_search(query);
-            
-            if (results && results.length > 0) {
-                terminal.println(`● FOUND ${results.length} MATCHING DATASETS:`);
-                results.forEach(ds => {
-                    if (terminal) terminal.println(`  [<span class="highlight">${ds.id}</span>] ${ds.name} (${ds.modality}/${ds.annotationType})`);
-                });
-            } else {
-                terminal.println(`○ NO MATCHING DATASETS FOUND.`);
-            }
-        }
-        return;
-    }
-
-    if (cmd === 'add') {
-        const targetId = args[0];
-        const dataset = DATASETS.find(ds => ds.id === targetId || ds.name.toLowerCase().includes(targetId.toLowerCase()));
-        if (dataset) {
-            dataset_toggle(dataset.id);
-        } else {
-            terminal.println(`<span class="error">>> ERROR: DATASET "${targetId}" NOT FOUND.</span>`);
-        }
-        return;
-    }
-
-    if (cmd === 'review' || cmd === 'gather') {
-        terminal.println(`● INITIATING COHORT REVIEW...`);
-        stage_advanceTo('gather');
-        return;
-    }
-
-    if (cmd === 'mount') {
-        terminal.println(`● MOUNTING VIRTUAL FILESYSTEM...`);
-        filesystem_build();
-        costs_calculate();
-        stage_advanceTo('process');
-        terminal.println(`<span class="success">>> MOUNT COMPLETE. FILESYSTEM READY.</span>`);
-        return;
-    }
-
-    if (cmd === 'simulate') {
-        terminal.println(`● ACTIVATING SIMULATION PROTOCOLS...`);
-        lcarslm_simulate();
-        return;
-    }
-
-    const query = [cmd, ...args].join(' ');
-    
-    // Check local globals.lcarsEngine reference (managed by search.ts via store)
-    // Actually, we imported 'globals' from store.ts.
-    // 'lcarslm_initialize' in search.ts sets 'globals.lcarsEngine'.
-    // Here we should check 'globals.lcarsEngine'.
-    
-    if (globals.lcarsEngine) {
-        terminal.println('○ CONTACTING AI CORE... PROCESSING...');
-        try {
-            const selectedIds: string[] = state.selectedDatasets.map((ds: Dataset) => ds.id);
-            const response: QueryResponse = await globals.lcarsEngine.query(query, selectedIds);
-            
-            // 1. Process Intent: [SELECT: ds-xxx]
-            const selectMatch = response.answer.match(/\[SELECT: (ds-[0-9]+)\]/);
-            if (selectMatch) {
-                const datasetId = selectMatch[1];
-                
-                // Use Store Action to clear context
-                if (state.activeProject) {
-                    terminal.println(`○ RESETTING PROJECT CONTEXT [${state.activeProject.name}] FOR NEW SELECTION.`);
-                    store.unloadProject();
-                    // Force UI to switch from "Project View" to "Dataset Grid"
-                    workspace_render(DATASETS, true);
-                }
-
-                dataset_select(datasetId);
-                terminal.println(`● AFFIRMATIVE. DATASET [${datasetId}] SELECTED AND ADDED TO SESSION BUFFER.`);
-            }
-
-            if (response.answer.includes('[ACTION: PROCEED]')) {
-                terminal.println('● AFFIRMATIVE. PREPARING GATHER PROTOCOL.');
-                setTimeout(stage_next, 1000);
-            }
-
-            const cleanAnswer = response.answer
-                .replace(/\[SELECT: ds-[0-9]+\]/g, '')
-                .replace(/\[ACTION: PROCEED\]/g, '')
-                .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
-                .replace(/\[FILTER:.*?\]/g, '')
-                .trim();
-
-            terminal.println(`<span class="highlight">${cleanAnswer}</span>`);
-            
-            // Only update the visual grid if the AI indicates a search/list intent
-            if (state.currentStage === 'search' && response.answer.includes('[ACTION: SHOW_DATASETS]')) {
-                let datasetsToShow = response.relevantDatasets;
-                
-                // Check for filter instruction
-                const filterMatch = response.answer.match(/\[FILTER: (.*?)\]/);
-                if (filterMatch) {
-                    const ids = filterMatch[1].split(',').map(s => s.trim());
-                    datasetsToShow = datasetsToShow.filter(ds => ids.includes(ds.id));
-                }
-                
-                workspace_render(datasetsToShow, true);
-            }
-        } catch (e: any) {
-            const errorMsg = (e.message || 'UNKNOWN ERROR').toLowerCase();
-            
-            if (errorMsg.includes('quota') || errorMsg.includes('exceeded') || errorMsg.includes('429')) {
-                terminal.println(`<span class="error">>> ERROR: RESOURCE QUOTA EXCEEDED. RATE LIMIT ACTIVE.</span>`);
-                terminal.println(`<span class="warn">>> STANDBY. RETRY IN 30-60 SECONDS.</span>`);
-                terminal.println(`<span class="dim">   (Or type "simulate" to force offline mode)</span>`);
-            } else {
-                terminal.println(`<span class="error">>> ERROR: UNABLE TO ESTABLISH LINK. ${e.message}</span>`);
-            }
-        }
-    } else {
-        terminal.println(`<span class="warn">>> COMMAND NOT RECOGNIZED. AI CORE OFFLINE.</span>`);
-        terminal.println(`<span class="dim">>> SYSTEM UNINITIALIZED. PLEASE AUTHENTICATE OR TYPE "simulate".</span>`);
-    }
-}
-
-// ============================================================================
-// UI Functions
-// ============================================================================
-
-// Terminal toggle moved to process.ts
-
-/**
- * Initializes the draggable Access Strip for console height adjustment.
- */
-function terminal_initializeDraggable(): void {
-    const strip: HTMLElement | null = document.getElementById('access-strip');
-    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
-    
-    if (!strip || !consoleEl) return;
-
-    let isDragging: boolean = false;
-    let startY: number = 0;
-    let startHeight: number = 0;
-
-    strip.addEventListener('mousedown', (e: MouseEvent) => {
-        isDragging = true;
-        startY = e.clientY;
-        startHeight = consoleEl.offsetHeight;
-        strip.classList.add('active');
-        document.body.style.cursor = 'ns-resize';
-        
-        // Ensure console has 'open' class if dragging starts
-        if (!consoleEl.classList.contains('open')) {
-            consoleEl.classList.add('open');
-        }
-    });
-
-    window.addEventListener('mousemove', (e: MouseEvent) => {
-        if (!isDragging) return;
-        
-        const deltaY: number = e.clientY - startY;
-        const newHeight: number = Math.max(0, startHeight + deltaY);
-        
-        consoleEl.style.height = `${newHeight}px`;
-        consoleEl.style.transition = 'none'; // Disable transition during drag
-        
-        // Synchronize 'open' class for styling
-        if (newHeight > 50) {
-            consoleEl.classList.add('open');
-        } else {
-            consoleEl.classList.remove('open');
-        }
-    });
-
-    window.addEventListener('mouseup', () => {
-        if (!isDragging) return;
-        isDragging = false;
-        strip.classList.remove('active');
-        document.body.style.cursor = 'default';
-        consoleEl.style.transition = ''; // Restore transition
-
-        // Sync FrameSlot slide state after drag completes
-        if (globals.frameSlot) {
-            globals.frameSlot.state_syncAfterDrag();
-        }
+        onStationClick: (stageId: string): void => station_click(stageId)
     });
 }
 
 /**
- * Initializes the ARGUS application.
+ * Initializes the VCS: ContentRegistry, home directory, and project mounts.
  */
-function app_initialize(): void {
-    // Display version
-    version_display();
+function vcs_initialize(): void {
+    const contentRegistry: ContentRegistry = new ContentRegistry();
+    contentRegistry.generators_registerAll(ALL_GENERATORS);
+    contentRegistry.vfs_connect(globals.vcs);
 
-    // Start clock
-    clock_update();
-    setInterval(clock_update, 1000);
+    homeDir_scaffold(globals.vcs, 'developer');
 
-    // Initialize Stage Indicators
-    stageIndicators_initialize();
-    personaButtons_initialize();
-    marketplace_initialize();
-
-    // Initialize VFS with Mock Projects
-    MOCK_PROJECTS.forEach(project => {
-        const legacyRoot = filesystem_create(project.datasets);
-        const root: VcsFileNode = legacyNode_normalize(legacyRoot);
-        globals.vfs.tree_mount(`/home/developer/projects/${project.name}`, root);
+    MOCK_PROJECTS.forEach((project: Project): void => {
+        const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
+        globals.vcs.tree_mount(`/home/developer/projects/${project.name}`, cohortRoot);
     });
+}
 
-    // Initial render: Force Project View (root workspace)
-    workspace_render([], false);
-
-    // Initialize cascade
-    cascade_update();
-
-    // Start Telemetry
-    telemetry_start();
-    workflow_initialize();
-
-
-    // Set initial gutter state
-    gutter_setStatus(1, 'active');
-
-    // Initialize Global Intelligence Console
+/**
+ * Initializes the terminal, Shell, and FrameSlot animation system.
+ */
+function terminal_initialize(): void {
     terminal = new LCARSTerminal('intelligence-console');
     globals.terminal = terminal;
-    terminal.onUnhandledCommand = terminal_handleCommand;
 
-    // Initialize Frame Slot for two-phase terminal animation
+    const shell: Shell = new Shell(globals.vcs, 'developer');
+    globals.shell = shell;
+    terminal.shell_connect(shell);
+    terminal.fallback_set(terminalCommand_handle);
+
+    frameSlot_initialize();
+}
+
+/**
+ * Initializes the FrameSlot two-phase animation for the console.
+ */
+function frameSlot_initialize(): void {
     const consoleBootEl: HTMLElement | null = document.getElementById('intelligence-console');
     const terminalWrapper: HTMLElement | null = consoleBootEl?.querySelector('.lcars-terminal-wrapper') as HTMLElement;
     const bar10El: HTMLElement | null = document.querySelector('.bar-10');
+
     if (consoleBootEl && terminalWrapper) {
         globals.frameSlot = new FrameSlot({
             frameElement: consoleBootEl,
@@ -492,78 +140,22 @@ function app_initialize(): void {
             frameDuration: 600,
             slideDuration: 400,
             openHeight: '600px',
-            onOpen: () => {
-                // Stop beckoning bar-10 when the terminal is open
+            onOpen: (): void => {
                 if (bar10El) bar10El.classList.remove('lcars-beckon');
             },
-            onClose: () => {
-                // Resume beckoning bar-10 when the terminal is closed
+            onClose: (): void => {
                 if (bar10El) bar10El.classList.add('lcars-beckon');
             },
         });
 
-        // Bar-10 starts beckoning (terminal starts closed)
         if (bar10El) bar10El.classList.add('lcars-beckon');
     }
+}
 
-    // Listen for stage changes to update Terminal
-    document.addEventListener('argus:stage-change', ((event: CustomEvent) => {
-        const stageName = event.detail.stage;
-        const consoleEl = document.getElementById('intelligence-console');
-        const terminalScreen = consoleEl?.querySelector('.lcars-terminal-screen') as HTMLElement;
-
-        if (consoleEl && terminal) {
-            // Hide terminal on login/role selection, show otherwise
-            const isEntryStage: boolean = stageName === 'login' || stageName === 'role-selection';
-            
-            if (isEntryStage) {
-                consoleEl.style.display = 'none';
-            } else {
-                consoleEl.style.display = 'block';
-            }
-
-            // Reset Developer Mode state
-            if (terminalScreen) {
-                terminalScreen.classList.remove('developer-mode');
-            }
-
-            // Contextual Prompt
-            if (stageName === 'search') {
-                terminal.setPrompt('ARGUS: SEARCH >');
-                if (globals.frameSlot) {
-                    setTimeout(() => globals.frameSlot.frame_open(), 10);
-                }
-            } else if (stageName === 'gather') {
-                terminal.setPrompt('ARGUS: COHORT >');
-            } else if (stageName === 'process') {
-                // DEVELOPER HUB MODE
-                terminal.clear();
-                if (terminalScreen) {
-                    terminalScreen.classList.add('developer-mode');
-                }
-                terminal.setPrompt('dev@argus:~/src/project $ ');
-                terminal.println('○ ENVIRONMENT: BASH 5.2.15 // ARGUS CORE v1.4.5');
-                terminal.println('● PROJECT MOUNTED AT /home/developer/src/project');
-                terminal.println('○ RUN "ls" TO VIEW ASSETS OR "python train.py" TO INITIATE FEDERATION.');
-                if (globals.frameSlot) {
-                    globals.frameSlot.frame_open();
-                }
-            } else {
-                terminal.setPrompt('dev@argus:~/ $');
-            }
-        }
-    }) as EventListener);
-
-    // Initialize Draggable Strip
-    terminal_initializeDraggable();
-
-    // Initialize LCARSLM (Terminal MUST be ready first)
-    lcarslm_initialize();
-
-    // Handle initial login state
-    stage_advanceTo(state.currentStage);
-
-    // Expose functions to window for onclick handlers
+/**
+ * Registers all window-level function bindings for HTML onclick handlers.
+ */
+function windowBindings_register(): void {
     window.stage_advanceTo = stage_advanceTo;
     window.station_click = station_click;
     window.stage_next = stage_next;
@@ -582,9 +174,398 @@ function app_initialize(): void {
     window.lcarslm_reset = lcarslm_reset;
     window.lcarslm_simulate = lcarslm_simulate;
     window.terminal_toggle = terminal_toggle;
-    (window as any).project_activate = project_activate;
-    (window as any).ide_openFile = ide_openFile;
-    (window as any).store = store;
+    window.project_activate = project_activate;
+    window.ide_openFile = ide_openFile;
+    window.store = store;
+}
+
+// ============================================================================
+// Clock & Version
+// ============================================================================
+
+/**
+ * Updates the LCARS clock display with current time and date.
+ */
+function clock_update(): void {
+    const now: Date = new Date();
+    const time: string = now.toLocaleTimeString('en-US', { hour12: false });
+    const date: string = now.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+
+    const dateEl: HTMLElement | null = document.getElementById('lcars-date');
+    const timeEl: HTMLElement | null = document.getElementById('lcars-time');
+
+    if (dateEl) dateEl.textContent = date;
+    if (timeEl) timeEl.textContent = time;
+}
+
+/**
+ * Displays the application version in the header.
+ */
+function version_display(): void {
+    const versionEl: HTMLElement | null = document.getElementById('app-version');
+    if (versionEl) {
+        versionEl.textContent = `v${VERSION}-${GIT_HASH}`;
+    }
+}
+
+// ============================================================================
+// UI Functions
+// ============================================================================
+
+/**
+ * Toggles the visibility of the top frame.
+ *
+ * @param event - The click event.
+ */
+function ui_toggleTopFrame(event: Event): void {
+    event.preventDefault();
+    const topFrame: HTMLElement | null = document.getElementById('top-frame');
+    const topBtn: HTMLElement | null = document.getElementById('topBtn');
+
+    if (topFrame && topBtn) {
+        topFrame.classList.toggle('collapsed');
+        const isCollapsed: boolean = topFrame.classList.contains('collapsed');
+        const spanEl: Element | null = topBtn.querySelector('span.hop');
+        if (spanEl) {
+            spanEl.textContent = isCollapsed ? 'show' : 'hide';
+        }
+    }
+}
+
+/**
+ * Initializes the draggable Access Strip for console height adjustment.
+ */
+function terminalDraggable_initialize(): void {
+    const strip: HTMLElement | null = document.getElementById('access-strip');
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+
+    if (!strip || !consoleEl) return;
+
+    let isDragging: boolean = false;
+    let startY: number = 0;
+    let startHeight: number = 0;
+
+    strip.addEventListener('mousedown', (e: MouseEvent): void => {
+        isDragging = true;
+        startY = e.clientY;
+        startHeight = consoleEl.offsetHeight;
+        strip.classList.add('active');
+        document.body.style.cursor = 'ns-resize';
+
+        if (!consoleEl.classList.contains('open')) {
+            consoleEl.classList.add('open');
+        }
+    });
+
+    window.addEventListener('mousemove', (e: MouseEvent): void => {
+        if (!isDragging) return;
+
+        const deltaY: number = e.clientY - startY;
+        const newHeight: number = Math.max(0, startHeight + deltaY);
+
+        consoleEl.style.height = `${newHeight}px`;
+        consoleEl.style.transition = 'none';
+
+        if (newHeight > 50) {
+            consoleEl.classList.add('open');
+        } else {
+            consoleEl.classList.remove('open');
+        }
+    });
+
+    window.addEventListener('mouseup', (): void => {
+        if (!isDragging) return;
+        isDragging = false;
+        strip.classList.remove('active');
+        document.body.style.cursor = 'default';
+        consoleEl.style.transition = '';
+
+        if (globals.frameSlot) {
+            globals.frameSlot.state_syncAfterDrag();
+        }
+    });
+}
+
+// ============================================================================
+// Terminal Fallback Command Handler
+// ============================================================================
+
+/**
+ * Handles workflow commands typed into the terminal.
+ * Routes search, add, review, mount, and simulate commands
+ * before falling through to the AI engine for natural language queries.
+ *
+ * @param cmd - The base command string.
+ * @param args - The command arguments.
+ */
+async function terminalCommand_handle(cmd: string, args: string[]): Promise<void> {
+    if (!terminal) return;
+
+    if (workflowCommand_handle(cmd, args)) return;
+
+    await aiQuery_handle(cmd, args);
+}
+
+/**
+ * Handles known workflow commands (search, add, review, mount, simulate).
+ *
+ * @param cmd - The command string.
+ * @param args - The command arguments.
+ * @returns True if the command was handled, false to fall through.
+ */
+function workflowCommand_handle(cmd: string, args: string[]): boolean {
+    if (!terminal) return false;
+
+    if (cmd === 'search') {
+        const query: string = args.join(' ');
+        terminal.println(`○ SEARCHING CATALOG FOR: "${query}"...`);
+        stage_advanceTo('search');
+        const searchInput: HTMLInputElement | null = document.getElementById('search-query') as HTMLInputElement;
+        if (searchInput) {
+            searchInput.value = query;
+            catalog_search(query).then((results: Dataset[]): void => {
+                if (!terminal) return;
+                if (results && results.length > 0) {
+                    terminal.println(`● FOUND ${results.length} MATCHING DATASETS:`);
+                    results.forEach((ds: Dataset): void => {
+                        if (terminal) terminal.println(`  [<span class="highlight">${ds.id}</span>] ${ds.name} (${ds.modality}/${ds.annotationType})`);
+                    });
+                } else {
+                    terminal.println(`○ NO MATCHING DATASETS FOUND.`);
+                }
+            });
+        }
+        return true;
+    }
+
+    if (cmd === 'add') {
+        const targetId: string = args[0];
+        const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean => ds.id === targetId || ds.name.toLowerCase().includes(targetId.toLowerCase()));
+        if (dataset) {
+            dataset_toggle(dataset.id);
+        } else {
+            terminal.println(`<span class="error">>> ERROR: DATASET "${targetId}" NOT FOUND.</span>`);
+        }
+        return true;
+    }
+
+    if (cmd === 'review' || cmd === 'gather') {
+        terminal.println(`● INITIATING COHORT REVIEW...`);
+        stage_advanceTo('gather');
+        return true;
+    }
+
+    if (cmd === 'mount') {
+        terminal.println(`● MOUNTING VIRTUAL FILESYSTEM...`);
+        filesystem_build();
+        costs_calculate();
+        stage_advanceTo('process');
+        terminal.println(`<span class="success">>> MOUNT COMPLETE. FILESYSTEM READY.</span>`);
+        return true;
+    }
+
+    if (cmd === 'simulate') {
+        terminal.println(`● ACTIVATING SIMULATION PROTOCOLS...`);
+        lcarslm_simulate();
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Handles natural language queries by routing to the AI engine.
+ *
+ * @param cmd - The command string.
+ * @param args - The command arguments.
+ */
+async function aiQuery_handle(cmd: string, args: string[]): Promise<void> {
+    if (!terminal) return;
+
+    const query: string = [cmd, ...args].join(' ');
+
+    if (globals.lcarsEngine) {
+        terminal.println('○ CONTACTING AI CORE... PROCESSING...');
+        try {
+            const selectedIds: string[] = state.selectedDatasets.map((ds: Dataset): string => ds.id);
+            const response: QueryResponse = await globals.lcarsEngine.query(query, selectedIds);
+
+            aiResponse_process(response);
+        } catch (e: unknown) {
+            const errorMsg: string = (e instanceof Error ? e.message : 'UNKNOWN ERROR').toLowerCase();
+
+            if (errorMsg.includes('quota') || errorMsg.includes('exceeded') || errorMsg.includes('429')) {
+                terminal.println(`<span class="error">>> ERROR: RESOURCE QUOTA EXCEEDED. RATE LIMIT ACTIVE.</span>`);
+                terminal.println(`<span class="warn">>> STANDBY. RETRY IN 30-60 SECONDS.</span>`);
+                terminal.println(`<span class="dim">   (Or type "simulate" to force offline mode)</span>`);
+            } else {
+                terminal.println(`<span class="error">>> ERROR: UNABLE TO ESTABLISH LINK. ${errorMsg}</span>`);
+            }
+        }
+    } else {
+        terminal.println(`<span class="warn">>> COMMAND NOT RECOGNIZED. AI CORE OFFLINE.</span>`);
+        terminal.println(`<span class="dim">>> SYSTEM UNINITIALIZED. PLEASE AUTHENTICATE OR TYPE "simulate".</span>`);
+    }
+}
+
+/**
+ * Processes an AI query response — handling select intents, action directives,
+ * and dataset filtering.
+ *
+ * @param response - The AI query response.
+ */
+function aiResponse_process(response: QueryResponse): void {
+    if (!terminal) return;
+
+    const selectMatch: RegExpMatchArray | null = response.answer.match(/\[SELECT: (ds-[0-9]+)\]/);
+    if (selectMatch) {
+        const datasetId: string = selectMatch[1];
+
+        if (state.activeProject) {
+            terminal.println(`○ RESETTING PROJECT CONTEXT [${state.activeProject.name}] FOR NEW SELECTION.`);
+            store.project_unload();
+            workspace_render(DATASETS, true);
+        }
+
+        dataset_select(datasetId);
+        terminal.println(`● AFFIRMATIVE. DATASET [${datasetId}] SELECTED AND ADDED TO SESSION BUFFER.`);
+    }
+
+    if (response.answer.includes('[ACTION: PROCEED]')) {
+        terminal.println('● AFFIRMATIVE. PREPARING GATHER PROTOCOL.');
+        setTimeout(stage_next, 1000);
+    }
+
+    const cleanAnswer: string = response.answer
+        .replace(/\[SELECT: ds-[0-9]+\]/g, '')
+        .replace(/\[ACTION: PROCEED\]/g, '')
+        .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
+        .replace(/\[FILTER:.*?\]/g, '')
+        .trim();
+
+    terminal.println(`<span class="highlight">${cleanAnswer}</span>`);
+
+    if (state.currentStage === 'search' && response.answer.includes('[ACTION: SHOW_DATASETS]')) {
+        let datasetsToShow: Dataset[] = response.relevantDatasets;
+
+        const filterMatch: RegExpMatchArray | null = response.answer.match(/\[FILTER: (.*?)\]/);
+        if (filterMatch) {
+            const ids: string[] = filterMatch[1].split(',').map((s: string): string => s.trim());
+            datasetsToShow = datasetsToShow.filter((ds: Dataset): boolean => ids.includes(ds.id));
+        }
+
+        workspace_render(datasetsToShow, true);
+    }
+}
+
+// ============================================================================
+// Stage Change Listener
+// ============================================================================
+
+/**
+ * Handles stage transition events — controls terminal visibility,
+ * developer mode, Shell stage_enter, and prompt synchronization.
+ *
+ * @param event - The stage-change custom event.
+ */
+function stageChange_handle(event: CustomEvent): void {
+    const stageName: string = event.detail.stage;
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+    const terminalScreen: HTMLElement | null = consoleEl?.querySelector('.lcars-terminal-screen') as HTMLElement;
+
+    if (consoleEl && terminal) {
+        const isEntryStage: boolean = stageName === 'login' || stageName === 'role-selection';
+
+        if (isEntryStage) {
+            consoleEl.style.display = 'none';
+        } else {
+            consoleEl.style.display = 'block';
+        }
+
+        if (terminalScreen) {
+            terminalScreen.classList.remove('developer-mode');
+        }
+
+        if (globals.shell) {
+            globals.shell.stage_enter(stageName);
+        }
+
+        if (stageName === 'search') {
+            const slot: FrameSlot | null = globals.frameSlot;
+            if (slot) {
+                setTimeout(() => { slot.frame_open(); }, 10);
+            }
+        } else if (stageName === 'process') {
+            projectDir_populate(globals.vcs, 'developer');
+            terminal.clear();
+            if (terminalScreen) {
+                terminalScreen.classList.add('developer-mode');
+            }
+            terminal.println('○ ENVIRONMENT: BASH 5.2.15 // ARGUS CORE v1.4.5');
+            terminal.println('● PROJECT MOUNTED AT /home/developer/src/project');
+            terminal.println('○ RUN "ls" TO VIEW ASSETS OR "federate train.py" TO INITIATE FEDERATION.');
+            if (globals.frameSlot) {
+                globals.frameSlot.frame_open();
+            }
+        }
+
+        terminal.prompt_sync();
+    }
+}
+
+// ============================================================================
+// Application Entry Point
+// ============================================================================
+
+/**
+ * Initializes the ARGUS application.
+ * Orchestrates subsystem startup in the correct order:
+ * UI → VCS → Telemetry → Terminal → Stage.
+ */
+function app_initialize(): void {
+    // UI basics
+    version_display();
+    clock_update();
+    setInterval(clock_update, 1000);
+
+    // Stage & marketplace UI
+    stageIndicators_initialize();
+    personaButtons_initialize();
+    marketplace_initialize();
+
+    // Virtual Computer System
+    vcs_initialize();
+
+    // Initial render
+    workspace_render([], false);
+    cascade_update();
+
+    // Telemetry & workflow
+    telemetry_start();
+    workflow_initialize();
+    gutter_setStatus(1, 'active');
+
+    // Terminal & Shell
+    terminal_initialize();
+
+    // Stage change listener
+    document.addEventListener('argus:stage-change', stageChange_handle as EventListener);
+
+    // Draggable console strip
+    terminalDraggable_initialize();
+
+    // AI engine
+    lcarslm_initialize();
+
+    // Initial stage
+    stage_advanceTo(state.currentStage);
+
+    // Window bindings for HTML onclick handlers
+    windowBindings_register();
 }
 
 // Initialize on DOM ready

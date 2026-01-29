@@ -1,32 +1,61 @@
 /**
  * @file Marketplace View Logic
- * @description Handles marketplace UI rendering, filtering, sorting, and search functionality.
+ *
+ * Handles marketplace UI rendering, filtering, sorting, and search functionality.
+ *
+ * @module
  */
 
 import { store, state, globals } from '../core/state/store.js';
 import { events, Events } from '../core/state/events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../core/data/marketplace.js';
+import type { AppState } from '../core/models/types.js';
+
+// ============================================================================
+// Window Interface Extension
+// ============================================================================
+
+declare global {
+    interface Window {
+        market_filter: typeof market_filter;
+        market_search: typeof market_search;
+        market_sort: typeof market_sort;
+        assetDetail_open: typeof assetDetail_open;
+        assetDetail_close: typeof assetDetail_close;
+        assetDetail_install: typeof assetDetail_install;
+        asset_install: (id: string, btnElement: HTMLButtonElement) => void;
+    }
+}
+
+// ============================================================================
+// Module State
+// ============================================================================
 
 let currentFilter: string = 'all';
 let currentSearch: string = '';
 let currentSort: string = 'stars-desc';
+let currentDetailAssetId: string | null = null;
+
+// ============================================================================
+// Initialization
+// ============================================================================
 
 /**
  * Initializes the marketplace view.
+ * Registers state-change listeners, performs initial render,
+ * and exposes marketplace functions to the global window scope.
  */
 export function marketplace_initialize(): void {
-    // 1. Listen for State Changes (Toggle visibility)
-    events.on(Events.STATE_CHANGED, (s: any) => {
-        const overlay = document.getElementById('marketplace-overlay');
+    events.on(Events.STATE_CHANGED, (s: AppState): void => {
+        const overlay: HTMLElement | null = document.getElementById('marketplace-overlay');
         if (overlay) {
             if (s.marketplaceOpen) {
                 overlay.classList.remove('hidden', 'closing');
                 marketGrid_render();
             } else {
-                // If visible, animate out
                 if (!overlay.classList.contains('hidden')) {
                     overlay.classList.add('closing');
-                    overlay.addEventListener('animationend', () => {
+                    overlay.addEventListener('animationend', (): void => {
                         overlay.classList.add('hidden');
                         overlay.classList.remove('closing');
                     }, { once: true });
@@ -35,29 +64,31 @@ export function marketplace_initialize(): void {
         }
     });
 
-    // 2. Initial Render
     marketGrid_render();
 
-    // 3. Expose functions to window
-    (window as any).market_filter = market_filter;
-    (window as any).market_search = market_search;
-    (window as any).market_sort = market_sort;
-    (window as any).assetDetail_open = assetDetail_open;
-    (window as any).assetDetail_close = assetDetail_close;
-    (window as any).assetDetail_install = assetDetail_install;
+    window.market_filter = market_filter;
+    window.market_search = market_search;
+    window.market_sort = market_sort;
+    window.assetDetail_open = assetDetail_open;
+    window.assetDetail_close = assetDetail_close;
+    window.assetDetail_install = assetDetail_install;
 }
+
+// ============================================================================
+// Filtering / Sorting / Search
+// ============================================================================
 
 /**
  * Filters the marketplace grid by asset type.
- * @param type - The asset type to filter by ('all', 'plugin', 'dataset', 'model', 'annotation', 'installed')
+ *
+ * @param type - The asset type to filter by ('all', 'plugin', 'dataset', 'model', 'annotation', 'installed').
  */
 export function market_filter(type: string): void {
     currentFilter = type;
 
-    // Update active state of pills
-    document.querySelectorAll('.filter-pill').forEach(btn => {
-        const text = btn.textContent?.toLowerCase() || '';
-        const isMatch = (type === 'all' && text === 'all') ||
+    document.querySelectorAll('.filter-pill').forEach((btn: Element): void => {
+        const text: string = btn.textContent?.toLowerCase() || '';
+        const isMatch: boolean = (type === 'all' && text === 'all') ||
                         (type === 'plugin' && text === 'plugins') ||
                         (type === 'dataset' && text === 'datasets') ||
                         (type === 'model' && text === 'models') ||
@@ -73,7 +104,8 @@ export function market_filter(type: string): void {
 
 /**
  * Searches the marketplace by query string.
- * @param query - The search query to filter assets by name, description, or author
+ *
+ * @param query - The search query to filter assets by name, description, or author.
  */
 export function market_search(query: string): void {
     currentSearch = query.toLowerCase().trim();
@@ -82,7 +114,8 @@ export function market_search(query: string): void {
 
 /**
  * Sorts the marketplace grid.
- * @param sortBy - The sort order ('stars-desc', 'stars-asc', 'name-asc', 'name-desc', 'size-desc', 'size-asc')
+ *
+ * @param sortBy - The sort order ('stars-desc', 'stars-asc', 'name-asc', 'name-desc', 'size-desc', 'size-asc').
  */
 export function market_sort(sortBy: string): void {
     currentSort = sortBy;
@@ -91,71 +124,74 @@ export function market_sort(sortBy: string): void {
 
 /**
  * Parses a size string (e.g., "150 MB") to a numeric value for sorting.
- * @param size - The size string to parse
- * @returns The numeric size value
+ *
+ * @param size - The size string to parse.
+ * @returns The numeric size value.
  */
-function parseSize(size: string): number {
-    const match = size.match(/(\d+)/);
+function size_parse(size: string): number {
+    const match: RegExpMatchArray | null = size.match(/(\d+)/);
     return match ? parseInt(match[1], 10) : 0;
 }
 
 /**
- * Sorts an array of marketplace assets.
- * @param assets - The assets to sort
- * @param sortBy - The sort order
- * @returns The sorted array
+ * Sorts an array of marketplace assets by the given criterion.
+ *
+ * @param assets - The assets to sort.
+ * @param sortBy - The sort order key.
+ * @returns A new sorted array.
  */
 function marketAssets_sort(assets: MarketplaceAsset[], sortBy: string): MarketplaceAsset[] {
-    const sorted = [...assets];
+    const sorted: MarketplaceAsset[] = [...assets];
     switch (sortBy) {
         case 'stars-desc':
-            return sorted.sort((a, b) => b.stars - a.stars);
+            return sorted.sort((a: MarketplaceAsset, b: MarketplaceAsset): number => b.stars - a.stars);
         case 'stars-asc':
-            return sorted.sort((a, b) => a.stars - b.stars);
+            return sorted.sort((a: MarketplaceAsset, b: MarketplaceAsset): number => a.stars - b.stars);
         case 'name-asc':
-            return sorted.sort((a, b) => a.name.localeCompare(b.name));
+            return sorted.sort((a: MarketplaceAsset, b: MarketplaceAsset): number => a.name.localeCompare(b.name));
         case 'name-desc':
-            return sorted.sort((a, b) => b.name.localeCompare(a.name));
+            return sorted.sort((a: MarketplaceAsset, b: MarketplaceAsset): number => b.name.localeCompare(a.name));
         case 'size-desc':
-            return sorted.sort((a, b) => parseSize(b.size) - parseSize(a.size));
+            return sorted.sort((a: MarketplaceAsset, b: MarketplaceAsset): number => size_parse(b.size) - size_parse(a.size));
         case 'size-asc':
-            return sorted.sort((a, b) => parseSize(a.size) - parseSize(b.size));
+            return sorted.sort((a: MarketplaceAsset, b: MarketplaceAsset): number => size_parse(a.size) - size_parse(b.size));
         default:
             return sorted;
     }
 }
 
+// ============================================================================
+// Grid Rendering
+// ============================================================================
+
 /**
- * Renders the grid of marketplace assets.
+ * Renders the marketplace grid of asset cards.
+ * Applies current filter, search, and sort state before rendering.
  */
 function marketGrid_render(): void {
-    const container = document.getElementById('market-grid');
+    const container: HTMLElement | null = document.getElementById('market-grid');
     if (!container) return;
 
-    // 1. Filter by type (including 'installed')
-    let filtered = MARKETPLACE_ASSETS.filter(a => {
+    let filtered: MarketplaceAsset[] = MARKETPLACE_ASSETS.filter((a: MarketplaceAsset): boolean => {
         if (currentFilter === 'all') return true;
         if (currentFilter === 'installed') return state.installedAssets.includes(a.id);
         return a.type === currentFilter;
     });
 
-    // 2. Filter by search query
     if (currentSearch) {
-        filtered = filtered.filter(a =>
+        filtered = filtered.filter((a: MarketplaceAsset): boolean =>
             a.name.toLowerCase().includes(currentSearch) ||
             a.description.toLowerCase().includes(currentSearch) ||
             a.author.toLowerCase().includes(currentSearch)
         );
     }
 
-    // 3. Sort
     filtered = marketAssets_sort(filtered, currentSort);
 
-    // 4. Render cards with 5-zone layout: header, title, desc, meta, action
-    container.innerHTML = filtered.map(asset => {
-        const isInstalled = state.installedAssets.includes(asset.id);
-        const isFda = asset.type === 'fda';
-        const cardClasses = `market-card${isInstalled ? ' installed' : ''}${isFda ? ' fda' : ''}`;
+    container.innerHTML = filtered.map((asset: MarketplaceAsset): string => {
+        const isInstalled: boolean = state.installedAssets.includes(asset.id);
+        const isFda: boolean = asset.type === 'fda';
+        const cardClasses: string = `market-card${isInstalled ? ' installed' : ''}${isFda ? ' fda' : ''}`;
         return `
             <div class="${cardClasses}" data-id="${asset.id}" onclick="assetDetail_open('${asset.id}')">
                 <div class="card-header">
@@ -178,99 +214,113 @@ function marketGrid_render(): void {
         `;
     }).join('');
 
-    // 5. Update result count
-    const countEl = document.getElementById('market-count');
+    const countEl: HTMLElement | null = document.getElementById('market-count');
     if (countEl) countEl.textContent = `${filtered.length} ASSETS`;
 }
 
+// ============================================================================
+// Grid Install Handler
+// ============================================================================
+
 /**
- * Handles installing an asset via the INSTALL button.
+ * Handles installing an asset via the grid INSTALL button.
  * Shows a filling progress bar animation inside the pill button.
+ *
+ * @param id - The marketplace asset ID.
+ * @param btnElement - The button element that was clicked.
  */
-(window as any).asset_install = (id: string, btnElement: HTMLButtonElement) => {
-    const asset = MARKETPLACE_ASSETS.find(a => a.id === id);
+window.asset_install = (id: string, btnElement: HTMLButtonElement): void => {
+    const asset: MarketplaceAsset | undefined = MARKETPLACE_ASSETS.find((a: MarketplaceAsset): boolean => a.id === id);
     if (!asset) return;
 
     if (state.installedAssets.includes(id)) {
-        globals.terminal.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
+        globals.terminal?.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
         return;
     }
 
-    // Prevent double-clicks
     if (btnElement.classList.contains('installing')) return;
 
-    // Start progress animation
     btnElement.classList.add('installing');
-    const textEl = btnElement.querySelector('.btn-text');
+    const textEl: Element | null = btnElement.querySelector('.btn-text');
     if (textEl) textEl.textContent = 'INSTALLING...';
 
-    globals.terminal.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
-    globals.terminal.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
+    globals.terminal?.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
+    globals.terminal?.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
 
-    // Simulate installation with progress (1.5s)
-    setTimeout(() => {
-        store.installAsset(id);
+    setTimeout((): void => {
+        store.asset_install(id);
 
-        // Update button state
         btnElement.classList.remove('installing');
         btnElement.classList.add('installed');
         if (textEl) textEl.textContent = 'INSTALLED';
 
-        globals.terminal.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
+        globals.terminal?.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
 
-        // If it was a plugin, remind user how to run it
         if (asset.type === 'plugin') {
-            globals.terminal.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
+            globals.terminal?.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
         }
 
-        // Update the card class
-        const card = btnElement.closest('.market-card');
+        const card: Element | null = btnElement.closest('.market-card');
         if (card) card.classList.add('installed');
-
-        // Update result count if on installed filter
-        const countEl = document.getElementById('market-count');
-        if (countEl) {
-            const currentCount = parseInt(countEl.textContent || '0');
-            // Count stays same, just update if needed
-        }
     }, 1500);
 };
 
-// ============================================================
-// ASSET DETAIL OVERLAY
-// ============================================================
-
-let currentDetailAssetId: string | null = null;
+// ============================================================================
+// Asset Detail Overlay
+// ============================================================================
 
 /**
  * Opens the asset detail overlay for the given asset ID.
+ * Populates all detail sections: header, specs, usage, dependencies,
+ * changelog, and related assets.
+ *
+ * @param id - The marketplace asset ID.
  */
 export function assetDetail_open(id: string): void {
-    const asset = MARKETPLACE_ASSETS.find(a => a.id === id);
+    const asset: MarketplaceAsset | undefined = MARKETPLACE_ASSETS.find((a: MarketplaceAsset): boolean => a.id === id);
     if (!asset) return;
 
     currentDetailAssetId = id;
 
-    const overlay = document.getElementById('asset-detail-overlay');
-    const panel = overlay?.querySelector('.detail-panel');
-    const lcarsFrame = document.getElementById('detail-lcars-frame');
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+    const panel: Element | null | undefined = overlay?.querySelector('.detail-panel');
+    const lcarsFrame: HTMLElement | null = document.getElementById('detail-lcars-frame');
     if (!overlay || !panel || !lcarsFrame) return;
 
-    // Set LCARS hue based on asset type (200=blue, 140=green for FDA)
-    const hue = asset.type === 'fda' ? 140 : 200;
+    detailHeader_populate(asset, id, overlay, lcarsFrame);
+    detailSpecs_populate(asset);
+    detailContent_populate(asset);
+
+    overlay.classList.remove('hidden');
+}
+
+/**
+ * Populates the detail overlay header: LCARS hue, module color,
+ * name, type badge, version, stars, author, and install button.
+ *
+ * @param asset - The marketplace asset.
+ * @param id - The asset ID.
+ * @param overlay - The overlay root element.
+ * @param lcarsFrame - The LCARS frame element.
+ */
+function detailHeader_populate(
+    asset: MarketplaceAsset,
+    id: string,
+    overlay: HTMLElement,
+    lcarsFrame: HTMLElement
+): void {
+    const hue: number = asset.type === 'fda' ? 140 : 200;
     lcarsFrame.style.setProperty('--lcars-hue', String(hue));
 
-    // Set Module Color for floating buttons
-    const moduleColor = asset.type === 'fda' ? 'hsl(140, 80%, 50%)' : 'var(--sky)';
-    const commandCol = overlay.querySelector('.detail-command-column') as HTMLElement;
+    const moduleColor: string = asset.type === 'fda' ? 'hsl(140, 80%, 50%)' : 'var(--sky)';
+    const commandCol: HTMLElement | null = overlay.querySelector('.detail-command-column') as HTMLElement;
     if (commandCol) commandCol.style.setProperty('--module-color', moduleColor);
 
-    // Populate header
-    const nameEl = document.getElementById('detail-name');
-    const typeBadge = document.getElementById('detail-type-badge');
-    const versionEl = document.getElementById('detail-version');
-    const starsEl = document.getElementById('detail-stars');
-    const authorEl = document.getElementById('detail-author');
+    const nameEl: HTMLElement | null = document.getElementById('detail-name');
+    const typeBadge: HTMLElement | null = document.getElementById('detail-type-badge');
+    const versionEl: HTMLElement | null = document.getElementById('detail-version');
+    const starsEl: HTMLElement | null = document.getElementById('detail-stars');
+    const authorEl: HTMLElement | null = document.getElementById('detail-author');
 
     if (nameEl) nameEl.textContent = asset.name;
     if (typeBadge) typeBadge.textContent = asset.type.toUpperCase();
@@ -278,27 +328,28 @@ export function assetDetail_open(id: string): void {
     if (starsEl) starsEl.textContent = `\u2605 ${asset.stars.toLocaleString()}`;
     if (authorEl) authorEl.textContent = `BY ${asset.author.toUpperCase()}`;
 
-    // Update install button state
-    const installBtn = document.getElementById('detail-install-btn');
-    const btnText = installBtn?.querySelector('.btn-text');
+    const installBtn: HTMLElement | null = document.getElementById('detail-install-btn');
+    const btnText: Element | null | undefined = installBtn?.querySelector('.btn-text');
 
     if (installBtn && btnText) {
-        const isInstalled = state.installedAssets.includes(id);
+        const isInstalled: boolean = state.installedAssets.includes(id);
         installBtn.classList.toggle('installed', isInstalled);
         btnText.textContent = isInstalled ? 'INSTALLED' : 'INSTALL';
     }
+}
 
-    // Populate description
-    const descEl = document.getElementById('detail-description');
-    if (descEl) descEl.textContent = asset.description;
-
-    // Populate specifications
-    const specType = document.getElementById('detail-spec-type');
-    const specVersion = document.getElementById('detail-spec-version');
-    const specSize = document.getElementById('detail-spec-size');
-    const specLicense = document.getElementById('detail-spec-license');
-    const specUpdated = document.getElementById('detail-spec-updated');
-    const specDownloads = document.getElementById('detail-spec-downloads');
+/**
+ * Populates the detail overlay specification fields.
+ *
+ * @param asset - The marketplace asset.
+ */
+function detailSpecs_populate(asset: MarketplaceAsset): void {
+    const specType: HTMLElement | null = document.getElementById('detail-spec-type');
+    const specVersion: HTMLElement | null = document.getElementById('detail-spec-version');
+    const specSize: HTMLElement | null = document.getElementById('detail-spec-size');
+    const specLicense: HTMLElement | null = document.getElementById('detail-spec-license');
+    const specUpdated: HTMLElement | null = document.getElementById('detail-spec-updated');
+    const specDownloads: HTMLElement | null = document.getElementById('detail-spec-downloads');
 
     if (specType) specType.textContent = asset.type.toUpperCase();
     if (specVersion) specVersion.textContent = asset.version;
@@ -306,23 +357,31 @@ export function assetDetail_open(id: string): void {
     if (specLicense) specLicense.textContent = asset.license;
     if (specUpdated) specUpdated.textContent = asset.updated;
     if (specDownloads) specDownloads.textContent = asset.downloads.toLocaleString();
+}
 
-    // Populate usage
-    const usageEl = document.getElementById('detail-usage');
+/**
+ * Populates the detail overlay content sections: description,
+ * usage, dependencies, changelog, and related assets.
+ *
+ * @param asset - The marketplace asset.
+ */
+function detailContent_populate(asset: MarketplaceAsset): void {
+    const descEl: HTMLElement | null = document.getElementById('detail-description');
+    if (descEl) descEl.textContent = asset.description;
+
+    const usageEl: HTMLElement | null = document.getElementById('detail-usage');
     if (usageEl) {
-        usageEl.innerHTML = asset.usage.map(cmd => `<code>$ ${cmd}</code>`).join('');
+        usageEl.innerHTML = asset.usage.map((cmd: string): string => `<code>$ ${cmd}</code>`).join('');
     }
 
-    // Populate dependencies
-    const depsEl = document.getElementById('detail-dependencies');
+    const depsEl: HTMLElement | null = document.getElementById('detail-dependencies');
     if (depsEl) {
-        depsEl.innerHTML = asset.dependencies.map(dep => `<li>${dep}</li>`).join('');
+        depsEl.innerHTML = asset.dependencies.map((dep: string): string => `<li>${dep}</li>`).join('');
     }
 
-    // Populate changelog
-    const changelogEl = document.getElementById('detail-changelog');
+    const changelogEl: HTMLElement | null = document.getElementById('detail-changelog');
     if (changelogEl) {
-        changelogEl.innerHTML = asset.changelog.map(entry => `
+        changelogEl.innerHTML = asset.changelog.map((entry: { version: string; date: string; notes: string }): string => `
             <div class="changelog-entry">
                 <span class="cl-version">${entry.version}</span>
                 <span class="cl-date">${entry.date}</span>
@@ -331,30 +390,26 @@ export function assetDetail_open(id: string): void {
         `).join('');
     }
 
-    // Populate related assets
-    const relatedEl = document.getElementById('detail-related');
+    const relatedEl: HTMLElement | null = document.getElementById('detail-related');
     if (relatedEl) {
-        const relatedAssets = asset.related
-            .map(rid => MARKETPLACE_ASSETS.find(a => a.id === rid))
-            .filter(Boolean) as typeof MARKETPLACE_ASSETS;
+        const relatedAssets: MarketplaceAsset[] = asset.related
+            .map((rid: string): MarketplaceAsset | undefined => MARKETPLACE_ASSETS.find((a: MarketplaceAsset): boolean => a.id === rid))
+            .filter((a: MarketplaceAsset | undefined): a is MarketplaceAsset => a !== undefined);
 
-        relatedEl.innerHTML = relatedAssets.map(ra => `
+        relatedEl.innerHTML = relatedAssets.map((ra: MarketplaceAsset): string => `
             <div class="related-card" onclick="event.stopPropagation(); assetDetail_open('${ra.id}')">
                 <div class="related-name">${ra.name}</div>
                 <div class="related-type">${ra.type}</div>
             </div>
         `).join('');
     }
-
-    // Show overlay
-    overlay.classList.remove('hidden');
 }
 
 /**
  * Closes the asset detail overlay.
  */
 export function assetDetail_close(): void {
-    const overlay = document.getElementById('asset-detail-overlay');
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
     if (overlay) {
         overlay.classList.add('hidden');
     }
@@ -363,53 +418,51 @@ export function assetDetail_close(): void {
 
 /**
  * Handles install from the detail overlay.
+ * Triggers install animation and updates both the detail button
+ * and the corresponding grid card.
  */
 export function assetDetail_install(): void {
     if (!currentDetailAssetId) return;
 
-    const asset = MARKETPLACE_ASSETS.find(a => a.id === currentDetailAssetId);
+    const asset: MarketplaceAsset | undefined = MARKETPLACE_ASSETS.find((a: MarketplaceAsset): boolean => a.id === currentDetailAssetId);
     if (!asset) return;
 
     if (state.installedAssets.includes(currentDetailAssetId)) {
-        globals.terminal.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
+        globals.terminal?.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
         return;
     }
 
-    const installBtn = document.getElementById('detail-install-btn');
+    const installBtn: HTMLElement | null = document.getElementById('detail-install-btn');
     if (!installBtn) return;
 
-    // Prevent double-clicks
     if (installBtn.classList.contains('installing')) return;
 
-    // Start progress animation
     installBtn.classList.add('installing');
-    const textEl = installBtn.querySelector('.btn-text');
+    const textEl: Element | null = installBtn.querySelector('.btn-text');
 
     if (textEl) textEl.textContent = 'INSTALLING...';
 
-    globals.terminal.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
-    globals.terminal.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
+    globals.terminal?.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
+    globals.terminal?.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
 
-    setTimeout(() => {
-        store.installAsset(currentDetailAssetId!);
+    setTimeout((): void => {
+        store.asset_install(currentDetailAssetId!);
 
-        // Update button state
         installBtn.classList.remove('installing');
         installBtn.classList.add('installed');
         if (textEl) textEl.textContent = 'INSTALLED';
 
-        globals.terminal.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
+        globals.terminal?.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
 
         if (asset.type === 'plugin') {
-            globals.terminal.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
+            globals.terminal?.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
         }
 
-        // Also update the card in the grid
-        const card = document.querySelector(`.market-card[data-id="${currentDetailAssetId}"]`);
+        const card: Element | null = document.querySelector(`.market-card[data-id="${currentDetailAssetId}"]`);
         if (card) {
             card.classList.add('installed');
-            const cardBtn = card.querySelector('.install-btn');
-            const cardBtnText = cardBtn?.querySelector('.btn-text');
+            const cardBtn: Element | null = card.querySelector('.install-btn');
+            const cardBtnText: Element | null | undefined = cardBtn?.querySelector('.btn-text');
             if (cardBtn) cardBtn.classList.add('installed');
             if (cardBtnText) cardBtnText.textContent = 'INSTALLED';
         }

@@ -1,36 +1,75 @@
-= ATLAS Marketplace Specification (v3.1.0)
+= ATLAS Marketplace Specification (v3.5.0)
 :toc:
 :toclevels: 3
 
 == 1. Overview
-The ATLAS Marketplace is a global asset registry providing ChRIS plugins (MERIDIAN apps), reference datasets, and pre-trained models. It serves as the primary distribution channel for extending the capabilities of an ARGUS instance.
+The ATLAS Marketplace is a global asset registry providing ChRIS plugins (MERIDIAN apps), reference datasets, pre-trained models, annotation tools, and FDA regulatory tools. It serves as the primary distribution channel for extending the capabilities of an ARGUS instance.
 
 == 2. Asset Types
 
+[cols="1,2,2"]
 |===
-| Type | Description | VFS Impact
+| Type | Description | VCS Impact
 
 | `plugin`
 | Containerized MERIDIAN/ChRIS applications.
-| Symlinked to `/home/developer/bin/` upon installation.
+| Installed to `/bin/<plugin-name>` with executable stub content.
 
 | `dataset`
 | Standalone reference cohorts for local validation.
-| Mounted to `/home/developer/projects/reference/`.
+| Installed to `/data/sets/<dataset-name>/manifest.json`.
 
 | `model`
-| Pre-trained neural network weights (e.g. ResNet, UNet).
-| Downloaded to `/home/developer/models/`.
+| Pre-trained neural network weights (e.g., ResNet, UNet).
+| Installed to `~/models/<model-name>/README.md` with model card.
+
+| `annotation`
+| Annotation tools and label schemas.
+| Installed to `/data/annotations/<tool-name>/manifest.json`.
+
+| `fda`
+| FDA regulatory compliance tools.
+| Dual install: `/bin/<tool-name>` + `/data/annotations/<tool-name>/`.
+
+| `workflow`
+| Federated learning workflow templates.
+| Installed to `~/workflows/<workflow-name>/manifest.json`.
 |===
 
 == 3. Installation Lifecycle
 
-The Marketplace is a **Public Service** (accessible without authentication) but requires an active session for VFS integration.
+The Marketplace is a **Public Service** (accessible without authentication) but requires an active session for VCS integration.
 
-1.  **Browse:** Users explore the high-density grid.
-2.  **Install:** Clicking "INSTALL" triggers a background payload download.
-3.  **VFS Mount:** The `Store` dispatches an `ASSET_INSTALLED` event. The `VirtualFileSystem` creates the necessary file handles.
-4.  **Terminal Notification:** The Intelligence Console confirms availability and provides usage hints.
+1.  **Browse:** Users explore the high-density grid. Filter by type, search by name/description/author, sort by stars/name/size.
+2.  **Install:** Clicking "INSTALL" triggers a progress animation (1.5s).
+3.  **Store Action:** The button calls `store.asset_install(id)`, which adds the asset ID to `state.installedAssets`.
+4.  **Provider Dispatch:** The `MarketplaceProvider.asset_install()` translates the asset into VCS filesystem entries at the appropriate paths (see table above). Each entry includes content generators for manifest files, executable stubs, and model cards.
+5.  **Terminal Notification:** The Intelligence Console confirms availability and provides usage hints.
 
 == 4. Architectural Integration
-The Marketplace is decoupled from the SeaGaP workflow. It operates as a modal overlay driven by the central `Store` and `EventBus`, ensuring that assets installed while in the "Process" stage are immediately visible in the IDE asset tree.
+The Marketplace is decoupled from the SeaGaP workflow. It operates as a modal overlay driven by the central `Store` and `EventBus`. The overlay slides in from the right (Slide-In Overlay animation pattern, see `docs/visual_language.adoc`).
+
+=== Key Files
+
+[cols="1,2"]
+|===
+| File | Purpose
+
+| `src/marketplace/view.ts`
+| Marketplace UI: grid rendering, filtering, sorting, search, detail overlay, install handlers.
+
+| `src/core/data/marketplace.ts`
+| `MARKETPLACE_ASSETS` registry of 400+ assets with metadata.
+
+| `src/vfs/providers/MarketplaceProvider.ts`
+| Translates assets into VCS filesystem trees with content generators.
+|===
+
+=== Detail Overlay
+Clicking an asset card opens a full detail overlay with:
+
+* LCARS frame with hue-based color coding (blue for standard, green for FDA)
+* Floating Command Column with INSTALL and CLOSE pills
+* Specifications, usage commands, dependencies, changelog, related assets
+
+See `docs/lcars.adoc` for the Floating Command Module visual pattern.
