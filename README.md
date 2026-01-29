@@ -27,13 +27,13 @@ The **SeaGaP-MP** workflow (Search, Gather, Process, Monitor, Post) informs the 
 
 ```bash
 # Install dependencies
-npm install
+make install
 
 # Build TypeScript
-npm run build
+make build
 
 # Serve the prototype
-npm run serve
+make serve
 ```
 
 Then open http://localhost:8080
@@ -101,7 +101,7 @@ The Developer persona is the current focus. Future exploration may include:
 
 ```bash
 # Run all 134 tests
-npm run test
+make test
 
 # Run specific suite
 npx vitest run src/vfs/Shell.test.ts
