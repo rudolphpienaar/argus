@@ -8,7 +8,7 @@ ARGUS is not a production UI. It is a design and interaction laboratory built to
 
 ## What It Explores
 
-The current focus is the **Developer persona** — a federated ML developer who searches for datasets, assembles cohorts, launches distributed training across Trusted Domains, and monitors results. The primary interaction surface is the **Intelligence Console**: a hybrid terminal that blends Unix-like shell commands with natural language AI queries in a single stream.
+The current focus is the **Federated ML Developer persona** — a researcher who searches for datasets, assembles cohorts, launches distributed training across Trusted Domains, and monitors results. The primary interaction surface is the **Intelligence Console**: a hybrid terminal that blends Unix-like shell commands with natural language AI queries in a single stream.
 
 The **SeaGaP-MP** workflow (Search, Gather, Process, Monitor, Post) informs the underlying narrative thread, but the interface is responsive and exploratory rather than a rigid stage-gate pipeline.
 
@@ -18,6 +18,7 @@ The **VCS** is the stateful runtime environment underlying the ARGUS Intelligenc
 
 - **Filesystem:** Supports directories, files with content, and standard CRUD operations.
 - **Shell:** A command interpreter supporting pipes, environment variables (`$HOME`, `$PATH`), and 15 builtin commands (e.g., `cd`, `ls`, `cat`, `grep`, `open`).
+- **Identity vs. Role:** The system separates user identity (Username: `user`, Home: `/home/user`) from the active persona (Role: `fedml`, `appdev`). This allows users to switch contexts (e.g., from training a model to packaging an app) without losing access to their project files.
 - **Content Providers:** Dynamic bridges that map application state (Datasets, Projects, Marketplace Assets) into the filesystem as "virtual files," allowing users to interact with rich objects using standard CLI tools.
 
 ### Features
@@ -96,12 +97,12 @@ argus/
 
 ## Personas (Planned)
 
-The Developer persona is the current focus. Future exploration may include:
+The Federated ML Developer persona is the current focus. Future exploration may include:
 
+- **App Developer** — Build and package MERIDIAN-compliant applications
 - **Annotator** — Label medical images
 - **User** — Run inference with existing models
 - **Data Provider** — Manage contributed datasets
-- **App Developer** — Build MERIDIAN-compliant applications
 - **Administrator** — Platform governance
 
 ## Technology

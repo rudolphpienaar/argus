@@ -60,26 +60,26 @@ describe('VirtualFileSystem', () => {
     let vfs: VirtualFileSystem;
 
     beforeEach(() => {
-        vfs = new VirtualFileSystem('developer');
+        vfs = new VirtualFileSystem('fedml');
     });
 
     // ─── Construction ───────────────────────────────────────────
 
     describe('constructor', () => {
         it('should bootstrap /home/<username> on creation', () => {
-            const home: FileNode | null = vfs.node_stat('/home/developer');
+            const home: FileNode | null = vfs.node_stat('/home/fedml');
             expect(home).not.toBeNull();
             expect(home!.type).toBe('folder');
         });
 
         it('should set CWD to $HOME', () => {
             const cwd: string = vfs.cwd_get();
-            expect(cwd).toBe('/home/developer');
+            expect(cwd).toBe('/home/fedml');
         });
 
         it('should set home path', () => {
             const home: string = vfs.home_get();
-            expect(home).toBe('/home/developer');
+            expect(home).toBe('/home/fedml');
         });
 
         it('should support custom username', () => {
@@ -94,7 +94,7 @@ describe('VirtualFileSystem', () => {
     describe('path_resolve', () => {
         it('should return CWD for empty input', () => {
             const resolved: string = vfs.path_resolve('');
-            expect(resolved).toBe('/home/developer');
+            expect(resolved).toBe('/home/fedml');
         });
 
         it('should resolve absolute paths as-is', () => {
@@ -104,27 +104,27 @@ describe('VirtualFileSystem', () => {
 
         it('should expand ~ to $HOME', () => {
             const resolved: string = vfs.path_resolve('~');
-            expect(resolved).toBe('/home/developer');
+            expect(resolved).toBe('/home/fedml');
         });
 
         it('should expand ~/subpath', () => {
             const resolved: string = vfs.path_resolve('~/src/project');
-            expect(resolved).toBe('/home/developer/src/project');
+            expect(resolved).toBe('/home/fedml/src/project');
         });
 
         it('should resolve relative paths against CWD', () => {
             const resolved: string = vfs.path_resolve('src/project');
-            expect(resolved).toBe('/home/developer/src/project');
+            expect(resolved).toBe('/home/fedml/src/project');
         });
 
         it('should normalize . segments', () => {
-            const resolved: string = vfs.path_resolve('/home/./developer/./src');
-            expect(resolved).toBe('/home/developer/src');
+            const resolved: string = vfs.path_resolve('/home/./fedml/./src');
+            expect(resolved).toBe('/home/fedml/src');
         });
 
         it('should normalize .. segments', () => {
-            const resolved: string = vfs.path_resolve('/home/developer/src/../data');
-            expect(resolved).toBe('/home/developer/data');
+            const resolved: string = vfs.path_resolve('/home/fedml/src/../data');
+            expect(resolved).toBe('/home/fedml/data');
         });
 
         it('should clamp .. at root', () => {
@@ -137,15 +137,15 @@ describe('VirtualFileSystem', () => {
 
     describe('cwd_set / cwd_get', () => {
         it('should change CWD to an existing folder', () => {
-            vfs.dir_create('/home/developer/src');
-            vfs.cwd_set('/home/developer/src');
-            expect(vfs.cwd_get()).toBe('/home/developer/src');
+            vfs.dir_create('/home/fedml/src');
+            vfs.cwd_set('/home/fedml/src');
+            expect(vfs.cwd_get()).toBe('/home/fedml/src');
         });
 
         it('should support tilde in cwd_set', () => {
             vfs.dir_create('~/src');
             vfs.cwd_set('~/src');
-            expect(vfs.cwd_get()).toBe('/home/developer/src');
+            expect(vfs.cwd_get()).toBe('/home/fedml/src');
         });
 
         it('should throw for non-existent path', () => {
@@ -165,8 +165,8 @@ describe('VirtualFileSystem', () => {
             vfs.cwd_set('~/src');
 
             expect(handler).toHaveBeenCalledWith({
-                oldPath: '/home/developer',
-                newPath: '/home/developer/src'
+                oldPath: '/home/fedml',
+                newPath: '/home/fedml/src'
             });
 
             events.off(Events.CWD_CHANGED, handler);
@@ -184,12 +184,12 @@ describe('VirtualFileSystem', () => {
         });
 
         it('should create intermediate directories (mkdir -p)', () => {
-            vfs.dir_create('/home/developer/src/project/lib');
-            const lib: FileNode | null = vfs.node_stat('/home/developer/src/project/lib');
+            vfs.dir_create('/home/fedml/src/project/lib');
+            const lib: FileNode | null = vfs.node_stat('/home/fedml/src/project/lib');
             expect(lib).not.toBeNull();
             expect(lib!.type).toBe('folder');
 
-            const src: FileNode | null = vfs.node_stat('/home/developer/src');
+            const src: FileNode | null = vfs.node_stat('/home/fedml/src');
             expect(src).not.toBeNull();
         });
 
@@ -201,8 +201,8 @@ describe('VirtualFileSystem', () => {
         });
 
         it('should throw if path segment is a file', () => {
-            vfs.file_create('/home/developer/block', 'data');
-            expect(() => vfs.dir_create('/home/developer/block/sub')).toThrow('Not a directory');
+            vfs.file_create('/home/fedml/block', 'data');
+            expect(() => vfs.dir_create('/home/fedml/block/sub')).toThrow('Not a directory');
         });
     });
 
@@ -273,7 +273,7 @@ describe('VirtualFileSystem', () => {
             const content: string | null = vfs.node_read('~/lazy.py');
 
             expect(content).toBe('generated content');
-            expect(resolver).toHaveBeenCalledWith('template:train', '/home/developer/lazy.py');
+            expect(resolver).toHaveBeenCalledWith('template:train', '/home/fedml/lazy.py');
         });
 
         it('should cache generated content on subsequent reads', () => {
@@ -490,13 +490,13 @@ describe('VirtualFileSystem', () => {
                 file_createHelper('main.py', 'print("hello")')
             ]);
 
-            vfs.tree_mount('/home/developer/projects/myproj', subtree);
+            vfs.tree_mount('/home/fedml/projects/myproj', subtree);
 
-            const mounted: FileNode | null = vfs.node_stat('/home/developer/projects/myproj');
+            const mounted: FileNode | null = vfs.node_stat('/home/fedml/projects/myproj');
             expect(mounted).not.toBeNull();
             expect(mounted!.type).toBe('folder');
 
-            const mainPy: FileNode | null = vfs.node_stat('/home/developer/projects/myproj/main.py');
+            const mainPy: FileNode | null = vfs.node_stat('/home/fedml/projects/myproj/main.py');
             expect(mainPy).not.toBeNull();
             expect(mainPy!.content).toBe('print("hello")');
         });
@@ -537,7 +537,7 @@ describe('VirtualFileSystem', () => {
 
             const node: FileNode | null = vfs.node_stat('~/mounted/f.txt');
             expect(node).not.toBeNull();
-            expect(node!.path).toBe('/home/developer/mounted/f.txt');
+            expect(node!.path).toBe('/home/fedml/mounted/f.txt');
         });
     });
 

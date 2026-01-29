@@ -58,8 +58,8 @@ describe('ContentRegistry', () => {
                 generate: (ctx: ContentContext): string => `Hello from ${ctx.filePath}`
             };
             registry.generator_register('hello', gen);
-            const result: string | null = registry.content_resolve('hello', '/home/developer/hello.txt');
-            expect(result).toBe('Hello from /home/developer/hello.txt');
+            const result: string | null = registry.content_resolve('hello', '/home/fedml/hello.txt');
+            expect(result).toBe('Hello from /home/fedml/hello.txt');
         });
     });
 
@@ -67,7 +67,7 @@ describe('ContentRegistry', () => {
 
     describe('vfs_connect', () => {
         it('should wire content resolver into VFS for lazy generation', () => {
-            const vfs: VirtualFileSystem = new VirtualFileSystem('developer');
+            const vfs: VirtualFileSystem = new VirtualFileSystem('fedml');
             const gen: ContentGenerator = {
                 pattern: 'greeting',
                 generate: (_ctx: ContentContext): string => 'Generated content'
@@ -76,20 +76,20 @@ describe('ContentRegistry', () => {
             registry.vfs_connect(vfs);
 
             // Create a file with a contentGenerator key
-            vfs.file_create('/home/developer/test.txt');
-            const node = vfs.node_stat('/home/developer/test.txt');
+            vfs.file_create('/home/fedml/test.txt');
+            const node = vfs.node_stat('/home/fedml/test.txt');
             if (node) {
                 node.contentGenerator = 'greeting';
                 node.content = null;
             }
 
             // node_read should trigger lazy generation
-            const content: string | null = vfs.node_read('/home/developer/test.txt');
+            const content: string | null = vfs.node_read('/home/fedml/test.txt');
             expect(content).toBe('Generated content');
         });
 
         it('should cache generated content on subsequent reads', () => {
-            const vfs: VirtualFileSystem = new VirtualFileSystem('developer');
+            const vfs: VirtualFileSystem = new VirtualFileSystem('fedml');
             let callCount: number = 0;
             const gen: ContentGenerator = {
                 pattern: 'counter',
@@ -101,15 +101,15 @@ describe('ContentRegistry', () => {
             registry.generator_register('counter', gen);
             registry.vfs_connect(vfs);
 
-            vfs.file_create('/home/developer/count.txt');
-            const node = vfs.node_stat('/home/developer/count.txt');
+            vfs.file_create('/home/fedml/count.txt');
+            const node = vfs.node_stat('/home/fedml/count.txt');
             if (node) {
                 node.contentGenerator = 'counter';
                 node.content = null;
             }
 
-            const first: string | null = vfs.node_read('/home/developer/count.txt');
-            const second: string | null = vfs.node_read('/home/developer/count.txt');
+            const first: string | null = vfs.node_read('/home/fedml/count.txt');
+            const second: string | null = vfs.node_read('/home/fedml/count.txt');
             expect(first).toBe('Call 1');
             expect(second).toBe('Call 1'); // Cached, not regenerated
             expect(callCount).toBe(1);
@@ -124,7 +124,7 @@ describe('ContentRegistry', () => {
         });
 
         it('should generate Python training script', () => {
-            const content: string | null = registry.content_resolve('train', '/home/developer/src/project/train.py');
+            const content: string | null = registry.content_resolve('train', '/home/fedml/src/project/train.py');
             expect(content).not.toBeNull();
             expect(content).toContain('import torch');
             expect(content).toContain('import meridian.federated as fl');

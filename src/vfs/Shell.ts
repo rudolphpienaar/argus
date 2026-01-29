@@ -60,22 +60,33 @@ export class Shell {
     private builtins: Map<string, BuiltinCommand>;
     private commandHistory: string[];
     private externalHandler: ExternalHandler | null = null;
+    private username: string;
 
-    constructor(vfs: VirtualFileSystem, username: string = 'developer') {
+    /**
+     * Creates a new Shell instance attached to a VFS.
+     *
+     * @param vfs - The Virtual File System instance.
+     * @param username - The current user (defaults to 'user').
+     */
+    constructor(vfs: VirtualFileSystem, username: string = 'user') {
         this.vfs = vfs;
-        this.env = new Map();
-        this.builtins = new Map();
+        this.username = username;
         this.commandHistory = [];
-
+        this.builtins = new Map<string, BuiltinCommand>();
+        this.env = new Map<string, string>();
+        
         // Initialize environment variables
-        this.env.set('HOME', `/home/${username}`);
         this.env.set('USER', username);
-        this.env.set('PWD', vfs.cwd_get());
-        this.env.set('PATH', `/bin:/home/${username}/bin`);
-        this.env.set('PERSONA', username);
-        this.env.set('STAGE', 'search');
+        this.env.set('HOME', `/home/${username}`);
+        this.env.set('PATH', `/bin:/usr/bin:/home/${username}/bin`);
+        this.env.set('SHELL', '/bin/bash');
+        this.env.set('TERM', 'xterm-256color');
+        this.env.set('PWD', `/home/${username}`);
+        this.env.set('PERSONA', 'fedml'); // Default initial persona
         this.env.set('PS1', '$USER@argus:$PWD $ ');
-
+        this.env.set('STAGE', 'search'); // Default stage
+        
+        // Register builtins
         this.builtins_register();
     }
 
@@ -178,7 +189,7 @@ export class Shell {
      */
     public prompt_render(): string {
         const ps1: string = this.env.get('PS1') || '$ ';
-        const homePath: string = this.env.get('HOME') || '/home/developer';
+        const homePath: string = this.env.get('HOME') || '/home/user';
         let pwd: string = this.vfs.cwd_get();
 
         // Cosmetic ~ substitution
@@ -446,7 +457,7 @@ export class Shell {
      * @returns Absolute path of the landing directory.
      */
     private stageLanding_resolve(stage: string): string {
-        const home: string = this.env.get('HOME') || '/home/developer';
+        const home: string = this.env.get('HOME') || '/home/user';
         switch (stage) {
             case 'search':   return home;
             case 'gather':   return `${home}/data/cohort`;

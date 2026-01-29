@@ -24,7 +24,7 @@
                     <span class="hop" id="lcars-time">12:00:00</span>
                 </div>
                 <div class="panel-2">
-                    <span id="current-persona">DEVELOPER</span>
+                    <span id="current-persona">FEDERATED ML</span>
                     <span class="hop" id="app-version">v0.0.0</span>
                 </div>
             </div>
@@ -345,10 +345,16 @@
                             </div>
                             
                             <div class="role-grid">
-                                <button onclick="role_select('developer')" class="role-card">
-                                    <div class="role-icon">DEV</div>
-                                    <h3>DEVELOPER</h3>
-                                    <p>Federated Model Training<br>Algorithm Design</p>
+                                <button onclick="role_select('fedml')" class="role-card">
+                                    <div class="role-icon">FED</div>
+                                    <h3>FEDERATED ML</h3>
+                                    <p>Model Training<br>Cohort Assembly</p>
+                                </button>
+
+                                <button onclick="role_select('appdev')" class="role-card" style="border-color: var(--tamarillo);">
+                                    <div class="role-icon" style="background-color: var(--tamarillo);">APP</div>
+                                    <h3 style="color: var(--tamarillo);">APP DEV</h3>
+                                    <p>Plugin Packaging<br>Container Build</p>
                                 </button>
                                 
                                 <button onclick="role_select('annotator')" class="role-card" style="border-color: var(--canary);">

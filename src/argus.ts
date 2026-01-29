@@ -102,11 +102,11 @@ function vcs_initialize(): void {
     contentRegistry.generators_registerAll(ALL_GENERATORS);
     contentRegistry.vfs_connect(globals.vcs);
 
-    homeDir_scaffold(globals.vcs, 'developer');
+    homeDir_scaffold(globals.vcs, 'user');
 
     MOCK_PROJECTS.forEach((project: Project): void => {
         const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
-        globals.vcs.tree_mount(`/home/developer/projects/${project.name}`, cohortRoot);
+        globals.vcs.tree_mount(`/home/user/projects/${project.name}`, cohortRoot);
     });
 }
 
@@ -117,7 +117,7 @@ function terminal_initialize(): void {
     terminal = new LCARSTerminal('intelligence-console');
     globals.terminal = terminal;
 
-    const shell: Shell = new Shell(globals.vcs, 'developer');
+    const shell: Shell = new Shell(globals.vcs, 'user');
     globals.shell = shell;
     terminal.shell_connect(shell);
     terminal.fallback_set(terminalCommand_handle);
@@ -500,13 +500,13 @@ function stageChange_handle(event: CustomEvent): void {
                 setTimeout(() => { slot.frame_open(); }, 10);
             }
         } else if (stageName === 'process') {
-            projectDir_populate(globals.vcs, 'developer');
+            projectDir_populate(globals.vcs, 'user');
             terminal.clear();
             if (terminalScreen) {
                 terminalScreen.classList.add('developer-mode');
             }
             terminal.println('○ ENVIRONMENT: BASH 5.2.15 // ARGUS CORE v1.4.5');
-            terminal.println('● PROJECT MOUNTED AT /home/developer/src/project');
+            terminal.println('● PROJECT MOUNTED AT /home/user/src/project');
             terminal.println('○ RUN "ls" TO VIEW ASSETS OR "federate train.py" TO INITIATE FEDERATION.');
             if (globals.frameSlot) {
                 globals.frameSlot.frame_open();

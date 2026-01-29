@@ -297,9 +297,9 @@ export function project_activate(projectId: string): void {
 
     // Build cohort tree and mount to VCS
     const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
-    globals.vcs.tree_unmount('/home/developer/data/cohort');
-    globals.vcs.tree_mount('/home/developer/data/cohort', cohortRoot);
-    globals.vcs.cwd_set(`/home/developer/projects/${project.name}`);
+    globals.vcs.tree_unmount('/home/user/data/cohort');
+    globals.vcs.tree_mount('/home/user/data/cohort', cohortRoot);
+    globals.vcs.cwd_set(`/home/user/projects/${project.name}`);
 
     if (globals.terminal) {
         globals.terminal.prompt_sync();

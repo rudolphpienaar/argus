@@ -18,26 +18,26 @@ describe('Shell', () => {
     let shell: Shell;
 
     beforeEach(() => {
-        vfs = new VirtualFileSystem('developer');
-        shell = new Shell(vfs, 'developer');
+        vfs = new VirtualFileSystem('fedml');
+        shell = new Shell(vfs, 'fedml');
     });
 
     // ─── Environment Variables ──────────────────────────────────
 
     describe('environment variables', () => {
         it('should initialize default env vars', () => {
-            expect(shell.env_get('HOME')).toBe('/home/developer');
-            expect(shell.env_get('USER')).toBe('developer');
-            expect(shell.env_get('PERSONA')).toBe('developer');
+            expect(shell.env_get('HOME')).toBe('/home/fedml');
+            expect(shell.env_get('USER')).toBe('fedml');
+            expect(shell.env_get('PERSONA')).toBe('fedml');
             expect(shell.env_get('STAGE')).toBe('search');
-            expect(shell.env_get('PATH')).toBe('/bin:/home/developer/bin');
+            expect(shell.env_get('PATH')).toBe('/bin:/usr/bin:/home/fedml/bin');
             expect(shell.env_get('PS1')).toBe('$USER@argus:$PWD $ ');
         });
 
         it('should return synced $PWD from VFS', () => {
-            vfs.dir_create('/home/developer/src');
-            vfs.cwd_set('/home/developer/src');
-            expect(shell.env_get('PWD')).toBe('/home/developer/src');
+            vfs.dir_create('/home/fedml/src');
+            vfs.cwd_set('/home/fedml/src');
+            expect(shell.env_get('PWD')).toBe('/home/fedml/src');
         });
 
         it('should set and get custom vars', () => {
@@ -47,8 +47,8 @@ describe('Shell', () => {
 
         it('should return all vars via env_all()', () => {
             const all: Map<string, string> = shell.env_all();
-            expect(all.get('HOME')).toBe('/home/developer');
-            expect(all.get('PWD')).toBe('/home/developer');
+            expect(all.get('HOME')).toBe('/home/fedml');
+            expect(all.get('PWD')).toBe('/home/fedml');
         });
     });
 
@@ -57,27 +57,27 @@ describe('Shell', () => {
     describe('prompt_render', () => {
         it('should render default prompt with ~ substitution', () => {
             const prompt: string = shell.prompt_render();
-            expect(prompt).toBe('developer@argus:~ $ ');
+            expect(prompt).toBe('fedml@argus:~ $ ');
         });
 
         it('should render prompt with subdirectory', () => {
-            vfs.dir_create('/home/developer/src/project');
-            vfs.cwd_set('/home/developer/src/project');
+            vfs.dir_create('/home/fedml/src/project');
+            vfs.cwd_set('/home/fedml/src/project');
             const prompt: string = shell.prompt_render();
-            expect(prompt).toBe('developer@argus:~/src/project $ ');
+            expect(prompt).toBe('fedml@argus:~/src/project $ ');
         });
 
         it('should render absolute path outside $HOME', () => {
             vfs.dir_create('/tmp');
             vfs.cwd_set('/tmp');
             const prompt: string = shell.prompt_render();
-            expect(prompt).toBe('developer@argus:/tmp $ ');
+            expect(prompt).toBe('fedml@argus:/tmp $ ');
         });
 
         it('should reflect custom $PS1', () => {
             shell.env_set('PS1', '[$USER] $ ');
             const prompt: string = shell.prompt_render();
-            expect(prompt).toBe('[developer] $ ');
+            expect(prompt).toBe('[fedml] $ ');
         });
     });
 
@@ -112,20 +112,20 @@ describe('Shell', () => {
             vfs.cwd_set('/tmp');
             const result: ShellResult = shell.command_execute('cd');
             expect(result.exitCode).toBe(0);
-            expect(vfs.cwd_get()).toBe('/home/developer');
+            expect(vfs.cwd_get()).toBe('/home/fedml');
         });
 
         it('should change to specified path', () => {
-            vfs.dir_create('/home/developer/src');
+            vfs.dir_create('/home/fedml/src');
             const result: ShellResult = shell.command_execute('cd ~/src');
             expect(result.exitCode).toBe(0);
-            expect(vfs.cwd_get()).toBe('/home/developer/src');
+            expect(vfs.cwd_get()).toBe('/home/fedml/src');
         });
 
         it('should update $PWD', () => {
-            vfs.dir_create('/home/developer/src');
+            vfs.dir_create('/home/fedml/src');
             shell.command_execute('cd ~/src');
-            expect(shell.env_get('PWD')).toBe('/home/developer/src');
+            expect(shell.env_get('PWD')).toBe('/home/fedml/src');
         });
 
         it('should return error for non-existent path', () => {
@@ -140,7 +140,7 @@ describe('Shell', () => {
     describe('pwd', () => {
         it('should print working directory', () => {
             const result: ShellResult = shell.command_execute('pwd');
-            expect(result.stdout).toBe('/home/developer');
+            expect(result.stdout).toBe('/home/fedml');
         });
     });
 
@@ -148,8 +148,8 @@ describe('Shell', () => {
 
     describe('ls', () => {
         it('should list CWD contents', () => {
-            vfs.file_create('/home/developer/test.txt');
-            vfs.dir_create('/home/developer/subdir');
+            vfs.file_create('/home/fedml/test.txt');
+            vfs.dir_create('/home/fedml/subdir');
             const result: ShellResult = shell.command_execute('ls');
             expect(result.exitCode).toBe(0);
             expect(result.stdout).toContain('test.txt');
@@ -157,8 +157,8 @@ describe('Shell', () => {
         });
 
         it('should list specified directory', () => {
-            vfs.dir_create('/home/developer/mydir');
-            vfs.file_create('/home/developer/mydir/inner.py');
+            vfs.dir_create('/home/fedml/mydir');
+            vfs.file_create('/home/fedml/mydir/inner.py');
             const result: ShellResult = shell.command_execute('ls ~/mydir');
             expect(result.stdout).toContain('inner.py');
         });
@@ -173,7 +173,7 @@ describe('Shell', () => {
 
     describe('cat', () => {
         it('should print file content', () => {
-            vfs.file_create('/home/developer/hello.txt', 'Hello World');
+            vfs.file_create('/home/fedml/hello.txt', 'Hello World');
             const result: ShellResult = shell.command_execute('cat hello.txt');
             expect(result.stdout).toBe('Hello World');
         });
@@ -201,7 +201,7 @@ describe('Shell', () => {
         it('should create a directory', () => {
             const result: ShellResult = shell.command_execute('mkdir newdir');
             expect(result.exitCode).toBe(0);
-            expect(vfs.node_stat('/home/developer/newdir')).not.toBeNull();
+            expect(vfs.node_stat('/home/fedml/newdir')).not.toBeNull();
         });
 
         it('should return error for missing operand', () => {
@@ -216,7 +216,7 @@ describe('Shell', () => {
         it('should create an empty file', () => {
             const result: ShellResult = shell.command_execute('touch newfile.txt');
             expect(result.exitCode).toBe(0);
-            expect(vfs.node_stat('/home/developer/newfile.txt')).not.toBeNull();
+            expect(vfs.node_stat('/home/fedml/newfile.txt')).not.toBeNull();
         });
 
         it('should return error for missing operand', () => {
@@ -229,26 +229,26 @@ describe('Shell', () => {
 
     describe('rm', () => {
         it('should remove a file', () => {
-            vfs.file_create('/home/developer/del.txt');
+            vfs.file_create('/home/fedml/del.txt');
             const result: ShellResult = shell.command_execute('rm del.txt');
             expect(result.exitCode).toBe(0);
-            expect(vfs.node_stat('/home/developer/del.txt')).toBeNull();
+            expect(vfs.node_stat('/home/fedml/del.txt')).toBeNull();
         });
 
         it('should fail on non-empty dir without -r', () => {
-            vfs.dir_create('/home/developer/full');
-            vfs.file_create('/home/developer/full/inner.txt');
+            vfs.dir_create('/home/fedml/full');
+            vfs.file_create('/home/fedml/full/inner.txt');
             const result: ShellResult = shell.command_execute('rm full');
             expect(result.exitCode).toBe(1);
             expect(result.stderr).toContain('not empty');
         });
 
         it('should remove non-empty dir with -r', () => {
-            vfs.dir_create('/home/developer/full');
-            vfs.file_create('/home/developer/full/inner.txt');
+            vfs.dir_create('/home/fedml/full');
+            vfs.file_create('/home/fedml/full/inner.txt');
             const result: ShellResult = shell.command_execute('rm -r full');
             expect(result.exitCode).toBe(0);
-            expect(vfs.node_stat('/home/developer/full')).toBeNull();
+            expect(vfs.node_stat('/home/fedml/full')).toBeNull();
         });
     });
 
@@ -256,10 +256,10 @@ describe('Shell', () => {
 
     describe('cp', () => {
         it('should copy a file', () => {
-            vfs.file_create('/home/developer/src.txt', 'data');
+            vfs.file_create('/home/fedml/src.txt', 'data');
             const result: ShellResult = shell.command_execute('cp src.txt dst.txt');
             expect(result.exitCode).toBe(0);
-            expect(vfs.node_read('/home/developer/dst.txt')).toBe('data');
+            expect(vfs.node_read('/home/fedml/dst.txt')).toBe('data');
         });
 
         it('should return error for missing operand', () => {
@@ -272,11 +272,11 @@ describe('Shell', () => {
 
     describe('mv', () => {
         it('should move a file', () => {
-            vfs.file_create('/home/developer/old.txt', 'data');
+            vfs.file_create('/home/fedml/old.txt', 'data');
             const result: ShellResult = shell.command_execute('mv old.txt new.txt');
             expect(result.exitCode).toBe(0);
-            expect(vfs.node_stat('/home/developer/old.txt')).toBeNull();
-            expect(vfs.node_read('/home/developer/new.txt')).toBe('data');
+            expect(vfs.node_stat('/home/fedml/old.txt')).toBeNull();
+            expect(vfs.node_read('/home/fedml/new.txt')).toBe('data');
         });
 
         it('should return error for missing operand', () => {
@@ -295,7 +295,7 @@ describe('Shell', () => {
 
         it('should expand $VARIABLE references', () => {
             const result: ShellResult = shell.command_execute('echo $USER@$HOME');
-            expect(result.stdout).toBe('developer@/home/developer');
+            expect(result.stdout).toBe('fedml@/home/fedml');
         });
 
         it('should leave unknown variables as-is', () => {
@@ -309,8 +309,8 @@ describe('Shell', () => {
     describe('env', () => {
         it('should print all environment variables', () => {
             const result: ShellResult = shell.command_execute('env');
-            expect(result.stdout).toContain('HOME=/home/developer');
-            expect(result.stdout).toContain('USER=developer');
+            expect(result.stdout).toContain('HOME=/home/fedml');
+            expect(result.stdout).toContain('USER=fedml');
             expect(result.stdout).toContain('PWD=');
         });
     });
@@ -335,7 +335,7 @@ describe('Shell', () => {
     describe('whoami', () => {
         it('should print username', () => {
             const result: ShellResult = shell.command_execute('whoami');
-            expect(result.stdout).toBe('developer');
+            expect(result.stdout).toBe('fedml');
         });
     });
 
@@ -386,24 +386,24 @@ describe('Shell', () => {
 
         it('should cd to process landing directory', () => {
             shell.stage_enter('process');
-            expect(vfs.cwd_get()).toBe('/home/developer/src/project');
+            expect(vfs.cwd_get()).toBe('/home/fedml/src/project');
         });
 
         it('should cd to gather landing directory', () => {
             shell.stage_enter('gather');
-            expect(vfs.cwd_get()).toBe('/home/developer/data/cohort');
+            expect(vfs.cwd_get()).toBe('/home/fedml/data/cohort');
         });
 
         it('should cd to post landing directory', () => {
             shell.stage_enter('post');
-            expect(vfs.cwd_get()).toBe('/home/developer/results');
+            expect(vfs.cwd_get()).toBe('/home/fedml/results');
         });
 
         it('should cd to $HOME for search stage', () => {
             vfs.dir_create('/tmp');
             vfs.cwd_set('/tmp');
             shell.stage_enter('search');
-            expect(vfs.cwd_get()).toBe('/home/developer');
+            expect(vfs.cwd_get()).toBe('/home/fedml');
         });
     });
 

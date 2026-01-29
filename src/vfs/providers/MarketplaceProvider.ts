@@ -36,7 +36,7 @@ interface AssetInput {
  * @param asset - The marketplace asset to install.
  * @param username - The persona username (default: 'developer').
  */
-export function asset_install(vfs: VirtualFileSystem, asset: AssetInput, username: string = 'developer'): void {
+export function asset_install(vfs: VirtualFileSystem, asset: AssetInput, username: string = 'user'): void {
     const home: string = `/home/${username}`;
 
     switch (asset.type) {

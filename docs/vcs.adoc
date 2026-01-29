@@ -27,10 +27,10 @@ The VCS replaces the current `VirtualFileSystem` class (`src/core/logic/vfs.ts`)
 | Users cannot read, delete, copy, or move files.
 
 | Stage transitions don't call `cd`
-| Process stage claims `~/src/project` but CWD remains `/home/developer`.
+| Process stage claims `~/src/project` but CWD remains `/home/user`.
 
 | Marketplace installs create name-only nodes
-| `vfs.touch('/home/developer/bin/x')` creates an entry with no content or metadata.
+| `vfs.touch('/home/user/bin/x')` creates an entry with no content or metadata.
 
 | Filesystem rebuilt from scratch each Gather
 | No persistence across the session. No accumulation of artifacts.
@@ -89,7 +89,7 @@ The VCS resolves all of these by providing a complete, stateful mini-computer th
 1. **User types `cat train.py`** in the terminal.
 2. **Terminal** sends the raw input string to the **Shell**.
 3. **Shell** parses the command (`cat`) and argument (`train.py`), resolves the path relative to `$PWD`.
-4. **Shell** calls `vfs.read('/home/developer/src/project/train.py')`.
+4. **Shell** calls `vfs.read('/home/user/src/project/train.py')`.
 5. **VirtualFileSystem** looks up the node. If `content` is `null`, it calls the **ContentRegistry** to generate content on demand.
 6. **ContentRegistry** finds the registered template for `train.py`, invokes it with the current project context, and returns the content string.
 7. **VirtualFileSystem** caches the content on the node and returns it.
@@ -103,7 +103,7 @@ The VCS resolves all of these by providing a complete, stateful mini-computer th
 ----
 /
 ├── home/
-│   └── <username>/          # $HOME — one per authenticated user
+│   └── <username>/          # $HOME — one per authenticated user (default: 'user')
 │       ├── data/
 │       │   ├── cohort/      # Current gathered datasets (populated by DatasetProvider)
 │       │   └── cache/       # Intermediate processing artifacts
@@ -358,11 +358,11 @@ interface ShellResult {
 | Variable | Default | Description
 
 | `$HOME`
-| `/home/developer`
+| `/home/user`
 | User's home directory. Set at login.
 
 | `$USER`
-| `developer`
+| `user`
 | Current username. Set at login.
 
 | `$PWD`
@@ -374,8 +374,8 @@ interface ShellResult {
 | Executable search path. Used by Shell to resolve commands.
 
 | `$PERSONA`
-| `developer`
-| Current persona. Set at role selection.
+| `fedml`
+| Current persona context.
 
 | `$STAGE`
 | `search`
@@ -468,8 +468,8 @@ The Shell owns prompt generation. The prompt is computed by evaluating the `$PS1
 [source,typescript]
 ----
 // $PS1 = '$USER@argus:$PWD $ '
-// After cd /home/developer/src/project:
-// Rendered: 'developer@argus:~/src/project $ '
+// After cd /home/user/src/project:
+// Rendered: 'user@argus:~/src/project $ '
 ----
 
 The `~` substitution is cosmetic: if `$PWD` starts with `$HOME`, the Shell replaces that prefix with `~` in the rendered prompt.

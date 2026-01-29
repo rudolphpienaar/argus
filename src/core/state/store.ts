@@ -17,7 +17,7 @@ import type { LCARSEngine } from '../../lcarslm/engine.js';
 import type { Shell } from '../../vfs/Shell.js';
 import type { FrameSlot } from '../../ui/components/FrameSlot.js';
 
-type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
+type Persona = 'fedml' | 'appdev' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
 interface ExtendedState extends AppState {
     currentPersona: Persona;
@@ -27,7 +27,7 @@ interface ExtendedState extends AppState {
 
 /** Initial application state with all defaults zeroed. */
 const initialState: ExtendedState = {
-    currentPersona: 'developer',
+    currentPersona: 'fedml',
     currentStage: 'login',
     selectedDatasets: [],
     activeProject: null,

@@ -39,7 +39,7 @@ export class VirtualFileSystem {
     private homePath: string;
     private contentResolver: ContentResolver | null = null;
 
-    constructor(username: string = 'developer') {
+    constructor(username: string = 'user') {
         this.homePath = `/home/${username}`;
         this.cwd = this.homePath;
         this.root = node_create('', 'folder', '/');

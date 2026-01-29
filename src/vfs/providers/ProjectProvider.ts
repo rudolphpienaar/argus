@@ -21,7 +21,7 @@ import type { FileNode } from '../types.js';
  * @param vfs - The VirtualFileSystem instance.
  * @param username - The persona username (default: 'developer').
  */
-export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'developer'): void {
+export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'user'): void {
     const home: string = `/home/${username}`;
 
     // Well-known directories
@@ -87,7 +87,7 @@ export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'dev
  * @param vfs - The VirtualFileSystem instance.
  * @param username - The persona username (default: 'developer').
  */
-export function projectDir_populate(vfs: VirtualFileSystem, username: string = 'developer'): void {
+export function projectDir_populate(vfs: VirtualFileSystem, username: string = 'user'): void {
     const projectPath: string = `/home/${username}/src/project`;
 
     // Ensure project directory exists

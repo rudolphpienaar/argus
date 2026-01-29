@@ -56,11 +56,11 @@ For Users running inference, the Post stage is typically simpler, involving expo
 
 ARGUS serves multiple distinct user personas, each with different goals, expertise levels, and interaction patterns. While all personas navigate the SeaGaP-MP workflow, the specific content and complexity at each stage varies significantly.
 
-=== Developer
+=== Federated ML Developer
 
-The Developer persona represents researchers and engineers building new machine learning models using ATLAS resources. Developers possess technical sophistication and expect powerful tools, including integrated development environments comparable to VSCode or JupyterLab. Their workflow emphasizes iteration and experimentation, with frequent cycles through the SeaGaP-MP stages as they refine their approaches.
+The Federated ML Developer persona represents researchers and engineers building new machine learning models using ATLAS resources. They possess technical sophistication and expect powerful tools, including integrated development environments comparable to VSCode or JupyterLab. Their workflow emphasizes iteration and experimentation, with frequent cycles through the SeaGaP-MP stages as they refine their approaches.
 
-The defining characteristic of the Developer experience in ATLAS is the platform's ability to transform standard training code into federated learning workflows automatically. Developers write code as if working with local data, and ATLAS handles distribution across Trusted Domains, aggregation of gradients, and production of final models. This capability represents the platform's core value proposition for this persona.
+The defining characteristic of the Federated ML Developer experience in ATLAS is the platform's ability to transform standard training code into federated learning workflows automatically. They write code as if working with local data, and ATLAS handles distribution across Trusted Domains, aggregation of gradients, and production of final models. This capability represents the platform's core value proposition for this persona.
 
 === Annotator
 

@@ -27,8 +27,8 @@ export function filesystem_build(): void {
 
     fileTree_render(cohortRoot);
 
-    globals.vcs.tree_unmount('/home/developer/data/cohort');
-    globals.vcs.tree_mount('/home/developer/data/cohort', cohortRoot);
+    globals.vcs.tree_unmount('/home/fedml/data/cohort');
+    globals.vcs.tree_mount('/home/fedml/data/cohort', cohortRoot);
 }
 
 // ============================================================================

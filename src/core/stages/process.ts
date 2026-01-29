@@ -227,6 +227,85 @@ function federationNodes_render(nodes: TrustedDomainNode[], spokesContainer: HTM
         nodeDiv.innerHTML = `<div class="fed-node-icon" id="node-icon-${i}">${node.name.split('-')[0]}</div>`;
         spokesContainer.appendChild(nodeDiv);
     });
+
+    // Initialize the SVG network layer after the container transition finishes (300ms + buffer)
+    setTimeout(() => federationNetwork_init(nodes, spokesContainer), 500);
+}
+
+/**
+ * Initializes the SVG network layer connecting the hub to all nodes.
+ * Creates an invisible line for each connection, ready to be animated.
+ *
+ * @param nodes - The trusted domain nodes.
+ * @param container - The container element (fed-spokes).
+ */
+function federationNetwork_init(nodes: TrustedDomainNode[], container: HTMLElement): void {
+    // Clean up any existing SVG
+    const existingSvg = container.querySelector('svg');
+    if (existingSvg) existingSvg.remove();
+
+    // Find the overlay to scope our search for the factory icon
+    const overlay = container.closest('.federation-overlay');
+    if (!overlay) return;
+
+    // Find the hub (factory icon) center within this specific overlay
+    const hubIcon = overlay.querySelector('.factory-icon');
+    if (!hubIcon) {
+        console.warn('ARGUS: Factory icon not found in federation overlay.');
+        return;
+    }
+
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNamespace, "svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.style.position = "absolute";
+    svg.style.top = "0";
+    svg.style.left = "0";
+    svg.style.pointerEvents = "none";
+    svg.style.zIndex = "0"; // Behind nodes
+
+    // We need coordinates relative to the container
+    const getCenter = (el: Element): { x: number, y: number } => {
+        const rect = el.getBoundingClientRect();
+        const contRect = container.getBoundingClientRect();
+        return {
+            x: rect.left + rect.width / 2 - contRect.left,
+            y: rect.top + rect.height / 2 - contRect.top
+        };
+    };
+
+    const hubCenter = getCenter(hubIcon);
+
+    nodes.forEach((_node, i) => {
+        const nodeIcon = document.getElementById(`node-icon-${i}`);
+        if (!nodeIcon) return;
+
+        const nodeCenter = getCenter(nodeIcon);
+        const line = document.createElementNS(svgNamespace, "line");
+
+        line.setAttribute("x1", hubCenter.x.toString());
+        line.setAttribute("y1", hubCenter.y.toString());
+        line.setAttribute("x2", nodeCenter.x.toString());
+        line.setAttribute("y2", nodeCenter.y.toString());
+        line.setAttribute("stroke", "var(--orange)"); // Use LCARS orange
+        line.setAttribute("stroke-width", "2");
+        line.setAttribute("id", `fed-line-${i}`);
+
+        // Prepare for animation: length of the line
+        const length = Math.sqrt(
+            Math.pow(nodeCenter.x - hubCenter.x, 2) +
+            Math.pow(nodeCenter.y - hubCenter.y, 2)
+        );
+
+        line.style.strokeDasharray = `${length}`;
+        line.style.strokeDashoffset = `${length}`; // Hidden initially
+        line.style.transition = "stroke-dashoffset 1s ease-out";
+
+        svg.appendChild(line);
+    });
+
+    container.prepend(svg);
 }
 
 /**
@@ -275,7 +354,7 @@ function federationBuild_run(
  * @param factoryIcon - The factory icon element.
  * @param nodes - The trusted domain nodes.
  * @param statusText - The status text element.
- * @param progressBar - The progress bar element.
+ * @param _progressBar - The progress bar element (unused in this phase).
  */
 function federationDistribution_run(
     t: LCARSTerminal | null,
@@ -290,13 +369,22 @@ function federationDistribution_run(
         if (t) t.println('\u25CF INITIATING SECURE DISTRIBUTION WAVE...');
 
         nodes.forEach((node: TrustedDomainNode, i: number): void => {
+            // Animate Line (Distribution)
+            setTimeout((): void => {
+                const line = document.getElementById(`fed-line-${i}`);
+                if (line) {
+                    line.style.strokeDashoffset = '0'; // Draw to end
+                }
+            }, i * 300); // Stagger line starts slightly
+
+            // Animate Node (Receipt) - triggered after line finishes roughly
             setTimeout((): void => {
                 const nodeIcon: HTMLElement | null = document.getElementById(`node-icon-${i}`);
                 if (nodeIcon) {
                     nodeIcon.classList.add('received');
                     if (t) t.println(`\u25CB [${node.name}] >> PAYLOAD RECEIVED. VERIFIED.`);
                 }
-            }, 1000 + (i * 600));
+            }, 1000 + (i * 300));
         });
     }, 6000);
 }

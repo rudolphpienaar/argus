@@ -116,7 +116,7 @@ export class ContentRegistry {
     private context_build(filePath: string): ContentContext {
         return {
             filePath,
-            persona: state.currentPersona || 'developer',
+            persona: state.currentPersona || 'fedml',
             selectedDatasets: state.selectedDatasets || [],
             activeProject: state.activeProject || null,
             installedAssets: state.installedAssets || []

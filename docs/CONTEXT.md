@@ -37,14 +37,15 @@ All user interactions follow the **SeaGaP-MP** workflow:
 
 | Persona | Primary Goal | Notes |
 |---------|--------------|-------|
-| **Developer** | Train ML models | **Primary Focus of current prototype** |
+| **Federated ML Developer** | Train ML models | **Primary Focus of current prototype** |
+| **App Developer** | Build MERIDIAN apps | Packaging and deployment workflow |
 | **Annotator** | Label images | Process stage features annotation UI |
 | **User** | Run inference | Streamlined inference-only flow |
 | **Data Provider** | Manage data | Visibility into usage and node health |
 
 ## Current Prototype State
 
-### Implemented (Developer Vertical)
+### Implemented (Federated ML Developer Vertical)
 
 - **Marketplace**: High-density registry of 400+ unique, technically nuanced medical AI assets.
 - **VCS**: Full Virtual Computer System — in-memory POSIX-like filesystem with content-aware files, Shell interpreter (15 builtins, env vars, `$PS1` prompt), ContentRegistry with 14 lazy-evaluated template generators, and 3 Providers (Dataset, Project, Marketplace).

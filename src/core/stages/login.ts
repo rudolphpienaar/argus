@@ -10,7 +10,7 @@ import { store } from '../state/store.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 
-type Persona = 'developer' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
+type Persona = 'fedml' | 'appdev' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
 // ============================================================================
 // Authentication
