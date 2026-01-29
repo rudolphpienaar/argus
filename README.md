@@ -12,11 +12,18 @@ The current focus is the **Developer persona** — a federated ML developer who 
 
 The **SeaGaP-MP** workflow (Search, Gather, Process, Monitor, Post) informs the underlying narrative thread, but the interface is responsive and exploratory rather than a rigid stage-gate pipeline.
 
+## The Virtual Computer System (VCS)
+
+The **VCS** is the stateful runtime environment underlying the ARGUS Intelligence Terminal. Unlike a static UI mock-up, the VCS provides a living, in-memory POSIX-like filesystem that maintains state across interactions.
+
+- **Filesystem:** Supports directories, files with content, and standard CRUD operations.
+- **Shell:** A command interpreter supporting pipes, environment variables (`$HOME`, `$PATH`), and 15 builtin commands (e.g., `cd`, `ls`, `cat`, `grep`, `open`).
+- **Content Providers:** Dynamic bridges that map application state (Datasets, Projects, Marketplace Assets) into the filesystem as "virtual files," allowing users to interact with rich objects using standard CLI tools.
+
 ### Features
 
 - LCARS-themed UI (Star Trek inspired interface)
 - AI-enhanced Intelligence Console (OpenAI/Gemini) with 15 Unix-like builtins
-- Virtual Computer System (VCS) — in-memory POSIX-like filesystem, Shell, content-aware providers
 - Marketplace with 400+ medical AI assets (plugins, datasets, models, annotations)
 - Simulated federated training across 5 Trusted Domains
 - Real-time training progress with loss charts
@@ -55,17 +62,25 @@ argus/
 │   └── visual_language.adoc    # Animation patterns and visual design
 │
 ├── src/
-│   ├── lcars-framework/        # Reusable Library (Terminal, Telemetry, Workflow)
+│   ├── lcars-framework/        # Reusable Library
+│   │   ├── telemetry/          # Telemetry generators & renderers
+│   │   └── ui/                 # Shared UI components (Terminal, WorkflowTracker)
 │   ├── core/
 │   │   ├── data/               # Mock registries (datasets, projects, marketplace, nodes)
 │   │   ├── logic/              # Navigation, Costs, Telemetry
 │   │   ├── models/             # TypeScript interfaces (AppState, Dataset, Project, etc.)
 │   │   ├── stages/             # SeaGaP stage implementations
 │   │   └── state/              # Store (centralized state) and EventBus (Pub/Sub)
+│   ├── generated/              # Auto-generated version info
 │   ├── lcarslm/                # AI Core (OpenAI, Gemini clients)
 │   ├── marketplace/            # Marketplace view and install logic
+│   ├── search/                 # Search Engine
+│   │   ├── providers/          # Search providers (Nano, Mock)
+│   │   └── engine.ts           # Search orchestration
 │   ├── telemetry/              # App-specific telemetry setup
-│   ├── ui/                     # UI wrappers (Terminal, FrameSlot, SlidePanel, LCARSFrame)
+│   ├── ui/                     # Application UI
+│   │   ├── components/         # LCARS Frames, Panels, Slots
+│   │   └── gutters.ts          # Layout logic
 │   ├── vfs/                    # Virtual Computer System
 │   │   ├── VirtualFileSystem.ts    # In-memory POSIX-like filesystem
 │   │   ├── Shell.ts                # Command interpreter (15 builtins, env vars, prompt)
