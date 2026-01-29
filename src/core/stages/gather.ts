@@ -10,17 +10,20 @@ import { state, globals, store } from '../state/store.js';
 import { events, Events } from '../state/events.js';
 import { costEstimate_calculate } from '../logic/costs.js';
 import { filesystem_create } from '../logic/filesystem.js';
+import { legacyNode_normalize } from '../../vfs/VirtualFileSystem.js';
 import type { FileNode } from '../models/types.js';
+import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 
 export function filesystem_build(): void {
     // ... existing logic ...
-    const root: FileNode = filesystem_create(state.selectedDatasets);
+    const legacyRoot: FileNode = filesystem_create(state.selectedDatasets);
     // state.virtualFilesystem = root; // Replaced with action if needed, but UI uses root directly here
-    fileTree_render(root);
+    fileTree_render(legacyRoot);
 
     // Mount to global VFS
-    const projectName = state.activeProject ? state.activeProject.name : 'current_cohort';
-    globals.vfs.mountProject(projectName, root);
+    const projectName: string = state.activeProject ? state.activeProject.name : 'current_cohort';
+    const root: VcsFileNode = legacyNode_normalize(legacyRoot);
+    globals.vfs.tree_mount(`/home/developer/projects/${projectName}`, root);
     
     // We only auto-cd if we are in the gather/process stage context, handled by navigation mostly.
 }

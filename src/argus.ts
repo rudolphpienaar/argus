@@ -21,6 +21,8 @@ import type {
 import { state, globals, store } from './core/state/store.js';
 import { costEstimate_calculate } from './core/logic/costs.js';
 import { filesystem_create } from './core/logic/filesystem.js';
+import { legacyNode_normalize } from './vfs/VirtualFileSystem.js';
+import type { FileNode as VcsFileNode } from './vfs/types.js';
 import { DATASETS } from './core/data/datasets.js';
 import { MOCK_PROJECTS } from './core/data/projects.js';
 import { MOCK_NODES } from './core/data/nodes.js';
@@ -455,8 +457,9 @@ function app_initialize(): void {
 
     // Initialize VFS with Mock Projects
     MOCK_PROJECTS.forEach(project => {
-        const root = filesystem_create(project.datasets);
-        globals.vfs.mountProject(project.name, root);
+        const legacyRoot = filesystem_create(project.datasets);
+        const root: VcsFileNode = legacyNode_normalize(legacyRoot);
+        globals.vfs.tree_mount(`/home/developer/projects/${project.name}`, root);
     });
 
     // Initial render: Force Project View (root workspace)

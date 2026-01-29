@@ -11,8 +11,10 @@ import { DATASETS } from '../data/datasets.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import { filesystem_create } from '../logic/filesystem.js';
+import { legacyNode_normalize } from '../../vfs/VirtualFileSystem.js';
 import { populate_ide } from './process.js';
 import type { Dataset } from '../models/types.js';
+import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import type { QueryResponse } from '../../lcarslm/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
 
@@ -239,9 +241,10 @@ export function project_activate(projectId: string): void {
     store.loadProject(project);
     
     // Initialize VFS
-    const root = filesystem_create(project.datasets);
-    globals.vfs.mountProject(project.name, root);
-    globals.vfs.cd(`/home/developer/projects/${project.name}`);
+    const legacyRoot = filesystem_create(project.datasets);
+    const root: VcsFileNode = legacyNode_normalize(legacyRoot);
+    globals.vfs.tree_mount(`/home/developer/projects/${project.name}`, root);
+    globals.vfs.cwd_set(`/home/developer/projects/${project.name}`);
 
     if (globals.terminal) {
         globals.terminal.updatePrompt();

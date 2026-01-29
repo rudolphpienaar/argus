@@ -772,27 +772,31 @@ src/
 
 This section is a living checklist. Update it with each implementation iteration.
 
-=== Phase 1: Core VFS (Not Started)
+=== Phase 1: Core VFS (Complete)
 
 [cols="1,1,2"]
 |===
 | Item | Status | Notes
 
 | `src/vfs/types.ts`
-| [ ] Pending
-| FileNode with content, ShellResult, ContentContext interfaces.
+| [x] Done
+| FileNode with content, ShellResult, ContentContext, VfsChangeEvent, CwdChangeEvent.
 
 | `src/vfs/VirtualFileSystem.ts`
-| [ ] Pending
-| Full rewrite. Tree, content, CWD, path resolution, events.
+| [x] Done
+| Full rewrite. Tree, content, CWD, path resolution (~, .., relative), lazy content generation, events via EventBus. Includes `legacyNode_normalize()` bridge for Phase 4 migration.
+
+| VCS events in EventBus
+| [x] Done
+| Added `VFS_CHANGED` and `CWD_CHANGED` to `src/core/state/events.ts`.
 
 | Unit tests for VFS
-| [ ] Pending
-| `node_read`, `node_write`, `node_remove`, `cwd_set`, `path_resolve`.
+| [x] Done
+| 64 tests covering path resolution, CWD, dir/file CRUD, node read/write/copy/move/remove, mount/unmount, lazy content generation, invalidation, and event emission.
 
 | Retire `src/core/logic/vfs.ts`
-| [ ] Pending
-| Only after all consumers migrated.
+| [x] Done
+| Old VFS class deleted. All consumers migrated to new API: `store.ts`, `Terminal.ts`, `search.ts`, `gather.ts`, `process.ts`, `argus.ts`. Legacy FileNode trees bridge via `legacyNode_normalize()`.
 |===
 
 === Phase 2: Shell (Not Started)
@@ -892,4 +896,8 @@ This section is a living checklist. Update it with each implementation iteration
 | 2026-01-28
 | 0.1.0
 | Initial specification. Defines architecture, filesystem layout, APIs, providers, migration path, and implementation phases.
+
+| 2026-01-28
+| 0.2.0
+| Phase 1 complete: `types.ts`, `VirtualFileSystem.ts`, VCS events in EventBus, 64 unit tests, old VFS retired. All consumers migrated. Legacy bridge `legacyNode_normalize()` added for filesystem.ts compatibility.
 |===

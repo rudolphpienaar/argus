@@ -38,34 +38,34 @@ export class LCARSTerminal extends BaseTerminal {
         this.registerCommand({
             name: 'pwd',
             description: 'Print working directory',
-            execute: () => this.println(globals.vfs.getCwd())
+            execute: () => this.println(globals.vfs.cwd_get())
         });
 
         this.registerCommand({
             name: 'ls',
             description: 'List directory contents',
-            execute: (args) => this.cmd_ls(args)
+            execute: (args: string[]) => this.cmd_ls(args)
         });
 
         this.registerCommand({
             name: 'cd',
             description: 'Change directory',
-            execute: (args) => this.cmd_cd(args)
+            execute: (args: string[]) => this.cmd_cd(args)
         });
 
         this.registerCommand({
             name: 'mkdir',
             description: 'Create directory',
-            execute: (args) => {
-                try { globals.vfs.mkdir(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
+            execute: (args: string[]) => {
+                try { globals.vfs.dir_create(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
             }
         });
 
         this.registerCommand({
             name: 'touch',
             description: 'Create empty file',
-            execute: (args) => {
-                try { globals.vfs.touch(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
+            execute: (args: string[]) => {
+                try { globals.vfs.file_create(args[0]); } catch(e: any) { this.println(`<span class="error">${e.message}</span>`); }
             }
         });
 
@@ -118,21 +118,22 @@ export class LCARSTerminal extends BaseTerminal {
     }
 
     private setupVfsIntegration(): void {
-        this.onTabComplete = (value: string) => {
-            const parts = value.split(/\s+/);
-            const lastPart = parts[parts.length - 1];
+        this.onTabComplete = (value: string): string | string[] | null => {
+            const parts: string[] = value.split(/\s+/);
+            const lastPart: string = parts[parts.length - 1];
             if (!lastPart && parts.length > 1) return null;
 
-            const targetNode = globals.vfs.getCwdNode();
+            const cwdPath: string = globals.vfs.cwd_get();
+            const targetNode = globals.vfs.node_stat(cwdPath);
             if (!targetNode || !targetNode.children) return null;
 
-            const matches = targetNode.children.filter(c => 
+            const matches = targetNode.children.filter(c =>
                 c.name.toLowerCase().startsWith(lastPart.toLowerCase())
             );
 
             if (matches.length === 1) {
                 const match = matches[0];
-                const suffix = match.type === 'folder' ? '/' : '';
+                const suffix: string = match.type === 'folder' ? '/' : '';
                 parts[parts.length - 1] = match.name + suffix;
                 return parts.join(' ');
             } else if (matches.length > 1) {
@@ -143,17 +144,18 @@ export class LCARSTerminal extends BaseTerminal {
     }
 
     private cmd_ls(args: string[]): void {
-        const targetNode = globals.vfs.getCwdNode();
+        const cwdPath: string = globals.vfs.cwd_get();
+        const targetNode = globals.vfs.node_stat(cwdPath);
         if (!targetNode || !targetNode.children) return;
 
         targetNode.children.forEach(child => {
-            let colorClass = 'file';
+            let colorClass: string = 'file';
             if (child.type === 'folder') colorClass = 'dir';
             else if (child.name.endsWith('.py')) colorClass = 'exec';
-            
-            const size = child.size || '4 KB';
-            const name = child.type === 'folder' ? `${child.name}/` : child.name;
-            
+
+            const size: string = child.size || '4 KB';
+            const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
+
             this.println(`<span class="${colorClass}">${name.padEnd(20)}</span> <span class="dim">${size}</span>`);
         });
     }
@@ -161,7 +163,7 @@ export class LCARSTerminal extends BaseTerminal {
     private cmd_cd(args: string[]): void {
         if (args.length === 0) return;
         try {
-            globals.vfs.cd(args[0]);
+            globals.vfs.cwd_set(args[0]);
             this.updatePrompt();
         } catch (e: any) {
             this.println(`<span class="error">${e.message}</span>`);
@@ -191,9 +193,10 @@ export class LCARSTerminal extends BaseTerminal {
     }
 
     public updatePrompt(): void {
-        let displayPath = globals.vfs.getCwd();
-        if (displayPath.startsWith('/home/developer')) {
-            displayPath = displayPath.replace('/home/developer', '~');
+        let displayPath: string = globals.vfs.cwd_get();
+        const homePath: string = globals.vfs.home_get();
+        if (displayPath.startsWith(homePath)) {
+            displayPath = displayPath.replace(homePath, '~');
         }
         this.setPrompt(`dev@argus:${displayPath} $`);
     }

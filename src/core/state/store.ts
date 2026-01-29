@@ -8,7 +8,7 @@
  */
 
 import type { AppState, Project, Dataset, TrustedDomainNode, TrainingJob } from '../models/types.js';
-import { VirtualFileSystem } from '../logic/vfs.js';
+import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { events, Events } from './events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../data/marketplace.js';
 
@@ -76,7 +76,8 @@ class Store {
             
             // Re-mount binaries to VFS if it's a plugin
             if (asset && asset.type === 'plugin') {
-                this.globals.vfs.touch(`/home/developer/bin/${asset.name}`);
+                this.globals.vfs.dir_create('/home/developer/bin');
+                this.globals.vfs.file_create(`/home/developer/bin/${asset.name}`);
             }
 
             events.emit(Events.STATE_CHANGED, this._state);

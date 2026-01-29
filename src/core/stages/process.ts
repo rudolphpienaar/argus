@@ -79,7 +79,7 @@ export function terminal_initializeDraggable(): void {
 export function populate_ide(): void {
     // 1. Render File Tree from VFS
     const processTree = document.getElementById('process-file-tree');
-    const cwdNode = globals.vfs.getCwdNode(); 
+    const cwdNode = globals.vfs.node_stat(globals.vfs.cwd_get());
     
     if (processTree && cwdNode) {
         const buildHtml = (n: any): string => {
