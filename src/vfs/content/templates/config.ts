@@ -67,8 +67,8 @@ data:
   modality: "${modality}"
 
 output:
-  model_path: "/home/${context.persona}/results/model.pt"
-  metrics_path: "/home/${context.persona}/results/metrics.json"
+  model_path: "/home/user/results/model.pt"
+  metrics_path: "/home/user/results/metrics.json"
   checkpoint_interval: 10
 `;
 }

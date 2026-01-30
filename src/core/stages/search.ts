@@ -167,16 +167,22 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
     // SCENARIO 1: Root View (No Project, No Search) -> Show Projects
     if (!state.activeProject && !isSearchActive) {
         container.innerHTML = `
-            <h2>Available Projects</h2>
+            <div class="lcars-header-block" style="border-color: var(--honey); margin-bottom: 1.5rem;">
+                <h2 style="margin: 0; color: var(--honey);">PROJECT LIBRARY</h2>
+                <div class="lcars-subtitle" style="color: var(--orange);">SELECT ACTIVE WORKSPACE</div>
+            </div>
             <div class="dataset-grid">
                 ${MOCK_PROJECTS.map((p: Project): string => `
-                    <div class="dataset-card project-card" onclick="project_activate('${p.id}')" style="border-color: var(--honey);">
-                        <div class="thumbnail" style="background: var(--honey); display: flex; align-items: center; justify-content: center; color: black; font-weight: bold; font-family: 'Antonio'; font-size: 2rem;">DIR</div>
-                        <h4>${p.name}</h4>
-                        <div class="meta">
-                            <span>PROJECT FOLDER</span>
-                            <span>${p.datasets.length} datasets</span>
-                            <span>Modified: ${p.lastModified.toLocaleDateString()}</span>
+                    <div class="project-chip" onclick="project_activate('${p.id}')">
+                        <div class="chip-header"></div>
+                        <div class="chip-body">
+                            <div class="chip-title">${p.name.toUpperCase()}</div>
+                            <div class="chip-meta">
+                                <span>ID: ${p.id.split('-').pop()}</span>
+                                <span>DATASETS: ${p.datasets.length}</span>
+                                <span>MODIFIED: ${p.lastModified.toLocaleDateString()}</span>
+                            </div>
+                            <div class="chip-bar"></div>
                         </div>
                     </div>
                 `).join('')}

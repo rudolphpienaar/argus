@@ -44,11 +44,17 @@ export function populate_ide(): void {
         const nodeHtml_build = (n: VfsFileNode): string => {
             const typeClass: string = n.type;
             if (n.children && n.children.length > 0) {
-                return `<li class="${typeClass}">${n.name}<ul>${n.children.map(nodeHtml_build).join('')}</ul></li>`;
+                // Folder with toggle capability
+                return `
+                    <li class="${typeClass} open">
+                        <span onclick="this.parentElement.classList.toggle('open')">${n.name}</span>
+                        <ul>${n.children.map(nodeHtml_build).join('')}</ul>
+                    </li>`;
             }
+            // File
             return `<li class="${typeClass}" onclick="ide_openFile('${n.name}', '${n.type}')">${n.name}</li>`;
         };
-        processTree.innerHTML = `<ul>${nodeHtml_build(cwdNode)}</ul>`;
+        processTree.innerHTML = `<ul class="interactive-tree">${nodeHtml_build(cwdNode)}</ul>`;
     } else if (processTree) {
         processTree.innerHTML = '<span class="dim">No filesystem mounted.</span>';
     }
@@ -91,8 +97,7 @@ export function ide_openFile(filename: string, type: string): void {
 
 /**
  * Applies basic syntax highlighting to plain-text file content.
- * Uses semantic span classes matching the existing LCARS CSS
- * (.comment, .keyword, .string, .function, .number).
+ * Uses a token-masking strategy to prevent HTML tag collisions.
  *
  * @param content - Raw file content string.
  * @param filename - Filename used to determine language.
@@ -105,19 +110,64 @@ function syntax_highlight(content: string, filename: string): string {
         .replace(/>/g, '&gt;');
 
     const ext: string = filename.split('.').pop()?.toLowerCase() || '';
+    const tokens: Map<string, string> = new Map();
+    let tokenIndex = 0;
+
+    const mask = (str: string): string => {
+        const key = `__TOKEN_${tokenIndex++}__`;
+        tokens.set(key, str);
+        return key;
+    };
 
     if (ext === 'py') {
-        escaped = escaped.replace(/(#[^\n]*)/g, '<span class="comment">$1</span>');
-        escaped = escaped.replace(/\b(import|from|as|def|class|return|if|elif|else|for|while|in|not|and|or|True|False|None|with|try|except|raise|yield|lambda|pass|break|continue)\b/g,
-            '<span class="keyword">$1</span>');
-        escaped = escaped.replace(/(&quot;[^&]*?&quot;|"[^"]*?")/g, '<span class="string">$1</span>');
+        // 1. Mask Strings (double and single quoted)
+        escaped = escaped.replace(/(&quot;[^&]*?&quot;|"[^"]*?"|'[^']*?')/g, (match) => {
+            return mask(`<span class="string">${match}</span>`);
+        });
+
+        // 2. Mask Comments
+        escaped = escaped.replace(/(#[^\n]*)/g, (match) => {
+            return mask(`<span class="comment">${match}</span>`);
+        });
+
+        // 3. Highlight Keywords (safe now that strings/comments are masked)
+        const keywords = /\b(import|from|as|def|class|return|if|elif|else|for|while|in|not|and|or|True|False|None|with|try|except|raise|yield|lambda|pass|break|continue)\b/g;
+        escaped = escaped.replace(keywords, '<span class="keyword">$1</span>');
+
+        // 4. Highlight Numbers
         escaped = escaped.replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>');
+
+        // 5. Restore Tokens
+        tokens.forEach((val, key) => {
+            escaped = escaped.replace(key, val);
+        });
+
     } else if (ext === 'yaml' || ext === 'yml') {
-        escaped = escaped.replace(/(#[^\n]*)/g, '<span class="comment">$1</span>');
-        escaped = escaped.replace(/^(\s*[\w_.-]+):/gm, '<span class="keyword">$1</span>:');
-        escaped = escaped.replace(/(".*?")/g, '<span class="string">$1</span>');
+        // 1. Mask Strings
+        escaped = escaped.replace(/(".*?"|'.*?')/g, (match) => {
+            return mask(`<span class="string">${match}</span>`);
+        });
+
+        // 2. Mask Comments
+        escaped = escaped.replace(/(#[^\n]*)/g, (match) => {
+            return mask(`<span class="comment">${match}</span>`);
+        });
+
+        // 3. Highlight Keys (the 'key:' part)
+        escaped = escaped.replace(/^(\s*[\w_.-]+):/gm, (match, p1) => {
+            return `<span class="keyword">${p1}</span>:`;
+        });
+
+        // 4. Highlight Keywords (true, false, null)
         escaped = escaped.replace(/\b(true|false|null)\b/gi, '<span class="keyword">$1</span>');
+
+        // 5. Highlight Numbers
         escaped = escaped.replace(/\b(\d+\.?\d*(?:e[+-]?\d+)?)\b/g, '<span class="number">$1</span>');
+
+        // 6. Restore Tokens
+        tokens.forEach((val, key) => {
+            escaped = escaped.replace(key, val);
+        });
     } else if (ext === 'json') {
         escaped = escaped.replace(/("(?:[^"\\]|\\.)*?")\s*:/g, '<span class="keyword">$1</span>:');
         escaped = escaped.replace(/:\s*("(?:[^"\\]|\\.)*?")/g, ': <span class="string">$1</span>');
