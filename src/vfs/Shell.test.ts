@@ -384,14 +384,35 @@ describe('Shell', () => {
             expect(shell.env_get('STAGE')).toBe('process');
         });
 
-        it('should cd to process landing directory', () => {
+        it('should cd to ~/projects for process stage without $PROJECT', () => {
             shell.stage_enter('process');
-            expect(vfs.cwd_get()).toBe('/home/fedml/src/project');
+            expect(vfs.cwd_get()).toBe('/home/fedml/projects');
         });
 
-        it('should cd to gather landing directory', () => {
+        it('should cd to $HOME for gather stage without $PROJECT', () => {
             shell.stage_enter('gather');
-            expect(vfs.cwd_get()).toBe('/home/fedml/data/cohort');
+            expect(vfs.cwd_get()).toBe('/home/fedml');
+        });
+
+        it('should cd to project src for process stage with $PROJECT', () => {
+            shell.env_set('PROJECT', 'study-01');
+            vfs.dir_create('/home/fedml/projects/study-01/src');
+            shell.stage_enter('process');
+            expect(vfs.cwd_get()).toBe('/home/fedml/projects/study-01/src');
+        });
+
+        it('should cd to project data for gather stage with $PROJECT', () => {
+            shell.env_set('PROJECT', 'study-01');
+            vfs.dir_create('/home/fedml/projects/study-01/data');
+            shell.stage_enter('gather');
+            expect(vfs.cwd_get()).toBe('/home/fedml/projects/study-01/data');
+        });
+
+        it('should cd to project src for monitor stage with $PROJECT', () => {
+            shell.env_set('PROJECT', 'study-01');
+            vfs.dir_create('/home/fedml/projects/study-01/src');
+            shell.stage_enter('monitor');
+            expect(vfs.cwd_get()).toBe('/home/fedml/projects/study-01/src');
         });
 
         it('should cd to post landing directory', () => {

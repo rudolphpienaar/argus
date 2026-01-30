@@ -73,6 +73,14 @@ The `WorkflowTracker` procedurally generates linear pipelines (like SeaGaP) with
 * **Connectors**: Dynamic line segments between stops.
 * **Integrated Telemetry**: Each station includes a "hanging" telemetry window that populates via the `TelemetryService`.
 
+=== Asset Card Component
+The `AssetCard` (`src/ui/components/AssetCard.ts`) is a shared UI primitive used to represent both Marketplace assets and User Projects. It unifies the visual language between external resources and internal workspaces.
+
+.Features:
+* **Polymorphic Rendering**: Adapts metadata display (stars/version for assets vs. dataset counts/modification date for projects).
+* **Integrated Actions**: Supports an optional primary action pill (INSTALL, SELECT, OPEN).
+* **Identity States**: Visually flags "Installed" or "Active" items via CSS class toggles.
+
 === Architecture
 
 The system consists of two parts:

@@ -28,7 +28,7 @@ import { monitor_initialize, training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
 import { marketplace_initialize } from './marketplace/view.js';
-import { catalog_search, dataset_toggle, dataset_select, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate } from './core/stages/search.js';
+import { catalog_search, dataset_toggle, dataset_select, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate, projectDetail_open } from './core/stages/search.js';
 import { telemetry_start } from './telemetry/manager.js';
 import { WorkflowTracker } from './lcars-framework/ui/WorkflowTracker.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
@@ -63,6 +63,7 @@ declare global {
         lcarslm_simulate: typeof lcarslm_simulate;
         terminal_toggle: typeof terminal_toggle;
         project_activate: typeof project_activate;
+        projectDetail_open: typeof import('./core/stages/search.js').projectDetail_open;
         ide_openFile: typeof ide_openFile;
         store: typeof store;
     }
@@ -105,8 +106,10 @@ function vcs_initialize(): void {
     homeDir_scaffold(globals.vcs, 'user');
 
     MOCK_PROJECTS.forEach((project: Project): void => {
+        const projectBase: string = `/home/user/projects/${project.name}`;
+        globals.vcs.dir_create(`${projectBase}/src`);
         const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
-        globals.vcs.tree_mount(`/home/user/projects/${project.name}`, cohortRoot);
+        globals.vcs.tree_mount(`${projectBase}/data`, cohortRoot);
     });
 }
 
@@ -175,6 +178,7 @@ function windowBindings_register(): void {
     window.lcarslm_simulate = lcarslm_simulate;
     window.terminal_toggle = terminal_toggle;
     window.project_activate = project_activate;
+    window.projectDetail_open = projectDetail_open;
     window.ide_openFile = ide_openFile;
     window.store = store;
 }
@@ -500,13 +504,14 @@ function stageChange_handle(event: CustomEvent): void {
                 setTimeout(() => { slot.frame_open(); }, 10);
             }
         } else if (stageName === 'process') {
-            projectDir_populate(globals.vcs, 'user');
+            const projectName: string = globals.shell?.env_get('PROJECT') || 'default';
+            projectDir_populate(globals.vcs, 'user', projectName);
             terminal.clear();
             if (terminalScreen) {
                 terminalScreen.classList.add('developer-mode');
             }
             terminal.println('○ ENVIRONMENT: BASH 5.2.15 // ARGUS CORE v1.4.5');
-            terminal.println('● PROJECT MOUNTED AT /home/user/src/project');
+            terminal.println(`● PROJECT MOUNTED AT ~/projects/${projectName}`);
             terminal.println('○ RUN "ls" TO VIEW ASSETS OR "federate train.py" TO INITIATE FEDERATION.');
             if (globals.frameSlot) {
                 globals.frameSlot.frame_open();

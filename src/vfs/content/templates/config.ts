@@ -62,7 +62,7 @@ privacy:
   max_grad_norm: 1.0
 
 data:
-  cohort_path: "/data/cohort"
+  cohort_path: "./data"
   dataset_count: ${datasetCount}
   modality: "${modality}"
 

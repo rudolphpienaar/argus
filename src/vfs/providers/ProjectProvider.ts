@@ -2,7 +2,7 @@
  * @file ProjectProvider — Home Directory Scaffolding & Project Population
  *
  * Scaffolds the user's home directory structure at login and populates
- * `~/src/project/` with lazy-content project files at Process stage entry.
+ * `~/projects/{name}/src/` with lazy-content project files at Process stage entry.
  *
  * All methods follow the RPN naming convention: <subject>_<verb>.
  *
@@ -28,12 +28,10 @@ export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'use
     const dirs: string[] = [
         `${home}/bin`,
         `${home}/data`,
-        `${home}/data/cohort`,
         `${home}/data/catalog`,
         `${home}/models`,
         `${home}/results`,
-        `${home}/src`,
-        `${home}/src/project`,
+        `${home}/projects`,
         `${home}/.config`
     ];
 
@@ -79,16 +77,17 @@ export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'use
 }
 
 /**
- * Populates the `~/src/project/` directory with project files.
+ * Populates the `~/projects/{projectName}/src/` directory with project files.
  * Each file uses a contentGenerator key for lazy content via the ContentRegistry.
  *
  * Called when entering the Process stage.
  *
  * @param vfs - The VirtualFileSystem instance.
- * @param username - The persona username (default: 'developer').
+ * @param username - The persona username (default: 'user').
+ * @param projectName - The active project name (default: 'default').
  */
-export function projectDir_populate(vfs: VirtualFileSystem, username: string = 'user'): void {
-    const projectPath: string = `/home/${username}/src/project`;
+export function projectDir_populate(vfs: VirtualFileSystem, username: string = 'user', projectName: string = 'default'): void {
+    const projectPath: string = `/home/${username}/projects/${projectName}/src`;
 
     // Ensure project directory exists
     vfs.dir_create(projectPath);

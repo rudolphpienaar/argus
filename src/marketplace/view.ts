@@ -10,6 +10,7 @@ import { store, state, globals } from '../core/state/store.js';
 import { events, Events } from '../core/state/events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../core/data/marketplace.js';
 import type { AppState } from '../core/models/types.js';
+import { render_assetCard, type AssetCardOptions } from '../ui/components/AssetCard.js';
 
 // ============================================================================
 // Window Interface Extension
@@ -35,6 +36,9 @@ let currentFilter: string = 'all';
 let currentSearch: string = '';
 let currentSort: string = 'stars-desc';
 let currentDetailAssetId: string | null = null;
+
+/** Cached original innerHTML of the .lcars-content area inside the detail overlay. */
+let originalDetailContentHtml: string | null = null;
 
 // ============================================================================
 // Initialization
@@ -190,28 +194,27 @@ function marketGrid_render(): void {
 
     container.innerHTML = filtered.map((asset: MarketplaceAsset): string => {
         const isInstalled: boolean = state.installedAssets.includes(asset.id);
-        const isFda: boolean = asset.type === 'fda';
-        const cardClasses: string = `market-card${isInstalled ? ' installed' : ''}${isFda ? ' fda' : ''}`;
-        return `
-            <div class="${cardClasses}" data-id="${asset.id}" onclick="assetDetail_open('${asset.id}')">
-                <div class="card-header">
-                    <div class="badge">${asset.type.toUpperCase()} v${asset.version}</div>
-                    <div class="stars-badge">\u2605 ${asset.stars.toLocaleString()}</div>
-                </div>
-                <div class="card-title">${asset.name}</div>
-                <div class="card-desc">${asset.description}</div>
-                <div class="card-meta">
-                    <span>BY ${asset.author.toUpperCase()}</span>
-                    <span>SIZE: ${asset.size}</span>
-                </div>
-                <div class="card-action">
-                    <button class="install-btn" onclick="event.stopPropagation(); asset_install('${asset.id}', this)">
-                        <span class="btn-progress"></span>
-                        <span class="btn-text">${isInstalled ? 'INSTALLED' : 'INSTALL'}</span>
-                    </button>
-                </div>
-            </div>
-        `;
+        
+        const opts: AssetCardOptions = {
+            id: asset.id,
+            type: asset.type,
+            title: asset.name,
+            description: asset.description,
+            metaLeft: `BY ${asset.author.toUpperCase()}`,
+            metaRight: `SIZE: ${asset.size}`,
+            badgeText: `${asset.type.toUpperCase()} v${asset.version}`,
+            badgeRightText: `\u2605 ${asset.stars.toLocaleString()}`,
+            isInstalled: isInstalled,
+            onClick: `assetDetail_open('${asset.id}')`,
+            actionButton: {
+                label: 'INSTALL',
+                activeLabel: 'INSTALLED',
+                onClick: `asset_install('${asset.id}', this)`,
+                isActive: isInstalled
+            }
+        };
+        
+        return render_assetCard(opts);
     }).join('');
 
     const countEl: HTMLElement | null = document.getElementById('market-count');
@@ -270,9 +273,50 @@ window.asset_install = (id: string, btnElement: HTMLButtonElement): void => {
 // ============================================================================
 
 /**
+ * Saves the original marketplace detail content HTML on first call.
+ * Subsequent calls restore the saved HTML into the .lcars-content area,
+ * ensuring the marketplace DOM structure is intact after project detail
+ * views have overwritten it.
+ */
+function detailContent_restore(): void {
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+    if (!overlay) return;
+
+    const contentArea: Element | null = overlay.querySelector('.lcars-content');
+    if (!contentArea) return;
+
+    if (originalDetailContentHtml === null) {
+        originalDetailContentHtml = contentArea.innerHTML;
+    } else {
+        contentArea.innerHTML = originalDetailContentHtml;
+    }
+
+    // Restore sidebar visibility (projectDetail_open hides it)
+    const sidebar: HTMLElement | null = overlay.querySelector('.lcars-sidebar') as HTMLElement;
+    if (sidebar) sidebar.style.display = '';
+
+    // Restore install button handlers (projectDetail_open clones and replaces them)
+    const installBtn: HTMLElement | null = document.getElementById('detail-install-btn');
+    if (installBtn) {
+        installBtn.onclick = (e: Event): void => {
+            e.stopPropagation();
+            assetDetail_install();
+        };
+    }
+
+    const closeBtn: Element | null = overlay.querySelector('.close-pill');
+    if (closeBtn) {
+        (closeBtn as HTMLElement).onclick = (): void => {
+            assetDetail_close();
+        };
+    }
+}
+
+/**
  * Opens the asset detail overlay for the given asset ID.
- * Populates all detail sections: header, specs, usage, dependencies,
- * changelog, and related assets.
+ * Restores the original marketplace DOM, then populates all detail
+ * sections: header, specs, usage, dependencies, changelog, and
+ * related assets. Slides in from the right per visual language spec.
  *
  * @param id - The marketplace asset ID.
  */
@@ -287,11 +331,14 @@ export function assetDetail_open(id: string): void {
     const lcarsFrame: HTMLElement | null = document.getElementById('detail-lcars-frame');
     if (!overlay || !panel || !lcarsFrame) return;
 
+    // Restore marketplace DOM in case projectDetail_open replaced it
+    detailContent_restore();
+
     detailHeader_populate(asset, id, overlay, lcarsFrame);
     detailSpecs_populate(asset);
     detailContent_populate(asset);
 
-    overlay.classList.remove('hidden');
+    overlay.classList.remove('hidden', 'closing');
 }
 
 /**
@@ -406,13 +453,18 @@ function detailContent_populate(asset: MarketplaceAsset): void {
 }
 
 /**
- * Closes the asset detail overlay.
+ * Closes the asset detail overlay with a slide-out animation.
  */
 export function assetDetail_close(): void {
     const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
-    if (overlay) {
+    if (!overlay || overlay.classList.contains('hidden')) return;
+
+    overlay.classList.add('closing');
+    overlay.addEventListener('animationend', (): void => {
         overlay.classList.add('hidden');
-    }
+        overlay.classList.remove('closing');
+    }, { once: true });
+
     currentDetailAssetId = null;
 }
 

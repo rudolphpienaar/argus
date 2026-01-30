@@ -27,10 +27,10 @@ type ContentResolver = (generatorKey: string, filePath: string) => string | null
  *
  * @example
  * ```typescript
- * const vfs = new VirtualFileSystem('developer');
- * vfs.dir_create('~/src/project');
- * vfs.file_create('~/src/project/train.py', '# training script');
- * const content: string | null = vfs.node_read('~/src/project/train.py');
+ * const vfs = new VirtualFileSystem('user');
+ * vfs.dir_create('~/projects/my-study/src');
+ * vfs.file_create('~/projects/my-study/src/train.py', '# training script');
+ * const content: string | null = vfs.node_read('~/projects/my-study/src/train.py');
  * ```
  */
 export class VirtualFileSystem {

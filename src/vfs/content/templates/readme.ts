@@ -52,7 +52,7 @@ ${datasetLines}
 
 \`\`\`bash
 # Review cohort
-ls ~/data/cohort/
+ls data/
 
 # Launch training
 federate train.py

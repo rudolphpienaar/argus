@@ -458,11 +458,12 @@ export class Shell {
      */
     private stageLanding_resolve(stage: string): string {
         const home: string = this.env.get('HOME') || '/home/user';
+        const project: string | undefined = this.env.get('PROJECT');
         switch (stage) {
             case 'search':   return home;
-            case 'gather':   return `${home}/data/cohort`;
-            case 'process':  return `${home}/src/project`;
-            case 'monitor':  return `${home}/src/project`;
+            case 'gather':   return project ? `${home}/projects/${project}/data` : home;
+            case 'process':  return project ? `${home}/projects/${project}/src` : `${home}/projects`;
+            case 'monitor':  return project ? `${home}/projects/${project}/src` : `${home}/projects`;
             case 'post':     return `${home}/results`;
             default:         return home;
         }

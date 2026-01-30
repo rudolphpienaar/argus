@@ -2,6 +2,7 @@
 
 ## Recent Refactoring Activity
 
+- **2026-01-29 (v4.2.0)**: **"Visual Language Unification"** - Converged the UI design of Projects and Marketplace Assets. Refactored tile rendering into a shared `AssetCard` component. Updated the Federated ML landing screen to display projects as Marketplace-style tiles. Implemented a Project Detail overlay (reusing the Marketplace detail view) that provides a read-only file browser preview before project activation. *Note: Project Detail animation currently uses standard visibility toggles and does not yet mirror the sliding behavior of the Marketplace detail view.*
 - **2026-01-29 (v3.5.0)**: **"The Style Sweep"** - Comprehensive codebase audit against the TypeScript Style Guide. Eliminated all `any` types from core application code (~35 instances). Renamed 20+ functions to RPN convention. Added JSDoc to ~50+ functions. Decomposed 3 long methods (130-line `terminalCommand_handle`, 165-line `app_initialize`, 103-line `assetDetail_open`). Replaced all `(window as any)` casts with typed `declare global { interface Window }` extensions. Changed all `catch (e: any)` to `catch (e: unknown)` with `instanceof Error` narrowing. Typed all lambda parameters and local variables across 14 source files.
 - **2026-01-29 (v3.4.1)**: **"The VCS Update"** - Completed the 5-phase Virtual Computer System implementation. Replaced the hollow VFS with a content-aware filesystem, Shell interpreter, ContentRegistry with 14 template generators, and 3 Providers (Dataset, Project, Marketplace). 134 tests across VFS (64), Shell (51), ContentRegistry (16), and Costs (3).
 - **2026-01-28 (v3.4.0)**: **"The Visual Language Update"** - Introduced the Frame Slot system: a two-phase "double whammy" animation where LCARS panels open, then content slides in from the right. Added the Beckon Pulse pattern for interactive affordances. Documented the emerging visual language in `docs/visual_language.adoc`. New components: `SlidePanel`, `FrameSlot`.
@@ -112,4 +113,4 @@ npm run test       # Run 134 unit tests
 ```
 
 ---
-*Last updated: 2026-01-29 (v3.5.0)*
+*Last updated: 2026-01-29 (v4.2.0)*

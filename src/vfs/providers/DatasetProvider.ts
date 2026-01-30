@@ -2,7 +2,7 @@
  * @file DatasetProvider — Cohort Filesystem Tree Builder
  *
  * Translates selected datasets into a VCS filesystem tree rooted at
- * `~/data/cohort/`. Each dataset becomes an institution directory with
+ * `~/projects/{name}/data/`. Each dataset becomes an institution directory with
  * images, masks, annotations, and metadata files.
  *
  * Replaces `filesystem_create()` from `core/logic/filesystem.ts`.
@@ -35,7 +35,7 @@ interface DatasetInput {
  *
  * The tree is structured as:
  * ```
- * cohort/
+ * data/
  * ├── training/
  * │   └── <institution>/
  * │       ├── images/
@@ -60,14 +60,14 @@ export function cohortTree_build(datasets: DatasetInput[]): FileNode {
 
     const cohortManifest: FileNode = node_file(
         'manifest.json',
-        '/data/cohort/manifest.json',
+        '/data/manifest.json',
         'cohort-manifest'
     );
 
     return {
-        name: 'cohort',
+        name: 'data',
         type: 'folder',
-        path: '/data/cohort',
+        path: '/data',
         size: '0 B',
         content: null,
         contentGenerator: null,
@@ -78,7 +78,7 @@ export function cohortTree_build(datasets: DatasetInput[]): FileNode {
             {
                 name: 'training',
                 type: 'folder',
-                path: '/data/cohort/training',
+                path: '/data/training',
                 size: '0 B',
                 content: null,
                 contentGenerator: null,
@@ -90,7 +90,7 @@ export function cohortTree_build(datasets: DatasetInput[]): FileNode {
             {
                 name: 'validation',
                 type: 'folder',
-                path: '/data/cohort/validation',
+                path: '/data/validation',
                 size: '0 B',
                 content: null,
                 contentGenerator: null,
@@ -114,8 +114,14 @@ export function cohortTree_build(datasets: DatasetInput[]): FileNode {
  */
 function datasetDir_build(ds: DatasetInput): FileNode {
     const dirName: string = ds.name.replace(/\s+/g, '_');
-    const basePath: string = `/data/cohort/training/${dirName}`;
+    const basePath: string = `/data/training/${dirName}`;
     const providerCode: string = providerCode_extract(ds.thumbnail);
+
+    // Derive the web-servable base directory from the thumbnail path.
+    // e.g. 'data/BCH/BCH_001.jpg' → 'data/BCH'
+    // e.g. 'data/WBC/images/WBC_001.bmp' → 'data/WBC/images'
+    const thumbParts: string[] = ds.thumbnail.split('/');
+    const imageWebBase: string = thumbParts.slice(0, -1).join('/');
 
     // Image nodes
     const imageNodes: FileNode[] = imageNodes_build(ds, providerCode, `${basePath}/images`);
@@ -129,7 +135,7 @@ function datasetDir_build(ds: DatasetInput): FileNode {
             contentGenerator: null,
             permissions: 'ro',
             modified: new Date(),
-            metadata: {},
+            metadata: { imageWebBase },
             children: imageNodes
         }
     ];
@@ -153,20 +159,20 @@ function datasetDir_build(ds: DatasetInput): FileNode {
         children.push(node_file(
             'annotations.json',
             `${basePath}/annotations.json`,
-            null,
+            'data-annotations',
             `${(ds.imageCount * 0.15).toFixed(1)} KB`
         ));
     } else {
         children.push(node_file(
             'labels.csv',
             `${basePath}/labels.csv`,
-            null,
+            'data-labels',
             `${(ds.imageCount * 0.05).toFixed(1)} KB`
         ));
     }
 
     // Always add metadata and manifest
-    children.push(node_file('metadata.json', `${basePath}/metadata.json`, null, '4 KB'));
+    children.push(node_file('metadata.json', `${basePath}/metadata.json`, 'data-metadata', '4 KB'));
     children.push(node_file('manifest.json', `${basePath}/manifest.json`, 'dataset-manifest'));
 
     return {
@@ -199,7 +205,7 @@ function imageNodes_build(ds: DatasetInput, providerCode: string, basePath: stri
     const nodes: FileNode[] = [];
     for (let i: number = 1; i <= ds.imageCount; i++) {
         const fileName: string = imageName_generate(providerCode, i);
-        nodes.push(node_file(fileName, `${basePath}/${fileName}`, null, '0 B'));
+        nodes.push(node_file(fileName, `${basePath}/${fileName}`, 'data-image', '0 B'));
     }
     return nodes;
 }
@@ -216,7 +222,7 @@ function maskNodes_build(ds: DatasetInput, providerCode: string, basePath: strin
     const nodes: FileNode[] = [];
     for (let i: number = 1; i <= ds.imageCount; i++) {
         const fileName: string = maskName_generate(providerCode, i);
-        nodes.push(node_file(fileName, `${basePath}/${fileName}`, null, '0 B'));
+        nodes.push(node_file(fileName, `${basePath}/${fileName}`, 'data-mask', '0 B'));
     }
     return nodes;
 }
@@ -273,7 +279,7 @@ function validationDir_build(datasets: DatasetInput[]): FileNode[] {
         'xray'
     );
 
-    const valBasePath: string = '/data/cohort/validation';
+    const valBasePath: string = '/data/validation';
 
     if (dominantModality === 'mri' || dominantModality === 'pathology') {
         return [
@@ -288,8 +294,8 @@ function validationDir_build(datasets: DatasetInput[]): FileNode[] {
                 modified: new Date(),
                 metadata: {},
                 children: [
-                    node_file('val_001.jpg', `${valBasePath}/images/val_001.jpg`),
-                    node_file('val_002.jpg', `${valBasePath}/images/val_002.jpg`)
+                    node_file('val_001.jpg', `${valBasePath}/images/val_001.jpg`, 'data-image'),
+                    node_file('val_002.jpg', `${valBasePath}/images/val_002.jpg`, 'data-image')
                 ]
             },
             {
@@ -303,8 +309,8 @@ function validationDir_build(datasets: DatasetInput[]): FileNode[] {
                 modified: new Date(),
                 metadata: {},
                 children: [
-                    node_file('val_001_mask.png', `${valBasePath}/masks/val_001_mask.png`),
-                    node_file('val_002_mask.png', `${valBasePath}/masks/val_002_mask.png`)
+                    node_file('val_001_mask.png', `${valBasePath}/masks/val_001_mask.png`, 'data-mask'),
+                    node_file('val_002_mask.png', `${valBasePath}/masks/val_002_mask.png`, 'data-mask')
                 ]
             }
         ];
@@ -323,11 +329,11 @@ function validationDir_build(datasets: DatasetInput[]): FileNode[] {
             modified: new Date(),
             metadata: {},
             children: [
-                node_file('val_001.jpg', `${valBasePath}/images/val_001.jpg`),
-                node_file('val_002.jpg', `${valBasePath}/images/val_002.jpg`)
+                node_file('val_001.jpg', `${valBasePath}/images/val_001.jpg`, 'data-image'),
+                node_file('val_002.jpg', `${valBasePath}/images/val_002.jpg`, 'data-image')
             ]
         },
-        node_file('labels.csv', `${valBasePath}/labels.csv`, null, '256 KB')
+        node_file('labels.csv', `${valBasePath}/labels.csv`, 'data-labels', '256 KB')
     ];
 }
 

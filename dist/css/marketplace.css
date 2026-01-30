@@ -431,8 +431,16 @@
     overflow-y: auto;
 }
 
+.asset-detail-overlay:not(.hidden):not(.closing) {
+    animation: detail-slide-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .asset-detail-overlay.hidden {
     display: none;
+}
+
+.asset-detail-overlay.closing {
+    animation: detail-slide-out 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 .detail-panel {
@@ -446,18 +454,16 @@
     max-width: 1200px; /* Increased max-width to accommodate side buttons */
     height: calc(100% - 2rem);
     gap: 1.5rem;
-    animation: detail-slide-in 0.3s ease-out;
 }
 
 @keyframes detail-slide-in {
-    from {
-        opacity: 0;
-        transform: translateY(-20px) scale(0.98);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+@keyframes detail-slide-out {
+    from { transform: translateX(0); }
+    to { transform: translateX(100%); }
 }
 
 /* Marketplace-specific LCARS frame overrides */
@@ -468,6 +474,7 @@
 .detail-panel .lcars-content {
     /* Content scrolls within frame */
     overflow-y: auto;
+    min-height: 0;  /* Allow grid cell to shrink — prevents child overflow */
 }
 
 /* ============================================================ */

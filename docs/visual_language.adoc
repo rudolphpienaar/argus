@@ -131,6 +131,7 @@ The left edge of the ARGUS interface is occupied by the LCARS sidebar -- a fixed
 |===
 | Scenario | Pattern | Rationale
 
+
 | System tool appearing within the console frame
 | Frame-then-Slide
 | Mechanical feel; tool is "inserted" into the console
@@ -147,3 +148,24 @@ The left edge of the ARGUS interface is occupied by the LCARS sidebar -- a fixed
 | Slide-out then Slide-in (no frame animation)
 | Bay is already open; only the content changes
 |===
+
+== Visual Convergence: Asset Tiles and Project Tiles
+
+To maintain a consistent visual language across the platform, ARGUS uses a unified tile-based metaphor for all addressable resources, whether they are external (Marketplace Assets) or internal (User Projects).
+
+=== The Asset Card Pattern
+
+The `AssetCard` component codifies the established LCARS "tile" aesthetic. It features:
+* **The Header Badge**: Top-left identification of the resource type (e.g., "PLUGIN", "PROJECT").
+* **The Semantic Color Code**: Orange for algorithms/scripts, Honey for data/projects, Sky for core systems.
+* **Metadata Alignment**: Primary stats (stars, dataset counts) on the right, authorship/origin on the bottom-left.
+* **The Mechanical Action**: A primary action button (INSTALL, SELECT) integrated into the card's baseline.
+
+=== Interaction Parity: Preview Before Commitment
+
+Consistent with the Marketplace interaction model, User Projects now feature a **Detail Preview** phase. Clicking a project tile no longer triggers an immediate workspace load (commitment); instead, it opens a detail overlay providing a read-only preview of the project's source code and data cohort.
+
+[NOTE]
+====
+As of v4.2.0, the Project Detail view is in a transitional state. While it shares the visual identity of the Marketplace Detail view, it currently uses a standard visibility toggle rather than the mechanical "Slide-In Overlay" pattern. Achieving full interaction parity (sliding behavior) is an immediate priority for the visual convergence initiative.
+====

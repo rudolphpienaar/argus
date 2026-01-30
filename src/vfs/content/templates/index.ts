@@ -24,6 +24,13 @@ import {
     workflowManifestGenerator,
     cohortManifestGenerator
 } from './assetManifest.js';
+import {
+    dataImageGenerator,
+    dataMaskGenerator,
+    dataMetadataGenerator,
+    dataAnnotationsGenerator,
+    dataLabelsGenerator
+} from './dataContent.js';
 
 /**
  * All registered content generators as [key, generator] tuples.
@@ -51,5 +58,12 @@ export const ALL_GENERATORS: Array<[string, ContentGenerator]> = [
     ['model-readme', modelReadmeGenerator],
     ['annotation-manifest', annotationManifestGenerator],
     ['workflow-manifest', workflowManifestGenerator],
-    ['cohort-manifest', cohortManifestGenerator]
+    ['cohort-manifest', cohortManifestGenerator],
+
+    // Data content (cohort tree files)
+    ['data-image', dataImageGenerator],
+    ['data-mask', dataMaskGenerator],
+    ['data-metadata', dataMetadataGenerator],
+    ['data-annotations', dataAnnotationsGenerator],
+    ['data-labels', dataLabelsGenerator]
 ];

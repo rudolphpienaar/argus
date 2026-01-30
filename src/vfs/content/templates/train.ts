@@ -61,7 +61,7 @@ def train(cohort_id):
     node = fl.Node(cohort_id)
 
     # Load Data (Secure Mount)
-    dataset = node.load_dataset("/data/cohort/training")
+    dataset = node.load_dataset("./data/training")
 
     # Define Model
     model = ${modelName}(pretrained=True)
