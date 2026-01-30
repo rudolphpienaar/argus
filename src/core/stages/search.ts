@@ -12,12 +12,12 @@ import { MOCK_PROJECTS } from '../data/projects.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import { cohortTree_build } from '../../vfs/providers/DatasetProvider.js';
 import { projectDir_populate } from '../../vfs/providers/ProjectProvider.js';
-import { populate_ide } from './process.js';
+import { populate_ide, training_launch } from './process.js';
 import type { Dataset, Project } from '../models/types.js';
 import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
 import { render_assetCard, type AssetCardOptions } from '../../ui/components/AssetCard.js';
-import { syntax_highlight } from '../../ui/syntaxHighlight.js';
+import { FileBrowser } from '../../ui/components/FileBrowser.js';
 
 // ============================================================================
 // AI / Auth Logic
@@ -344,6 +344,15 @@ function projectDetail_close(): void {
     const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
     if (!overlay || overlay.classList.contains('hidden')) return;
 
+    // Collapse workspace if expanded
+    if (isWorkspaceExpanded) {
+        workspace_collapse();
+        // Close terminal if open
+        if (globals.frameSlot && globals.frameSlot.state_isOpen()) {
+            globals.frameSlot.frame_close();
+        }
+    }
+
     overlay.classList.add('closing');
     overlay.addEventListener('animationend', (): void => {
         overlay.classList.add('hidden');
@@ -351,139 +360,24 @@ function projectDetail_close(): void {
     }, { once: true });
 }
 
-/**
- * Renders a VFS FileNode tree as nested `<li>` elements.
- * Folders get a click handler to toggle open/closed.
- * Files get a click handler to preview content in the preview pane.
- *
- * @param n - The FileNode to render.
- * @param projectBase - The project base path for resolving VFS reads.
- * @returns HTML string for the node and its children.
- */
-function renderNode(n: VcsFileNode, projectBase: string): string {
-    if (n.children) {
-        return `<li class="${n.type} open" data-path="${n.path}">
-                    <span class="tree-toggle">${n.name}</span>
-                    <ul>${n.children.map((c: VcsFileNode): string => renderNode(c, projectBase)).join('')}</ul>
-                </li>`;
-    }
-    return `<li class="${n.type}" data-path="${n.path}">${n.name} <span class="dim" style="float:right">${n.size}</span></li>`;
-}
+// ─── Module State ───────────────────────────────────────────
 
-/**
- * Attaches click handlers to tree nodes inside the given container.
- * Folders toggle open/closed; files trigger a preview read.
- *
- * @param treeEl - The `.file-tree` container element.
- * @param projectBase - VFS base path for the project.
- * @param activeTab - 'source' or 'data', determines path prefix.
- */
-function treeHandlers_attach(treeEl: HTMLElement, projectBase: string, activeTab: string): void {
-    treeEl.addEventListener('click', (e: Event): void => {
-        const target: HTMLElement = (e.target as HTMLElement).closest('li') as HTMLElement;
-        if (!target) return;
+/** Active FileBrowser instance for the project detail overlay. */
+let detailBrowser: FileBrowser | null = null;
 
-        // Folder toggle
-        if (target.classList.contains('folder')) {
-            target.classList.toggle('open');
-            e.stopPropagation();
-            return;
-        }
+/** Whether the detail overlay is in expanded workspace mode. */
+let isWorkspaceExpanded: boolean = false;
 
-        // File preview
-        if (target.classList.contains('file')) {
-            e.stopPropagation();
-            // Mark selected
-            treeEl.querySelectorAll('.file.selected').forEach((el: Element): void => el.classList.remove('selected'));
-            target.classList.add('selected');
+/** Project base path while workspace is expanded (for pwd↔tab sync). */
+let workspaceProjectBase: string = '';
 
-            const nodePath: string | undefined = target.dataset.path;
-            if (!nodePath) return;
+/** Drag listener cleanup for the terminal resize handle. */
+let workspaceDragCleanup: (() => void) | null = null;
 
-            // After tree_mount, data paths are already absolute VFS paths.
-            // Source paths are relative (/src/...) and need the project base prefix.
-            const fullPath: string = nodePath.startsWith('/home/')
-                ? nodePath
-                : `${projectBase}${nodePath.startsWith('/') ? nodePath : '/' + nodePath}`;
-            projectFile_preview(fullPath, nodePath);
-        }
-    });
-}
+/** Drag listener cleanup for the browser resize handle. */
+let browserDragCleanup: (() => void) | null = null;
 
-/**
- * Returns true if the filename has an image extension.
- */
-function isImageFile(fileName: string): boolean {
-    return /\.(jpg|jpeg|png|bmp|gif)$/i.test(fileName);
-}
-
-/**
- * Attempts to resolve a web-servable URL for an image file by
- * looking up the `imageWebBase` metadata on the parent images/ folder.
- *
- * @param fullPath - Absolute VFS path to the image file.
- * @param fileName - The image filename.
- * @returns A web URL string, or null if metadata is unavailable.
- */
-function imageWebUrl_resolve(fullPath: string, fileName: string): string | null {
-    // Walk up to find the images/ folder which has imageWebBase metadata
-    const parentPath: string = fullPath.substring(0, fullPath.lastIndexOf('/'));
-    try {
-        const parentNode = globals.vcs.node_stat(parentPath);
-        if (parentNode && parentNode.metadata && parentNode.metadata.imageWebBase) {
-            return `${parentNode.metadata.imageWebBase}/${fileName}`;
-        }
-    } catch {
-        // Parent not found
-    }
-    return null;
-}
-
-/**
- * Previews a file in the detail pane. Image files are rendered as
- * actual `<img>` tags using the web-served dataset images. Text
- * files are read from the VFS (with lazy content generation).
- *
- * @param fullPath - Absolute VFS path to the file.
- * @param displayPath - Path shown in the header.
- */
-function projectFile_preview(fullPath: string, displayPath: string): void {
-    const previewEl: HTMLElement | null = document.getElementById('project-file-preview');
-    if (!previewEl) return;
-
-    const fileName: string = displayPath.split('/').pop() || displayPath;
-
-    // Image files — render as <img> from web-served dataset images
-    if (isImageFile(fileName)) {
-        const webUrl: string | null = imageWebUrl_resolve(fullPath, fileName);
-        if (webUrl) {
-            previewEl.innerHTML = `
-                <div class="preview-filename">${fileName}</div>
-                <img src="${webUrl}" alt="${fileName}" onerror="this.outerHTML='<pre><code><span class=dim>Image not found on server</span></code></pre>'">
-            `;
-            return;
-        }
-    }
-
-    // Text files — read content from VFS
-    try {
-        const content: string | null = globals.vcs.node_read(fullPath);
-        if (content != null) {
-            previewEl.innerHTML = `
-                <div class="preview-filename">${fileName}</div>
-                <div class="code-content"><pre>${syntax_highlight(content, fileName)}</pre></div>
-            `;
-            return;
-        }
-    } catch {
-        // Fall through to placeholder
-    }
-
-    previewEl.innerHTML = `
-        <div class="preview-filename">${fileName}</div>
-        <div class="code-content"><pre><span class="dim">No content available</span></pre></div>
-    `;
-}
+// ─── Project Detail Populate ────────────────────────────────
 
 function projectDetail_populate(
     project: Project,
@@ -564,7 +458,15 @@ function projectDetail_populate(
                 sidebar.querySelectorAll<HTMLElement>('.lcars-panel').forEach((p: HTMLElement): void => {
                     p.classList.toggle('active', p.dataset.panelId === tab.id);
                 });
-                projectTree_render(trees[activeTab], projectBase, activeTab);
+                if (detailBrowser) detailBrowser.tab_switch(tab.id);
+
+                // Sync terminal pwd when workspace is active
+                if (isWorkspaceExpanded && workspaceProjectBase) {
+                    const subdir: string = tab.id === 'source' ? 'src' : 'data';
+                    const targetPath: string = `${workspaceProjectBase}/${subdir}`;
+                    globals.vcs.cwd_set(targetPath);
+                    if (globals.terminal) globals.terminal.prompt_sync();
+                }
             });
 
             sidebar.appendChild(panel);
@@ -604,11 +506,22 @@ function projectDetail_populate(
             </section>
         `;
 
-        // Render default tab (source)
-        projectTree_render(trees[activeTab], projectBase, activeTab);
+        // Instantiate reusable FileBrowser
+        const treeEl: HTMLElement | null = document.getElementById('project-file-tree');
+        const previewEl: HTMLElement | null = document.getElementById('project-file-preview');
+        if (treeEl && previewEl) {
+            detailBrowser = new FileBrowser({
+                treeContainer: treeEl,
+                previewContainer: previewEl,
+                vfs: globals.vcs,
+                projectBase: projectBase
+            });
+            detailBrowser.trees_set(trees);
+            detailBrowser.tree_render();
+        }
     }
 
-    // 6. Install button → "OPEN WORKSPACE" for projects
+    // 6. OPEN button → expand-in-place workspace
     const installBtn: HTMLElement | null = document.getElementById('detail-install-btn');
     if (installBtn) {
         installBtn.classList.remove('installed', 'installing');
@@ -617,8 +530,7 @@ function projectDetail_populate(
 
         installBtn.onclick = (e: Event): void => {
             e.stopPropagation();
-            projectDetail_close();
-            project_activate(projectId);
+            workspace_expand(projectId, project);
         };
     }
 
@@ -631,35 +543,338 @@ function projectDetail_populate(
     }
 }
 
+// ─── Workspace Expand / Collapse ────────────────────────────
+
 /**
- * Renders a file tree into the #project-file-tree container and
- * wires up click handlers for folder toggle and file preview.
+ * Expands the detail overlay into a full-width workspace with
+ * a split-pane layout: terminal (top) + divider + file browser (bottom).
  *
- * @param root - The root FileNode to render.
- * @param projectBase - VFS base path for the project.
- * @param activeTab - 'source' or 'data'.
+ * Phase 1: Widen layout, hide pills, set up split-pane DOM.
+ * Phase 2: Activate terminal, mount project in shell.
+ * Phase 3: Set default split ratio and show FEDERALIZE button.
  */
-function projectTree_render(root: VcsFileNode, projectBase: string, activeTab: string): void {
-    const treeEl: HTMLElement | null = document.getElementById('project-file-tree');
-    const previewEl: HTMLElement | null = document.getElementById('project-file-preview');
-    if (!treeEl) return;
+function workspace_expand(projectId: string, project: Project): void {
+    if (isWorkspaceExpanded) return;
+    isWorkspaceExpanded = true;
 
-    const treeUl: Element | null = treeEl.querySelector('.interactive-tree');
-    if (treeUl) {
-        treeUl.innerHTML = renderNode(root, projectBase);
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+    const layout: HTMLElement | null = overlay?.querySelector('.detail-layout') as HTMLElement;
+    const commandCol: HTMLElement | null = overlay?.querySelector('.detail-command-column') as HTMLElement;
+    const rightFrame: HTMLElement | null = document.querySelector('.right-frame') as HTMLElement;
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+
+    if (!overlay || !layout || !rightFrame || !consoleEl) return;
+
+    const projectBase: string = `/home/user/projects/${project.name}`;
+    workspaceProjectBase = projectBase;
+
+    // Phase 1: Expand layout, hide pills, enter split-pane mode
+    layout.classList.add('workspace-expanded');
+    overlay.dataset.workspace = 'true';
+    overlay.classList.add('workspace-expanded');
+
+    // Hide marketplace overlay and stage content
+    const marketOverlay: HTMLElement | null = document.getElementById('marketplace-overlay');
+    if (marketOverlay) marketOverlay.classList.add('hidden');
+    const stageContent: HTMLElement | null = document.querySelector('.stage-content[data-stage="search"]') as HTMLElement;
+    if (stageContent) stageContent.style.display = 'none';
+
+    if (commandCol) {
+        commandCol.classList.add('command-col-hiding');
+        commandCol.addEventListener('transitionend', (): void => {
+            commandCol.style.display = 'none';
+        }, { once: true });
     }
 
-    // Clear preview when switching tabs
-    if (previewEl) {
-        previewEl.innerHTML = '<p class="dim">Select a file to preview</p>';
-    }
+    // Activate split-pane: flex column on right-frame
+    rightFrame.classList.add('workspace-active');
 
-    // Replace the tree element to clear old event listeners
-    const freshTree: HTMLElement = treeEl.cloneNode(true) as HTMLElement;
-    treeEl.parentNode?.replaceChild(freshTree, treeEl);
-    freshTree.id = 'project-file-tree';
-    treeHandlers_attach(freshTree, projectBase, activeTab);
+    // Create terminal resize handle and insert between terminal and overlay
+    const termHandle: HTMLDivElement = document.createElement('div');
+    termHandle.className = 'workspace-resize-handle';
+    termHandle.dataset.target = 'terminal';
+    consoleEl.insertAdjacentElement('afterend', termHandle);
+
+    // Move overlay right after the terminal handle so DOM order is:
+    // terminal → termHandle → overlay → browserHandle
+    termHandle.insertAdjacentElement('afterend', overlay);
+
+    // Create browser resize handle after the overlay
+    const browserHandle: HTMLDivElement = document.createElement('div');
+    browserHandle.className = 'workspace-resize-handle';
+    browserHandle.dataset.target = 'browser';
+    overlay.insertAdjacentElement('afterend', browserHandle);
+
+    // Attach drag listeners for both handles
+    workspaceDragCleanup = workspaceTerminalResize_attach(termHandle, consoleEl);
+    browserDragCleanup = workspaceBrowserResize_attach(browserHandle, overlay);
+
+    // Phase 2: Terminal activation (after layout transition settles)
+    setTimeout((): void => {
+        // Load project into store + VFS
+        store.project_load(project);
+
+        const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
+        globals.vcs.tree_unmount(`${projectBase}/data`);
+        globals.vcs.dir_create(`${projectBase}/src`);
+        globals.vcs.tree_mount(`${projectBase}/data`, cohortRoot);
+        globals.vcs.cwd_set(projectBase);
+
+        if (globals.shell) {
+            globals.shell.env_set('PROJECT', project.name);
+        }
+
+        // Open terminal
+        if (globals.frameSlot && !globals.frameSlot.state_isOpen()) {
+            globals.frameSlot.frame_open();
+        }
+
+        // Phase 3: Set default split — terminal gets 30% of frame
+        setTimeout((): void => {
+            const frameH: number = rightFrame.clientHeight;
+            const defaultTermH: number = Math.round(frameH * 0.3);
+            consoleEl.style.height = `${defaultTermH}px`;
+            consoleEl.style.transition = 'none';
+            // Restore transition after a tick so future FrameSlot
+            // operations (if any) still animate smoothly
+            requestAnimationFrame((): void => {
+                consoleEl.style.transition = '';
+            });
+        }, 100);
+
+        if (globals.terminal) {
+            globals.terminal.prompt_sync();
+            globals.terminal.println(`● MOUNTING PROJECT: [${project.name.toUpperCase()}]`);
+            globals.terminal.println(`○ LOADED ${project.datasets.length} DATASETS.`);
+            globals.terminal.println('○ WORKSPACE ACTIVE. FILE BROWSER READY.');
+        }
+
+        // Register pwd→tab sync
+        if (globals.shell) {
+            globals.shell.onCwdChange_set((newCwd: string): void => {
+                if (!isWorkspaceExpanded || !detailBrowser) return;
+                const tabId: string | null = cwdToTab_resolve(newCwd);
+                if (tabId && tabId !== detailBrowser.activeTab_get()) {
+                    detailBrowser.tab_switch(tabId);
+                    const sidebarEl: HTMLElement | null = overlay?.querySelector('.lcars-sidebar') as HTMLElement;
+                    if (sidebarEl) {
+                        sidebarEl.querySelectorAll<HTMLElement>('.lcars-panel').forEach((p: HTMLElement): void => {
+                            p.classList.toggle('active', p.dataset.panelId === tabId);
+                        });
+                    }
+                }
+            });
+        }
+
+        workspace_federalizeButton_add();
+    }, 400);
 }
+
+/**
+ * Attaches drag-to-resize listeners to the terminal resize handle.
+ * Dragging changes the terminal height independently.
+ * Returns a cleanup function that removes all listeners.
+ */
+function workspaceTerminalResize_attach(
+    handle: HTMLElement,
+    consoleEl: HTMLElement
+): () => void {
+    let isDragging: boolean = false;
+    let startY: number = 0;
+    let startTermH: number = 0;
+
+    const onMouseDown = (e: MouseEvent): void => {
+        isDragging = true;
+        startY = e.clientY;
+        startTermH = consoleEl.offsetHeight;
+        handle.classList.add('active');
+        document.body.style.cursor = 'ns-resize';
+        e.preventDefault();
+    };
+
+    const onMouseMove = (e: MouseEvent): void => {
+        if (!isDragging) return;
+        const delta: number = e.clientY - startY;
+        const newTermH: number = Math.max(80, startTermH + delta);
+        consoleEl.style.height = `${newTermH}px`;
+        consoleEl.style.transition = 'none';
+    };
+
+    const onMouseUp = (): void => {
+        if (!isDragging) return;
+        isDragging = false;
+        handle.classList.remove('active');
+        document.body.style.cursor = '';
+        consoleEl.style.transition = '';
+    };
+
+    handle.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return (): void => {
+        handle.removeEventListener('mousedown', onMouseDown);
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+    };
+}
+
+/**
+ * Attaches drag-to-resize listeners to the browser resize handle.
+ * Dragging changes the file browser (overlay) height independently.
+ * Returns a cleanup function that removes all listeners.
+ */
+function workspaceBrowserResize_attach(
+    handle: HTMLElement,
+    overlay: HTMLElement
+): () => void {
+    let isDragging: boolean = false;
+    let startY: number = 0;
+    let startBrowserH: number = 0;
+
+    const onMouseDown = (e: MouseEvent): void => {
+        isDragging = true;
+        startY = e.clientY;
+        startBrowserH = overlay.offsetHeight;
+        handle.classList.add('active');
+        document.body.style.cursor = 'ns-resize';
+        e.preventDefault();
+    };
+
+    const onMouseMove = (e: MouseEvent): void => {
+        if (!isDragging) return;
+        const delta: number = e.clientY - startY;
+        const newH: number = Math.max(300, startBrowserH + delta);
+        overlay.style.height = `${newH}px`;
+    };
+
+    const onMouseUp = (): void => {
+        if (!isDragging) return;
+        isDragging = false;
+        handle.classList.remove('active');
+        document.body.style.cursor = '';
+    };
+
+    handle.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return (): void => {
+        handle.removeEventListener('mousedown', onMouseDown);
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+    };
+}
+
+/**
+ * Adds a FEDERALIZE AND LAUNCH button to the workspace content area.
+ */
+function workspace_federalizeButton_add(): void {
+    const metaEl: Element | null = document.querySelector('.project-meta');
+    if (!metaEl) return;
+
+    const existing: HTMLElement | null = document.getElementById('workspace-federalize-btn');
+    if (existing) existing.remove();
+
+    const btn: HTMLButtonElement = document.createElement('button');
+    btn.id = 'workspace-federalize-btn';
+    btn.className = 'pill-btn install-pill';
+    btn.style.cssText = 'margin-top: 1.5rem; width: 100%; max-width: 400px; height: 50px; font-size: 1rem;';
+    btn.innerHTML = '<span class="btn-text">FEDERALIZE AND LAUNCH</span>';
+    btn.onclick = (): void => {
+        training_launch();
+    };
+
+    metaEl.appendChild(btn);
+}
+
+/**
+ * Maps a cwd path to the corresponding sidebar tab ID.
+ * Returns 'source' if cwd is under .../src, 'data' if under .../data,
+ * or null if it doesn't map to either.
+ */
+function cwdToTab_resolve(cwd: string): string | null {
+    if (!workspaceProjectBase) return null;
+    const relative: string = cwd.startsWith(workspaceProjectBase)
+        ? cwd.substring(workspaceProjectBase.length)
+        : '';
+    if (relative === '/src' || relative.startsWith('/src/')) return 'source';
+    if (relative === '/data' || relative.startsWith('/data/')) return 'data';
+    return null;
+}
+
+/**
+ * Reverses the workspace expansion, restoring the detail overlay
+ * to its original constrained layout and tearing down the split-pane.
+ */
+function workspace_collapse(): void {
+    if (!isWorkspaceExpanded) return;
+    isWorkspaceExpanded = false;
+    workspaceProjectBase = '';
+
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+    const layout: HTMLElement | null = overlay?.querySelector('.detail-layout') as HTMLElement;
+    const commandCol: HTMLElement | null = overlay?.querySelector('.detail-command-column') as HTMLElement;
+    const rightFrame: HTMLElement | null = document.querySelector('.right-frame') as HTMLElement;
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+
+    // Tear down resize handles and their drag listeners
+    if (workspaceDragCleanup) {
+        workspaceDragCleanup();
+        workspaceDragCleanup = null;
+    }
+    if (browserDragCleanup) {
+        browserDragCleanup();
+        browserDragCleanup = null;
+    }
+    rightFrame?.querySelectorAll('.workspace-resize-handle').forEach((h: Element): void => h.remove());
+
+    if (rightFrame) rightFrame.classList.remove('workspace-active');
+
+    // Clear inline height set by drag so FrameSlot controls it again
+    if (consoleEl) {
+        consoleEl.style.height = '';
+        consoleEl.style.transition = '';
+    }
+
+    if (layout) {
+        layout.classList.remove('workspace-expanded');
+    }
+    if (overlay) {
+        overlay.classList.remove('workspace-expanded');
+        overlay.style.height = '';
+        delete overlay.dataset.workspace;
+    }
+    if (commandCol) {
+        commandCol.style.display = '';
+        commandCol.classList.remove('command-col-hiding');
+    }
+
+    // Restore marketplace overlay visibility
+    const marketOverlay: HTMLElement | null = document.getElementById('marketplace-overlay');
+    if (marketOverlay) marketOverlay.classList.remove('hidden');
+
+    // Restore stage content visibility
+    const stageContent: HTMLElement | null = document.querySelector('.stage-content[data-stage="search"]') as HTMLElement;
+    if (stageContent) stageContent.style.display = '';
+
+    // Unregister pwd→tab sync
+    if (globals.shell) {
+        globals.shell.onCwdChange_set(null);
+    }
+
+    // Clean up FileBrowser instance
+    if (detailBrowser) {
+        detailBrowser.destroy();
+        detailBrowser = null;
+    }
+
+    // Remove federalize button
+    const fedBtn: HTMLElement | null = document.getElementById('workspace-federalize-btn');
+    if (fedBtn) fedBtn.remove();
+}
+
+// ─── Project Detail Open / Close ────────────────────────────
 
 /**
  * Opens the project detail overlay (reusing asset detail UI).

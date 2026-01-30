@@ -10,7 +10,7 @@
 import { state, globals, store } from '../state/store.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import { MOCK_NODES } from '../data/nodes.js';
-import { syntax_highlight } from '../../ui/syntaxHighlight.js';
+import { FileBrowser } from '../../ui/components/FileBrowser.js';
 import type { TrustedDomainNode } from '../models/types.js';
 import type { FileNode as VfsFileNode } from '../../vfs/types.js';
 import type { LCARSTerminal } from '../../ui/components/Terminal.js';
@@ -33,67 +33,54 @@ export function terminal_toggle(): void {
 // IDE / File Tree
 // ============================================================================
 
+/** Active FileBrowser instance for the Process stage IDE. */
+let ideBrowser: FileBrowser | null = null;
+
 /**
  * Populates the Process stage IDE: renders the VFS file tree
  * in the sidebar and opens the default file in the code editor.
+ * Uses the shared FileBrowser component.
  */
 export function populate_ide(): void {
     const processTree: HTMLElement | null = document.getElementById('process-file-tree');
-    const cwdNode: VfsFileNode | null = globals.vcs.node_stat(globals.vcs.cwd_get());
+    const codeContent: HTMLElement | null = document.getElementById('process-code-content');
+    const cwdPath: string = globals.vcs.cwd_get();
+    const cwdNode: VfsFileNode | null = globals.vcs.node_stat(cwdPath);
 
-    if (processTree && cwdNode) {
-        const nodeHtml_build = (n: VfsFileNode): string => {
-            const typeClass: string = n.type;
-            if (n.children && n.children.length > 0) {
-                // Folder with toggle capability
-                return `
-                    <li class="${typeClass} open">
-                        <span onclick="this.parentElement.classList.toggle('open')">${n.name}</span>
-                        <ul>${n.children.map(nodeHtml_build).join('')}</ul>
-                    </li>`;
-            }
-            // File
-            return `<li class="${typeClass}" onclick="ide_openFile('${n.name}', '${n.type}')">${n.name}</li>`;
-        };
-        processTree.innerHTML = `<ul class="interactive-tree">${nodeHtml_build(cwdNode)}</ul>`;
+    if (processTree && codeContent && cwdNode) {
+        // Ensure tree container has the expected <ul>
+        if (!processTree.querySelector('.interactive-tree')) {
+            processTree.innerHTML = '<ul class="interactive-tree"></ul>';
+        }
+
+        ideBrowser = new FileBrowser({
+            treeContainer: processTree,
+            previewContainer: codeContent,
+            vfs: globals.vcs,
+            projectBase: cwdPath
+        });
+        ideBrowser.trees_set({ default: cwdNode });
+        ideBrowser.tree_render();
+
+        // Open default file
+        ideBrowser.preview_show(`${cwdPath}/src/train.py`, 'train.py');
     } else if (processTree) {
         processTree.innerHTML = '<span class="dim">No filesystem mounted.</span>';
     }
-
-    ide_openFile('train.py', 'file');
 }
 
 /**
  * Loads file content into the IDE code editor.
- * Reads content from the VCS (triggering lazy generation if needed).
- * Falls back to type-based placeholders for binary/image files.
+ * Thin wrapper delegating to the FileBrowser instance.
  *
  * @param filename - The file name to open.
- * @param type - The file type ('file', 'folder', 'image').
+ * @param _type - Unused (retained for backward compat).
  */
-export function ide_openFile(filename: string, type: string): void {
-    const codeEl: HTMLElement | null = document.getElementById('process-code-content');
-    if (!codeEl) return;
-
-    if (type === 'image') {
-        codeEl.innerHTML = `<div style="display:flex; justify-content:center; align-items:center; height:100%; color:var(--honey);">[IMAGE PREVIEW NOT AVAILABLE IN CODE EDITOR]</div>`;
-        return;
+export function ide_openFile(filename: string, _type: string): void {
+    if (ideBrowser) {
+        const cwdPath: string = globals.vcs.cwd_get();
+        ideBrowser.preview_show(`${cwdPath}/${filename}`, filename);
     }
-
-    const cwdPath: string = globals.vcs.cwd_get();
-    const filePath: string = `${cwdPath}/${filename}`;
-    try {
-        const content: string | null = globals.vcs.node_read(filePath);
-        if (content !== null) {
-            const highlighted: string = syntax_highlight(content, filename);
-            codeEl.innerHTML = `<pre>${highlighted}</pre>`;
-            return;
-        }
-    } catch (_e: unknown) {
-        // File not found in VCS — fall through to placeholder
-    }
-
-    codeEl.innerHTML = `<div style="padding:1rem; color:var(--font-color);">[Binary or Unknown File Type]</div>`;
 }
 
 // ============================================================================

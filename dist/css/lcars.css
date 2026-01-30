@@ -670,6 +670,49 @@ nav button.active {
     position: relative;
 }
 
+/* ── Workspace Split-Pane ────────────────────────────────────── */
+/* When a project is OPENed, right-frame becomes a vertical
+   split-pane: terminal (top) + divider + file browser (bottom). */
+
+.right-frame.workspace-active {
+    display: flex;
+    flex-direction: column;
+    /* Use min-height so the split-pane is at least viewport-tall,
+       allowing the page to scroll the top LCARS off-screen. */
+    min-height: 100vh;
+    overflow: visible;
+}
+
+/* Hide bar-panel and main-content in workspace mode */
+.right-frame.workspace-active .main-bar-panel,
+.right-frame.workspace-active #main-content {
+    display: none;
+}
+
+/* Terminal in workspace: height driven by drag, no transitions */
+.right-frame.workspace-active .terminal-drawer {
+    flex: none;
+    z-index: auto;
+    overflow: hidden;
+}
+
+/* Resize handles — each panel owns its own bottom-edge grip */
+.workspace-resize-handle {
+    flex: none;
+    height: 6px;
+    background: var(--october-sunset);
+    cursor: row-resize;
+    position: relative;
+    z-index: 10;
+    transition: background-color 0.15s ease;
+}
+
+.workspace-resize-handle:hover,
+.workspace-resize-handle.active {
+    background: var(--canary);
+    box-shadow: 0 0 10px rgba(255, 255, 0, 0.3);
+}
+
 .main-bar-panel {
     position: relative;
 }
@@ -1020,8 +1063,8 @@ hr {
 .detail-section.project-browser {
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-height: 0;         /* allow shrinking in flex parent */
+    height: 0;             /* start at zero — flex-grow fills allocated space */
+    flex: 1 1 0px;
     margin: 0;
     padding: 0;
     border: none;
@@ -1029,10 +1072,12 @@ hr {
 }
 
 .project-browser-layout {
-    display: flex;
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: 1fr;
     gap: 1rem;
-    flex: 1;
-    min-height: 0;
+    height: 0;             /* start at zero — flex-grow fills allocated space */
+    flex: 1 1 0px;
     overflow: hidden;
 }
 
@@ -1042,20 +1087,15 @@ hr {
 }
 
 .project-browser-layout .file-tree {
-    flex: 0 0 280px;
-    max-width: 300px;
     max-height: none;       /* override base .file-tree 400px cap */
-    height: 100%;
-    overflow-y: auto;
     min-height: 0;
+    overflow-y: auto;
 }
 
 .project-browser-layout .file-preview {
-    flex: 1;
-    height: 100%;
+    min-height: 0;
     overflow-y: auto;
     text-align: left;
-    min-height: 0;
 }
 
 .project-browser-layout .file-preview pre {

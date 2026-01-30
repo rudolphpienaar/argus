@@ -1,6 +1,6 @@
 {
   "name": "argus",
-  "version": "4.0.2",
+  "version": "4.3.0",
   "description": "ATLAS Resource Graphical User System",
   "type": "module",
   "scripts": {

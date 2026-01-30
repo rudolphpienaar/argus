@@ -133,6 +133,32 @@ describe('Shell', () => {
             expect(result.exitCode).toBe(1);
             expect(result.stderr).toContain('No such file or directory');
         });
+
+        it('should fire onCwdChange callback after cd', () => {
+            let captured: string | null = null;
+            shell.onCwdChange_set((newCwd: string): void => { captured = newCwd; });
+            vfs.dir_create('/home/fedml/src');
+            shell.command_execute('cd ~/src');
+            expect(captured).toBe('/home/fedml/src');
+        });
+
+        it('should not fire onCwdChange on cd failure', () => {
+            let fired = false;
+            shell.onCwdChange_set((): void => { fired = true; });
+            shell.command_execute('cd /nonexistent');
+            expect(fired).toBe(false);
+        });
+
+        it('should clear onCwdChange with null', () => {
+            let count = 0;
+            shell.onCwdChange_set((): void => { count++; });
+            vfs.dir_create('/home/fedml/src');
+            shell.command_execute('cd ~/src');
+            expect(count).toBe(1);
+            shell.onCwdChange_set(null);
+            shell.command_execute('cd ~');
+            expect(count).toBe(1);
+        });
     });
 
     // ─── Builtin: pwd ───────────────────────────────────────────

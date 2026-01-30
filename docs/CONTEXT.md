@@ -2,6 +2,7 @@
 
 ## Recent Refactoring Activity
 
+- **2026-01-30 (v4.3.0)**: **"The Workspace Update"** - Implemented the interactive split-pane workspace layout. When a project is OPENed, the right-frame becomes a flex column with the Intelligence Console (terminal) on top and a FileBrowser below. Each panel has its own independent bottom-edge resize handle (`workspace-resize-handle`) — dragging the terminal handle resizes only the terminal; dragging the browser handle resizes only the file browser. The panels are fully decoupled (no zero-sum constraint); the page scrolls to accommodate total height. Added bidirectional tab↔terminal pwd sync via `Shell.onCwdChange_set()` callback. FileBrowser extracted as a reusable component with `trees_set()`, `tab_switch()`, `tree_render()`, `preview_show()`. Hidden stage content and bar-panel in workspace mode via `.workspace-active` class. 140 tests (57 Shell, 64 VFS, 16 ContentRegistry, 3 Costs).
 - **2026-01-29 (v4.2.0)**: **"Visual Language Unification"** - Converged the UI design of Projects and Marketplace Assets. Refactored tile rendering into a shared `AssetCard` component. Updated the Federated ML landing screen to display projects as Marketplace-style tiles. Implemented a Project Detail overlay (reusing the Marketplace detail view) that provides a read-only file browser preview before project activation. *Note: Project Detail animation currently uses standard visibility toggles and does not yet mirror the sliding behavior of the Marketplace detail view.*
 - **2026-01-29 (v3.5.0)**: **"The Style Sweep"** - Comprehensive codebase audit against the TypeScript Style Guide. Eliminated all `any` types from core application code (~35 instances). Renamed 20+ functions to RPN convention. Added JSDoc to ~50+ functions. Decomposed 3 long methods (130-line `terminalCommand_handle`, 165-line `app_initialize`, 103-line `assetDetail_open`). Replaced all `(window as any)` casts with typed `declare global { interface Window }` extensions. Changed all `catch (e: any)` to `catch (e: unknown)` with `instanceof Error` narrowing. Typed all lambda parameters and local variables across 14 source files.
 - **2026-01-29 (v3.4.1)**: **"The VCS Update"** - Completed the 5-phase Virtual Computer System implementation. Replaced the hollow VFS with a content-aware filesystem, Shell interpreter, ContentRegistry with 14 template generators, and 3 Providers (Dataset, Project, Marketplace). 134 tests across VFS (64), Shell (51), ContentRegistry (16), and Costs (3).
@@ -70,10 +71,10 @@ All user interactions follow the **SeaGaP-MP** workflow:
 | Suite | Tests | Module |
 |-------|-------|--------|
 | VirtualFileSystem | 64 | Path resolution, CWD, CRUD, mount/unmount, lazy content, events |
-| Shell | 51 | Env vars, prompt, builtins, stage transitions, external handlers |
+| Shell | 57 | Env vars, prompt, builtins, stage transitions, external handlers, cwd change callback |
 | ContentRegistry | 16 | Registration, resolution, VFS integration, 8 template generators |
 | Costs | 3 | Cost estimation engine |
-| **Total** | **134** | |
+| **Total** | **140** | |
 
 ## Source Structure
 
@@ -109,8 +110,8 @@ src/
 ```bash
 npm run build      # Compile TypeScript
 npm run serve      # http://localhost:8080 (or 'make serve')
-npm run test       # Run 134 unit tests
+npm run test       # Run 140 unit tests
 ```
 
 ---
-*Last updated: 2026-01-29 (v4.2.0)*
+*Last updated: 2026-01-30 (v4.3.0)*

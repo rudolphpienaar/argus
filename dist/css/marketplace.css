@@ -429,6 +429,23 @@
     box-sizing: border-box;
     backdrop-filter: blur(10px);
     overflow-y: auto;
+    transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.asset-detail-overlay.workspace-expanded {
+    /* Independent height — NOT flex:1 (zero-sum).
+       The file browser keeps its own generous size regardless
+       of the terminal height.  Page scrolls if total exceeds viewport. */
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    flex: none;
+    height: 70vh;
+    min-height: 400px;
+    padding: 0.5rem 1rem;
+    overflow-y: hidden;
+    z-index: auto;
 }
 
 .asset-detail-overlay:not(.hidden):not(.closing) {
@@ -454,6 +471,12 @@
     max-width: 1200px; /* Increased max-width to accommodate side buttons */
     height: calc(100% - 2rem);
     gap: 1.5rem;
+    transition: max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.detail-layout.workspace-expanded {
+    max-width: 100%;
+    height: 100%;
 }
 
 @keyframes detail-slide-in {
@@ -472,9 +495,15 @@
 }
 
 .detail-panel .lcars-content {
-    /* Content scrolls within frame */
+    /* Content scrolls within frame (unless project-browser overrides) */
     overflow-y: auto;
     min-height: 0;  /* Allow grid cell to shrink — prevents child overflow */
+}
+
+/* When project browser is active, lock the content area so
+   the tree and preview scroll independently within their panes */
+.detail-panel .lcars-content:has(.project-browser) {
+    overflow-y: hidden;
 }
 
 /* ============================================================ */
@@ -488,6 +517,13 @@
     width: 180px;
     padding-top: 2rem;
     justify-content: flex-start;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.detail-command-column.command-col-hiding {
+    opacity: 0;
+    transform: translateX(50px);
+    pointer-events: none;
 }
 
 .detail-command-column .pill-btn {
@@ -548,6 +584,28 @@
     color: #888 !important;
     cursor: default;
     pointer-events: none;
+}
+
+/* ============================================================ */
+/* WORKSPACE FEDERALIZE BUTTON                                  */
+/* ============================================================ */
+
+#workspace-federalize-btn {
+    background-color: var(--honey);
+    color: black;
+    border: none;
+    border-radius: 100vmax;
+    cursor: pointer;
+    font-family: 'Antonio', sans-serif;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.2s ease;
+}
+
+#workspace-federalize-btn:hover {
+    filter: brightness(1.2);
+    box-shadow: 0 0 20px rgba(255, 200, 0, 0.3);
 }
 
 /* Note: LCARS frame styling (panels, colors, FDA variant) is handled by

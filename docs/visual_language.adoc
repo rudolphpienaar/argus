@@ -1,6 +1,6 @@
 = ARGUS: Visual Language Specification
 :author: ATLAS Project Team
-:revdate: 2026-01-28
+:revdate: 2026-01-30
 :toc:
 :sectnums:
 
@@ -165,7 +165,10 @@ The `AssetCard` component codifies the established LCARS "tile" aesthetic. It fe
 
 Consistent with the Marketplace interaction model, User Projects now feature a **Detail Preview** phase. Clicking a project tile no longer triggers an immediate workspace load (commitment); instead, it opens a detail overlay providing a read-only preview of the project's source code and data cohort.
 
-[NOTE]
-====
-As of v4.2.0, the Project Detail view is in a transitional state. While it shares the visual identity of the Marketplace Detail view, it currently uses a standard visibility toggle rather than the mechanical "Slide-In Overlay" pattern. Achieving full interaction parity (sliding behavior) is an immediate priority for the visual convergence initiative.
-====
+=== The Workspace Layout
+
+As of v4.3.0, opening a project from the detail preview activates a **workspace layout** that transforms the right-frame into a vertical stack of two independently-sized panels: the Intelligence Console (terminal) on top and a FileBrowser below.
+
+Each panel owns its own bottom-edge **resize handle** — an LCARS-styled 6px orange grip bar. Dragging a handle resizes only its associated panel. The panels are fully decoupled; the page scrolls to accommodate their combined height. This "independent sizing" model replaces the traditional split-pane approach (where resizing one panel shrinks the other) and aligns with the LCARS philosophy of modular, self-contained instrument panels.
+
+The file browser tabs (SOURCE/DATA) and the terminal working directory maintain bidirectional sync: clicking a tab changes the terminal's cwd, and typing `cd` in the terminal switches the active tab.

@@ -60,6 +60,7 @@ export class Shell {
     private builtins: Map<string, BuiltinCommand>;
     private commandHistory: string[];
     private externalHandler: ExternalHandler | null = null;
+    private cwdChangeHandler: ((newCwd: string) => void) | null = null;
     private username: string;
 
     /**
@@ -101,6 +102,16 @@ export class Shell {
      */
     public externalHandler_set(handler: ExternalHandler): void {
         this.externalHandler = handler;
+    }
+
+    /**
+     * Sets a callback invoked whenever `cd` changes the working directory.
+     *
+     * @param handler - Callback receiving the new absolute cwd path,
+     *                  or null to clear.
+     */
+    public onCwdChange_set(handler: ((newCwd: string) => void) | null): void {
+        this.cwdChangeHandler = handler;
     }
 
     // ─── Command Execution ──────────────────────────────────────
@@ -252,7 +263,11 @@ export class Shell {
             const target: string = args[0] || '~';
             try {
                 this.vfs.cwd_set(target);
-                this.env.set('PWD', this.vfs.cwd_get());
+                const newCwd: string = this.vfs.cwd_get();
+                this.env.set('PWD', newCwd);
+                if (this.cwdChangeHandler) {
+                    this.cwdChangeHandler(newCwd);
+                }
                 return result_ok('');
             } catch (e: unknown) {
                 return result_err(e instanceof Error ? e.message : String(e), 1);

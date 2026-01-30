@@ -459,6 +459,9 @@ export function assetDetail_close(): void {
     const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
     if (!overlay || overlay.classList.contains('hidden')) return;
 
+    // Don't dismiss via background click when in workspace mode
+    if (overlay.dataset.workspace === 'true') return;
+
     overlay.classList.add('closing');
     overlay.addEventListener('animationend', (): void => {
         overlay.classList.add('hidden');

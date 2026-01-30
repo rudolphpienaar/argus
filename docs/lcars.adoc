@@ -33,6 +33,47 @@ The primary method for adjusting the terminal's height is the **Access Strip**.
   - **Primary Toggle**: The rightmost bar segment (`bar-10`) of the workstation lid acts as the toggle switch. Pulses with `lcars-beckon-orange` when the terminal is closed; stops pulsing when open.
   - **Resize Handle**: The Access Strip pulses with `lcars-beckon-orange` when the terminal is open, indicating drag-to-resize capability.
 
+== The Workspace Split-Pane
+
+When a project is OPENed from the Search stage, the right-frame transforms into a **workspace layout** — a vertical stack of two independently-sized panels separated by resize handles.
+
+=== Layout Structure
+
+The workspace activates by adding `workspace-active` to `.right-frame`, switching it to a flex column. The DOM order becomes:
+
+----
+.right-frame.workspace-active
+├── #intelligence-console .terminal-drawer     (terminal panel)
+├── .workspace-resize-handle[data-target=terminal]  (terminal resize grip)
+├── #asset-detail-overlay.workspace-expanded   (file browser panel)
+├── .workspace-resize-handle[data-target=browser]   (browser resize grip)
+├── .bar-panel.main-bar-panel                  (hidden in workspace)
+└── #main-content                              (hidden in workspace)
+----
+
+=== Independent Panel Sizing
+
+The two panels are **fully decoupled** — resizing one does not affect the other. This is achieved by giving each panel its own bottom-edge resize handle, rather than using a traditional split-pane divider that redistributes a fixed pool of height.
+
+* **Terminal panel**: Height set explicitly by drag (default: 30% of frame). `flex: none`. Min-height: 80px. No upper bound — making the terminal taller makes the page taller.
+* **File browser panel**: `flex: none; height: 70vh; min-height: 400px`. Independently resizable via its own handle.
+* **Page scrolling**: `.right-frame.workspace-active` has `min-height: 100vh` and `overflow: visible`, so the page scrolls to accommodate the total height of both panels. Users can scroll the top LCARS header off-screen for maximum workspace area.
+
+=== Resize Handles
+
+Both handles share the `.workspace-resize-handle` CSS class:
+
+* **Visual**: 6px horizontal bar in `october-sunset` (orange). On hover/active: `canary` (yellow) with a subtle box-shadow glow.
+* **Interaction**: `cursor: row-resize`. Standard mousedown → mousemove → mouseup drag pattern.
+* **Cleanup**: Both handles and their event listeners are created by `workspace_expand()` and torn down by `workspace_collapse()`.
+
+=== Bidirectional Tab ↔ Terminal Sync
+
+The file browser sidebar (SOURCE/DATA tabs) and the terminal working directory stay in sync:
+
+* **Tab → Terminal**: Clicking a sidebar tab calls `shell.cd()` to change the terminal's working directory to the corresponding project subdirectory (`/src` or `/data`).
+* **Terminal → Tab**: The Shell's `onCwdChange_set()` callback fires whenever `cd` succeeds. The workspace handler resolves the new cwd to a tab ID via `cwdToTab_resolve()` and switches the visual tab accordingly.
+
 == Operational Modes
 
 The terminal dynamically adapts its persona and capabilities based on the active SeaGaP stage.
