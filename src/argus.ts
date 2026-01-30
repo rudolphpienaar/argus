@@ -28,7 +28,7 @@ import { monitor_initialize, training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
 import { marketplace_initialize } from './marketplace/view.js';
-import { catalog_search, dataset_toggle, dataset_select, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate, projectDetail_open } from './core/stages/search.js';
+import { catalog_search, dataset_toggle, dataset_select, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate, projectDetail_open, datasetDetail_open } from './core/stages/search.js';
 import { telemetry_start } from './telemetry/manager.js';
 import { WorkflowTracker } from './lcars-framework/ui/WorkflowTracker.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
@@ -64,6 +64,7 @@ declare global {
         terminal_toggle: typeof terminal_toggle;
         project_activate: typeof project_activate;
         projectDetail_open: typeof import('./core/stages/search.js').projectDetail_open;
+        datasetDetail_open: typeof import('./core/stages/search.js').datasetDetail_open;
         ide_openFile: typeof ide_openFile;
         store: typeof store;
     }
@@ -179,6 +180,7 @@ function windowBindings_register(): void {
     window.terminal_toggle = terminal_toggle;
     window.project_activate = project_activate;
     window.projectDetail_open = projectDetail_open;
+    window.datasetDetail_open = datasetDetail_open;
     window.ide_openFile = ide_openFile;
     window.store = store;
 }

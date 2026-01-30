@@ -74,6 +74,49 @@ The file browser sidebar (SOURCE/DATA tabs) and the terminal working directory s
 * **Tab → Terminal**: Clicking a sidebar tab calls `shell.cd()` to change the terminal's working directory to the corresponding project subdirectory (`/src` or `/data`).
 * **Terminal → Tab**: The Shell's `onCwdChange_set()` callback fires whenever `cd` succeeds. The workspace handler resolves the new cwd to a tab ID via `cwdToTab_resolve()` and switches the visual tab accordingly.
 
+== The Dataset Detail Overlay (Gather Mode)
+
+When a dataset tile is clicked from the search results, the asset detail overlay opens in **gather mode** — a selectable FileBrowser showing the dataset's data tree.
+
+=== Visual Identity
+
+The dataset detail uses LCARS hue 200 (sky blue) to distinguish it from project detail (hue 30, orange/honey). The sidebar shows a single "DATA" tab and a "GATHER" label at the bottom corner.
+
+=== Selectable FileBrowser
+
+The FileBrowser component operates in `selectable: true` mode. Short clicks still preview files. Long-pressing (500ms+) toggles selection:
+
+* **File long-press**: Toggles the individual file. Selected files show `.selected-for-gather` — a canary left-border, background tint, and checkmark prefix.
+* **Folder long-press**: Toggles all descendant files. If all are selected, deselects all; otherwise selects all.
+
+=== Command Column
+
+The standard INSTALL/CLOSE pills are replaced with:
+
+* **DONE** (canary/gold): Commits gathered selection, closes overlay, marks dataset tile as `.gathered`.
+* **ADDITIONAL DATA** (october-sunset/orange): Commits selection, closes overlay, returns to grid for more dataset browsing.
+* **CANCEL** (mars/red): Closes without committing.
+
+=== Cost Strip
+
+A real-time cost summary bar at the bottom of the content area:
+
+----
+SELECTED: 45 / 293 FILES  |  ESTIMATED COST: $6.92
+----
+
+Per-file cost = dataset total cost / total file count. Updates live via `onSelectionChange` callback.
+
+== The Persistent Project Strip
+
+A horizontal strip of compact project chips persists at the top of the Search stage across all search operations. Projects never disappear when dataset results are displayed.
+
+* **Default chip**: honey border on dark background.
+* **Active chip** (gather target): solid honey background, black text, glow. Gathered data merges into this project.
+* **"+ NEW" chip**: dashed harvestgold border. Clears the active target for new project creation.
+
+First click on a chip sets it as the gather target. Second click (already active) opens the project detail overlay.
+
 == Operational Modes
 
 The terminal dynamically adapts its persona and capabilities based on the active SeaGaP stage.

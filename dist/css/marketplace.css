@@ -587,6 +587,52 @@
 }
 
 /* ============================================================ */
+/* DATASET GATHER PILLS                                         */
+/* ============================================================ */
+
+.done-pill {
+    background-color: var(--canary) !important;
+    color: black !important;
+    font-weight: bold;
+}
+
+.done-pill:hover {
+    filter: brightness(1.15);
+    box-shadow: 0 0 15px var(--canary);
+}
+
+.additional-data-pill {
+    background-color: var(--october-sunset) !important;
+    color: black !important;
+    font-weight: bold;
+}
+
+.additional-data-pill:hover {
+    filter: brightness(1.15);
+    box-shadow: 0 0 15px var(--october-sunset);
+}
+
+/* Cost summary strip in dataset detail */
+.gather-cost-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    margin-top: 1rem;
+    background: rgba(255, 204, 0, 0.08);
+    border: 1px solid var(--canary);
+    border-radius: 8px;
+    font-family: 'Inconsolata', monospace;
+    font-size: 0.85rem;
+    color: var(--canary);
+}
+
+.gather-cost-strip .cost-value {
+    font-weight: bold;
+    font-size: 1rem;
+}
+
+/* ============================================================ */
 /* WORKSPACE FEDERALIZE BUTTON                                  */
 /* ============================================================ */
 

@@ -157,73 +157,121 @@ export async function catalog_search(overrideQuery?: string): Promise<Dataset[]>
 }
 
 /**
- * Renders the workspace view — either project cards or dataset cards
- * depending on whether a project is active and whether a search is in progress.
+ * Renders the workspace view — persistent project strip at top,
+ * dataset tiles below.
  *
  * @param datasets - The datasets to display.
  * @param isSearchActive - Whether any search filter is currently active.
  */
 export function workspace_render(datasets: Dataset[], isSearchActive: boolean): void {
+    // Always render the persistent project strip
+    projectStrip_render();
+
     const container: HTMLElement | null = document.getElementById('dataset-results');
     if (!container) return;
 
-    // SCENARIO 1: Root View (No Project, No Search) -> Show Projects
-    if (!state.activeProject && !isSearchActive) {
+    // If no search is active and no datasets provided, show a prompt
+    if (!isSearchActive && datasets.length === 0) {
         container.innerHTML = `
-            <div class="lcars-header-block" style="border-color: var(--honey); margin-bottom: 1.5rem;">
-                <h2 style="margin: 0; color: var(--honey);">PROJECT LIBRARY</h2>
-                <div class="lcars-subtitle" style="color: var(--orange);">SELECT ACTIVE WORKSPACE</div>
-            </div>
-            <div class="dataset-grid">
-                ${MOCK_PROJECTS.map((p: Project): string => {
-                    const opts: AssetCardOptions = {
-                        id: p.id,
-                        type: 'project',
-                        title: p.name.toUpperCase(),
-                        description: p.description || 'Federated Learning Project',
-                        metaLeft: `ID: ${p.id.split('-').pop()}`,
-                        metaRight: `MODIFIED: ${p.lastModified.toLocaleDateString()}`,
-                        badgeText: `PROJECT`,
-                        badgeRightText: `${p.datasets.length} DATASETS`,
-                        onClick: `projectDetail_open('${p.id}')`,
-                        actionButton: {
-                            label: 'SELECT',
-                            onClick: `projectDetail_open('${p.id}')`
-                        }
-                    };
-                    return render_assetCard(opts);
-                }).join('')}
+            <div style="text-align: center; padding: 3rem 1rem; color: var(--font-color); opacity: 0.6;">
+                <p style="font-size: 1.1rem;">USE THE AI CORE TO SEARCH FOR DATASETS</p>
+                <p style="font-size: 0.85rem; color: var(--harvestgold);">OR SELECT A PROJECT ABOVE TO OPEN AN EXISTING WORKSPACE</p>
             </div>
         `;
         return;
     }
 
-    // SCENARIO 2: Active Project OR Search Results -> Show Datasets
-    let headerHtml: string = '<h2>Available Datasets</h2>';
-    if (state.activeProject) {
-        headerHtml = `
-            <div class="lcars-header-block" style="border-color: var(--canary); margin-bottom: 1rem;">
-                <h2 style="margin: 0; color: var(--canary); font-size: 1.5rem;">ACTIVE PROJECT: ${state.activeProject.name}</h2>
-                <div class="lcars-subtitle" style="color: var(--harvestgold);">MODIFYING COHORT DEFINITION</div>
-            </div>
-            ${headerHtml}
-        `;
-    }
+    // Render dataset tiles using AssetCard for visual convergence
+    container.innerHTML = datasets.map((ds: Dataset): string => {
+        const isGathered: boolean = gatheredDatasets.has(ds.id);
+        const opts: AssetCardOptions = {
+            id: ds.id,
+            type: 'dataset',
+            title: ds.name.toUpperCase(),
+            description: ds.description,
+            metaLeft: `${ds.provider}`,
+            metaRight: `${ds.imageCount.toLocaleString()} IMAGES · ${ds.size}`,
+            badgeText: `${ds.modality.toUpperCase()} · ${ds.annotationType.toUpperCase()}`,
+            badgeRightText: `$${ds.cost.toFixed(2)}`,
+            isInstalled: isGathered,
+            onClick: `datasetDetail_open('${ds.id}')`,
+            actionButton: {
+                label: isGathered ? 'GATHERED' : 'BROWSE',
+                activeLabel: 'GATHERED',
+                onClick: `datasetDetail_open('${ds.id}')`,
+                isActive: isGathered
+            }
+        };
+        return render_assetCard(opts);
+    }).join('');
 
-    container.innerHTML = headerHtml + datasets.map((ds: Dataset): string => `
-        <div class="dataset-card ${state.selectedDatasets.some((s: Dataset): boolean => s.id === ds.id) ? 'selected' : ''}"
-             data-id="${ds.id}"
-             onclick="dataset_toggle('${ds.id}')">
-            <img class="thumbnail" src="${ds.thumbnail}" alt="${ds.name}" onerror="this.style.display='none'">
-            <h4>${ds.name}</h4>
-            <div class="meta">
-                <span>${ds.modality.toUpperCase()} · ${ds.annotationType}</span>
-                <span>${ds.imageCount.toLocaleString()} images · ${ds.size}</span>
-                <span>${ds.provider}</span>
-                <span class="cost">$${ds.cost.toFixed(2)}</span>
-            </div>
-        </div>
-    `).join('');
+    // Apply gathered class to cards
+    gatheredDatasets.forEach((_entry: GatheredEntry, dsId: string): void => {
+        const card: HTMLElement | null = container.querySelector(`[data-id="${dsId}"]`);
+        if (card) card.classList.add('gathered');
+    });
+}
+
+/**
+ * Renders the persistent project strip at the top of the Search stage.
+ * Shows compact project chips and a "+ NEW" chip.
+ */
+function projectStrip_render(): void {
+    const strip: HTMLElement | null = document.getElementById('project-strip');
+    if (!strip) return;
+
+    let html: string = '<span class="project-strip-header">PROJECTS</span>';
+
+    html += MOCK_PROJECTS.map((p: Project): string => {
+        const isActive: boolean = gatherTargetProject !== null && gatherTargetProject.id === p.id;
+        const dsCount: number = p.datasets.length;
+        return `<div class="project-chip${isActive ? ' active' : ''}" data-id="${p.id}">
+                    ${p.name.toUpperCase()}
+                    <span class="chip-badge">${dsCount}DS</span>
+                </div>`;
+    }).join('');
+
+    html += '<div class="project-chip new-project">+ NEW</div>';
+    strip.innerHTML = html;
+
+    // Attach click handlers
+    strip.querySelectorAll<HTMLElement>('.project-chip[data-id]').forEach((chip: HTMLElement): void => {
+        chip.addEventListener('click', (): void => {
+            const id: string = chip.dataset.id || '';
+            projectChip_toggle(id);
+        });
+    });
+
+    strip.querySelector('.project-chip.new-project')?.addEventListener('click', (): void => {
+        // Deselect any active project — new project mode
+        gatherTargetProject = null;
+        projectStrip_render();
+        if (globals.terminal) {
+            globals.terminal.println('○ NEW PROJECT MODE: GATHER DATA TO CREATE A NEW PROJECT.');
+        }
+    });
+}
+
+/**
+ * Toggles a project chip between active (gather target) and inactive.
+ * Single-click toggles gather target. Double-click opens project detail.
+ */
+function projectChip_toggle(projectId: string): void {
+    const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === projectId);
+    if (!project) return;
+
+    if (gatherTargetProject && gatherTargetProject.id === projectId) {
+        // Already active — open the project detail
+        projectDetail_open(projectId);
+    } else {
+        // Set as gather target
+        gatherTargetProject = project;
+        projectStrip_render();
+        if (globals.terminal) {
+            globals.terminal.println(`● GATHER TARGET: [${project.name.toUpperCase()}]`);
+            globals.terminal.println('○ BROWSE DATASETS AND GATHER DATA FOR THIS PROJECT.');
+        }
+    }
 }
 
 /**
@@ -376,6 +424,23 @@ let workspaceDragCleanup: (() => void) | null = null;
 
 /** Drag listener cleanup for the browser resize handle. */
 let browserDragCleanup: (() => void) | null = null;
+
+/** The project currently targeted for data gathering (highlighted in the strip). */
+let gatherTargetProject: Project | null = null;
+
+/** Accumulated gathered datasets: datasetId → { dataset, selectedPaths, subtree }. */
+interface GatheredEntry {
+    dataset: Dataset;
+    selectedPaths: string[];
+    subtree: VcsFileNode;
+}
+const gatheredDatasets: Map<string, GatheredEntry> = new Map();
+
+/** Active FileBrowser for dataset detail (separate from project detail browser). */
+let datasetBrowser: FileBrowser | null = null;
+
+/** The dataset currently being viewed in the detail overlay. */
+let activeDetailDataset: Dataset | null = null;
 
 // ─── Project Detail Populate ────────────────────────────────
 
@@ -905,4 +970,281 @@ export function projectDetail_open(projectId: string): void {
     } else {
         overlay.classList.remove('hidden', 'closing');
     }
+}
+
+// ============================================================================
+// Dataset Detail View (Selectable Gather Mode)
+// ============================================================================
+
+/**
+ * Opens the dataset detail overlay with a selectable FileBrowser
+ * showing the dataset's data tree. Used for granular file/dir gathering.
+ *
+ * @param datasetId - The dataset identifier.
+ */
+export function datasetDetail_open(datasetId: string): void {
+    const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean => ds.id === datasetId);
+    if (!dataset) return;
+
+    activeDetailDataset = dataset;
+
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+    const lcarsFrame: HTMLElement | null = document.getElementById('detail-lcars-frame');
+    if (!overlay || !lcarsFrame) return;
+
+    datasetDetail_populate(dataset, overlay, lcarsFrame);
+
+    // Close terminal first if open, then reveal
+    const frameSlot = globals.frameSlot;
+    if (frameSlot && frameSlot.state_isOpen()) {
+        frameSlot.frame_close().then((): void => {
+            overlay.classList.remove('hidden', 'closing');
+        });
+    } else {
+        overlay.classList.remove('hidden', 'closing');
+    }
+}
+
+/**
+ * Populates the detail overlay for a dataset in selectable gather mode.
+ */
+function datasetDetail_populate(
+    dataset: Dataset,
+    overlay: HTMLElement,
+    lcarsFrame: HTMLElement
+): void {
+    // 1. Style & Header
+    lcarsFrame.style.setProperty('--lcars-hue', '200');
+    const commandCol: HTMLElement | null = overlay.querySelector('.detail-command-column') as HTMLElement;
+    if (commandCol) commandCol.style.setProperty('--module-color', 'var(--sky)');
+
+    const nameEl: HTMLElement | null = document.getElementById('detail-name');
+    const typeBadge: HTMLElement | null = document.getElementById('detail-type-badge');
+    const versionEl: HTMLElement | null = document.getElementById('detail-version');
+    const starsEl: HTMLElement | null = document.getElementById('detail-stars');
+    const authorEl: HTMLElement | null = document.getElementById('detail-author');
+
+    if (nameEl) nameEl.textContent = dataset.name.toUpperCase();
+    if (typeBadge) typeBadge.textContent = 'DATASET';
+    if (versionEl) versionEl.textContent = `${dataset.modality.toUpperCase()}`;
+    if (starsEl) starsEl.textContent = `${dataset.imageCount.toLocaleString()} IMAGES`;
+    if (authorEl) authorEl.textContent = dataset.provider;
+
+    // 2. Build data tree
+    const dataRoot: VcsFileNode = cohortTree_build([dataset]);
+    const totalFiles: number = fileCount_total(dataRoot);
+    const costPerFile: number = totalFiles > 0 ? dataset.cost / totalFiles : 0;
+
+    // 3. Mount to VFS temporarily for preview
+    const tempBase: string = `/home/user/datasets/${dataset.id}`;
+    try { globals.vcs.dir_create(tempBase); } catch { /* exists */ }
+    globals.vcs.tree_unmount(`${tempBase}/data`);
+    globals.vcs.tree_mount(`${tempBase}/data`, dataRoot);
+
+    // 4. Sidebar — hide it for dataset detail (single DATA context)
+    const sidebar: HTMLElement | null = overlay.querySelector('.lcars-sidebar') as HTMLElement;
+    if (sidebar) {
+        sidebar.style.display = '';
+        sidebar.innerHTML = '';
+
+        const dataPanel: HTMLAnchorElement = document.createElement('a');
+        dataPanel.className = 'lcars-panel active';
+        dataPanel.textContent = 'DATA';
+        dataPanel.dataset.shade = '1';
+        sidebar.appendChild(dataPanel);
+
+        const spacer: HTMLDivElement = document.createElement('div');
+        spacer.className = 'lcars-sidebar-spacer';
+        spacer.dataset.shade = '4';
+        sidebar.appendChild(spacer);
+
+        const bottomPanel: HTMLAnchorElement = document.createElement('a');
+        bottomPanel.className = 'lcars-panel lcars-corner-bl';
+        bottomPanel.dataset.shade = '2';
+        bottomPanel.textContent = 'GATHER';
+        sidebar.appendChild(bottomPanel);
+    }
+
+    // 5. Content — selectable file tree + preview + cost strip
+    const contentArea: Element | null = overlay.querySelector('.lcars-content');
+    if (contentArea) {
+        contentArea.innerHTML = `
+            <section class="detail-section project-browser">
+                <div class="project-browser-layout">
+                    <div class="file-tree" id="dataset-file-tree" style="border-color: var(--sky);">
+                        <ul class="interactive-tree"></ul>
+                    </div>
+                    <div class="file-preview" id="dataset-file-preview">
+                        <p class="dim">Select a file to preview · Long-press to select for gathering</p>
+                    </div>
+                </div>
+                <div class="gather-cost-strip" id="gather-cost-strip">
+                    <span>SELECTED: <strong id="gather-selected-count">0</strong> / ${totalFiles} FILES</span>
+                    <span>ESTIMATED COST: <span class="cost-value" id="gather-cost-value">$0.00</span></span>
+                </div>
+            </section>
+        `;
+
+        // Instantiate selectable FileBrowser
+        const treeEl: HTMLElement | null = document.getElementById('dataset-file-tree');
+        const previewEl: HTMLElement | null = document.getElementById('dataset-file-preview');
+        if (treeEl && previewEl) {
+            // Clean up previous instance
+            if (datasetBrowser) {
+                datasetBrowser.destroy();
+                datasetBrowser = null;
+            }
+            datasetBrowser = new FileBrowser({
+                treeContainer: treeEl,
+                previewContainer: previewEl,
+                vfs: globals.vcs,
+                projectBase: tempBase,
+                selectable: true,
+                onSelectionChange: (selectedPaths: string[]): void => {
+                    // Update cost strip
+                    const countEl: HTMLElement | null = document.getElementById('gather-selected-count');
+                    const costEl: HTMLElement | null = document.getElementById('gather-cost-value');
+                    if (countEl) countEl.textContent = String(selectedPaths.length);
+                    if (costEl) costEl.textContent = `$${(selectedPaths.length * costPerFile).toFixed(2)}`;
+                }
+            });
+            datasetBrowser.trees_set({ data: dataRoot });
+            datasetBrowser.tree_render();
+        }
+    }
+
+    // 6. Command column pills — DONE + ADDITIONAL DATA (replace INSTALL/CLOSE)
+    if (commandCol) {
+        commandCol.innerHTML = `
+            <button class="pill-btn done-pill" id="dataset-done-btn">
+                <span class="btn-text">DONE</span>
+            </button>
+            <button class="pill-btn additional-data-pill" id="dataset-additional-btn">
+                <span class="btn-text">ADDITIONAL DATA</span>
+            </button>
+            <button class="pill-btn close-pill" id="dataset-close-btn">
+                <span class="btn-text">CANCEL</span>
+            </button>
+        `;
+
+        document.getElementById('dataset-done-btn')?.addEventListener('click', (e: Event): void => {
+            e.stopPropagation();
+            datasetDetail_done();
+        });
+
+        document.getElementById('dataset-additional-btn')?.addEventListener('click', (e: Event): void => {
+            e.stopPropagation();
+            datasetDetail_additionalData();
+        });
+
+        document.getElementById('dataset-close-btn')?.addEventListener('click', (e: Event): void => {
+            e.stopPropagation();
+            datasetDetail_close();
+        });
+    }
+}
+
+/**
+ * Commits the current dataset selection and closes the overlay.
+ * Stores the gathered subtree and marks the dataset tile as gathered.
+ */
+function datasetDetail_done(): void {
+    datasetGather_commit();
+    datasetDetail_close();
+
+    if (globals.terminal && activeDetailDataset) {
+        globals.terminal.println(`● GATHERED: [${activeDetailDataset.name.toUpperCase()}]`);
+        const entry: GatheredEntry | undefined = gatheredDatasets.get(activeDetailDataset.id);
+        if (entry) {
+            globals.terminal.println(`○ ${entry.selectedPaths.length} FILES SELECTED.`);
+        }
+    }
+}
+
+/**
+ * Commits the current dataset selection and returns to the search grid
+ * for additional dataset browsing.
+ */
+function datasetDetail_additionalData(): void {
+    datasetGather_commit();
+    datasetDetail_close();
+
+    if (globals.terminal && activeDetailDataset) {
+        globals.terminal.println(`● GATHERED: [${activeDetailDataset.name.toUpperCase()}]`);
+        globals.terminal.println('○ SELECT ADDITIONAL DATASETS TO CONTINUE GATHERING.');
+    }
+}
+
+/**
+ * Commits the current selection from the dataset browser to the gathered map.
+ */
+function datasetGather_commit(): void {
+    if (!datasetBrowser || !activeDetailDataset) return;
+
+    const selectedPaths: string[] = datasetBrowser.selection_get();
+    if (selectedPaths.length === 0) return;
+
+    const dataRoot: VcsFileNode = cohortTree_build([activeDetailDataset]);
+    const subtree: VcsFileNode | null = datasetBrowser.selectionSubtree_extract(dataRoot);
+    if (!subtree) return;
+
+    gatheredDatasets.set(activeDetailDataset.id, {
+        dataset: activeDetailDataset,
+        selectedPaths,
+        subtree
+    });
+
+    // If a gather target project is active, merge into its VFS data tree
+    if (gatherTargetProject) {
+        const projectBase: string = `/home/user/projects/${gatherTargetProject.name}`;
+        try { globals.vcs.dir_create(`${projectBase}/data`); } catch { /* exists */ }
+        // Mount the gathered subtree under the project's data directory
+        const dsDir: string = activeDetailDataset.name.replace(/\s+/g, '_');
+        globals.vcs.tree_unmount(`${projectBase}/data/${dsDir}`);
+        globals.vcs.tree_mount(`${projectBase}/data/${dsDir}`, subtree);
+    }
+
+    // Re-render the dataset grid to show gathered tint
+    const container: HTMLElement | null = document.getElementById('dataset-results');
+    const card: HTMLElement | null = container?.querySelector(`[data-id="${activeDetailDataset.id}"]`) as HTMLElement;
+    if (card) card.classList.add('gathered');
+}
+
+/**
+ * Closes the dataset detail overlay (no gather commit).
+ */
+function datasetDetail_close(): void {
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+
+    if (datasetBrowser) {
+        datasetBrowser.destroy();
+        datasetBrowser = null;
+    }
+
+    // Clean up temp VFS mount
+    if (activeDetailDataset) {
+        const tempBase: string = `/home/user/datasets/${activeDetailDataset.id}`;
+        try { globals.vcs.tree_unmount(`${tempBase}/data`); } catch { /* noop */ }
+    }
+
+    activeDetailDataset = null;
+
+    overlay.classList.add('closing');
+    overlay.addEventListener('animationend', (): void => {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('closing');
+    }, { once: true });
+}
+
+/**
+ * Counts total leaf files in a VcsFileNode tree.
+ */
+function fileCount_total(node: VcsFileNode): number {
+    if (!node.children) return 1;
+    let count: number = 0;
+    for (const child of node.children) {
+        count += fileCount_total(child);
+    }
+    return count;
 }
