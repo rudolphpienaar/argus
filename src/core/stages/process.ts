@@ -11,6 +11,7 @@ import { state, globals, store } from '../state/store.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import { MOCK_NODES } from '../data/nodes.js';
 import { FileBrowser } from '../../ui/components/FileBrowser.js';
+import { workspace_teardown } from './search.js';
 import type { TrustedDomainNode } from '../models/types.js';
 import type { FileNode as VfsFileNode } from '../../vfs/types.js';
 import type { LCARSTerminal } from '../../ui/components/Terminal.js';
@@ -359,6 +360,11 @@ function federationHandshake_run(
 
         setTimeout((): void => {
             overlay.classList.add('hidden');
+
+            // Tear down workspace (overlay, resize handles, layout) so
+            // the monitor stage content can render unobstructed.
+            workspace_teardown();
+
             store.trainingJob_set({
                 id: `job-${Date.now()}`,
                 status: 'running',

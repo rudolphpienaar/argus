@@ -951,6 +951,39 @@ function workspace_collapse(): void {
     if (fedBtn) fedBtn.remove();
 }
 
+/**
+ * Fully tears down the workspace: collapses the split-pane layout,
+ * hides the asset-detail overlay, and clears slot contents.
+ * Called by the federation handshake before transitioning to Monitor.
+ */
+export function workspace_teardown(): void {
+    if (isWorkspaceExpanded) {
+        workspace_collapse();
+    }
+
+    // Hide and reset the asset-detail overlay
+    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+    if (overlay) {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('closing', 'workspace-expanded');
+        overlay.dataset.mode = 'marketplace';
+        delete overlay.dataset.workspace;
+    }
+
+    // Clean up FileBrowser if still alive
+    if (detailBrowser) {
+        detailBrowser.destroy();
+        detailBrowser = null;
+    }
+
+    overlaySlots_clear();
+
+    // Close terminal if open (monitor has its own telemetry)
+    if (globals.frameSlot && globals.frameSlot.state_isOpen()) {
+        globals.frameSlot.frame_close();
+    }
+}
+
 // ─── Project Detail Open / Close ────────────────────────────
 
 /**
