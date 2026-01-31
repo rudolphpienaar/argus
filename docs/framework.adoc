@@ -1,0 +1,661 @@
+= ARGUS Framework Patterns
+:author: ATLAS Project Team
+:revdate: 2026-01-30
+:toc:
+:sectnums:
+
+== Purpose
+
+ARGUS is built without a frontend framework (React, Vue, Svelte). Reactivity, component lifecycle, and DOM ownership are handled through project-specific patterns that have emerged organically during development. This document codifies those patterns as they exist today -- not as aspirational design, but as working conventions extracted from the codebase.
+
+The goal is threefold:
+
+1. **Onboarding**: A new developer (human or AI) can read this document and understand how to add features without reverse-engineering implicit conventions.
+2. **Consistency**: Named patterns are referenceable. "Use the slot pattern" is an actionable instruction.
+3. **Guard rails**: Documented anti-patterns prevent re-invention of known mistakes.
+
+== Naming Convention: RPN
+
+All functions follow **Reverse Polish Notation**: `<subject>_<verb>`.
+
+[source,typescript]
+----
+// Good
+function workspace_expand(): void { ... }
+function cohortTree_build(datasets: DatasetInput[]): FileNode { ... }
+function detailHeader_populate(asset, id, overlay, lcarsFrame): void { ... }
+
+// Bad
+function expandWorkspace(): void { ... }
+function buildCohortTree(datasets: DatasetInput[]): FileNode { ... }
+----
+
+The subject is the thing being acted on. The verb is the action. This applies to:
+
+- Module-level functions: `catalog_search()`, `projectStrip_render()`
+- Class methods: `browser.trees_set()`, `browser.tab_switch()`, `shell.env_set()`
+- Store actions: `store.project_load()`, `store.marketplace_toggle()`
+- Event handlers: `selectionToggle_handle()`, `terminalCommand_handle()`
+
+Private helpers follow the same convention: `descendantPaths_collect()`, `imageWebUrl_resolve()`.
+
+== State Management: Store + EventBus
+
+=== Architecture
+
+Application state is centralized in a single `Store` class (`src/core/state/store.ts`). The store holds:
+
+- **Reactive state** (`ExtendedState`): current stage, selected datasets, active project, training job, installed assets.
+- **Global singletons** (`globals`): terminal, VCS, shell, frame slot, AI engine.
+
+All mutations go through Store actions, which emit typed events via the `EventBus` (`src/core/state/events.ts`).
+
+[source,typescript]
+----
+// Store action
+public stage_set(stage: AppState['currentStage']): void {
+    this._state.currentStage = stage;
+    events.emit(Events.STAGE_CHANGED, stage);
+    events.emit(Events.STATE_CHANGED, this._state);
+}
+
+// Consumer subscribes
+events.on(Events.STAGE_CHANGED, (newStage): void => {
+    stageContent_update(newStage);
+});
+----
+
+=== The `globals` Object
+
+The `globals` bag on the Store holds runtime singletons that don't belong in serializable state:
+
+[cols="1,2"]
+|===
+| Key | Type
+
+| `terminal` | `LCARSTerminal \| null`
+| `vcs` | `VirtualFileSystem`
+| `shell` | `Shell \| null`
+| `frameSlot` | `FrameSlot \| null`
+| `lcarsEngine` | `LCARSEngine \| null`
+| `lossChart` | `{ ctx, data } \| null`
+| `trainingInterval` | `number \| null`
+|===
+
+Access via `import { globals } from '../state/store.js'`.
+
+IMPORTANT: The VCS instance is `globals.vcs`, not `globals.vfs`. This has caused bugs.
+
+=== Event Types
+
+All events are typed via the `EventPayloads` interface. The compiler enforces payload types at both emit and subscribe sites:
+
+[source,typescript]
+----
+export enum Events {
+    STATE_CHANGED       // payload: AppState
+    STAGE_CHANGED       // payload: AppState['currentStage']
+    DATASET_SELECTION_CHANGED  // payload: Dataset[]
+    PROJECT_LOADED      // payload: Project | null
+    VFS_UPDATED         // payload: void
+    VFS_CHANGED         // payload: VfsChangeEvent
+    CWD_CHANGED         // payload: CwdChangeEvent
+}
+----
+
+=== Rules
+
+1. **Never mutate `state` directly from outside the Store.** Use Store actions.
+2. **Emit `STATE_CHANGED` after every mutation.** Consumers may depend on any field.
+3. **`globals` is mutable by design** -- singletons are initialized at boot and nulled on teardown. Guard access with null checks.
+
+== The Slot Pattern
+
+=== Problem
+
+Multiple consumers need to display different content inside a shared DOM container (e.g., the asset detail overlay is used by marketplace, project detail, and dataset detail). The naive approach -- rewriting `innerHTML` on open and restoring it on close -- is fragile. If any consumer forgets to restore, the next consumer inherits corrupted DOM.
+
+=== Solution
+
+The shared container holds the **default consumer's** content as static HTML. Additional consumers get empty **slot containers** -- `<div>` elements that are hidden by default and shown on demand via a CSS `data-mode` attribute.
+
+==== DOM Structure
+
+[source,html]
+----
+<div id="asset-detail-overlay" data-mode="marketplace">
+    <!-- Original marketplace content (never mutated) -->
+    <div class="lcars-sidebar">...</div>
+    <div id="overlay-sidebar-slot" class="lcars-sidebar overlay-slot"></div>
+
+    <div class="lcars-content">...</div>
+    <div id="overlay-content-slot" class="lcars-content overlay-slot"></div>
+
+    <div class="detail-command-column">...</div>
+    <div id="overlay-command-slot" class="detail-command-column overlay-slot"></div>
+</div>
+----
+
+==== CSS Visibility Rules
+
+[source,css]
+----
+/* Default mode: hide slots */
+#asset-detail-overlay[data-mode="marketplace"] .overlay-slot {
+    display: none !important;
+}
+
+/* Project/dataset modes: hide originals, show slots */
+#asset-detail-overlay[data-mode="project"] .lcars-sidebar:not(.overlay-slot),
+#asset-detail-overlay[data-mode="project"] .lcars-content:not(.overlay-slot),
+#asset-detail-overlay[data-mode="project"] .detail-command-column:not(.overlay-slot) {
+    display: none !important;
+}
+----
+
+==== Consumer Contract
+
+Opening a non-default consumer:
+
+[source,typescript]
+----
+// 1. Set mode
+overlay.dataset.mode = 'project';
+
+// 2. Write into slots (never touch originals)
+const sidebarSlot = document.getElementById('overlay-sidebar-slot');
+sidebarSlot.innerHTML = '...';
+
+const contentSlot = document.getElementById('overlay-content-slot');
+contentSlot.innerHTML = '...';
+
+const commandSlot = document.getElementById('overlay-command-slot');
+commandSlot.innerHTML = '...';
+----
+
+Closing a non-default consumer:
+
+[source,typescript]
+----
+// 1. Clear slots
+overlaySlots_clear();
+
+// 2. Reset mode -- CSS shows originals, hides (now-empty) slots
+overlay.dataset.mode = 'marketplace';
+----
+
+The `overlaySlots_clear()` helper is defined in `search.ts`:
+
+[source,typescript]
+----
+function overlaySlots_clear(): void {
+    const sidebarSlot = document.getElementById('overlay-sidebar-slot');
+    const contentSlot = document.getElementById('overlay-content-slot');
+    const commandSlot = document.getElementById('overlay-command-slot');
+    if (sidebarSlot) sidebarSlot.innerHTML = '';
+    if (contentSlot) contentSlot.innerHTML = '';
+    if (commandSlot) commandSlot.innerHTML = '';
+}
+----
+
+=== When to Use
+
+Use the slot pattern whenever multiple consumers share a DOM container. The default consumer's content stays as static HTML. Each additional consumer gets a slot.
+
+=== Anti-Pattern: innerHTML Restore
+
+[WARNING]
+====
+*Do not* cache `innerHTML` on open and restore it on close. This was the original approach in ARGUS (`detailContent_restore()`). It failed when `datasetDetail_populate()` replaced the command column's `innerHTML` with DONE/ADD/CANCEL pills, but `datasetDetail_close()` only restored `.lcars-content` -- not the command column. When a marketplace asset was opened next, it showed gather pills instead of INSTALL/CLOSE.
+
+The slot pattern eliminates this entire class of bug. The marketplace's original DOM is never read, cached, or written. Mode switching is pure CSS visibility.
+====
+
+== The Populate / Teardown Lifecycle
+
+=== The Pattern
+
+Every overlay consumer follows the same implicit lifecycle:
+
+----
+populate → show → [expand] → [collapse] → close → clear
+----
+
+[cols="1,3"]
+|===
+| Phase | Responsibility
+
+| **populate** | Write content into the appropriate containers (slots or originals). Set LCARS hue, header fields, event listeners.
+| **show** | Remove `hidden` / `closing` classes from the overlay. Trigger slide-in animation.
+| **expand** _(optional)_ | Transform the overlay into a workspace layout (split-pane, resize handles).
+| **collapse** _(optional)_ | Reverse workspace expansion. Remove resize handles, restore layout.
+| **close** | Trigger slide-out animation. On `animationend`, add `hidden` class.
+| **clear** | Clear slot innerHTML, reset `data-mode`, destroy component instances (FileBrowser).
+|===
+
+=== Critical Rule: Teardown Before Stage Transition
+
+[IMPORTANT]
+====
+Any code that transitions away from an active workspace **MUST** call `workspace_teardown()` first. The workspace sets `display: none` on the search stage content, adds `workspace-active` to the right-frame, and keeps the asset-detail overlay visible. If these aren't reversed, the destination stage's content renders behind the overlay and is invisible.
+
+This rule was learned when `federationHandshake_run()` in `process.ts` called `stage_advanceTo('monitor')` without collapsing the workspace. The monitor stage content was correctly activated but invisible behind the expanded overlay.
+====
+
+`workspace_teardown()` is the canonical cleanup function:
+
+[source,typescript]
+----
+export function workspace_teardown(): void {
+    if (isWorkspaceExpanded) {
+        workspace_collapse();    // resize handles, layout, stage content
+    }
+    overlay.classList.add('hidden');
+    overlay.dataset.mode = 'marketplace';
+    overlaySlots_clear();
+    if (globals.frameSlot?.state_isOpen()) {
+        globals.frameSlot.frame_close();
+    }
+}
+----
+
+=== Lifecycle Examples
+
+==== Marketplace Asset
+
+----
+assetDetail_open(id)
+├── overlay.dataset.mode = 'marketplace'   (no slots needed)
+├── detailHeader_populate(...)
+├── detailSpecs_populate(...)
+├── detailContent_populate(...)
+└── overlay.classList.remove('hidden')
+
+assetDetail_close()
+├── overlay.classList.add('closing')
+└── on animationend → overlay.classList.add('hidden')
+----
+
+==== Project Detail → Workspace
+
+----
+projectDetail_open(id)
+├── projectDetail_populate(...)
+│   ├── overlay.dataset.mode = 'project'
+│   ├── write sidebar → #overlay-sidebar-slot
+│   ├── write content → #overlay-content-slot
+│   ├── write commands → #overlay-command-slot
+│   └── instantiate FileBrowser
+└── overlay.classList.remove('hidden')
+
+workspace_expand(id, project)
+├── layout.classList.add('workspace-expanded')
+├── create resize handles
+├── store.project_load(project)
+├── mount VCS trees
+├── open terminal
+└── register pwd↔tab sync
+
+projectDetail_close()
+├── workspace_collapse()  [if expanded]
+├── detailBrowser.destroy()
+├── overlaySlots_clear()
+├── overlay.dataset.mode = 'marketplace'
+└── slide-out animation → hidden
+----
+
+==== Dataset Detail (Gather Mode)
+
+----
+datasetDetail_open(id)
+├── datasetDetail_populate(...)
+│   ├── overlay.dataset.mode = 'dataset'
+│   ├── write sidebar → #overlay-sidebar-slot
+│   ├── write content → #overlay-content-slot  (selectable FileBrowser)
+│   ├── write commands → #overlay-command-slot  (DONE / ADD / CANCEL)
+│   └── mount temp VFS tree
+└── overlay.classList.remove('hidden')
+
+datasetDetail_close()
+├── datasetBrowser.destroy()
+├── unmount temp VFS tree
+├── overlaySlots_clear()
+├── overlay.dataset.mode = 'marketplace'
+└── slide-out animation → hidden
+----
+
+== The Component Pattern
+
+ARGUS uses two styles of reusable UI element: **class components** and **render functions**.
+
+=== Class Components
+
+Used when the component has internal state, event listeners, or a destroy lifecycle.
+
+==== FileBrowser
+
+`src/ui/components/FileBrowser.ts`
+
+The most complex component. Renders a VFS file tree with preview pane, supports multiple named tabs, and an optional selectable mode for gathering.
+
+**Constructor options:**
+[source,typescript]
+----
+interface FileBrowserOptions {
+    treeContainer: HTMLElement;
+    previewContainer: HTMLElement;
+    vfs: VirtualFileSystem;
+    projectBase: string;
+    selectable?: boolean;
+    onSelectionChange?: (selectedPaths: string[]) => void;
+}
+----
+
+**Public API (RPN convention):**
+[cols="2,3"]
+|===
+| Method | Purpose
+
+| `trees_set(trees)` | Set named tree roots (e.g. `{ source: srcNode, data: dataNode }`)
+| `tab_switch(tabId)` | Switch active tree and re-render
+| `tree_render()` | Render active tree into DOM
+| `preview_show(path, display)` | Read VFS content, syntax-highlight, display in preview pane
+| `activeTab_get()` | Return current tab ID
+| `selection_get()` | Return selected file paths (selectable mode)
+| `selection_clear()` | Clear all selections
+| `selectionSubtree_extract(root)` | Return pruned tree containing only selected files + skeleton dirs
+| `destroy()` | Clear DOM references, timers, callbacks
+|===
+
+**Selectable mode**: Activated via `selectable: true`. Short click = preview. Long press (500ms) = toggle selection. Long press on folder cascades to all descendants.
+
+**Lifecycle rule**: Always call `destroy()` before discarding a FileBrowser instance. The component holds event listeners that will leak otherwise.
+
+==== FrameSlot
+
+`src/ui/components/FrameSlot.ts`
+
+Orchestrates the two-phase "double whammy" animation (frame separation + content slide-in). See `docs/visual_language.adoc` for the animation spec.
+
+==== LCARSTerminal
+
+`src/ui/components/Terminal.ts`
+
+Global singleton terminal with command registration, AI mode, and status bar.
+
+=== Render Functions
+
+Used for stateless, declarative HTML generation. No lifecycle, no event listeners (those are attached by the caller via `onclick` strings).
+
+==== AssetCard
+
+`src/ui/components/AssetCard.ts`
+
+Returns an HTML string for a grid tile. Used by both Marketplace and Search stages.
+
+[source,typescript]
+----
+interface AssetCardOptions {
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    metaLeft: string;
+    metaRight: string;
+    badgeText: string;
+    badgeRightText?: string;
+    isInstalled?: boolean;
+    onClick: string;          // onclick handler as string
+    actionButton?: { label, activeLabel?, onClick, isActive? };
+}
+
+const html: string = render_assetCard(opts);
+container.innerHTML = cards.map(render_assetCard).join('');
+----
+
+**Note**: `onClick` is a string (e.g. `"assetDetail_open('abc')"`), not a function reference. This is because the HTML is inserted via `innerHTML`. The target function must be exposed on `window` via typed declarations:
+
+[source,typescript]
+----
+declare global {
+    interface Window {
+        assetDetail_open: typeof assetDetail_open;
+    }
+}
+window.assetDetail_open = assetDetail_open;
+----
+
+=== Choosing Between Styles
+
+[cols="1,1,3"]
+|===
+| Style | Example | When to Use
+
+| Class component | FileBrowser | Has internal state, event listeners, needs explicit destroy
+| Render function | AssetCard | Stateless HTML generation, no lifecycle
+|===
+
+== The Provider Pattern
+
+Providers translate domain data into VCS filesystem trees. They are pure functions that take domain objects and return `FileNode` trees suitable for mounting.
+
+=== Existing Providers
+
+[cols="2,3,2"]
+|===
+| Provider | Purpose | Location
+
+| `DatasetProvider` | Builds cohort tree from datasets (`/data/training/`, `/data/validation/`) | `src/vfs/providers/DatasetProvider.ts`
+| `ProjectProvider` | Scaffolds project directory (`~/projects/{name}/src/`, config files) | `src/vfs/providers/ProjectProvider.ts`
+| `MarketplaceProvider` | Installs assets to VCS (`/bin/`, `/data/sets/`, `~/models/`) | `src/vfs/providers/MarketplaceProvider.ts`
+|===
+
+=== Contract
+
+A provider:
+
+1. Accepts domain data (datasets, project config, marketplace asset) as input.
+2. Returns a `FileNode` tree (or mutates the VCS directly for `MarketplaceProvider`).
+3. Uses `contentGenerator` strings for lazy file content (evaluated by `ContentRegistry` on read).
+4. Sets `metadata` on nodes for consumer-specific data (e.g., `imageWebBase` for web-servable image URLs).
+
+=== Usage Pattern
+
+[source,typescript]
+----
+import { cohortTree_build } from '../../vfs/providers/DatasetProvider.js';
+
+// Build tree
+const dataRoot: VcsFileNode = cohortTree_build(project.datasets);
+
+// Mount into VCS
+globals.vcs.tree_unmount(`${projectBase}/data`);
+globals.vcs.tree_mount(`${projectBase}/data`, dataRoot);
+----
+
+Always `tree_unmount` before `tree_mount` to avoid stale data from a previous mount.
+
+== The Strip Pattern
+
+A horizontal bar of compact chips that persists across context changes. Used for the project strip at the top of the Search stage.
+
+=== Structure
+
+[source,html]
+----
+<div class="project-strip" id="project-strip">
+    <!-- Populated by projectStrip_render() -->
+</div>
+----
+
+The strip is re-rendered on every state change by calling `projectStrip_render()`. Chips have click handlers attached after render via `addEventListener` (not inline `onclick`).
+
+=== Visual States
+
+[cols="1,3"]
+|===
+| State | Appearance
+
+| Default | Honey border, dark background, `border-radius: 100vmax` (LCARS pill)
+| Active (gather target) | Solid honey background, black text, glow
+| New project | Dashed harvestgold border
+|===
+
+=== Interaction
+
+- First click: set as gather target.
+- Second click (already active): open detail overlay.
+- "+ NEW" chip: clear gather target, enter new-project mode.
+
+== The Selectable Mode Pattern
+
+Any tree-based component can support granular selection via long-press interaction.
+
+=== Activation
+
+Pass `selectable: true` to the component constructor. The component manages its own `selectedPaths: Set<string>` and reports changes via the `onSelectionChange` callback.
+
+=== Interaction Model
+
+[cols="1,3"]
+|===
+| Gesture | Effect
+
+| Short click (< 500ms) on file | Preview file content (standard behavior)
+| Short click on folder | Toggle folder open/closed
+| Long press (>= 500ms) on file | Toggle selection of individual file
+| Long press on folder | Toggle all descendant files (select all / deselect all)
+|===
+
+=== Subtree Extraction
+
+After selection, call `selectionSubtree_extract(root)` to get a pruned copy of the tree containing only selected files and the directory skeleton needed to reach them. This is used by the gather flow to mount partial datasets into a project's VCS tree.
+
+=== Visual Feedback
+
+Selected items receive the `.selected-for-gather` CSS class: canary left-border, subtle background tint, checkmark prefix.
+
+== Window Binding Convention
+
+Functions that need to be callable from HTML `onclick` attributes must be:
+
+1. **Declared** on the global `Window` interface:
++
+[source,typescript]
+----
+declare global {
+    interface Window {
+        datasetDetail_open: typeof datasetDetail_open;
+    }
+}
+----
+
+2. **Assigned** in the initialization function:
++
+[source,typescript]
+----
+window.datasetDetail_open = datasetDetail_open;
+----
+
+3. **Registered** in `argus.ts` (the main entry point) if the function is exported from a stage module.
+
+This replaces `(window as any).foo = foo` casts. The TypeScript compiler enforces type safety on the binding.
+
+== CSS Architecture
+
+=== File Organization
+
+[cols="2,3"]
+|===
+| File | Scope
+
+| `dist/css/lcars.css` | Global layout, frame, bars, project strip, workspace handles, selection visuals
+| `dist/css/lcars-components.css` | LCARS frame component system (hue-based shading, panels, elbows)
+| `dist/css/marketplace.css` | Marketplace overlay, asset detail overlay, command pills, slot visibility rules, gather pills
+| `dist/css/federation.css` | Federation animation overlay
+|===
+
+=== The Hue System
+
+All LCARS component colors derive from `--lcars-hue` (0-360). Set the hue on a `.lcars-frame` and all child panels, elbows, and bars inherit computed HSL shades. See `docs/lcars.adoc` for the full spec.
+
+=== Naming
+
+CSS classes follow BEM-like conventions but without strict BEM syntax:
+
+- `.market-card` (block)
+- `.card-header`, `.card-title`, `.card-desc` (elements)
+- `.market-card.installed`, `.market-card.fda` (modifiers)
+- `.workspace-expanded`, `.command-col-hiding` (state classes)
+
+== TypeScript Conventions
+
+=== Explicit Typing
+
+Every `const`, parameter, return type, and lambda parameter has an explicit type annotation:
+
+[source,typescript]
+----
+// Good
+const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
+const filtered: Dataset[] = DATASETS.filter((ds: Dataset): boolean => { ... });
+
+// Bad
+const overlay = document.getElementById('asset-detail-overlay');
+const filtered = DATASETS.filter(ds => { ... });
+----
+
+=== No `any`
+
+`any` is eliminated from core application code. Use `unknown` with `instanceof` narrowing for catch blocks:
+
+[source,typescript]
+----
+try { ... } catch (e: unknown) {
+    if (e instanceof Error) {
+        globals.terminal?.println(`Error: ${e.message}`);
+    }
+}
+----
+
+=== Module Exports
+
+- Functions intended for cross-module use are explicitly `export`ed.
+- Module-level state (e.g., `let isWorkspaceExpanded`) is private by default.
+- Types are exported via `export type` or `export interface`.
+
+== Testing Strategy
+
+=== Current Coverage
+
+[cols="2,1,2"]
+|===
+| Suite | Tests | Focus
+
+| VirtualFileSystem | 64 | Path resolution, CWD, CRUD, mount/unmount, lazy content, events
+| Shell | 57 | Env vars, prompt, builtins, stage transitions, external handlers
+| ContentRegistry | 16 | Registration, resolution, VFS integration, template generators
+| Costs | 3 | Cost estimation engine
+| **Total** | **140** |
+|===
+
+=== Gap: UI Layer
+
+The UI layer (overlays, stage transitions, DOM manipulation) has zero test coverage. All regressions to date have occurred in this layer. The primary barrier is the absence of a DOM environment in the test runner (Vitest with no jsdom/happy-dom configured).
+
+=== Mitigation
+
+The slot pattern and the populate/teardown lifecycle are architectural mitigations for UI bugs. By reducing shared mutable DOM state, the slot pattern eliminates the class of bug where one consumer corrupts another's DOM. The teardown convention ensures workspace state is cleaned up before stage transitions.
+
+Future improvement: add integration tests with a DOM environment to verify overlay lifecycle sequences.
+
+== Known Patterns to Extract
+
+The following patterns currently live inline in stage modules but are candidates for extraction into `src/lcars-framework/` or `src/ui/`:
+
+1. **`overlaySlots_clear()`**: Currently in `search.ts`. Should live in a shared overlay utilities module if more slot-based overlays are added.
+2. **`workspace_teardown()`**: Currently in `search.ts`, imported by `process.ts`. If more stage transitions need workspace cleanup, this should move to a lifecycle module.
+3. **Resize handle creation/cleanup**: Currently inline in `workspace_expand()` / `workspace_collapse()`. The pattern (create handle → attach drag listeners → return cleanup function) is generalizable.
+
+---
+_Last updated: 2026-01-30 (v4.5.0)_
