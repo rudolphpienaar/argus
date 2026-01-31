@@ -16,6 +16,52 @@ import type { TrustedDomainNode } from '../models/types.js';
 import type { FileNode as VfsFileNode } from '../../vfs/types.js';
 import type { LCARSTerminal } from '../../ui/components/Terminal.js';
 
+import { projectDir_populate } from '../../vfs/providers/ProjectProvider.js';
+
+// ============================================================================
+// Lifecycle Hooks
+// ============================================================================
+
+/**
+ * Hook called when entering the Process stage.
+ * Populates the project directory, clears terminal, enables developer mode,
+ * and opens the terminal frame.
+ */
+export function onEnter(): void {
+    const t: LCARSTerminal | null = globals.terminal;
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+    const terminalScreen: HTMLElement | null = consoleEl?.querySelector('.lcars-terminal-screen') as HTMLElement;
+
+    const projectName: string = globals.shell?.env_get('PROJECT') || 'default';
+    projectDir_populate(globals.vcs, 'user', projectName);
+
+    if (t) {
+        t.clear();
+        if (terminalScreen) {
+            terminalScreen.classList.add('developer-mode');
+        }
+        t.println('○ ENVIRONMENT: BASH 5.2.15 // ARGUS CORE v1.4.5');
+        t.println(`● PROJECT MOUNTED AT ~/projects/${projectName}`);
+        t.println('○ RUN "ls" TO VIEW ASSETS OR "federate train.py" TO INITIATE FEDERATION.');
+    }
+
+    if (globals.frameSlot) {
+        globals.frameSlot.frame_open();
+    }
+}
+
+/**
+ * Hook called when exiting the Process stage.
+ * Disables developer mode on the terminal screen.
+ */
+export function onExit(): void {
+    const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
+    const terminalScreen: HTMLElement | null = consoleEl?.querySelector('.lcars-terminal-screen') as HTMLElement;
+    if (terminalScreen) {
+        terminalScreen.classList.remove('developer-mode');
+    }
+}
+
 // ============================================================================
 // Terminal Controls
 // ============================================================================

@@ -1,0 +1,128 @@
+= ARGUS Developer Onboarding Guide
+:author: ATLAS Project Team
+:revdate: 2026-01-30
+:toc:
+:sectnums:
+
+== Welcome to ARGUS
+
+ARGUS (ATLAS Resource Graphical User System) is the UI layer for the ATLAS federated medical imaging platform. It is a **Vanilla TypeScript** application that implements the SeaGaP-MP workflow (Search, Gather, Process, Monitor, Post).
+
+**The Golden Rule:** There is no framework (React, Vue, Svelte). We use raw DOM manipulation, orchestrated by a custom Pub/Sub Store and strict architectural patterns.
+
+== The Mental Model
+
+To work on ARGUS, you need to understand three core concepts:
+
+=== The Store is Truth
+
+Everything that changes (current stage, selected datasets, training status) lives in `src/core/state/store.ts`.
+
+*   **Don't** mutate state directly.
+*   **Do** call Store actions (e.g., `store.dataset_select(id)`).
+*   **Do** listen for events (e.g., `events.on(Events.STATE_CHANGED, ...)`).
+
+=== The Virtual Computer (VCS)
+
+ARGUS isn't just a website; it simulates a computer.
+
+*   It has a filesystem (`src/vfs/`).
+*   It has a shell (`src/vfs/Shell.ts`) with environment variables (`$HOME`, `$PWD`).
+*   It has a terminal.
+
+**Key Concept:** "Providers" bridge the gap. When you select a dataset in the UI, the `DatasetProvider` effectively "mounts" that data into the virtual filesystem at `~/data/cohort/`.
+
+=== The Stage Lifecycle
+
+The app moves through stages (Search -> Process -> Monitor).
+
+*   **Entry Point:** `src/argus.ts` is the orchestrator.
+*   **Lifecycle:** Each stage module (e.g., `src/core/stages/process.ts`) exports `onEnter()` and `onExit()` hooks.
+*   **Control Flow:** The orchestrator calls `currentStage.onExit()` -> `nextStage.onEnter()`.
+
+== Codebase Tour
+
+[cols="1,3"]
+|===
+| Path | What's Inside
+
+| `src/argus.ts`
+| **The Orchestrator.** Initializes the app, sets up the VCS, and handles high-level events. Keep this file clean.
+
+| `src/lcars-framework/`
+| **The UI Library.** Reusable LCARS components (Terminal, WorkflowTracker) that know *nothing* about ARGUS business logic.
+
+| `src/core/state/`
+| **The Brain.** `store.ts` (state) and `events.ts` (pub/sub bus).
+
+| `src/core/logic/`
+| **The Logic Layer.** Specialized services like `commands.ts` (routing), `WindowBindings.ts` (DOM glue), and `Lifecycle.ts`.
+
+| `src/core/stages/`
+| **The Scenes.** One file per stage (search, gather, process...). Logic for that specific screen lives here.
+
+| `src/vfs/`
+| **The Computer.** The virtual filesystem, shell, and content generators.
+
+| `src/lcarslm/`
+| **The AI.** Service for communicating with Gemini/OpenAI (RAG logic).
+|===
+
+== Rules of the Road
+
+=== Naming: RPN (Reverse Polish Notation)
+
+We use `object_method` naming to group related functionality.
+
+*   ✅ `project_load()`, `dataset_select()`, `terminal_toggle()`
+*   ❌ `loadProject()`, `selectDataset()`, `toggleTerminal()`
+
+=== The Slot Pattern
+
+We avoid rewriting `innerHTML` for complex overlays.
+
+*   The `#asset-detail-overlay` has empty "slots" (`#overlay-content-slot`).
+*   When you open a Project Detail, you simply **show** the slot and **render** into it.
+*   When you close it, you **clear** the slot.
+*   *Never* touch the original Marketplace DOM that shares the overlay.
+
+=== Window Bindings
+
+HTML `onclick="myFunc()"` requires `myFunc` to be on `window`.
+
+*   **Don't** just say `(window as any).myFunc = ...`
+*   **Do** register it in `src/core/logic/WindowBindings.ts`.
+
+== "Hello World": Adding a Command
+
+Want to add a new command called `hello` to the terminal?
+
+1.  **Edit `src/core/logic/commands.ts`**:
+    Add your logic to the `workflow_dispatch` function.
+
+[source,typescript]
+----
+if (cmd === 'hello') {
+    globals.terminal.println('Hello, World!');
+    return true; // Command handled
+}
+----
+
+That's it. The `CommandRouter` automatically intercepts it before checking the AI engine.
+
+== "Hello World": Adding a Stage
+
+1.  **Create `src/core/stages/mystage.ts`**:
+    Implement `onEnter()` and `onExit()`.
+
+2.  **Register in `src/argus.ts`**:
+    Import it and add it to `STAGE_HANDLERS`.
+
+3.  **Update Navigation**:
+    Add it to `STAGE_ORDER` in `src/core/logic/navigation.ts`.
+
+== Further Reading
+
+*   **`docs/framework.adoc`**: Detailed guide to the patterns mentioned above.
+*   **`docs/vcs.adoc`**: Deep dive into how the Virtual Filesystem works.
+*   **`docs/architecture.adoc`**: High-level system design.

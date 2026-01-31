@@ -3,10 +3,10 @@
 :toclevels: 3
 :sectnums:
 
-== 1. Core Philosophy: Robust Vanilla
+== Core Philosophy: Robust Vanilla
 ARGUS avoids heavy frontend frameworks (React, Vue) to maintain maximum performance and "snap." However, to avoid state desynchronization issues common in imperative Vanilla JS, we employ a **Pub/Sub (Observer) Pattern**.
 
-== 2. State Management (Pub/Sub)
+== State Management (Pub/Sub)
 
 The application state is centralized in a `Store` that acts as the single source of truth. Components do not mutate state directly; they dispatch **Actions**. The Store mutates the state and broadcasts **Events**. Components subscribe to these events to update the UI.
 
@@ -25,7 +25,31 @@ The application state is centralized in a `Store` that acts as the single source
 *   **`src/core/state/events.ts`**: The Event Emitter implementation and Event Type definitions.
 *   **`src/core/state/store.ts`**: The central Store class containing application state and business logic actions. All methods follow RPN naming (e.g., `stage_set()`, `marketplace_toggle()`, `asset_install()`).
 
-== 3. Event Catalog
+== Application Logic Layers
+
+The application logic is decoupled from the main entry point (`argus.ts`) into specialized services and routers.
+
+=== Command Routing
+**`src/core/logic/commands.ts`**
+*   **Role**: Dispatches terminal commands to the appropriate subsystem.
+*   **Flow**: Terminal Input -> Shell (builtin check) -> CommandRouter (workflow check) -> AIService (NL query).
+*   **Commands Handled**: `search`, `add`, `review`, `gather`, `mount`, `simulate`.
+
+=== AI Service
+**`src/lcarslm/AIService.ts`**
+*   **Role**: Manages the RAG (Retrieval Augmented Generation) loop with the LLM backend.
+*   **Responsibility**: Builds context from the search buffer, executes queries via `LCARSEngine`, and parses structured intents (e.g., `[SELECT: ds-123]`) from the response.
+
+=== Stage Lifecycle
+**`src/core/logic/Lifecycle.ts`**
+*   **Role**: Defines the contract for stage transitions.
+*   **Pattern**: Each stage module exports `onEnter()` and `onExit()` hooks. The main orchestrator (`argus.ts`) calls these hooks during transitions, inverting control and keeping the entry point clean.
+
+=== Window Bindings
+**`src/core/logic/WindowBindings.ts`**
+*   **Role**: A centralized registry for all functions exposed to the DOM (for HTML `onclick` attributes). Ensures type safety for global window extensions.
+
+== Event Catalog
 
 [cols="2,2,2,3"]
 |===
@@ -39,7 +63,7 @@ The application state is centralized in a `Store` that acts as the single source
 | `STAGE_CHANGED`
 | `AppState['currentStage']`
 | `store.stage_set()`
-| UI panels, Terminal prompt, Shell `stage_enter()`, Gutters
+| UI panels, Terminal prompt, Shell `stage_enter()`, Gutters, Stage Lifecycle Hooks
 
 | `DATASET_SELECTION_CHANGED`
 | `Dataset[]`
@@ -62,7 +86,7 @@ The application state is centralized in a `Store` that acts as the single source
 | Shell prompt update
 |===
 
-== 4. Virtual Computer System (VCS)
+== Virtual Computer System (VCS)
 
 The VCS (`src/vfs/`) is ARGUS's stateful runtime environment. It provides a POSIX-like in-memory filesystem with content-aware files, a Shell interpreter, and a Provider architecture.
 

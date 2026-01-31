@@ -1300,6 +1300,28 @@ function fileCount_total(node: VcsFileNode): number {
     return count;
 }
 
+// ============================================================================
+// Lifecycle Hooks
+// ============================================================================
+
+/**
+ * Hook called when entering the Search stage.
+ * Opens the terminal frame automatically.
+ */
+export function onEnter(): void {
+    if (globals.frameSlot) {
+        setTimeout(() => { globals.frameSlot?.frame_open(); }, 10);
+    }
+}
+
+/**
+ * Hook called when exiting the Search stage.
+ * No-op for now.
+ */
+export function onExit(): void {
+    // Teardown logic if needed
+}
+
 /**
  * Clears the overlay slot containers (sidebar, content, command).
  * The marketplace's original DOM is never touched — mode switching

@@ -109,6 +109,73 @@ export enum Events {
 2. **Emit `STATE_CHANGED` after every mutation.** Consumers may depend on any field.
 3. **`globals` is mutable by design** -- singletons are initialized at boot and nulled on teardown. Guard access with null checks.
 
+== The Command Router Pattern
+
+=== Problem
+The main application entry point (`argus.ts`) should be an orchestrator, not a logic handler. Routing string commands (e.g., "search", "mount", "federate") in a massive switch statement inside `argus.ts` couples it tightly to every feature.
+
+=== Solution
+Delegate all command logic to a dedicated router (`src/core/logic/commands.ts`).
+
+[source,typescript]
+----
+// argus.ts (Entry Point)
+import { command_dispatch } from './core/logic/commands.js';
+terminal.fallback_set(command_dispatch);
+
+// commands.ts (Router)
+export async function command_dispatch(cmd: string, args: string[]): Promise<void> {
+    if (workflow_dispatch(cmd, args)) return;
+    await ai_query([cmd, ...args].join(' '));
+}
+----
+
+== The Stage Lifecycle Pattern
+
+=== Problem
+Stage transitions (Search -> Process) require setup and teardown logic (e.g., opening the terminal, populating the IDE). Hardcoding this in `argus.ts` makes it a "God Object."
+
+=== Solution
+Invert control. Each stage module exports `onEnter()` and `onExit()` hooks. The orchestrator simply calls them.
+
+[source,typescript]
+----
+// src/core/stages/process.ts
+export function onEnter(): void {
+    projectDir_populate(...);
+    globals.frameSlot.frame_open();
+}
+export function onExit(): void {
+    // Cleanup
+}
+
+// argus.ts
+const newHandler = STAGE_HANDLERS[stageName];
+if (newHandler) newHandler.onEnter();
+----
+
+== The Window Binding Registry Pattern
+
+=== Problem
+HTML `onclick="myFunc()"` requires `myFunc` to be on `window`. Scattering `window.foo = foo` assignments throughout the codebase is untidy and bypasses type safety.
+
+=== Solution
+Centralize all bindings in `src/core/logic/WindowBindings.ts`. This provides a single manifest of the application's public DOM API.
+
+[source,typescript]
+----
+// WindowBindings.ts
+declare global {
+    interface Window {
+        myFunction: typeof myFunction;
+    }
+}
+
+export function windowBindings_initialize(): void {
+    window.myFunction = myFunction;
+}
+----
+
 == The Slot Pattern
 
 === Problem
@@ -259,71 +326,6 @@ export function workspace_teardown(): void {
 }
 ----
 
-=== Lifecycle Examples
-
-==== Marketplace Asset
-
-----
-assetDetail_open(id)
-├── overlay.dataset.mode = 'marketplace'   (no slots needed)
-├── detailHeader_populate(...)
-├── detailSpecs_populate(...)
-├── detailContent_populate(...)
-└── overlay.classList.remove('hidden')
-
-assetDetail_close()
-├── overlay.classList.add('closing')
-└── on animationend → overlay.classList.add('hidden')
-----
-
-==== Project Detail → Workspace
-
-----
-projectDetail_open(id)
-├── projectDetail_populate(...)
-│   ├── overlay.dataset.mode = 'project'
-│   ├── write sidebar → #overlay-sidebar-slot
-│   ├── write content → #overlay-content-slot
-│   ├── write commands → #overlay-command-slot
-│   └── instantiate FileBrowser
-└── overlay.classList.remove('hidden')
-
-workspace_expand(id, project)
-├── layout.classList.add('workspace-expanded')
-├── create resize handles
-├── store.project_load(project)
-├── mount VCS trees
-├── open terminal
-└── register pwd↔tab sync
-
-projectDetail_close()
-├── workspace_collapse()  [if expanded]
-├── detailBrowser.destroy()
-├── overlaySlots_clear()
-├── overlay.dataset.mode = 'marketplace'
-└── slide-out animation → hidden
-----
-
-==== Dataset Detail (Gather Mode)
-
-----
-datasetDetail_open(id)
-├── datasetDetail_populate(...)
-│   ├── overlay.dataset.mode = 'dataset'
-│   ├── write sidebar → #overlay-sidebar-slot
-│   ├── write content → #overlay-content-slot  (selectable FileBrowser)
-│   ├── write commands → #overlay-command-slot  (DONE / ADD / CANCEL)
-│   └── mount temp VFS tree
-└── overlay.classList.remove('hidden')
-
-datasetDetail_close()
-├── datasetBrowser.destroy()
-├── unmount temp VFS tree
-├── overlaySlots_clear()
-├── overlay.dataset.mode = 'marketplace'
-└── slide-out animation → hidden
-----
-
 == The Component Pattern
 
 ARGUS uses two styles of reusable UI element: **class components** and **render functions**.
@@ -417,12 +419,12 @@ container.innerHTML = cards.map(render_assetCard).join('');
 
 [source,typescript]
 ----
+// Use WindowBindings.ts registry
 declare global {
     interface Window {
         assetDetail_open: typeof assetDetail_open;
     }
 }
-window.assetDetail_open = assetDetail_open;
 ----
 
 === Choosing Between Styles
@@ -535,32 +537,6 @@ After selection, call `selectionSubtree_extract(root)` to get a pruned copy of t
 
 Selected items receive the `.selected-for-gather` CSS class: canary left-border, subtle background tint, checkmark prefix.
 
-== Window Binding Convention
-
-Functions that need to be callable from HTML `onclick` attributes must be:
-
-1. **Declared** on the global `Window` interface:
-+
-[source,typescript]
-----
-declare global {
-    interface Window {
-        datasetDetail_open: typeof datasetDetail_open;
-    }
-}
-----
-
-2. **Assigned** in the initialization function:
-+
-[source,typescript]
-----
-window.datasetDetail_open = datasetDetail_open;
-----
-
-3. **Registered** in `argus.ts` (the main entry point) if the function is exported from a stage module.
-
-This replaces `(window as any).foo = foo` casts. The TypeScript compiler enforces type safety on the binding.
-
 == CSS Architecture
 
 === File Organization
@@ -658,4 +634,4 @@ The following patterns currently live inline in stage modules but are candidates
 3. **Resize handle creation/cleanup**: Currently inline in `workspace_expand()` / `workspace_collapse()`. The pattern (create handle → attach drag listeners → return cleanup function) is generalizable.
 
 ---
-_Last updated: 2026-01-30 (v4.5.0)_
+_Last updated: 2026-01-30 (v4.5.1)_
