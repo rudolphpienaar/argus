@@ -587,6 +587,39 @@
 }
 
 /* ============================================================ */
+/* MULTI-MODE OVERLAY SLOTS                                     */
+/* ============================================================ */
+/*
+ * The #asset-detail-overlay uses a data-mode attribute to switch
+ * between marketplace, project, and dataset views.
+ *
+ * - marketplace: show original sidebar/content/commands, hide slots
+ * - project/dataset: hide originals, show slots
+ *
+ * This eliminates shared innerHTML mutation and the fragile
+ * restore-on-close pattern.
+ */
+
+/* Marketplace mode (default): hide all slot containers */
+#asset-detail-overlay[data-mode="marketplace"] .overlay-slot {
+    display: none !important;
+}
+
+/* Project mode: hide original sidebar/content/commands, show slots */
+#asset-detail-overlay[data-mode="project"] .lcars-sidebar:not(.overlay-slot),
+#asset-detail-overlay[data-mode="project"] .lcars-content:not(.overlay-slot),
+#asset-detail-overlay[data-mode="project"] .detail-command-column:not(.overlay-slot) {
+    display: none !important;
+}
+
+/* Dataset mode: hide original sidebar/content/commands, show slots */
+#asset-detail-overlay[data-mode="dataset"] .lcars-sidebar:not(.overlay-slot),
+#asset-detail-overlay[data-mode="dataset"] .lcars-content:not(.overlay-slot),
+#asset-detail-overlay[data-mode="dataset"] .detail-command-column:not(.overlay-slot) {
+    display: none !important;
+}
+
+/* ============================================================ */
 /* DATASET GATHER PILLS                                         */
 /* ============================================================ */
 

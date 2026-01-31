@@ -37,11 +37,6 @@ let currentSearch: string = '';
 let currentSort: string = 'stars-desc';
 let currentDetailAssetId: string | null = null;
 
-/** Cached original innerHTML of the .lcars-content area inside the detail overlay. */
-let originalDetailContentHtml: string | null = null;
-
-/** Cached original innerHTML of the .detail-command-column inside the detail overlay. */
-let originalCommandColHtml: string | null = null;
 
 // ============================================================================
 // Initialization
@@ -276,57 +271,6 @@ window.asset_install = (id: string, btnElement: HTMLButtonElement): void => {
 // ============================================================================
 
 /**
- * Saves the original marketplace detail content HTML on first call.
- * Subsequent calls restore the saved HTML into the .lcars-content area,
- * ensuring the marketplace DOM structure is intact after project detail
- * views have overwritten it.
- */
-export function detailContent_restore(): void {
-    const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
-    if (!overlay) return;
-
-    const contentArea: Element | null = overlay.querySelector('.lcars-content');
-    if (!contentArea) return;
-
-    // Cache original state on first call
-    if (originalDetailContentHtml === null) {
-        originalDetailContentHtml = contentArea.innerHTML;
-    } else {
-        contentArea.innerHTML = originalDetailContentHtml;
-    }
-
-    // Restore command column (may have been replaced by dataset/project detail)
-    const commandCol: HTMLElement | null = overlay.querySelector('.detail-command-column') as HTMLElement;
-    if (commandCol) {
-        if (originalCommandColHtml === null) {
-            originalCommandColHtml = commandCol.innerHTML;
-        } else {
-            commandCol.innerHTML = originalCommandColHtml;
-        }
-    }
-
-    // Restore sidebar visibility (projectDetail_open hides it)
-    const sidebar: HTMLElement | null = overlay.querySelector('.lcars-sidebar') as HTMLElement;
-    if (sidebar) sidebar.style.display = '';
-
-    // Restore install button handlers (projectDetail_open clones and replaces them)
-    const installBtn: HTMLElement | null = document.getElementById('detail-install-btn');
-    if (installBtn) {
-        installBtn.onclick = (e: Event): void => {
-            e.stopPropagation();
-            assetDetail_install();
-        };
-    }
-
-    const closeBtn: Element | null = overlay.querySelector('.close-pill');
-    if (closeBtn) {
-        (closeBtn as HTMLElement).onclick = (): void => {
-            assetDetail_close();
-        };
-    }
-}
-
-/**
  * Opens the asset detail overlay for the given asset ID.
  * Restores the original marketplace DOM, then populates all detail
  * sections: header, specs, usage, dependencies, changelog, and
@@ -345,8 +289,8 @@ export function assetDetail_open(id: string): void {
     const lcarsFrame: HTMLElement | null = document.getElementById('detail-lcars-frame');
     if (!overlay || !panel || !lcarsFrame) return;
 
-    // Restore marketplace DOM in case projectDetail_open replaced it
-    detailContent_restore();
+    // Set mode to marketplace — CSS hides slot containers, shows originals
+    overlay.dataset.mode = 'marketplace';
 
     detailHeader_populate(asset, id, overlay, lcarsFrame);
     detailSpecs_populate(asset);

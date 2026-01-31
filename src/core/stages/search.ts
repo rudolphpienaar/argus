@@ -18,7 +18,6 @@ import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
 import { render_assetCard, type AssetCardOptions } from '../../ui/components/AssetCard.js';
 import { FileBrowser } from '../../ui/components/FileBrowser.js';
-import { detailContent_restore } from '../../marketplace/view.js';
 
 // ============================================================================
 // AI / Auth Logic
@@ -402,6 +401,16 @@ function projectDetail_close(): void {
         }
     }
 
+    // Clean up FileBrowser instance
+    if (detailBrowser) {
+        detailBrowser.destroy();
+        detailBrowser = null;
+    }
+
+    // Clear slot contents and reset mode
+    overlaySlots_clear();
+    overlay.dataset.mode = 'marketplace';
+
     overlay.classList.add('closing');
     overlay.addEventListener('animationend', (): void => {
         overlay.classList.add('hidden');
@@ -453,10 +462,11 @@ function projectDetail_populate(
 ): void {
     const projectBase: string = `/home/user/projects/${project.name}`;
 
+    // Set overlay mode — CSS hides marketplace originals, shows slots
+    overlay.dataset.mode = 'project';
+
     // 1. Style & Header
     lcarsFrame.style.setProperty('--lcars-hue', '30');
-    const commandCol: HTMLElement | null = overlay.querySelector('.detail-command-column') as HTMLElement;
-    if (commandCol) commandCol.style.setProperty('--module-color', 'var(--honey)');
 
     const nameEl: HTMLElement | null = document.getElementById('detail-name');
     const typeBadge: HTMLElement | null = document.getElementById('detail-type-badge');
@@ -498,11 +508,10 @@ function projectDetail_populate(
     globals.vcs.tree_unmount(`${projectBase}/data`);
     globals.vcs.tree_mount(`${projectBase}/data`, cohortRoot);
 
-    // 4. Sidebar — Show SOURCE / DATA tabs instead of hiding
-    const sidebar: HTMLElement | null = overlay.querySelector('.lcars-sidebar') as HTMLElement;
-    if (sidebar) {
-        sidebar.style.display = '';
-        sidebar.innerHTML = '';
+    // 4. Sidebar → write into #overlay-sidebar-slot (never touch marketplace original)
+    const sidebarSlot: HTMLElement | null = document.getElementById('overlay-sidebar-slot');
+    if (sidebarSlot) {
+        sidebarSlot.innerHTML = '';
 
         const tabs: Array<{ id: string; label: string; shade: number }> = [
             { id: 'source', label: 'SOURCE', shade: 1 },
@@ -521,7 +530,7 @@ function projectDetail_populate(
             panel.addEventListener('click', (e: Event): void => {
                 e.preventDefault();
                 activeTab = tab.id;
-                sidebar.querySelectorAll<HTMLElement>('.lcars-panel').forEach((p: HTMLElement): void => {
+                sidebarSlot.querySelectorAll<HTMLElement>('.lcars-panel').forEach((p: HTMLElement): void => {
                     p.classList.toggle('active', p.dataset.panelId === tab.id);
                 });
                 if (detailBrowser) detailBrowser.tab_switch(tab.id);
@@ -535,27 +544,27 @@ function projectDetail_populate(
                 }
             });
 
-            sidebar.appendChild(panel);
+            sidebarSlot.appendChild(panel);
         });
 
         // Spacer fills remaining sidebar height
         const spacer: HTMLDivElement = document.createElement('div');
         spacer.className = 'lcars-sidebar-spacer';
         spacer.dataset.shade = '4';
-        sidebar.appendChild(spacer);
+        sidebarSlot.appendChild(spacer);
 
         // Bottom corner panel to close the frame cleanly
         const bottomPanel: HTMLAnchorElement = document.createElement('a');
         bottomPanel.className = 'lcars-panel lcars-corner-bl';
         bottomPanel.dataset.shade = '3';
         bottomPanel.textContent = 'FILES';
-        sidebar.appendChild(bottomPanel);
+        sidebarSlot.appendChild(bottomPanel);
     }
 
-    // 5. Content — tabbed file tree + preview layout
-    const contentArea: Element | null = overlay.querySelector('.lcars-content');
-    if (contentArea) {
-        contentArea.innerHTML = `
+    // 5. Content → write into #overlay-content-slot
+    const contentSlot: HTMLElement | null = document.getElementById('overlay-content-slot');
+    if (contentSlot) {
+        contentSlot.innerHTML = `
             <section class="detail-section project-browser">
                 <div class="project-browser-layout">
                     <div class="file-tree" id="project-file-tree" style="border-color: var(--honey);">
@@ -587,25 +596,27 @@ function projectDetail_populate(
         }
     }
 
-    // 6. OPEN button → expand-in-place workspace
-    const installBtn: HTMLElement | null = document.getElementById('detail-install-btn');
-    if (installBtn) {
-        installBtn.classList.remove('installed', 'installing');
-        const textEl: Element | null = installBtn.querySelector('.btn-text');
-        if (textEl) textEl.textContent = 'OPEN';
+    // 6. Command pills → write CLOSE + OPEN into #overlay-command-slot
+    const commandSlot: HTMLElement | null = document.getElementById('overlay-command-slot');
+    if (commandSlot) {
+        commandSlot.style.setProperty('--module-color', 'var(--honey)');
+        commandSlot.innerHTML = `
+            <button class="pill-btn close-pill" id="project-close-btn">
+                <span class="btn-text">CLOSE</span>
+            </button>
+            <button class="pill-btn install-pill" id="project-open-btn">
+                <span class="btn-text">OPEN</span>
+            </button>
+        `;
 
-        installBtn.onclick = (e: Event): void => {
+        document.getElementById('project-close-btn')?.addEventListener('click', (): void => {
+            projectDetail_close();
+        });
+
+        document.getElementById('project-open-btn')?.addEventListener('click', (e: Event): void => {
             e.stopPropagation();
             workspace_expand(projectId, project);
-        };
-    }
-
-    // 7. Close button → animated close for projects
-    const closeBtn: Element | null = overlay.querySelector('.close-pill');
-    if (closeBtn) {
-        (closeBtn as HTMLElement).onclick = (): void => {
-            projectDetail_close();
-        };
+        });
     }
 }
 
@@ -625,7 +636,7 @@ function workspace_expand(projectId: string, project: Project): void {
 
     const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
     const layout: HTMLElement | null = overlay?.querySelector('.detail-layout') as HTMLElement;
-    const commandCol: HTMLElement | null = overlay?.querySelector('.detail-command-column') as HTMLElement;
+    const commandSlot: HTMLElement | null = document.getElementById('overlay-command-slot');
     const rightFrame: HTMLElement | null = document.querySelector('.right-frame') as HTMLElement;
     const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
 
@@ -645,10 +656,10 @@ function workspace_expand(projectId: string, project: Project): void {
     const stageContent: HTMLElement | null = document.querySelector('.stage-content[data-stage="search"]') as HTMLElement;
     if (stageContent) stageContent.style.display = 'none';
 
-    if (commandCol) {
-        commandCol.classList.add('command-col-hiding');
-        commandCol.addEventListener('transitionend', (): void => {
-            commandCol.style.display = 'none';
+    if (commandSlot) {
+        commandSlot.classList.add('command-col-hiding');
+        commandSlot.addEventListener('transitionend', (): void => {
+            commandSlot.style.display = 'none';
         }, { once: true });
     }
 
@@ -722,9 +733,9 @@ function workspace_expand(projectId: string, project: Project): void {
                 const tabId: string | null = cwdToTab_resolve(newCwd);
                 if (tabId && tabId !== detailBrowser.activeTab_get()) {
                     detailBrowser.tab_switch(tabId);
-                    const sidebarEl: HTMLElement | null = overlay?.querySelector('.lcars-sidebar') as HTMLElement;
-                    if (sidebarEl) {
-                        sidebarEl.querySelectorAll<HTMLElement>('.lcars-panel').forEach((p: HTMLElement): void => {
+                    const sidebarSlotEl: HTMLElement | null = document.getElementById('overlay-sidebar-slot');
+                    if (sidebarSlotEl) {
+                        sidebarSlotEl.querySelectorAll<HTMLElement>('.lcars-panel').forEach((p: HTMLElement): void => {
                             p.classList.toggle('active', p.dataset.panelId === tabId);
                         });
                     }
@@ -880,7 +891,7 @@ function workspace_collapse(): void {
 
     const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
     const layout: HTMLElement | null = overlay?.querySelector('.detail-layout') as HTMLElement;
-    const commandCol: HTMLElement | null = overlay?.querySelector('.detail-command-column') as HTMLElement;
+    const commandSlot: HTMLElement | null = document.getElementById('overlay-command-slot');
     const rightFrame: HTMLElement | null = document.querySelector('.right-frame') as HTMLElement;
     const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
 
@@ -911,9 +922,9 @@ function workspace_collapse(): void {
         overlay.style.height = '';
         delete overlay.dataset.workspace;
     }
-    if (commandCol) {
-        commandCol.style.display = '';
-        commandCol.classList.remove('command-col-hiding');
+    if (commandSlot) {
+        commandSlot.style.display = '';
+        commandSlot.classList.remove('command-col-hiding');
     }
 
     // Restore marketplace overlay visibility
@@ -1014,10 +1025,11 @@ function datasetDetail_populate(
     overlay: HTMLElement,
     lcarsFrame: HTMLElement
 ): void {
+    // Set overlay mode — CSS hides marketplace originals, shows slots
+    overlay.dataset.mode = 'dataset';
+
     // 1. Style & Header
     lcarsFrame.style.setProperty('--lcars-hue', '200');
-    const commandCol: HTMLElement | null = overlay.querySelector('.detail-command-column') as HTMLElement;
-    if (commandCol) commandCol.style.setProperty('--module-color', 'var(--sky)');
 
     const nameEl: HTMLElement | null = document.getElementById('detail-name');
     const typeBadge: HTMLElement | null = document.getElementById('detail-type-badge');
@@ -1042,34 +1054,33 @@ function datasetDetail_populate(
     globals.vcs.tree_unmount(`${tempBase}/data`);
     globals.vcs.tree_mount(`${tempBase}/data`, dataRoot);
 
-    // 4. Sidebar — hide it for dataset detail (single DATA context)
-    const sidebar: HTMLElement | null = overlay.querySelector('.lcars-sidebar') as HTMLElement;
-    if (sidebar) {
-        sidebar.style.display = '';
-        sidebar.innerHTML = '';
+    // 4. Sidebar → write into #overlay-sidebar-slot
+    const sidebarSlot: HTMLElement | null = document.getElementById('overlay-sidebar-slot');
+    if (sidebarSlot) {
+        sidebarSlot.innerHTML = '';
 
         const dataPanel: HTMLAnchorElement = document.createElement('a');
         dataPanel.className = 'lcars-panel active';
         dataPanel.textContent = 'DATA';
         dataPanel.dataset.shade = '1';
-        sidebar.appendChild(dataPanel);
+        sidebarSlot.appendChild(dataPanel);
 
         const spacer: HTMLDivElement = document.createElement('div');
         spacer.className = 'lcars-sidebar-spacer';
         spacer.dataset.shade = '4';
-        sidebar.appendChild(spacer);
+        sidebarSlot.appendChild(spacer);
 
         const bottomPanel: HTMLAnchorElement = document.createElement('a');
         bottomPanel.className = 'lcars-panel lcars-corner-bl';
         bottomPanel.dataset.shade = '2';
         bottomPanel.textContent = 'GATHER';
-        sidebar.appendChild(bottomPanel);
+        sidebarSlot.appendChild(bottomPanel);
     }
 
-    // 5. Content — selectable file tree + preview + cost strip
-    const contentArea: Element | null = overlay.querySelector('.lcars-content');
-    if (contentArea) {
-        contentArea.innerHTML = `
+    // 5. Content → write into #overlay-content-slot
+    const contentSlot: HTMLElement | null = document.getElementById('overlay-content-slot');
+    if (contentSlot) {
+        contentSlot.innerHTML = `
             <section class="detail-section project-browser">
                 <div class="project-browser-layout">
                     <div class="file-tree" id="dataset-file-tree" style="border-color: var(--sky);">
@@ -1114,9 +1125,11 @@ function datasetDetail_populate(
         }
     }
 
-    // 6. Command column pills — DONE + ADDITIONAL DATA (replace INSTALL/CLOSE)
-    if (commandCol) {
-        commandCol.innerHTML = `
+    // 6. Command pills → write into #overlay-command-slot
+    const commandSlot: HTMLElement | null = document.getElementById('overlay-command-slot');
+    if (commandSlot) {
+        commandSlot.style.setProperty('--module-color', 'var(--sky)');
+        commandSlot.innerHTML = `
             <button class="pill-btn done-pill" id="dataset-done-btn">
                 <span class="btn-text">DONE</span>
             </button>
@@ -1231,8 +1244,9 @@ function datasetDetail_close(): void {
 
     activeDetailDataset = null;
 
-    // Restore the overlay's original marketplace DOM (content + command column)
-    detailContent_restore();
+    // Clear slot contents and reset mode — marketplace originals are untouched
+    overlaySlots_clear();
+    overlay.dataset.mode = 'marketplace';
 
     overlay.classList.add('closing');
     overlay.addEventListener('animationend', (): void => {
@@ -1251,4 +1265,18 @@ function fileCount_total(node: VcsFileNode): number {
         count += fileCount_total(child);
     }
     return count;
+}
+
+/**
+ * Clears the overlay slot containers (sidebar, content, command).
+ * The marketplace's original DOM is never touched — mode switching
+ * is handled entirely by CSS via the data-mode attribute.
+ */
+function overlaySlots_clear(): void {
+    const sidebarSlot: HTMLElement | null = document.getElementById('overlay-sidebar-slot');
+    const contentSlot: HTMLElement | null = document.getElementById('overlay-content-slot');
+    const commandSlot: HTMLElement | null = document.getElementById('overlay-command-slot');
+    if (sidebarSlot) sidebarSlot.innerHTML = '';
+    if (contentSlot) contentSlot.innerHTML = '';
+    if (commandSlot) commandSlot.innerHTML = '';
 }

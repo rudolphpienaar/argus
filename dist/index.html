@@ -136,7 +136,7 @@
                 </div>
 
                 <!-- ASSET DETAIL OVERLAY -->
-                <div id="asset-detail-overlay" class="asset-detail-overlay hidden" onclick="if(event.target === this) assetDetail_close()">
+                <div id="asset-detail-overlay" class="asset-detail-overlay hidden" data-mode="marketplace" onclick="if(event.target === this) assetDetail_close()">
                     <div class="detail-layout">
                         <!-- MAIN DATA PANEL -->
                         <div class="detail-panel">
@@ -170,6 +170,9 @@
                                     <!-- Bottom corner panel -->
                                     <a href="#detail-sec-related" class="lcars-panel lcars-corner-bl" data-shade="3" data-panel-id="related">RELATED</a>
                                 </div>
+
+                                <!-- Slot: project/dataset sidebar (hidden in marketplace mode) -->
+                                <div id="overlay-sidebar-slot" class="lcars-sidebar overlay-slot"></div>
 
                                 <!-- Main content area -->
                                 <div class="lcars-content">
@@ -246,6 +249,9 @@
                                         </div>
                                     </section>
                                 </div>
+
+                                <!-- Slot: project/dataset content (hidden in marketplace mode) -->
+                                <div id="overlay-content-slot" class="lcars-content overlay-slot"></div>
                             </div>
                         </div>
 
@@ -258,6 +264,9 @@
                                 <div class="btn-progress"></div>
                             </button>
                         </div>
+
+                        <!-- Slot: project/dataset commands (hidden in marketplace mode) -->
+                        <div id="overlay-command-slot" class="detail-command-column overlay-slot"></div>
                     </div>
                 </div>
 
