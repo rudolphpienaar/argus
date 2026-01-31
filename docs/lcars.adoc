@@ -117,6 +117,52 @@ A horizontal strip of compact project chips persists at the top of the Search st
 
 First click on a chip sets it as the gather target. Second click (already active) opens the project detail overlay.
 
+== The Multi-Mode Overlay Architecture
+
+The `#asset-detail-overlay` is shared by three consumers — marketplace assets, project detail, and dataset detail — each requiring different sidebar panels, content areas, and command pills. Rather than rewriting the overlay's innerHTML on each open and restoring it on close (a fragile pattern that caused regressions), the overlay uses a **slot-based multi-mode** approach.
+
+=== DOM Structure
+
+The overlay contains both the marketplace's original static DOM and three empty **slot containers**:
+
+----
+#asset-detail-overlay[data-mode="marketplace|project|dataset"]
+├── .detail-layout
+│   ├── .detail-panel
+│   │   ├── .lcars-frame
+│   │   │   ├── .lcars-sidebar            ← marketplace original (never mutated)
+│   │   │   ├── #overlay-sidebar-slot     ← project/dataset sidebar
+│   │   │   ├── .lcars-content            ← marketplace original (never mutated)
+│   │   │   ├── #overlay-content-slot     ← project/dataset content
+│   ├── .detail-command-column            ← marketplace original (CLOSE/INSTALL)
+│   ├── #overlay-command-slot             ← project/dataset commands (DONE/ADD/CANCEL or CLOSE/OPEN)
+----
+
+=== Mode Switching
+
+The `data-mode` attribute on the overlay root controls visibility via CSS attribute selectors:
+
+* **`marketplace`** (default): Original sidebar, content, and command column are visible. All `.overlay-slot` containers are `display: none`.
+* **`project`** / **`dataset`**: Original elements are hidden via `:not(.overlay-slot)` selectors. Slot containers are visible and populated by `projectDetail_populate()` or `datasetDetail_populate()`.
+
+When a project or dataset detail is closed, the close handler:
+
+1. Clears slot innerHTML (via `overlaySlots_clear()`)
+2. Sets `data-mode="marketplace"`
+
+The marketplace's original DOM is **never touched**. No restore logic is needed.
+
+=== Workspace Teardown
+
+When the user triggers FEDERALIZE AND LAUNCH from within an expanded workspace, the system must fully tear down the workspace before transitioning to the Monitor stage. The `workspace_teardown()` function handles this:
+
+1. Calls `workspace_collapse()` — removes resize handles, restores `rightFrame` layout, shows stage content
+2. Hides the `asset-detail-overlay` and resets `data-mode` to `marketplace`
+3. Clears all slot contents
+4. Closes the terminal (monitor has its own telemetry)
+
+This ensures the Monitor stage content renders unobstructed.
+
 == Operational Modes
 
 The terminal dynamically adapts its persona and capabilities based on the active SeaGaP stage.
