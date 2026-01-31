@@ -2,9 +2,16 @@
 
 **ATLAS Resource Graphical User System**
 
-ARGUS (**A**TLAS **R**esource **G**raphical **U**ser **S**ystem) is named after Argus Panoptes, the hundred-eyed giant from Greek mythology—the all-seeing guardian. This vigilance is the guiding metaphor for the platform: providing a comprehensive, transparent window into distributed medical imaging resources.
+ARGUS (**A**TLAS **R**esource **G**raphical **U**ser **S**ystem) is the conceptual UI layer for **ATLAS** (Advanced Training and Learning At Scale), a platform designed to enable federated machine learning on medical imaging data across distributed, secure institutional nodes.
 
-ARGUS is the conceptual UI layer for **ATLAS** (Advanced Training and Learning At Scale), a platform designed to enable federated machine learning on medical imaging data across distributed, secure institutional nodes. Originally conceived as a rapid prototyping environment to explore user interaction models for the "Federated ML Developer" persona, ARGUS has evolved into a functional architectural reference.
+## The Mythological Metaphor
+
+The project draws its naming from two figures in Greek mythology, representing the relationship between the infrastructure and the user interface:
+
+*   **ATLAS** (The Titan) was condemned to hold up the celestial spheres for eternity. In our context, ATLAS is the massive, distributed infrastructure that bears the weight of the federated learning ecosystem—computing, storage, and secure networking across institutions.
+*   **ARGUS** (The Giant) was Argus Panoptes, the "all-seeing" watchman with a hundred eyes. In our context, ARGUS is the interface that provides vigilance and visibility. It acts as the hundred eyes of the developer, monitoring the distributed training jobs, datasets, and secure enclaves that ATLAS supports.
+
+**Atlas supports the weight; Argus sees the details.**
 
 ## The Concept
 
