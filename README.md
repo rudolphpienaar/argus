@@ -2,9 +2,9 @@
 
 **ATLAS Resource Graphical User System**
 
-ARGUS is the conceptual UI layer for **ATLAS** (Advanced Training and Learning At Scale), a platform designed to enable federated machine learning on medical imaging data across distributed, secure institutional nodes.
+ARGUS (**A**TLAS **R**esource **G**raphical **U**ser **S**ystem) is named after Argus Panoptes, the hundred-eyed giant from Greek mythology—the all-seeing guardian. This vigilance is the guiding metaphor for the platform: providing a comprehensive, transparent window into distributed medical imaging resources.
 
-Originally conceived as a rapid prototyping environment to explore user interaction models for the "Federated ML Developer" persona, ARGUS has evolved into a functional architectural reference.
+ARGUS is the conceptual UI layer for **ATLAS** (Advanced Training and Learning At Scale), a platform designed to enable federated machine learning on medical imaging data across distributed, secure institutional nodes. Originally conceived as a rapid prototyping environment to explore user interaction models for the "Federated ML Developer" persona, ARGUS has evolved into a functional architectural reference.
 
 ## The Concept
 
