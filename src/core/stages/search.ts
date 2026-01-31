@@ -1121,7 +1121,7 @@ function datasetDetail_populate(
                 <span class="btn-text">DONE</span>
             </button>
             <button class="pill-btn additional-data-pill" id="dataset-additional-btn">
-                <span class="btn-text">ADDITIONAL DATA</span>
+                <span class="btn-text">ADD</span>
             </button>
             <button class="pill-btn close-pill" id="dataset-close-btn">
                 <span class="btn-text">CANCEL</span>
