@@ -40,6 +40,9 @@ let currentDetailAssetId: string | null = null;
 /** Cached original innerHTML of the .lcars-content area inside the detail overlay. */
 let originalDetailContentHtml: string | null = null;
 
+/** Cached original innerHTML of the .detail-command-column inside the detail overlay. */
+let originalCommandColHtml: string | null = null;
+
 // ============================================================================
 // Initialization
 // ============================================================================
@@ -278,17 +281,28 @@ window.asset_install = (id: string, btnElement: HTMLButtonElement): void => {
  * ensuring the marketplace DOM structure is intact after project detail
  * views have overwritten it.
  */
-function detailContent_restore(): void {
+export function detailContent_restore(): void {
     const overlay: HTMLElement | null = document.getElementById('asset-detail-overlay');
     if (!overlay) return;
 
     const contentArea: Element | null = overlay.querySelector('.lcars-content');
     if (!contentArea) return;
 
+    // Cache original state on first call
     if (originalDetailContentHtml === null) {
         originalDetailContentHtml = contentArea.innerHTML;
     } else {
         contentArea.innerHTML = originalDetailContentHtml;
+    }
+
+    // Restore command column (may have been replaced by dataset/project detail)
+    const commandCol: HTMLElement | null = overlay.querySelector('.detail-command-column') as HTMLElement;
+    if (commandCol) {
+        if (originalCommandColHtml === null) {
+            originalCommandColHtml = commandCol.innerHTML;
+        } else {
+            commandCol.innerHTML = originalCommandColHtml;
+        }
     }
 
     // Restore sidebar visibility (projectDetail_open hides it)

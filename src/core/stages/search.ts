@@ -18,6 +18,7 @@ import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
 import { render_assetCard, type AssetCardOptions } from '../../ui/components/AssetCard.js';
 import { FileBrowser } from '../../ui/components/FileBrowser.js';
+import { detailContent_restore } from '../../marketplace/view.js';
 
 // ============================================================================
 // AI / Auth Logic
@@ -1229,6 +1230,9 @@ function datasetDetail_close(): void {
     }
 
     activeDetailDataset = null;
+
+    // Restore the overlay's original marketplace DOM (content + command column)
+    detailContent_restore();
 
     overlay.classList.add('closing');
     overlay.addEventListener('animationend', (): void => {
