@@ -2,139 +2,98 @@
 
 **ATLAS Resource Graphical User System**
 
-ARGUS is a functional mock-up — bordering on prototype — for rapidly exploring interface ideas for the [ATLAS](https://github.com/FNNDSC/ATLAS) federated medical imaging platform. The name draws from Greek mythology: Argus Panoptes, the hundred-eyed giant whose vigilance made him the perfect guardian.
+ARGUS is the UI layer for the [ATLAS](https://github.com/FNNDSC/ATLAS) federated medical imaging platform. It is an advanced architectural prototype demonstrating how a **Virtual Computer System (VCS)**, an **AI-Enhanced Intelligence Console**, and a **Strict Vanilla TypeScript Framework** can be combined to create a powerful, "No-Framework" web application.
 
-ARGUS is not a production UI. It is a design and interaction laboratory built to answer questions about how developers, annotators, and other personas might interact with federated medical imaging resources through an AI-enhanced Intelligent Terminal.
+> **Status:** Active Architectural Prototype / Foundation for Production
+> **Version:** 4.5.1
 
-## What It Explores
+## Core Capabilities
 
-The current focus is the **Federated ML Developer persona** — a researcher who searches for datasets, assembles cohorts, launches distributed training across Trusted Domains, and monitors results. The primary interaction surface is the **Intelligence Console**: a hybrid terminal that blends Unix-like shell commands with natural language AI queries in a single stream.
+### 1. The Virtual Computer System (VCS)
+ARGUS is not just a UI; it simulates a running computer in the browser.
+*   **Full Filesystem**: In-memory, POSIX-like filesystem (`src/vfs/`) with directories, permissions, and content.
+*   **Shell Interpreter**: A functional shell (`src/vfs/Shell.ts`) supporting pipes, environment variables (`$HOME`, `$PWD`), and builtins (`cd`, `ls`, `grep`, `cat`).
+*   **Providers**: Bridges that mount application state (Datasets, Projects) as virtual files, allowing standard tools to interact with rich domain objects.
 
-The **SeaGaP-MP** workflow (Search, Gather, Process, Monitor, Post) informs the underlying narrative thread, but the interface is responsive and exploratory rather than a rigid stage-gate pipeline.
+### 2. The Intelligence Console
+A hybrid command-line interface that seamlessly blends:
+*   **System Commands**: `ls`, `cd`, `mkdir` (executed by the Shell).
+*   **Workflow Commands**: `search`, `mount`, `federate` (executed by the Command Router).
+*   **Natural Language**: "Find chest x-ray datasets under $500" (executed by the AI Service via RAG).
 
-## The Virtual Computer System (VCS)
+### 3. The SeaGaP-MP Workflow
+The application implements the ATLAS workflow for Federated Machine Learning:
+*   **Search**: Discover datasets via AI or filters.
+*   **Gather**: Inspect and mount cohorts into the VCS.
+*   **Process**: Write code in a split-pane IDE backed by the VFS.
+*   **Monitor**: Visualize real-time federated training across distributed nodes.
+*   **Post**: Publish trained models to the Marketplace.
 
-The **VCS** is the stateful runtime environment underlying the ARGUS Intelligence Terminal. Unlike a static UI mock-up, the VCS provides a living, in-memory POSIX-like filesystem that maintains state across interactions.
+## The "No-Framework" Architecture
 
-- **Filesystem:** Supports directories, files with content, and standard CRUD operations.
-- **Shell:** A command interpreter supporting pipes, environment variables (`$HOME`, `$PATH`), and 15 builtin commands (e.g., `cd`, `ls`, `cat`, `grep`, `open`).
-- **Identity vs. Role:** The system separates user identity (Username: `user`, Home: `/home/user`) from the active persona (Role: `fedml`, `appdev`). This allows users to switch contexts (e.g., from training a model to packaging an app) without losing access to their project files.
-- **Content Providers:** Dynamic bridges that map application state (Datasets, Projects, Marketplace Assets) into the filesystem as "virtual files," allowing users to interact with rich objects using standard CLI tools.
+ARGUS is built without React, Vue, or Svelte. It relies on a rigorous set of architectural patterns to maintain scalability and type safety.
 
-### Features
+*   **Store + EventBus**: Centralized state management with a Pub/Sub backbone.
+*   **RPN Naming**: Strict `object_method` naming convention (e.g., `project_load`, `dataset_select`) for discoverability.
+*   **Slot Pattern**: Overlay management that prevents DOM corruption by using CSS-switched slots.
+*   **LCARS Framework**: A decoupled UI library (`src/lcars-framework/`) implementing the Star Trek aesthetic.
 
-- LCARS-themed UI (Star Trek inspired interface)
-- AI-enhanced Intelligence Console (OpenAI/Gemini) with 15 Unix-like builtins
-- Marketplace with 400+ medical AI assets (plugins, datasets, models, annotations)
-- Simulated federated training across 5 Trusted Domains
-- Real-time training progress with loss charts
-- Cost tracking with abort capability
-- Split-pane IDE with syntax highlighting
+See [docs/framework.adoc](docs/framework.adoc) for the full architectural specification.
 
 ## Quick Start
+
+### Prerequisites
+*   Node.js 18+
+*   NPM
+
+### Installation
 
 ```bash
 # Install dependencies
 make install
 
-# Build TypeScript
+# Build the application
 make build
 
-# Serve the prototype
+# Start the development server
 make serve
 ```
 
-Then open http://localhost:8080
+Open **http://localhost:8080** in your browser.
+
+## Documentation
+
+New developers should start here:
+
+1.  **[Onboarding Guide](docs/onboarding.adoc)**: The "mental model" of the application and "Hello World" examples.
+2.  **[Framework Patterns](docs/framework.adoc)**: The rules of the road (Naming, State, Components).
+3.  **[Architecture](docs/architecture.adoc)**: High-level system design and service layers.
+4.  **[VCS Specification](docs/vcs.adoc)**: Deep dive into the Virtual Computer System.
 
 ## Project Structure
 
 ```
 argus/
-├── docs/
-│   ├── CONTEXT.md              # Development context and changelog
-│   ├── architecture.adoc       # Pub/Sub architecture, event catalog, VCS
-│   ├── design.adoc             # SeaGaP-MP paradigm, Federalization model
-│   ├── dev.adoc                # Developer notes, LCARS reference, testing
-│   ├── lcars.adoc              # LCARS interface and component system
-│   ├── marketplace.adoc        # Marketplace asset types and lifecycle
-│   ├── modularization.adoc     # LCARS Framework extraction plan
-│   ├── philosophy.adoc         # Conceptual design philosophy
-│   ├── vcs.adoc                # Virtual Computer System specification
-│   └── visual_language.adoc    # Animation patterns and visual design
-│
 ├── src/
-│   ├── lcars-framework/        # Reusable Library
-│   │   ├── telemetry/          # Telemetry generators & renderers
-│   │   └── ui/                 # Shared UI components (Terminal, WorkflowTracker)
-│   ├── core/
-│   │   ├── data/               # Mock registries (datasets, projects, marketplace, nodes)
-│   │   ├── logic/              # Navigation, Costs, Telemetry
-│   │   ├── models/             # TypeScript interfaces (AppState, Dataset, Project, etc.)
-│   │   ├── stages/             # SeaGaP stage implementations
-│   │   └── state/              # Store (centralized state) and EventBus (Pub/Sub)
-│   ├── generated/              # Auto-generated version info
-│   ├── lcarslm/                # AI Core (OpenAI, Gemini clients)
-│   ├── marketplace/            # Marketplace view and install logic
-│   ├── search/                 # Search Engine
-│   │   ├── providers/          # Search providers (Nano, Mock)
-│   │   └── engine.ts           # Search orchestration
-│   ├── telemetry/              # App-specific telemetry setup
-│   ├── ui/                     # Application UI
-│   │   ├── components/         # LCARS Frames, Panels, Slots
-│   │   └── gutters.ts          # Layout logic
-│   ├── vfs/                    # Virtual Computer System
-│   │   ├── VirtualFileSystem.ts    # In-memory POSIX-like filesystem
-│   │   ├── Shell.ts                # Command interpreter (15 builtins, env vars, prompt)
-│   │   ├── types.ts                # FileNode, ShellResult, ContentContext
-│   │   ├── content/                # ContentRegistry + 14 template generators
-│   │   └── providers/              # Dataset, Project, Marketplace providers
-│   └── argus.ts                # Main entry point
-│
-├── dist/                       # Built output (HTML, CSS, JS)
-├── TYPESCRIPT-STYLE-GUIDE.md   # Coding conventions (RPN, typing, JSDoc)
-└── package.json
+│   ├── argus.ts                # Application Orchestrator (Entry Point)
+│   ├── lcars-framework/        # Decoupled UI Library (Terminal, Workflow)
+│   ├── lcarslm/                # AI Service & RAG Engine
+│   ├── marketplace/            # Marketplace View & Logic
+│   ├── vfs/                    # Virtual Computer System (Shell, FS, Providers)
+│   └── core/
+│       ├── logic/              # Business Logic (Commands, Navigation, Lifecycle)
+│       ├── state/              # Store & EventBus
+│       ├── stages/             # SeaGaP Stage Implementations (Search, Process...)
+│       └── models/             # TypeScript Interfaces
+├── docs/                       # Comprehensive Documentation
+└── dist/                       # Compiled Output
 ```
-
-## Personas (Planned)
-
-The Federated ML Developer persona is the current focus. Future exploration may include:
-
-- **App Developer** — Build and package MERIDIAN-compliant applications
-- **Annotator** — Label medical images
-- **User** — Run inference with existing models
-- **Data Provider** — Manage contributed datasets
-- **Administrator** — Platform governance
-
-## Technology
-
-- TypeScript 5.0+ with strict mode
-- LCARS CSS theme (adapted from [theLCARS.com](https://www.thelcars.com))
-- Vanilla JS runtime (no framework dependencies)
-- RPN naming convention (`subject_verb` pattern)
-- Vitest for testing (134 tests)
-
-## Testing
-
-```bash
-# Run all 134 tests
-make test
-
-# Run specific suite
-npx vitest run src/vfs/Shell.test.ts
-```
-
-| Suite | Tests |
-|-------|-------|
-| VirtualFileSystem | 64 |
-| Shell | 51 |
-| ContentRegistry | 16 |
-| Costs | 3 |
 
 ## Related Projects
 
 - [ATLAS](https://github.com/FNNDSC/ATLAS) - Advanced Training and Learning At Scale
 - [ChRIS](https://github.com/FNNDSC/ChRIS_ultron_backEnd) - ChRIS Research Integration System
-- [MERIDIAN](docs/philosophy.adoc) - Multi-tenant Execution Runtime for Integrated Distributed Infrastructure in ATLAS Nodes
+- [MERIDIAN](docs/philosophy.adoc) - Multi-tenant Execution Runtime for Integrated Distributed Infrastructure
 
 ## License
 
@@ -142,7 +101,6 @@ MIT
 
 ## Acknowledgments
 
-- **Architect & Lead Developer:** Rudolph Pienaar (System Architecture, Source Layout, Design).
-- **AI Assistance:** Implementation support and boilerplate generation provided by **Claude Code** (Anthropic), **Codex** (OpenAI), and **Gemini CLI** (Google), developed under the direction and review of the lead developer.
-- **LCARS Theme:** Based on work by Jim Robertus ([theLCARS.com](https://www.thelcars.com)).
-- **Data:** Sample chest X-ray images from [COVID Chest X-ray Dataset](https://github.com/ieee8023/covid-chestxray-dataset) and Wikimedia Commons.
+- **Architect & Lead Developer:** Rudolph Pienaar.
+- **AI Assistance:** Development accelerated by **Claude Code** (Anthropic), **Codex** (OpenAI), and **Gemini CLI** (Google).
+- **Design:** LCARS Theme based on work by Jim Robertus ([theLCARS.com](https://www.thelcars.com)).
