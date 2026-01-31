@@ -63,5 +63,6 @@ make serve
 ## Acknowledgments
 
 *   **Architect & Lead:** Rudolph Pienaar
-*   **Design Influence:** The visual language is based on the Star Trek LCARS system, adapted for modern web usability.
+*   **Original Design:** The visual language is based on the **LCARS** (Library Computer Access/Retrieval System) interface designed by **Michael Okuda** for *Star Trek: The Next Generation*. His visionary work from the 1980s remains a pinnacle of functional futuristic design, continuing to inspire developers and designers nearly 40 years later.
+*   **LCARS Reference:** The specific CSS architecture and visual fidelity of this project are heavily derived from the excellent work of **Jim Robertus** at [TheLCARS.com](https://www.thelcars.com). His reference implementations are the gold standard for web-based LCARS interfaces.
 *   **AI Collaboration:** Development was accelerated using an agentic workflow with Claude Code, Codex, and Gemini.
