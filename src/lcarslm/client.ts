@@ -8,6 +8,18 @@
 
 import type { ChatMessage, LCARSSystemConfig } from './types.js';
 
+interface OpenAIModelList {
+    data: Array<{ id: string }>;
+}
+
+interface OpenAIError {
+    error?: { message: string };
+}
+
+interface OpenAIChatResponse {
+    choices: Array<{ message: { content: string } }>;
+}
+
 /**
  * Client for interacting with the OpenAI Chat Completions API.
  */
@@ -36,9 +48,9 @@ export class OpenAIClient {
                 headers: { 'Authorization': `Bearer ${this.apiKey}` }
             });
             if (!response.ok) return "UNABLE TO RETRIEVE MODEL LIST.";
-            const data: any = await response.json();
-            return data.data.map((m: any) => m.id).join('\n');
-        } catch (e: any) {
+            const data: unknown = await response.json();
+            return (data as OpenAIModelList).data.map((m) => m.id).join('\n');
+        } catch (e: unknown) {
             return "ERROR QUERYING MODELS.";
         }
     }
@@ -66,13 +78,13 @@ export class OpenAIClient {
             });
 
             if (!response.ok) {
-                const error: any = await response.json();
-                throw new Error(error.error?.message || 'Unknown API Error');
+                const error: unknown = await response.json();
+                throw new Error((error as OpenAIError).error?.message || 'Unknown API Error');
             }
 
-            const data: any = await response.json();
-            return data.choices[0]?.message?.content || '';
-        } catch (error: any) {
+            const data: unknown = await response.json();
+            return (data as OpenAIChatResponse).choices[0]?.message?.content || '';
+        } catch (error: unknown) {
             console.error('OpenAI API Error:', error);
             throw error;
         }

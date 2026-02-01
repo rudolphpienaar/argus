@@ -10,7 +10,7 @@
 import { state, globals, store } from '../core/state/store.js';
 import type { Dataset } from '../core/models/types.js';
 import type { QueryResponse } from './types.js';
-import { dataset_select, workspace_render } from '../core/stages/search.js';
+import { datasetDetail_open, workspace_render } from '../core/stages/search.js';
 import { stage_next } from '../core/logic/navigation.js';
 
 /**
@@ -66,8 +66,8 @@ function aiResponse_process(response: QueryResponse): void {
             workspace_render([], true); // Render empty search results to clear previous context
         }
 
-        dataset_select(datasetId);
-        t.println(`● AFFIRMATIVE. DATASET [${datasetId}] SELECTED AND ADDED TO SESSION BUFFER.`);
+        datasetDetail_open(datasetId);
+        t.println(`● AFFIRMATIVE. OPENING DATASET [${datasetId}] FOR INSPECTION.`);
     }
 
     if (response.answer.includes('[ACTION: PROCEED]')) {

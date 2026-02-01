@@ -165,8 +165,12 @@ export class LCARSTerminal {
         if (command) {
             try {
                 await command.execute(args, this);
-            } catch (err: any) {
-                this.println(`<span class="error">Error: ${err.message}</span>`);
+            } catch (err: unknown) {
+                if (err instanceof Error) {
+                    this.println(`<span class="error">Error: ${err.message}</span>`);
+                } else {
+                    this.println(`<span class="error">Error: Unknown error occurred</span>`);
+                }
             }
         } else if (this.onUnhandledCommand) {
             await this.onUnhandledCommand(name, args);

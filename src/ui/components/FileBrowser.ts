@@ -141,21 +141,40 @@ export class FileBrowser {
     public preview_show(fullPath: string, displayPath: string): void {
         const fileName: string = displayPath.split('/').pop() || displayPath;
 
-        // Image files — render from web-served dataset images
-        if (this.imageFile_test(fileName)) {
-            const webUrl: string | null = this.imageWebUrl_resolve(fullPath, fileName);
-            if (webUrl) {
-                this.previewEl.innerHTML = `
-                    <div class="preview-filename">${fileName}</div>
-                    <img src="${webUrl}" alt="${fileName}" onerror="this.outerHTML='<pre><code><span class=dim>Image not found on server</span></code></pre>'">
-                `;
-                return;
-            }
-        }
-
-        // Text files — read content from VFS
         try {
             const content: string | null = this.vfs.node_read(fullPath);
+            
+            // Handle Data URIs (uploaded files)
+            if (content && content.startsWith('data:')) {
+                if (content.startsWith('data:image/')) {
+                    this.previewEl.innerHTML = `
+                        <div class="preview-filename">${fileName}</div>
+                        <img src="${content}" alt="${fileName}" style="max-height: 100%; max-width: 100%; object-fit: contain;">
+                    `;
+                    return;
+                }
+                if (content.startsWith('data:application/pdf')) {
+                    this.previewEl.innerHTML = `
+                        <div class="preview-filename">${fileName}</div>
+                        <embed src="${content}" type="application/pdf" width="100%" height="100%" style="min-height: 500px; border: none;">
+                    `;
+                    return;
+                }
+            }
+
+            // Image files from web server (legacy path)
+            if (this.imageFile_test(fileName)) {
+                const webUrl: string | null = this.imageWebUrl_resolve(fullPath, fileName);
+                if (webUrl) {
+                    this.previewEl.innerHTML = `
+                        <div class="preview-filename">${fileName}</div>
+                        <img src="${webUrl}" alt="${fileName}" onerror="this.outerHTML='<pre><code><span class=dim>Image not found on server</span></code></pre>'">
+                    `;
+                    return;
+                }
+            }
+
+            // Text files
             if (content != null) {
                 this.previewEl.innerHTML = `
                     <div class="preview-filename">${fileName}</div>

@@ -18,6 +18,9 @@ import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
 import { render_assetCard, type AssetCardOptions } from '../../ui/components/AssetCard.js';
 import { FileBrowser } from '../../ui/components/FileBrowser.js';
+import { overlaySlots_clear } from '../logic/OverlayUtils.js';
+import { resizeHandle_attach } from '../../ui/interactions/ResizeHandle.js';
+import { files_prompt, files_ingest } from '../logic/FileUploader.js';
 
 // ============================================================================
 // AI / Auth Logic
@@ -218,7 +221,12 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
  */
 function projectStrip_render(): void {
     const strip: HTMLElement | null = document.getElementById('project-strip');
-    if (!strip) return;
+    if (!strip) {
+        console.error('ARGUS: project-strip element not found in DOM');
+        return;
+    }
+
+    console.log('ARGUS: Rendering project strip. Project count:', MOCK_PROJECTS.length);
 
     let html: string = '<span class="project-strip-header">PROJECTS</span>';
 
@@ -243,11 +251,40 @@ function projectStrip_render(): void {
     });
 
     strip.querySelector('.project-chip.new-project')?.addEventListener('click', (): void => {
-        // Deselect any active project — new project mode
-        gatherTargetProject = null;
+        console.log('ARGUS: + NEW clicked');
+        // Immediate Draft Creation
+        const timestamp = Date.now();
+        const shortId = timestamp.toString().slice(-4);
+        const draftProject: Project = {
+            id: `draft-${timestamp}`,
+            name: `DRAFT-${shortId}`,
+            description: 'New project workspace',
+            created: new Date(),
+            lastModified: new Date(),
+            datasets: []
+        };
+
+        MOCK_PROJECTS.push(draftProject);
+        gatherTargetProject = draftProject;
+        console.log('ARGUS: Created draft project:', draftProject);
+
+        // Mount in VFS and activate context
+        const projectBase: string = `/home/user/projects/${draftProject.name}`;
+        // Create clean project root only - NO BOILERPLATE
+        globals.vcs.dir_create(projectBase);
+
+        if (globals.shell) {
+            globals.shell.command_execute(`cd ${projectBase}`);
+            globals.shell.env_set('PROJECT', draftProject.name);
+            if (globals.terminal) globals.terminal.prompt_sync();
+        }
+        
         projectStrip_render();
+        
         if (globals.terminal) {
-            globals.terminal.println('○ NEW PROJECT MODE: GATHER DATA TO CREATE A NEW PROJECT.');
+            globals.terminal.println(`● NEW PROJECT INITIALIZED: [${draftProject.name}].`);
+            globals.terminal.println(`○ CONTEXT SWITCHED TO ${projectBase}`);
+            globals.terminal.println(`○ TYPE "upload" TO INGEST LOCAL FILES OR CONTINUE SEARCHING.`);
         }
     });
 }
@@ -480,43 +517,49 @@ function projectDetail_populate(
     if (starsEl) starsEl.textContent = `${project.datasets.length} DATASETS`;
     if (authorEl) authorEl.textContent = `UPDATED: ${project.lastModified.toLocaleDateString()}`;
 
-    // 2. Build both file trees upfront
-    const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
-    const srcRoot: VcsFileNode = {
-        name: 'src', type: 'folder', path: '/src', size: '-', modified: new Date(),
-        content: null, contentGenerator: null, permissions: 'rw', metadata: {},
-        children: [
-            { name: 'train.py', type: 'file', path: '/src/train.py', size: '2KB', modified: new Date(), content: null, contentGenerator: 'train', permissions: 'rw', metadata: {}, children: null },
-            { name: 'config.yaml', type: 'file', path: '/src/config.yaml', size: '500B', modified: new Date(), content: null, contentGenerator: 'config', permissions: 'rw', metadata: {}, children: null },
-            { name: 'requirements.txt', type: 'file', path: '/src/requirements.txt', size: '200B', modified: new Date(), content: null, contentGenerator: 'requirements', permissions: 'rw', metadata: {}, children: null },
-            { name: 'README.md', type: 'file', path: '/src/README.md', size: '1KB', modified: new Date(), content: null, contentGenerator: 'readme', permissions: 'rw', metadata: {}, children: null },
-            {
-                name: '.meridian', type: 'folder', path: '/src/.meridian', size: '-', modified: new Date(),
-                content: null, contentGenerator: null, permissions: 'rw', metadata: {},
-                children: [
-                    { name: 'manifest.json', type: 'file', path: '/src/.meridian/manifest.json', size: '300B', modified: new Date(), content: null, contentGenerator: 'manifest', permissions: 'rw', metadata: {}, children: null }
-                ]
-            }
-        ]
-    };
+    // 2. Build file trees from ACTUAL VFS STATE
+    // This ensures that uploaded files (and scaffolded files) are visible.
+    
+    // Ensure the project exists in VFS
+    if (!globals.vcs.node_stat(projectBase)) {
+        // If somehow missing (e.g. legacy mock), just create root
+        globals.vcs.dir_create(projectBase);
+    }
 
-    const trees: Record<string, VcsFileNode> = { source: srcRoot, data: cohortRoot };
-    let activeTab: string = 'source';
+    const srcRoot: VcsFileNode | null = vfsTree_build(`${projectBase}/src`);
+    const dataRoot: VcsFileNode | null = vfsTree_build(`${projectBase}/data`);
+    const projectRoot: VcsFileNode | null = vfsTree_build(projectBase);
 
-    // 3. Ensure project files exist in VFS for preview
-    projectDir_populate(globals.vcs, 'user', project.name);
-    globals.vcs.tree_unmount(`${projectBase}/data`);
-    globals.vcs.tree_mount(`${projectBase}/data`, cohortRoot);
+    const trees: Record<string, VcsFileNode> = {};
+    const tabs: Array<{ id: string; label: string; shade: number }> = [];
+
+    // Decision Logic: Progressive Structure
+    // Only switch to "IDE Mode" (Source/Data tabs) if there is actual source code structure.
+    // Otherwise, stay in "Filesystem Mode" (Root view) so users see uploads + data folders together.
+    if (srcRoot) {
+        // Has code structure -> IDE View
+        trees.source = srcRoot;
+        tabs.push({ id: 'source', label: 'SOURCE', shade: 1 });
+        
+        if (dataRoot) {
+            trees.data = dataRoot;
+            tabs.push({ id: 'data', label: 'DATA', shade: 2 });
+        }
+    } else {
+        // Draft/Hybrid/Flat -> Filesystem View
+        if (projectRoot) {
+            trees.files = projectRoot;
+            tabs.push({ id: 'files', label: 'FILES', shade: 1 });
+        }
+    }
+
+    // Default active tab
+    let activeTab: string = tabs.length > 0 ? tabs[0].id : 'files';
 
     // 4. Sidebar → write into #overlay-sidebar-slot (never touch marketplace original)
     const sidebarSlot: HTMLElement | null = document.getElementById('overlay-sidebar-slot');
     if (sidebarSlot) {
         sidebarSlot.innerHTML = '';
-
-        const tabs: Array<{ id: string; label: string; shade: number }> = [
-            { id: 'source', label: 'SOURCE', shade: 1 },
-            { id: 'data', label: 'DATA', shade: 2 }
-        ];
 
         tabs.forEach((tab): void => {
             const panel: HTMLAnchorElement = document.createElement('a');
@@ -525,7 +568,7 @@ function projectDetail_populate(
             panel.textContent = tab.label;
             panel.dataset.panelId = tab.id;
             panel.dataset.shade = String(tab.shade);
-            if (tab.id === 'source') panel.classList.add('active');
+            if (tab.id === activeTab) panel.classList.add('active');
 
             panel.addEventListener('click', (e: Event): void => {
                 e.preventDefault();
@@ -537,8 +580,10 @@ function projectDetail_populate(
 
                 // Sync terminal pwd when workspace is active
                 if (isWorkspaceExpanded && workspaceProjectBase) {
-                    const subdir: string = tab.id === 'source' ? 'src' : 'data';
-                    const targetPath: string = `${workspaceProjectBase}/${subdir}`;
+                    let targetPath = workspaceProjectBase;
+                    if (tab.id === 'source') targetPath += '/src';
+                    else if (tab.id === 'data') targetPath += '/data';
+                    
                     globals.vcs.cwd_set(targetPath);
                     if (globals.terminal) globals.terminal.prompt_sync();
                 }
@@ -596,11 +641,17 @@ function projectDetail_populate(
         }
     }
 
-    // 6. Command pills → write CLOSE + OPEN into #overlay-command-slot
+    // 6. Command pills → write UPLOAD, RENAME, CLOSE, OPEN
     const commandSlot: HTMLElement | null = document.getElementById('overlay-command-slot');
     if (commandSlot) {
         commandSlot.style.setProperty('--module-color', 'var(--honey)');
         commandSlot.innerHTML = `
+            <button class="pill-btn additional-data-pill" id="project-upload-btn" style="margin-bottom: 0;">
+                <span class="btn-text">UPLOAD</span>
+            </button>
+            <button class="pill-btn additional-data-pill" id="project-rename-btn">
+                <span class="btn-text">RENAME</span>
+            </button>
             <button class="pill-btn close-pill" id="project-close-btn">
                 <span class="btn-text">CLOSE</span>
             </button>
@@ -608,6 +659,32 @@ function projectDetail_populate(
                 <span class="btn-text">OPEN</span>
             </button>
         `;
+
+        document.getElementById('project-upload-btn')?.addEventListener('click', async (e: Event): Promise<void> => {
+            e.stopPropagation();
+            try {
+                const files = await files_prompt();
+                if (files.length === 0) return;
+
+                // Ingest into project root (or specific folder if we tracked active tab/folder)
+                // For now, project root is the most predictable 'Just a Folder' behavior.
+                const count = await files_ingest(files, projectBase);
+                
+                if (globals.terminal) {
+                    globals.terminal.println(`● UPLOAD COMPLETE: ${count} FILES ADDED TO [${project.name}].`);
+                }
+
+                // Refresh view to show new files
+                projectDetail_populate(project, projectId, overlay, lcarsFrame);
+            } catch (err) {
+                console.error('Upload failed', err);
+            }
+        });
+
+        document.getElementById('project-rename-btn')?.addEventListener('click', (e: Event): void => {
+            e.stopPropagation();
+            project_rename_interact(project);
+        });
 
         document.getElementById('project-close-btn')?.addEventListener('click', (): void => {
             projectDetail_close();
@@ -619,6 +696,102 @@ function projectDetail_populate(
         });
     }
 }
+
+/**
+ * Handles the project rename workflow.
+ * Prompts user, moves VFS directory, updates state, and refreshes UI.
+ */
+function project_rename_interact(project: Project): void {
+    const oldName = project.name;
+    const newNameRaw = prompt('ENTER NEW PROJECT NAME:', oldName);
+    
+    if (!newNameRaw || newNameRaw === oldName) return;
+    
+    // Sanitize: allow alphanumeric, underscore, hyphen
+    const newName = newNameRaw.replace(/[^a-zA-Z0-9-_]/g, '');
+    if (!newName) {
+        alert('Invalid name. Use alphanumeric characters only.');
+        return;
+    }
+
+    const oldPath = `/home/user/projects/${oldName}`;
+    const newPath = `/home/user/projects/${newName}`;
+
+    try {
+        // 1. Move VFS directory
+        if (globals.vcs.node_stat(oldPath)) {
+            globals.vcs.node_move(oldPath, newPath);
+        } else {
+            globals.vcs.dir_create(newPath);
+            globals.vcs.dir_create(`${newPath}/src`);
+            globals.vcs.dir_create(`${newPath}/data`);
+        }
+
+        // 2. Update Project Model
+        project.name = newName;
+
+        // 3. Update Shell Context if active
+        const shellProject = globals.shell?.env_get('PROJECT');
+        if (shellProject === oldName) {
+            globals.shell?.env_set('PROJECT', newName);
+            const currentCwd = globals.vcs.cwd_get();
+            if (currentCwd.startsWith(oldPath)) {
+                const newCwd = currentCwd.replace(oldPath, newPath);
+                globals.shell?.command_execute(`cd ${newCwd}`);
+            }
+        }
+
+        // 4. UI Refresh
+        projectStrip_render();
+        
+        const nameEl: HTMLElement | null = document.getElementById('detail-name');
+        if (nameEl) nameEl.textContent = newName.toUpperCase();
+        
+        const overlay = document.getElementById('asset-detail-overlay');
+        const lcarsFrame = document.getElementById('detail-lcars-frame');
+        if (overlay && lcarsFrame) {
+            projectDetail_populate(project, project.id, overlay, lcarsFrame);
+        }
+
+        if (globals.terminal) {
+            globals.terminal.println(`● PROJECT RENAMED: [${oldName}] -> [${newName}]`);
+            globals.terminal.println(`○ VFS PATH MOVED TO ${newPath}`);
+        }
+
+    } catch (e: unknown) {
+        console.error('Rename failed', e);
+        alert(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+}
+
+/**
+ * Recursively builds a FileNode tree from the VFS.
+ * Used to mirror actual VFS state (including uploads) in the UI.
+ */
+function vfsTree_build(path: string): VcsFileNode | null {
+    try {
+        const node = globals.vcs.node_stat(path);
+        if (!node) return null;
+
+        // If it's a folder, we must populate children via dir_list
+        // node_stat returns the node metadata but children might be null/stale
+        // depending on how node_stat is implemented (usually assumes VFS structure).
+        // Best to use dir_list to get fresh children.
+        if (node.type === 'folder') {
+            const children = globals.vcs.dir_list(path);
+            const populatedChildren = children.map(child => vfsTree_build(child.path)).filter((n): n is VcsFileNode => n !== null);
+            return {
+                ...node,
+                children: populatedChildren
+            };
+        }
+        
+        return node;
+    } catch {
+        return null;
+    }
+}
+
 
 // ─── Workspace Expand / Collapse ────────────────────────────
 
@@ -683,8 +856,19 @@ function workspace_expand(projectId: string, project: Project): void {
     overlay.insertAdjacentElement('afterend', browserHandle);
 
     // Attach drag listeners for both handles
-    workspaceDragCleanup = workspaceTerminalResize_attach(termHandle, consoleEl);
-    browserDragCleanup = workspaceBrowserResize_attach(browserHandle, overlay);
+    workspaceDragCleanup = resizeHandle_attach({
+        target: consoleEl,
+        handle: termHandle,
+        minSize: 80,
+        direction: 'vertical'
+    });
+
+    browserDragCleanup = resizeHandle_attach({
+        target: overlay,
+        handle: browserHandle,
+        minSize: 300,
+        direction: 'vertical'
+    });
 
     // Phase 2: Terminal activation (after layout transition settles)
     setTimeout((): void => {
@@ -745,102 +929,6 @@ function workspace_expand(projectId: string, project: Project): void {
 
         workspace_federalizeButton_add();
     }, 400);
-}
-
-/**
- * Attaches drag-to-resize listeners to the terminal resize handle.
- * Dragging changes the terminal height independently.
- * Returns a cleanup function that removes all listeners.
- */
-function workspaceTerminalResize_attach(
-    handle: HTMLElement,
-    consoleEl: HTMLElement
-): () => void {
-    let isDragging: boolean = false;
-    let startY: number = 0;
-    let startTermH: number = 0;
-
-    const onMouseDown = (e: MouseEvent): void => {
-        isDragging = true;
-        startY = e.clientY;
-        startTermH = consoleEl.offsetHeight;
-        handle.classList.add('active');
-        document.body.style.cursor = 'ns-resize';
-        e.preventDefault();
-    };
-
-    const onMouseMove = (e: MouseEvent): void => {
-        if (!isDragging) return;
-        const delta: number = e.clientY - startY;
-        const newTermH: number = Math.max(80, startTermH + delta);
-        consoleEl.style.height = `${newTermH}px`;
-        consoleEl.style.transition = 'none';
-    };
-
-    const onMouseUp = (): void => {
-        if (!isDragging) return;
-        isDragging = false;
-        handle.classList.remove('active');
-        document.body.style.cursor = '';
-        consoleEl.style.transition = '';
-    };
-
-    handle.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-
-    return (): void => {
-        handle.removeEventListener('mousedown', onMouseDown);
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-    };
-}
-
-/**
- * Attaches drag-to-resize listeners to the browser resize handle.
- * Dragging changes the file browser (overlay) height independently.
- * Returns a cleanup function that removes all listeners.
- */
-function workspaceBrowserResize_attach(
-    handle: HTMLElement,
-    overlay: HTMLElement
-): () => void {
-    let isDragging: boolean = false;
-    let startY: number = 0;
-    let startBrowserH: number = 0;
-
-    const onMouseDown = (e: MouseEvent): void => {
-        isDragging = true;
-        startY = e.clientY;
-        startBrowserH = overlay.offsetHeight;
-        handle.classList.add('active');
-        document.body.style.cursor = 'ns-resize';
-        e.preventDefault();
-    };
-
-    const onMouseMove = (e: MouseEvent): void => {
-        if (!isDragging) return;
-        const delta: number = e.clientY - startY;
-        const newH: number = Math.max(300, startBrowserH + delta);
-        overlay.style.height = `${newH}px`;
-    };
-
-    const onMouseUp = (): void => {
-        if (!isDragging) return;
-        isDragging = false;
-        handle.classList.remove('active');
-        document.body.style.cursor = '';
-    };
-
-    handle.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-
-    return (): void => {
-        handle.removeEventListener('mousedown', onMouseDown);
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('mouseup', onMouseUp);
-    };
 }
 
 /**
@@ -1224,15 +1312,30 @@ function datasetDetail_additionalData(): void {
 
 /**
  * Commits the current selection from the dataset browser to the gathered map.
+ * If no files are manually selected, defaults to adding the ENTIRE dataset.
  */
 function datasetGather_commit(): void {
     if (!datasetBrowser || !activeDetailDataset) return;
 
-    const selectedPaths: string[] = datasetBrowser.selection_get();
-    if (selectedPaths.length === 0) return;
-
     const dataRoot: VcsFileNode = cohortTree_build([activeDetailDataset]);
-    const subtree: VcsFileNode | null = datasetBrowser.selectionSubtree_extract(dataRoot);
+    let subtree: VcsFileNode | null = null;
+    let selectedPaths: string[] = datasetBrowser.selection_get();
+    let isFullDataset: boolean = false;
+
+    if (selectedPaths.length === 0) {
+        // Fallback: No manual selection -> Add Everything
+        // We simulate "all selected" by using the full tree
+        subtree = dataRoot;
+        isFullDataset = true;
+        // Ideally we'd list all paths here, but for the map entry we can just flag it
+        // or leave paths empty implies 'all' in some contexts, but let's be safe:
+        // We won't backfill selectedPaths with 1000s of strings for performance,
+        // just assume subtree is authoritative.
+    } else {
+        // Partial selection
+        subtree = datasetBrowser.selectionSubtree_extract(dataRoot);
+    }
+
     if (!subtree) return;
 
     gatheredDatasets.set(activeDetailDataset.id, {
@@ -1241,20 +1344,72 @@ function datasetGather_commit(): void {
         subtree
     });
 
-    // If a gather target project is active, merge into its VFS data tree
-    if (gatherTargetProject) {
-        const projectBase: string = `/home/user/projects/${gatherTargetProject.name}`;
-        try { globals.vcs.dir_create(`${projectBase}/data`); } catch { /* exists */ }
-        // Mount the gathered subtree under the project's data directory
-        const dsDir: string = activeDetailDataset.name.replace(/\s+/g, '_');
-        globals.vcs.tree_unmount(`${projectBase}/data/${dsDir}`);
-        globals.vcs.tree_mount(`${projectBase}/data/${dsDir}`, subtree);
+    // Auto-create draft project if none active
+    if (!gatherTargetProject) {
+        console.log('ARGUS: Auto-creating draft project from gather action');
+        const timestamp = Date.now();
+        const shortId = timestamp.toString().slice(-4);
+        const draftProject: Project = {
+            id: `draft-${timestamp}`,
+            name: `DRAFT-${shortId}`,
+            description: 'New project workspace',
+            created: new Date(),
+            lastModified: new Date(),
+            datasets: []
+        };
+        MOCK_PROJECTS.push(draftProject);
+        gatherTargetProject = draftProject;
+
+        // Mount in VFS and activate context
+        const projectBase: string = `/home/user/projects/${draftProject.name}`;
+        // Create clean project root only - NO BOILERPLATE
+        globals.vcs.dir_create(projectBase);
+
+        if (globals.shell) {
+            globals.shell.command_execute(`cd ${projectBase}`);
+            globals.shell.env_set('PROJECT', draftProject.name);
+            if (globals.terminal) globals.terminal.prompt_sync();
+        }
+        
+        if (globals.terminal) {
+            globals.terminal.println(`● AUTO-INITIATED NEW PROJECT: [${draftProject.name}].`);
+        }
     }
+
+    // Add dataset to project model (for UI count) if not already present
+    const alreadyLinked = gatherTargetProject.datasets.some(ds => ds.id === activeDetailDataset!.id);
+    if (!alreadyLinked) {
+        gatherTargetProject.datasets.push(activeDetailDataset);
+    }
+
+    // Mount into Project VFS
+    // For 'Just a Folder' drafts, we mount data under ~/projects/NAME/data/DATASET_NAME
+    const projectBase: string = `/home/user/projects/${gatherTargetProject.name}`;
+    try { globals.vcs.dir_create(`${projectBase}/data`); } catch { /* exists */ }
+    
+    // Mount the gathered subtree
+    const dsDir: string = activeDetailDataset.name.replace(/\s+/g, '_');
+    globals.vcs.tree_unmount(`${projectBase}/data/${dsDir}`);
+    globals.vcs.tree_mount(`${projectBase}/data/${dsDir}`, subtree);
+
+    // Update UI
+    projectStrip_render();
 
     // Re-render the dataset grid to show gathered tint
     const container: HTMLElement | null = document.getElementById('dataset-results');
     const card: HTMLElement | null = container?.querySelector(`[data-id="${activeDetailDataset.id}"]`) as HTMLElement;
     if (card) card.classList.add('gathered');
+
+    // Scroll to top so the user sees the updated project strip
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (globals.terminal) {
+        if (isFullDataset) {
+            globals.terminal.println(`● ADDED FULL DATASET: [${activeDetailDataset.name.toUpperCase()}] TO [${gatherTargetProject.name}].`);
+        } else {
+            globals.terminal.println(`● ADDED PARTIAL DATASET: [${activeDetailDataset.name.toUpperCase()}] (${selectedPaths.length} FILES) TO [${gatherTargetProject.name}].`);
+        }
+    }
 }
 
 /**
@@ -1322,16 +1477,3 @@ export function onExit(): void {
     // Teardown logic if needed
 }
 
-/**
- * Clears the overlay slot containers (sidebar, content, command).
- * The marketplace's original DOM is never touched — mode switching
- * is handled entirely by CSS via the data-mode attribute.
- */
-function overlaySlots_clear(): void {
-    const sidebarSlot: HTMLElement | null = document.getElementById('overlay-sidebar-slot');
-    const contentSlot: HTMLElement | null = document.getElementById('overlay-content-slot');
-    const commandSlot: HTMLElement | null = document.getElementById('overlay-command-slot');
-    if (sidebarSlot) sidebarSlot.innerHTML = '';
-    if (contentSlot) contentSlot.innerHTML = '';
-    if (commandSlot) commandSlot.innerHTML = '';
-}

@@ -28,8 +28,24 @@ The Search stage supports three distinct user intents, all served by the same UI
 
 | **Add data to existing project**
 | Gather additional datasets into an existing project's data tree
-| Click a project chip to set it as the gather target (highlighted), then search and gather datasets
+| Click a project chip to set it as the gather target (highlighted), then search and gather datasets. If no project is selected, clicking ADD automatically creates a new Draft Project.
 |===
+
+== Draft Projects & Local Uploads (v4.6.0)
+
+To support a more flexible "Filesystem First" workflow, ARGUS now supports **Draft Projects** that start as clean, empty directories without the rigid Federated Learning boilerplate.
+
+### The "Just a Folder" Model
+
+1.  **Immediate Creation**: Clicking **`+ NEW`** in the project strip immediately creates a new workspace at `~/projects/DRAFT-XXXX/`. It does *not* pre-populate `src/` or `train.py`.
+2.  **Context Switching**: The terminal automatically `cd`s to the new project root.
+3.  **Local Data**: Users can type `upload` in the terminal to ingest local files (PDFs, images, CSVs) directly into the project root.
+4.  **Rich Preview**: The Project Detail view detects the flat structure and shows a single **"FILES"** tab. It supports inline preview of uploaded PDFs and images.
+5.  **Progressive Structure**: When you `ADD` a dataset from the catalog, it appears as a `data/` folder alongside your uploads. Only when you decide to write code does the `src/` structure become necessary.
+
+### Project Renaming
+
+Draft projects can be renamed at any time via the **RENAME** pill in the Project Detail overlay. This moves the underlying VFS directory and updates all references, preserving your gathered data and uploads.
 
 == The Project Strip
 

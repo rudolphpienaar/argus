@@ -84,21 +84,21 @@ describe('Shell', () => {
     // ─── Command Parsing ────────────────────────────────────────
 
     describe('command_execute', () => {
-        it('should return empty result for blank input', () => {
-            const result: ShellResult = shell.command_execute('');
+        it('should return empty result for blank input', async () => {
+            const result: ShellResult = await shell.command_execute('');
             expect(result.exitCode).toBe(0);
             expect(result.stdout).toBe('');
         });
 
-        it('should return error for unknown command', () => {
-            const result: ShellResult = shell.command_execute('foobar');
+        it('should return error for unknown command', async () => {
+            const result: ShellResult = await shell.command_execute('foobar');
             expect(result.exitCode).toBe(127);
             expect(result.stderr).toContain('command not found');
         });
 
-        it('should record commands in history', () => {
-            shell.command_execute('pwd');
-            shell.command_execute('ls');
+        it('should record commands in history', async () => {
+            await shell.command_execute('pwd');
+            await shell.command_execute('ls');
             const history: string[] = shell.history_get();
             expect(history).toEqual(['pwd', 'ls']);
         });
@@ -107,56 +107,56 @@ describe('Shell', () => {
     // ─── Builtin: cd ────────────────────────────────────────────
 
     describe('cd', () => {
-        it('should change to $HOME with no args', () => {
+        it('should change to $HOME with no args', async () => {
             vfs.dir_create('/tmp');
             vfs.cwd_set('/tmp');
-            const result: ShellResult = shell.command_execute('cd');
+            const result: ShellResult = await shell.command_execute('cd');
             expect(result.exitCode).toBe(0);
             expect(vfs.cwd_get()).toBe('/home/fedml');
         });
 
-        it('should change to specified path', () => {
+        it('should change to specified path', async () => {
             vfs.dir_create('/home/fedml/src');
-            const result: ShellResult = shell.command_execute('cd ~/src');
+            const result: ShellResult = await shell.command_execute('cd ~/src');
             expect(result.exitCode).toBe(0);
             expect(vfs.cwd_get()).toBe('/home/fedml/src');
         });
 
-        it('should update $PWD', () => {
+        it('should update $PWD', async () => {
             vfs.dir_create('/home/fedml/src');
-            shell.command_execute('cd ~/src');
+            await shell.command_execute('cd ~/src');
             expect(shell.env_get('PWD')).toBe('/home/fedml/src');
         });
 
-        it('should return error for non-existent path', () => {
-            const result: ShellResult = shell.command_execute('cd /nonexistent');
+        it('should return error for non-existent path', async () => {
+            const result: ShellResult = await shell.command_execute('cd /nonexistent');
             expect(result.exitCode).toBe(1);
             expect(result.stderr).toContain('No such file or directory');
         });
 
-        it('should fire onCwdChange callback after cd', () => {
+        it('should fire onCwdChange callback after cd', async () => {
             let captured: string | null = null;
             shell.onCwdChange_set((newCwd: string): void => { captured = newCwd; });
             vfs.dir_create('/home/fedml/src');
-            shell.command_execute('cd ~/src');
+            await shell.command_execute('cd ~/src');
             expect(captured).toBe('/home/fedml/src');
         });
 
-        it('should not fire onCwdChange on cd failure', () => {
+        it('should not fire onCwdChange on cd failure', async () => {
             let fired = false;
             shell.onCwdChange_set((): void => { fired = true; });
-            shell.command_execute('cd /nonexistent');
+            await shell.command_execute('cd /nonexistent');
             expect(fired).toBe(false);
         });
 
-        it('should clear onCwdChange with null', () => {
+        it('should clear onCwdChange with null', async () => {
             let count = 0;
             shell.onCwdChange_set((): void => { count++; });
             vfs.dir_create('/home/fedml/src');
-            shell.command_execute('cd ~/src');
+            await shell.command_execute('cd ~/src');
             expect(count).toBe(1);
             shell.onCwdChange_set(null);
-            shell.command_execute('cd ~');
+            await shell.command_execute('cd ~');
             expect(count).toBe(1);
         });
     });
@@ -164,8 +164,8 @@ describe('Shell', () => {
     // ─── Builtin: pwd ───────────────────────────────────────────
 
     describe('pwd', () => {
-        it('should print working directory', () => {
-            const result: ShellResult = shell.command_execute('pwd');
+        it('should print working directory', async () => {
+            const result: ShellResult = await shell.command_execute('pwd');
             expect(result.stdout).toBe('/home/fedml');
         });
     });
@@ -173,24 +173,24 @@ describe('Shell', () => {
     // ─── Builtin: ls ────────────────────────────────────────────
 
     describe('ls', () => {
-        it('should list CWD contents', () => {
+        it('should list CWD contents', async () => {
             vfs.file_create('/home/fedml/test.txt');
             vfs.dir_create('/home/fedml/subdir');
-            const result: ShellResult = shell.command_execute('ls');
+            const result: ShellResult = await shell.command_execute('ls');
             expect(result.exitCode).toBe(0);
             expect(result.stdout).toContain('test.txt');
             expect(result.stdout).toContain('subdir/');
         });
 
-        it('should list specified directory', () => {
+        it('should list specified directory', async () => {
             vfs.dir_create('/home/fedml/mydir');
             vfs.file_create('/home/fedml/mydir/inner.py');
-            const result: ShellResult = shell.command_execute('ls ~/mydir');
+            const result: ShellResult = await shell.command_execute('ls ~/mydir');
             expect(result.stdout).toContain('inner.py');
         });
 
-        it('should return error for non-existent path', () => {
-            const result: ShellResult = shell.command_execute('ls /nonexistent');
+        it('should return error for non-existent path', async () => {
+            const result: ShellResult = await shell.command_execute('ls /nonexistent');
             expect(result.exitCode).toBe(1);
         });
     });
@@ -198,25 +198,25 @@ describe('Shell', () => {
     // ─── Builtin: cat ───────────────────────────────────────────
 
     describe('cat', () => {
-        it('should print file content', () => {
+        it('should print file content', async () => {
             vfs.file_create('/home/fedml/hello.txt', 'Hello World');
-            const result: ShellResult = shell.command_execute('cat hello.txt');
+            const result: ShellResult = await shell.command_execute('cat hello.txt');
             expect(result.stdout).toBe('Hello World');
         });
 
-        it('should return error for missing operand', () => {
-            const result: ShellResult = shell.command_execute('cat');
+        it('should return error for missing operand', async () => {
+            const result: ShellResult = await shell.command_execute('cat');
             expect(result.exitCode).toBe(1);
             expect(result.stderr).toContain('missing operand');
         });
 
-        it('should return error for directory', () => {
-            const result: ShellResult = shell.command_execute('cat .');
+        it('should return error for directory', async () => {
+            const result: ShellResult = await shell.command_execute('cat .');
             expect(result.exitCode).toBe(1);
         });
 
-        it('should return error for non-existent file', () => {
-            const result: ShellResult = shell.command_execute('cat nope.txt');
+        it('should return error for non-existent file', async () => {
+            const result: ShellResult = await shell.command_execute('cat nope.txt');
             expect(result.exitCode).toBe(1);
         });
     });
@@ -224,14 +224,14 @@ describe('Shell', () => {
     // ─── Builtin: mkdir ─────────────────────────────────────────
 
     describe('mkdir', () => {
-        it('should create a directory', () => {
-            const result: ShellResult = shell.command_execute('mkdir newdir');
+        it('should create a directory', async () => {
+            const result: ShellResult = await shell.command_execute('mkdir newdir');
             expect(result.exitCode).toBe(0);
             expect(vfs.node_stat('/home/fedml/newdir')).not.toBeNull();
         });
 
-        it('should return error for missing operand', () => {
-            const result: ShellResult = shell.command_execute('mkdir');
+        it('should return error for missing operand', async () => {
+            const result: ShellResult = await shell.command_execute('mkdir');
             expect(result.exitCode).toBe(1);
         });
     });
@@ -239,14 +239,14 @@ describe('Shell', () => {
     // ─── Builtin: touch ─────────────────────────────────────────
 
     describe('touch', () => {
-        it('should create an empty file', () => {
-            const result: ShellResult = shell.command_execute('touch newfile.txt');
+        it('should create an empty file', async () => {
+            const result: ShellResult = await shell.command_execute('touch newfile.txt');
             expect(result.exitCode).toBe(0);
             expect(vfs.node_stat('/home/fedml/newfile.txt')).not.toBeNull();
         });
 
-        it('should return error for missing operand', () => {
-            const result: ShellResult = shell.command_execute('touch');
+        it('should return error for missing operand', async () => {
+            const result: ShellResult = await shell.command_execute('touch');
             expect(result.exitCode).toBe(1);
         });
     });
@@ -254,25 +254,25 @@ describe('Shell', () => {
     // ─── Builtin: rm ────────────────────────────────────────────
 
     describe('rm', () => {
-        it('should remove a file', () => {
+        it('should remove a file', async () => {
             vfs.file_create('/home/fedml/del.txt');
-            const result: ShellResult = shell.command_execute('rm del.txt');
+            const result: ShellResult = await shell.command_execute('rm del.txt');
             expect(result.exitCode).toBe(0);
             expect(vfs.node_stat('/home/fedml/del.txt')).toBeNull();
         });
 
-        it('should fail on non-empty dir without -r', () => {
+        it('should fail on non-empty dir without -r', async () => {
             vfs.dir_create('/home/fedml/full');
             vfs.file_create('/home/fedml/full/inner.txt');
-            const result: ShellResult = shell.command_execute('rm full');
+            const result: ShellResult = await shell.command_execute('rm full');
             expect(result.exitCode).toBe(1);
             expect(result.stderr).toContain('not empty');
         });
 
-        it('should remove non-empty dir with -r', () => {
+        it('should remove non-empty dir with -r', async () => {
             vfs.dir_create('/home/fedml/full');
             vfs.file_create('/home/fedml/full/inner.txt');
-            const result: ShellResult = shell.command_execute('rm -r full');
+            const result: ShellResult = await shell.command_execute('rm -r full');
             expect(result.exitCode).toBe(0);
             expect(vfs.node_stat('/home/fedml/full')).toBeNull();
         });
@@ -281,15 +281,15 @@ describe('Shell', () => {
     // ─── Builtin: cp ────────────────────────────────────────────
 
     describe('cp', () => {
-        it('should copy a file', () => {
+        it('should copy a file', async () => {
             vfs.file_create('/home/fedml/src.txt', 'data');
-            const result: ShellResult = shell.command_execute('cp src.txt dst.txt');
+            const result: ShellResult = await shell.command_execute('cp src.txt dst.txt');
             expect(result.exitCode).toBe(0);
             expect(vfs.node_read('/home/fedml/dst.txt')).toBe('data');
         });
 
-        it('should return error for missing operand', () => {
-            const result: ShellResult = shell.command_execute('cp src.txt');
+        it('should return error for missing operand', async () => {
+            const result: ShellResult = await shell.command_execute('cp src.txt');
             expect(result.exitCode).toBe(1);
         });
     });
@@ -297,16 +297,16 @@ describe('Shell', () => {
     // ─── Builtin: mv ────────────────────────────────────────────
 
     describe('mv', () => {
-        it('should move a file', () => {
+        it('should move a file', async () => {
             vfs.file_create('/home/fedml/old.txt', 'data');
-            const result: ShellResult = shell.command_execute('mv old.txt new.txt');
+            const result: ShellResult = await shell.command_execute('mv old.txt new.txt');
             expect(result.exitCode).toBe(0);
             expect(vfs.node_stat('/home/fedml/old.txt')).toBeNull();
             expect(vfs.node_read('/home/fedml/new.txt')).toBe('data');
         });
 
-        it('should return error for missing operand', () => {
-            const result: ShellResult = shell.command_execute('mv old.txt');
+        it('should return error for missing operand', async () => {
+            const result: ShellResult = await shell.command_execute('mv old.txt');
             expect(result.exitCode).toBe(1);
         });
     });
@@ -314,18 +314,18 @@ describe('Shell', () => {
     // ─── Builtin: echo ──────────────────────────────────────────
 
     describe('echo', () => {
-        it('should print text', () => {
-            const result: ShellResult = shell.command_execute('echo hello world');
+        it('should print text', async () => {
+            const result: ShellResult = await shell.command_execute('echo hello world');
             expect(result.stdout).toBe('hello world');
         });
 
-        it('should expand $VARIABLE references', () => {
-            const result: ShellResult = shell.command_execute('echo $USER@$HOME');
+        it('should expand $VARIABLE references', async () => {
+            const result: ShellResult = await shell.command_execute('echo $USER@$HOME');
             expect(result.stdout).toBe('fedml@/home/fedml');
         });
 
-        it('should leave unknown variables as-is', () => {
-            const result: ShellResult = shell.command_execute('echo $UNDEFINED');
+        it('should leave unknown variables as-is', async () => {
+            const result: ShellResult = await shell.command_execute('echo $UNDEFINED');
             expect(result.stdout).toBe('$UNDEFINED');
         });
     });
@@ -333,8 +333,8 @@ describe('Shell', () => {
     // ─── Builtin: env ───────────────────────────────────────────
 
     describe('env', () => {
-        it('should print all environment variables', () => {
-            const result: ShellResult = shell.command_execute('env');
+        it('should print all environment variables', async () => {
+            const result: ShellResult = await shell.command_execute('env');
             expect(result.stdout).toContain('HOME=/home/fedml');
             expect(result.stdout).toContain('USER=fedml');
             expect(result.stdout).toContain('PWD=');
@@ -344,14 +344,14 @@ describe('Shell', () => {
     // ─── Builtin: export ────────────────────────────────────────
 
     describe('export', () => {
-        it('should set a variable', () => {
-            const result: ShellResult = shell.command_execute('export FOO=bar');
+        it('should set a variable', async () => {
+            const result: ShellResult = await shell.command_execute('export FOO=bar');
             expect(result.exitCode).toBe(0);
             expect(shell.env_get('FOO')).toBe('bar');
         });
 
-        it('should return error for invalid format', () => {
-            const result: ShellResult = shell.command_execute('export invalid');
+        it('should return error for invalid format', async () => {
+            const result: ShellResult = await shell.command_execute('export invalid');
             expect(result.exitCode).toBe(1);
         });
     });
@@ -359,8 +359,8 @@ describe('Shell', () => {
     // ─── Builtin: whoami ────────────────────────────────────────
 
     describe('whoami', () => {
-        it('should print username', () => {
-            const result: ShellResult = shell.command_execute('whoami');
+        it('should print username', async () => {
+            const result: ShellResult = await shell.command_execute('whoami');
             expect(result.stdout).toBe('fedml');
         });
     });
@@ -368,8 +368,8 @@ describe('Shell', () => {
     // ─── Builtin: date ──────────────────────────────────────────
 
     describe('date', () => {
-        it('should print a date string', () => {
-            const result: ShellResult = shell.command_execute('date');
+        it('should print a date string', async () => {
+            const result: ShellResult = await shell.command_execute('date');
             expect(result.exitCode).toBe(0);
             expect(result.stdout.length).toBeGreaterThan(0);
         });
@@ -378,10 +378,10 @@ describe('Shell', () => {
     // ─── Builtin: history ───────────────────────────────────────
 
     describe('history', () => {
-        it('should show command history', () => {
-            shell.command_execute('pwd');
-            shell.command_execute('ls');
-            const result: ShellResult = shell.command_execute('history');
+        it('should show command history', async () => {
+            await shell.command_execute('pwd');
+            await shell.command_execute('ls');
+            const result: ShellResult = await shell.command_execute('history');
             expect(result.stdout).toContain('pwd');
             expect(result.stdout).toContain('ls');
             expect(result.stdout).toContain('history');
@@ -391,8 +391,8 @@ describe('Shell', () => {
     // ─── Builtin: help ──────────────────────────────────────────
 
     describe('help', () => {
-        it('should list all builtins', () => {
-            const result: ShellResult = shell.command_execute('help');
+        it('should list all builtins', async () => {
+            const result: ShellResult = await shell.command_execute('help');
             expect(result.stdout).toContain('cd');
             expect(result.stdout).toContain('ls');
             expect(result.stdout).toContain('cat');
@@ -457,20 +457,20 @@ describe('Shell', () => {
     // ─── External Handler ───────────────────────────────────────
 
     describe('externalHandler', () => {
-        it('should delegate to external handler for unknown commands', () => {
+        it('should delegate to external handler for unknown commands', async () => {
             shell.externalHandler_set((cmd: string, _args: string[]): ShellResult | null => {
                 if (cmd === 'federate') {
                     return { stdout: 'federating...', stderr: '', exitCode: 0 };
                 }
                 return null;
             });
-            const result: ShellResult = shell.command_execute('federate train.py');
+            const result: ShellResult = await shell.command_execute('federate train.py');
             expect(result.stdout).toBe('federating...');
         });
 
-        it('should return command-not-found if handler returns null', () => {
+        it('should return command-not-found if handler returns null', async () => {
             shell.externalHandler_set((_cmd: string, _args: string[]): ShellResult | null => null);
-            const result: ShellResult = shell.command_execute('unknown');
+            const result: ShellResult = await shell.command_execute('unknown');
             expect(result.exitCode).toBe(127);
         });
     });

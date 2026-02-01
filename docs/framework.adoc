@@ -629,9 +629,12 @@ Future improvement: add integration tests with a DOM environment to verify overl
 
 The following patterns currently live inline in stage modules but are candidates for extraction into `src/lcars-framework/` or `src/ui/`:
 
-1. **`overlaySlots_clear()`**: Currently in `search.ts`. Should live in a shared overlay utilities module if more slot-based overlays are added.
-2. **`workspace_teardown()`**: Currently in `search.ts`, imported by `process.ts`. If more stage transitions need workspace cleanup, this should move to a lifecycle module.
-3. **Resize handle creation/cleanup**: Currently inline in `workspace_expand()` / `workspace_collapse()`. The pattern (create handle → attach drag listeners → return cleanup function) is generalizable.
+1. **`workspace_teardown()`**: Currently in `search.ts`, imported by `process.ts`. If more stage transitions need workspace cleanup, this should move to a lifecycle module.
+
+== Extracted Patterns (Completed)
+
+1. **`overlaySlots_clear()`**: Moved to `src/core/logic/OverlayUtils.ts`.
+2. **Resize handle logic**: Moved to `src/ui/interactions/ResizeHandle.ts`.
 
 ---
 _Last updated: 2026-01-30 (v4.5.1)_

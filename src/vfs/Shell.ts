@@ -27,7 +27,7 @@ import type { FileNode } from './types.js';
 interface BuiltinCommand {
     name: string;
     description: string;
-    execute: (args: string[]) => ShellResult;
+    execute: (args: string[]) => ShellResult | Promise<ShellResult>;
 }
 
 /**
@@ -50,7 +50,7 @@ type ExternalHandler = (command: string, args: string[]) => ShellResult | null;
  * @example
  * ```typescript
  * const shell = new Shell(vfs, 'developer');
- * const result: ShellResult = shell.command_execute('ls ~/src');
+ * const result: ShellResult = await shell.command_execute('ls ~/src');
  * // result.stdout contains colorized directory listing
  * ```
  */
@@ -123,7 +123,7 @@ export class Shell {
      * @param line - Raw input from the terminal.
      * @returns The result of command execution.
      */
-    public command_execute(line: string): ShellResult {
+    public async command_execute(line: string): Promise<ShellResult> {
         const trimmed: string = line.trim();
         if (!trimmed) return result_ok('');
 
@@ -138,7 +138,7 @@ export class Shell {
         // Try builtin first
         const builtin: BuiltinCommand | undefined = this.builtins.get(command);
         if (builtin) {
-            return builtin.execute(args);
+            return await builtin.execute(args);
         }
 
         // Try external handler
@@ -432,6 +432,29 @@ export class Shell {
             }
             return result_ok(lines.join('\n'));
         });
+
+        this.builtin_add('upload', 'Upload local files to current directory', async (args: string[]): Promise<ShellResult> => {
+            try {
+                // Dynamically import to avoid circular dependencies/browser-only code at top level
+                const { files_prompt, files_ingest } = await import('../core/logic/FileUploader.js');
+                
+                // Determine destination (default to CWD)
+                let destination: string = this.vfs.cwd_get();
+                if (args.length > 0) {
+                    destination = this.vfs.path_resolve(args[0]);
+                }
+
+                const files: File[] = await files_prompt();
+                if (files.length === 0) {
+                    return result_ok('<span class="dim">Upload cancelled.</span>');
+                }
+
+                const count: number = await files_ingest(files, destination);
+                return result_ok(`<span class="success">Successfully uploaded ${count} file(s) to ${destination}</span>`);
+            } catch (e: unknown) {
+                return result_err(e instanceof Error ? e.message : String(e), 1);
+            }
+        });
     }
 
     // ─── Internal Helpers ───────────────────────────────────────
@@ -446,7 +469,7 @@ export class Shell {
     private builtin_add(
         name: string,
         description: string,
-        execute: (args: string[]) => ShellResult
+        execute: (args: string[]) => ShellResult | Promise<ShellResult>
     ): void {
         this.builtins.set(name, { name, description, execute });
     }

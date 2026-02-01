@@ -8,6 +8,18 @@
 
 import type { ChatMessage, LCARSSystemConfig } from './types.js';
 
+interface GeminiModelList {
+    models: Array<{ name: string }>;
+}
+
+interface GeminiError {
+    error?: { message: string };
+}
+
+interface GeminiChatResponse {
+    candidates: Array<{ content: { parts: Array<{ text: string }> } }>;
+}
+
 /**
  * Client for interacting with the Google Gemini API.
  */
@@ -40,9 +52,9 @@ export class GeminiClient {
         try {
             const response: Response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${this.apiKey}`);
             if (!response.ok) return "UNABLE TO RETRIEVE MODEL LIST.";
-            const data: any = await response.json();
-            return data.models.map((m: any) => m.name).join('\n');
-        } catch (e: any) {
+            const data: unknown = await response.json();
+            return (data as GeminiModelList).models.map((m) => m.name).join('\n');
+        } catch (e: unknown) {
             return "ERROR QUERYING MODELS.";
         }
     }
@@ -86,13 +98,13 @@ export class GeminiClient {
             });
 
             if (!response.ok) {
-                const error: any = await response.json();
-                throw new Error(error.error?.message || 'Unknown Gemini API Error');
+                const error: unknown = await response.json();
+                throw new Error((error as GeminiError).error?.message || 'Unknown Gemini API Error');
             }
 
-            const data: any = await response.json();
-            return data.candidates[0]?.content?.parts[0]?.text || '';
-        } catch (error: any) {
+            const data: unknown = await response.json();
+            return (data as GeminiChatResponse).candidates[0]?.content?.parts[0]?.text || '';
+        } catch (error: unknown) {
             console.error('Gemini API Error:', error);
             throw error;
         }

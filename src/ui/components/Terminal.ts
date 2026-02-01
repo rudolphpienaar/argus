@@ -90,8 +90,8 @@ export class LCARSTerminal extends BaseTerminal {
         this.registerCommand({
             name: 'help',
             description: 'List available commands',
-            execute: (): void => {
-                const result: ShellResult = shell.command_execute('help');
+            execute: async (): Promise<void> => {
+                const result: ShellResult = await shell.command_execute('help');
                 if (result.stdout) {
                     const lines: string[] = result.stdout.split('\n');
                     for (const l of lines) {
@@ -156,7 +156,7 @@ export class LCARSTerminal extends BaseTerminal {
 
             // Reconstruct the full command line for the Shell
             const line: string = [cmd, ...args].join(' ');
-            const result: ShellResult = this.shell.command_execute(line);
+            const result: ShellResult = await this.shell.command_execute(line);
 
             // If Shell doesn't recognize the command, try fallback handler
             if (result.exitCode === 127 && this.fallbackHandler) {
