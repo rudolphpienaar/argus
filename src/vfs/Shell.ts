@@ -499,9 +499,18 @@ export class Shell {
         const project: string | undefined = this.env.get('PROJECT');
         switch (stage) {
             case 'search':   return home;
-            case 'gather':   return project ? `${home}/projects/${project}/data` : home;
-            case 'process':  return project ? `${home}/projects/${project}/src` : `${home}/projects`;
-            case 'monitor':  return project ? `${home}/projects/${project}/src` : `${home}/projects`;
+            case 'gather':   return project ? `${home}/projects/${project}/input` : home;
+            case 'process': {
+                if (!project) return `${home}/projects`;
+                const projectRoot = `${home}/projects/${project}`;
+                const srcPath = `${projectRoot}/src`;
+                // If src exists (structured project), land there. Otherwise root (draft).
+                if (this.vfs.node_stat(srcPath)) {
+                    return srcPath;
+                }
+                return projectRoot;
+            }
+            case 'monitor':  return project ? `${home}/projects/${project}/src` : `${home}/projects`; // Monitor assumes code exists
             case 'post':     return `${home}/results`;
             default:         return home;
         }

@@ -27,23 +27,34 @@ export class LCARSEngine {
      * Creates a new LCARSEngine instance.
      * 
      * @param config - The system configuration, or null for simulation mode.
+     * @param knowledge - Optional dictionary of system documentation (filename -> content).
      */
-    constructor(config: LCARSSystemConfig | null) {
+    constructor(config: LCARSSystemConfig | null, knowledge?: Record<string, string>) {
         this.client = config ? (config.provider === 'gemini' ? new GeminiClient(config) : new OpenAIClient(config)) : null;
         this.isSimulated = !config;
-        this.systemPrompt = `You are the core computer of the ATLAS Resource Graphical User System (ARGUS).
-Your primary function is to query the medical imaging dataset catalog and manage the user session.
+        
+        let knowledgeContext = "";
+        if (knowledge) {
+            knowledgeContext = "\n\n### SYSTEM KNOWLEDGE BASE (INTERNAL DOCUMENTATION):\n" + 
+                Object.entries(knowledge).map(([file, content]) => 
+                    `--- BEGIN FILE: ${file} ---\n${content}\n--- END FILE: ${file} ---`
+                ).join('\n\n');
+        }
+
+        this.systemPrompt = `You are CALYPSO (Cognitive Algorithms & Logic Yielding Predictive Scientific Outcomes), the AI Core of the ARGUS system.
+Your primary function is to query the medical imaging dataset catalog and manage the user session. You also have access to the system's full technical documentation.
 
 ### OPERATIONAL DIRECTIVES:
 1.  **Response Format**: Use LCARS markers. Start important affirmations with "●". Use "○" for technical details. Use line breaks (\n) between logical sections for terminal readability.
 2.  **Intent Identification**:
-    *   If the user wants to select/get a dataset, include [SELECT: ds-ID] in your response.
+    *   If the user EXPLICITLY asks to "open", "select", "inspect", or "add" a specific dataset, include [SELECT: ds-ID].
+    *   If the user asks to "search", "show", "find", or "list" datasets, include [ACTION: SHOW_DATASETS] and optionally [FILTER: ds-ID, ds-ID]. Do NOT use [SELECT] for search queries.
     *   If the user wants to proceed to the next stage (Gather), include [ACTION: PROCEED] in your response.
-    *   If the user asks to search/list datasets, include [ACTION: SHOW_DATASETS]. If the result is a subset, also include [FILTER: ds-ID, ds-ID].
-3.  **Persona**: Star Trek Computer (concise, logical).
+3.  **Persona**: Industrial, efficient, but helpful. Use "I" to refer to yourself as Calypso.
+4.  **Knowledge Usage**: Use the provided SYSTEM KNOWLEDGE BASE to answer questions about ARGUS architecture, the SeaGaP workflow, or specific components. Cite the file name if relevant (e.g., "ACCORDING TO seagap-workflow.adoc...").
 
 ### DATA CONTEXT:
-The context provided to you contains a JSON list of available datasets. Use this strictly as your source of truth.`;
+The context provided to you contains a JSON list of available datasets. Use this strictly as your source of truth.${knowledgeContext}`;
     }
 
     /**

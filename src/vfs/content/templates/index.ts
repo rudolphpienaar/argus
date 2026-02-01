@@ -31,6 +31,12 @@ import {
     dataAnnotationsGenerator,
     dataLabelsGenerator
 } from './dataContent.js';
+import { chrisAppGenerator } from './chrisapp/chrisApp.js';
+import { fedmlAppGenerator } from './chrisapp/fedmlApp.js';
+import { chrisSetupGenerator } from './chrisapp/chrisSetup.js';
+import { chrisDockerfileGenerator } from './chrisapp/chrisDockerfile.js';
+import { chrisRequirementsGenerator } from './chrisapp/chrisRequirements.js';
+import { chrisReadmeGenerator } from './chrisapp/chrisReadme.js';
 
 /**
  * All registered content generators as [key, generator] tuples.
@@ -43,6 +49,14 @@ export const ALL_GENERATORS: Array<[string, ContentGenerator]> = [
     ['config', configGenerator],
     ['requirements', requirementsGenerator],
     ['manifest', manifestGenerator],
+
+    // ChRIS App templates
+    ['chris-app-py', chrisAppGenerator],
+    ['fedml-app-py', fedmlAppGenerator],
+    ['chris-setup-py', chrisSetupGenerator],
+    ['chris-dockerfile', chrisDockerfileGenerator],
+    ['chris-requirements', chrisRequirementsGenerator],
+    ['chris-readme', chrisReadmeGenerator],
 
     // System catalogs
     ['catalog-datasets', catalogDatasetsGenerator],

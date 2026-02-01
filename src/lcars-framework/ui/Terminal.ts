@@ -21,7 +21,7 @@ export interface TerminalOptions {
 
 export class LCARSTerminal {
     protected container: HTMLElement;
-    private output: HTMLElement;
+    protected output: HTMLElement;
     private input: HTMLInputElement;
     private promptEl: HTMLElement;
     private statusEl: HTMLElement;
@@ -203,7 +203,7 @@ export class LCARSTerminal {
         return this.promptEl.textContent || '$ ';
     }
 
-    private scrollToBottom(): void {
+    protected scrollToBottom(): void {
         this.output.scrollTop = this.output.scrollHeight;
     }
 

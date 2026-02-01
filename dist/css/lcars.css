@@ -1039,10 +1039,28 @@ hr {
     border: 2px dashed var(--harvestgold);
     color: var(--harvestgold);
     opacity: 0.7;
+    animation: pulse-new-project 3s ease-in-out infinite;
+}
+
+@keyframes pulse-new-project {
+    0%, 100% {
+        background-color: transparent;
+        color: var(--harvestgold);
+        box-shadow: none;
+    }
+    50% {
+        background-color: var(--harvestgold);
+        color: black;
+        box-shadow: 0 0 15px var(--harvestgold);
+        opacity: 1;
+    }
 }
 
 .project-chip.new-project:hover {
     opacity: 1;
+    animation: none;
+    background-color: var(--harvestgold);
+    color: black;
 }
 
 .dataset-card .thumbnail {
@@ -2204,3 +2222,36 @@ body.state-locked .next-pill {
 .error { color: var(--tomato); }
 .highlight { color: var(--butter); text-shadow: 0 0 5px var(--daybreak); }
 
+
+/* ==========================================================================
+   Project MU/TH/UR - AI Core Styling
+   ========================================================================== */
+:root {
+    --muthur-color: var(--sky); /* Integrated LCARS Blue */
+}
+
+.muthur-text {
+    color: var(--muthur-color);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 0 5px rgba(153, 204, 255, 0.4);
+    line-height: 1.5;
+    margin-bottom: 0.5rem;
+    white-space: pre-wrap;
+}
+
+/* Optional: Blinking cursor block for the AI typing effect */
+.muthur-cursor::after {
+    content: '█';
+    display: inline-block;
+    animation: blink 1s step-end infinite;
+    color: var(--muthur-color);
+    margin-left: 4px;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}

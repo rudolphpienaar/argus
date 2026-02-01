@@ -91,30 +91,101 @@ let ideBrowser: FileBrowser | null = null;
 export function populate_ide(): void {
     const processTree: HTMLElement | null = document.getElementById('process-file-tree');
     const codeContent: HTMLElement | null = document.getElementById('process-code-content');
-    const cwdPath: string = globals.vcs.cwd_get();
-    const cwdNode: VfsFileNode | null = globals.vcs.node_stat(cwdPath);
+    
+    // Determine Project Root for the File Browser (Visual Scope)
+    const projectName: string | undefined = globals.shell?.env_get('PROJECT');
+    let viewRootPath: string;
+    
+    if (projectName) {
+        viewRootPath = `/home/user/projects/${projectName}`;
+    } else {
+        viewRootPath = globals.vcs.cwd_get();
+    }
 
-    if (processTree && codeContent && cwdNode) {
+    const rootNode: VfsFileNode | null = globals.vcs.node_stat(viewRootPath);
+
+    if (processTree && codeContent && rootNode) {
         // Ensure tree container has the expected <ul>
         if (!processTree.querySelector('.interactive-tree')) {
             processTree.innerHTML = '<ul class="interactive-tree"></ul>';
+        }
+
+        // Clean up previous instance
+        if (ideBrowser) {
+            ideBrowser.destroy();
         }
 
         ideBrowser = new FileBrowser({
             treeContainer: processTree,
             previewContainer: codeContent,
             vfs: globals.vcs,
-            projectBase: cwdPath
+            projectBase: viewRootPath
         });
-        ideBrowser.trees_set({ default: cwdNode });
-        ideBrowser.tree_render();
+        
+        // We need to populate children for the root node manually if node_stat didn't recursive fetch
+        // But FileBrowser expects a node structure. VFS.node_stat might return shallow.
+        // Actually VirtualFileSystem.node_stat traverses but children are only populated if they exist.
+        // Let's ensure we get the dir_list for the root.
+        if (rootNode.type === 'folder' && (!rootNode.children || rootNode.children.length === 0)) {
+             try {
+                 rootNode.children = globals.vcs.dir_list(viewRootPath);
+             } catch { /* ignore */ }
+        }
 
-        // Open default file
-        ideBrowser.preview_show(`${cwdPath}/src/train.py`, 'train.py');
+        // Recursively build tree for display? FileBrowser expects a tree. 
+        // Our VFS node_stat returns the node at path. 
+        // If we want the full tree, we might need a recursive builder similar to `vfsTree_build` in search.ts.
+        // However, FileBrowser handles lazy loading if we just give it the top level? 
+        // No, FileBrowser `node_render` is recursive on `children`. 
+        // So we DO need to build the tree.
+        
+        // Let's reuse the logic: We need a helper to build the tree state.
+        // Since we can't easily import `vfsTree_build` from search.ts (it's local), 
+        // we'll implement a lightweight version here or rely on the fact that for Process stage,
+        // we want to see the whole project.
+        
+        const fullTree = ideTree_build(viewRootPath);
+
+        if (fullTree) {
+            ideBrowser.trees_set({ default: fullTree });
+            ideBrowser.tree_render();
+        }
+
+        // Open default file: try main entry points based on project type
+        const defaults = ['src/train.py', 'train.py', 'README.md'];
+        for (const file of defaults) {
+            const path = `${viewRootPath}/${file}`;
+            if (globals.vcs.node_stat(path)) {
+                ideBrowser.preview_show(path, file);
+                break;
+            }
+        }
     } else if (processTree) {
         processTree.innerHTML = '<span class="dim">No filesystem mounted.</span>';
     }
 }
+
+/**
+ * Recursively builds a file tree for the IDE view.
+ */
+function ideTree_build(path: string): VfsFileNode | null {
+    try {
+        const node = globals.vcs.node_stat(path);
+        if (!node) return null;
+        if (node.type === 'folder') {
+            const children = globals.vcs.dir_list(path);
+            // Clone to avoid mutating VFS state if we modify children for display
+            return {
+                ...node,
+                children: children.map(c => ideTree_build(c.path)).filter((n): n is VfsFileNode => n !== null)
+            };
+        }
+        return node;
+    } catch {
+        return null;
+    }
+}
+
 
 /**
  * Loads file content into the IDE code editor.

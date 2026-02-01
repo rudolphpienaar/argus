@@ -16,11 +16,13 @@ import { populate_ide, training_launch } from './process.js';
 import type { Dataset, Project } from '../models/types.js';
 import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
+import { ai_greeting } from '../../lcarslm/AIService.js';
 import { render_assetCard, type AssetCardOptions } from '../../ui/components/AssetCard.js';
 import { FileBrowser } from '../../ui/components/FileBrowser.js';
 import { overlaySlots_clear } from '../logic/OverlayUtils.js';
 import { resizeHandle_attach } from '../../ui/interactions/ResizeHandle.js';
 import { files_prompt, files_ingest } from '../logic/FileUploader.js';
+import { SYSTEM_KNOWLEDGE } from '../data/knowledge.js';
 
 // ============================================================================
 // AI / Auth Logic
@@ -41,7 +43,7 @@ export function lcarslm_initialize(): void {
             apiKey,
             model: model,
             provider: provider as 'openai' | 'gemini'
-        });
+        }, SYSTEM_KNOWLEDGE);
         searchUIState_set('ready');
         if (globals.terminal) {
             globals.terminal.setStatus(`MODE: [${provider.toUpperCase()}] // MODEL: [${model.toUpperCase()}]`);
@@ -90,11 +92,12 @@ export function lcarslm_reset(): void {
  * Activates simulation mode by creating an engine with null config.
  */
 export function lcarslm_simulate(): void {
-    globals.lcarsEngine = new LCARSEngine(null);
+    globals.lcarsEngine = new LCARSEngine(null, SYSTEM_KNOWLEDGE);
     searchUIState_set('ready');
     if (globals.terminal) {
         globals.terminal.setStatus('MODE: [SIMULATION] // EMULATION ACTIVE');
-        globals.terminal.println('>> AI CORE: SIMULATION MODE ACTIVE. EMULATING NEURAL RESPONSES.');
+        // Trigger Calypso startup sequence
+        ai_greeting();
     }
 }
 
@@ -163,7 +166,7 @@ export async function catalog_search(overrideQuery?: string): Promise<Dataset[]>
  * Renders the workspace view — persistent project strip at top,
  * dataset tiles below.
  *
- * @param datasets - The datasets to display.
+ * @param datasets - The datasets to display (search results).
  * @param isSearchActive - Whether any search filter is currently active.
  */
 export function workspace_render(datasets: Dataset[], isSearchActive: boolean): void {
@@ -173,19 +176,16 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
     const container: HTMLElement | null = document.getElementById('dataset-results');
     if (!container) return;
 
-    // If no search is active and no datasets provided, show a prompt
-    if (!isSearchActive && datasets.length === 0) {
-        container.innerHTML = `
-            <div style="text-align: center; padding: 3rem 1rem; color: var(--font-color); opacity: 0.6;">
-                <p style="font-size: 1.1rem;">USE THE AI CORE TO SEARCH FOR DATASETS</p>
-                <p style="font-size: 0.85rem; color: var(--harvestgold);">OR SELECT A PROJECT ABOVE TO OPEN AN EXISTING WORKSPACE</p>
-            </div>
-        `;
-        return;
-    }
+    // 1. Identify gathered datasets that are NOT in the current search results
+    const gatheredMissing: Dataset[] = [];
+    gatheredDatasets.forEach((entry) => {
+        if (!datasets.some(ds => ds.id === entry.dataset.id)) {
+            gatheredMissing.push(entry.dataset);
+        }
+    });
 
-    // Render dataset tiles using AssetCard for visual convergence
-    container.innerHTML = datasets.map((ds: Dataset): string => {
+    // Helper to render a list of datasets
+    const renderList = (list: Dataset[]): string => list.map((ds: Dataset): string => {
         const isGathered: boolean = gatheredDatasets.has(ds.id);
         const opts: AssetCardOptions = {
             id: ds.id,
@@ -208,7 +208,41 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
         return render_assetCard(opts);
     }).join('');
 
-    // Apply gathered class to cards
+    let html = '';
+
+    // 2. Render Workspace Assets (if any)
+    if (gatheredMissing.length > 0) {
+        html += `<div style="grid-column: 1 / -1; margin-top: 1rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--honey); color: var(--honey); font-family: 'Antonio', sans-serif; letter-spacing: 1px;">WORKSPACE ASSETS</div>`;
+        html += renderList(gatheredMissing);
+        
+        if (datasets.length > 0) {
+             html += `<div style="grid-column: 1 / -1; margin-top: 2rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--sky); color: var(--sky); font-family: 'Antonio', sans-serif; letter-spacing: 1px;">SEARCH RESULTS</div>`;
+        }
+    }
+
+    // 3. Render Search Results
+    if (datasets.length > 0) {
+        html += renderList(datasets);
+    } else if (gatheredMissing.length === 0 && !isSearchActive) {
+        // Empty state (no gathered, no search results, no search active)
+        html = `
+            <div style="text-align: center; padding: 3rem 1rem; color: var(--font-color); opacity: 0.6; grid-column: 1 / -1;">
+                <p style="font-size: 1.1rem;">USE THE AI CORE TO SEARCH FOR DATASETS</p>
+                <p style="font-size: 0.85rem; color: var(--harvestgold);">OR SELECT A PROJECT ABOVE TO OPEN AN EXISTING WORKSPACE</p>
+            </div>
+        `;
+    } else if (datasets.length === 0 && gatheredMissing.length === 0) {
+        // Search active but no results
+         html = `
+            <div style="text-align: center; padding: 3rem 1rem; color: var(--font-color); opacity: 0.6; grid-column: 1 / -1;">
+                <p style="font-size: 1.1rem;">NO MATCHING DATASETS FOUND</p>
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+
+    // Apply gathered class to cards (in case renderList logic didn't catch it, though it should have)
     gatheredDatasets.forEach((_entry: GatheredEntry, dsId: string): void => {
         const card: HTMLElement | null = container.querySelector(`[data-id="${dsId}"]`);
         if (card) card.classList.add('gathered');
@@ -321,22 +355,15 @@ export function dataset_select(datasetId: string, quiet: boolean = false): void 
     const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean => ds.id === datasetId);
     if (!dataset) return;
 
-    const exists: boolean = state.selectedDatasets.some((ds: Dataset): boolean => ds.id === datasetId);
-    if (!exists) {
-        state.selectedDatasets.push(dataset);
+    store.dataset_select(dataset);
 
-        // Update UI
-        const card: Element | null = document.querySelector(`.dataset-card[data-id="${datasetId}"]`);
-        if (card) card.classList.add('selected');
+    // Update UI
+    const card: Element | null = document.querySelector(`.dataset-card[data-id="${datasetId}"]`);
+    if (card) card.classList.add('selected');
 
-        if (!quiet && globals.terminal) {
-            globals.terminal.println(`● SELECTED DATASET: [${dataset.id}] ${dataset.name}`);
-            globals.terminal.println(`○ ADDED TO COHORT BUFFER. SELECT MORE OR PROCEED TO GATHER.`);
-        }
-
-        // Update cascading stats
-        import('./gather.js').then((m: { selectionCount_update: () => void }): void => m.selectionCount_update());
-        import('../logic/telemetry.js').then((m: { cascade_update: () => void }): void => m.cascade_update());
+    if (!quiet && globals.terminal) {
+        globals.terminal.println(`● SELECTED DATASET: [${dataset.id}] ${dataset.name}`);
+        globals.terminal.println(`○ ADDED TO COHORT BUFFER. SELECT MORE OR PROCEED TO CODE.`);
     }
 }
 
@@ -347,22 +374,17 @@ export function dataset_select(datasetId: string, quiet: boolean = false): void 
  * @param quiet - If true, suppresses terminal output.
  */
 export function dataset_deselect(datasetId: string, quiet: boolean = false): void {
-    const index: number = state.selectedDatasets.findIndex((ds: Dataset): boolean => ds.id === datasetId);
-    if (index >= 0) {
-        const dataset: Dataset = state.selectedDatasets[index];
-        state.selectedDatasets.splice(index, 1);
+    const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean => ds.id === datasetId);
+    if (!dataset) return;
 
-        // Update UI
-        const card: Element | null = document.querySelector(`.dataset-card[data-id="${datasetId}"]`);
-        if (card) card.classList.remove('selected');
+    store.dataset_deselect(datasetId);
 
-        if (!quiet && globals.terminal) {
-            globals.terminal.println(`○ DESELECTED DATASET: [${datasetId}] ${dataset.name}`);
-        }
+    // Update UI
+    const card: Element | null = document.querySelector(`.dataset-card[data-id="${datasetId}"]`);
+    if (card) card.classList.remove('selected');
 
-        // Update cascading stats
-        import('./gather.js').then((m: { selectionCount_update: () => void }): void => m.selectionCount_update());
-        import('../logic/telemetry.js').then((m: { cascade_update: () => void }): void => m.cascade_update());
+    if (!quiet && globals.terminal) {
+        globals.terminal.println(`○ DESELECTED DATASET: [${datasetId}] ${dataset.name}`);
     }
 }
 
@@ -452,6 +474,11 @@ function projectDetail_close(): void {
     overlay.addEventListener('animationend', (): void => {
         overlay.classList.add('hidden');
         overlay.classList.remove('closing');
+        
+        // Restore the Intelligence Console (Terminal) so user can continue searching
+        if (globals.frameSlot && !globals.frameSlot.state_isOpen()) {
+            globals.frameSlot.frame_open();
+        }
     }, { once: true });
 }
 
@@ -518,45 +545,52 @@ function projectDetail_populate(
     if (authorEl) authorEl.textContent = `UPDATED: ${project.lastModified.toLocaleDateString()}`;
 
     // 2. Build file trees from ACTUAL VFS STATE
-    // This ensures that uploaded files (and scaffolded files) are visible.
     
     // Ensure the project exists in VFS
     if (!globals.vcs.node_stat(projectBase)) {
-        // If somehow missing (e.g. legacy mock), just create root
         globals.vcs.dir_create(projectBase);
     }
-
-    const srcRoot: VcsFileNode | null = vfsTree_build(`${projectBase}/src`);
-    const dataRoot: VcsFileNode | null = vfsTree_build(`${projectBase}/data`);
-    const projectRoot: VcsFileNode | null = vfsTree_build(projectBase);
 
     const trees: Record<string, VcsFileNode> = {};
     const tabs: Array<{ id: string; label: string; shade: number }> = [];
 
-    // Decision Logic: Progressive Structure
-    // Only switch to "IDE Mode" (Source/Data tabs) if there is actual source code structure.
-    // Otherwise, stay in "Filesystem Mode" (Root view) so users see uploads + data folders together.
-    if (srcRoot) {
-        // Has code structure -> IDE View
-        trees.source = srcRoot;
-        tabs.push({ id: 'source', label: 'SOURCE', shade: 1 });
-        
-        if (dataRoot) {
-            trees.data = dataRoot;
-            tabs.push({ id: 'data', label: 'DATA', shade: 2 });
-        }
-    } else {
-        // Draft/Hybrid/Flat -> Filesystem View
-        if (projectRoot) {
-            trees.files = projectRoot;
-            tabs.push({ id: 'files', label: 'FILES', shade: 1 });
-        }
+    // Always include ROOT view
+    const rootNode = vfsTree_build(projectBase);
+    if (rootNode) {
+        trees.root = rootNode;
+        tabs.push({ id: 'root', label: 'ROOT', shade: 1 });
     }
 
-    // Default active tab
-    let activeTab: string = tabs.length > 0 ? tabs[0].id : 'files';
+    // Optional: SOURCE
+    const srcNode = vfsTree_build(`${projectBase}/src`);
+    if (srcNode) {
+        trees.source = srcNode;
+        tabs.push({ id: 'source', label: 'SOURCE', shade: 2 });
+    }
 
-    // 4. Sidebar → write into #overlay-sidebar-slot (never touch marketplace original)
+    // Optional: INPUT (formerly data)
+    // Check for 'input' first, fallback to 'data' for legacy compatibility
+    let inputPath = `${projectBase}/input`;
+    if (!globals.vcs.node_stat(inputPath) && globals.vcs.node_stat(`${projectBase}/data`)) {
+        inputPath = `${projectBase}/data`;
+    }
+    const inputNode = vfsTree_build(inputPath);
+    if (inputNode) {
+        trees.input = inputNode;
+        tabs.push({ id: 'input', label: 'INPUT', shade: 3 });
+    }
+
+    // Optional: OUTPUT
+    const outputNode = vfsTree_build(`${projectBase}/output`);
+    if (outputNode) {
+        trees.output = outputNode;
+        tabs.push({ id: 'output', label: 'OUTPUT', shade: 1 });
+    }
+
+    // Default active tab: ROOT is usually the safest default now
+    let activeTab: string = 'root';
+
+    // 4. Sidebar → write into #overlay-sidebar-slot
     const sidebarSlot: HTMLElement | null = document.getElementById('overlay-sidebar-slot');
     if (sidebarSlot) {
         sidebarSlot.innerHTML = '';
@@ -578,11 +612,12 @@ function projectDetail_populate(
                 });
                 if (detailBrowser) detailBrowser.tab_switch(tab.id);
 
-                // Sync terminal pwd when workspace is active
+                // Sync terminal pwd
                 if (isWorkspaceExpanded && workspaceProjectBase) {
                     let targetPath = workspaceProjectBase;
                     if (tab.id === 'source') targetPath += '/src';
-                    else if (tab.id === 'data') targetPath += '/data';
+                    else if (tab.id === 'input') targetPath += '/input';
+                    else if (tab.id === 'output') targetPath += '/output';
                     
                     globals.vcs.cwd_set(targetPath);
                     if (globals.terminal) globals.terminal.prompt_sync();
@@ -655,8 +690,8 @@ function projectDetail_populate(
             <button class="pill-btn close-pill" id="project-close-btn">
                 <span class="btn-text">CLOSE</span>
             </button>
-            <button class="pill-btn install-pill" id="project-open-btn">
-                <span class="btn-text">OPEN</span>
+            <button class="pill-btn install-pill" id="project-code-btn">
+                <span class="btn-text">CODE</span>
             </button>
         `;
 
@@ -690,10 +725,119 @@ function projectDetail_populate(
             projectDetail_close();
         });
 
-        document.getElementById('project-open-btn')?.addEventListener('click', (e: Event): void => {
+        document.getElementById('project-code-btn')?.addEventListener('click', (e: Event): void => {
             e.stopPropagation();
-            workspace_expand(projectId, project);
+            // Check if src already exists. If yes, skip selection.
+            if (globals.vcs.node_stat(`${projectBase}/src`)) {
+                workspace_expand(projectId, project);
+            } else {
+                workspace_initialize_interact(projectId, project);
+            }
         });
+    }
+}
+
+/**
+ * Shows the LCARS intermediate UI for selecting a project template.
+ */
+function workspace_initialize_interact(projectId: string, project: Project): void {
+    const contentSlot = document.getElementById('overlay-content-slot');
+    if (!contentSlot) return;
+
+    contentSlot.innerHTML = `
+        <div class="workspace-init-overlay">
+            <h2 style="color: var(--honey); margin-top: 0;">SELECT WORKFLOW TYPE</h2>
+            <p class="dim">Initialize your ChRIS workspace with a standardized template.</p>
+            
+            <div class="template-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 2rem;">
+                <div class="template-card" id="tpl-standalone" style="background: #111; padding: 1.5rem; border: 2px solid var(--sky); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
+                    <h3 style="color: var(--sky); margin-top: 0;">STANDARD ChRIS APP</h3>
+                    <p style="font-size: 0.9rem; color: #888;">Standard Python ChRIS Plugin. Suitable for image processing, analysis, and DICOM manipulation.</p>
+                    <ul style="font-size: 0.8rem; color: #666; margin-top: 1rem; padding-left: 1.2rem;">
+                        <li>python-chrisapp-template structure</li>
+                        <li>app.py with PathMapper support</li>
+                        <li>Dockerfile & setup.py included</li>
+                    </ul>
+                </div>
+                
+                <div class="template-card" id="tpl-fedml" style="background: #111; padding: 1.5rem; border: 2px solid var(--orange); border-radius: 12px; cursor: pointer; transition: all 0.2s;">
+                    <h3 style="color: var(--orange); margin-top: 0;">FEDERATED ML TASK</h3>
+                    <p style="font-size: 0.9rem; color: #888;">Pre-configured for ATLAS/MERIDIAN Federated Learning. Develop locally, scale globally.</p>
+                    <ul style="font-size: 0.8rem; color: #666; margin-top: 1rem; padding-left: 1.2rem;">
+                        <li>Includes ATLAS/MERIDIAN shim hooks</li>
+                        <li>Ready for "Federalize & Launch" stage</li>
+                        <li>Implicit code injection support</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div style="margin-top: 2rem; text-align: center;">
+                <button class="pill-btn close-pill" id="init-cancel-btn" style="width: 200px;">CANCEL</button>
+            </div>
+        </div>
+    `;
+
+    // Click Handlers for cards
+    document.getElementById('tpl-standalone')?.addEventListener('click', () => {
+        workspace_scaffold(project, 'standalone');
+        // Refresh detail view to show file browser (clear init overlay)
+        const overlay = document.getElementById('asset-detail-overlay');
+        const lcarsFrame = document.getElementById('detail-lcars-frame');
+        if (overlay && lcarsFrame) {
+            projectDetail_populate(project, projectId, overlay, lcarsFrame);
+        }
+        workspace_expand(projectId, project);
+    });
+
+    document.getElementById('tpl-fedml')?.addEventListener('click', () => {
+        workspace_scaffold(project, 'fedml');
+        // Refresh detail view to show file browser
+        const overlay = document.getElementById('asset-detail-overlay');
+        const lcarsFrame = document.getElementById('detail-lcars-frame');
+        if (overlay && lcarsFrame) {
+            projectDetail_populate(project, projectId, overlay, lcarsFrame);
+        }
+        workspace_expand(projectId, project);
+    });
+
+    document.getElementById('init-cancel-btn')?.addEventListener('click', () => {
+        // Just refresh the detail view
+        const overlay = document.getElementById('asset-detail-overlay');
+        const lcarsFrame = document.getElementById('detail-lcars-frame');
+        if (overlay && lcarsFrame) {
+            projectDetail_populate(project, projectId, overlay, lcarsFrame);
+        }
+    });
+
+    // Add hover effects via JS (simpler than CSS injection here)
+    contentSlot.querySelectorAll<HTMLElement>('.template-card').forEach(card => {
+        card.onmouseenter = () => { card.style.background = '#181818'; card.style.transform = 'translateY(-5px)'; };
+        card.onmouseleave = () => { card.style.background = '#111'; card.style.transform = 'translateY(0)'; };
+    });
+}
+
+/**
+ * Scaffolds the actual project file tree based on the selected archetype.
+ */
+function workspace_scaffold(project: Project, type: 'standalone' | 'fedml'): void {
+    const projectBase = `/home/user/projects/${project.name}`;
+    const vcs = globals.vcs;
+
+    vcs.dir_create(`${projectBase}/src`);
+    vcs.dir_create(`${projectBase}/output`);
+
+    const appTpl = type === 'standalone' ? 'chris-app-py' : 'fedml-app-py';
+
+    // Populate with template files
+    vcs.file_create(`${projectBase}/src/app.py`, undefined, appTpl);
+    vcs.file_create(`${projectBase}/setup.py`, undefined, 'chris-setup-py');
+    vcs.file_create(`${projectBase}/Dockerfile`, undefined, 'chris-dockerfile');
+    vcs.file_create(`${projectBase}/requirements.txt`, undefined, 'chris-requirements');
+    vcs.file_create(`${projectBase}/README.md`, undefined, 'chris-readme');
+
+    if (globals.terminal) {
+        globals.terminal.println(`● WORKSPACE INITIALIZED: [${type.toUpperCase()}] ARCHETYPE.`);
+        globals.terminal.println(`○ SCAFFOLDED ChRIS STRUCTURE IN ${projectBase}/`);
     }
 }
 
@@ -756,6 +900,7 @@ function project_rename_interact(project: Project): void {
         if (globals.terminal) {
             globals.terminal.println(`● PROJECT RENAMED: [${oldName}] -> [${newName}]`);
             globals.terminal.println(`○ VFS PATH MOVED TO ${newPath}`);
+            globals.terminal.prompt_sync();
         }
 
     } catch (e: unknown) {
@@ -876,9 +1021,9 @@ function workspace_expand(projectId: string, project: Project): void {
         store.project_load(project);
 
         const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
-        globals.vcs.tree_unmount(`${projectBase}/data`);
+        globals.vcs.tree_unmount(`${projectBase}/input`);
         globals.vcs.dir_create(`${projectBase}/src`);
-        globals.vcs.tree_mount(`${projectBase}/data`, cohortRoot);
+        globals.vcs.tree_mount(`${projectBase}/input`, cohortRoot);
         globals.vcs.cwd_set(projectBase);
 
         if (globals.shell) {
@@ -1382,15 +1527,19 @@ function datasetGather_commit(): void {
         gatherTargetProject.datasets.push(activeDetailDataset);
     }
 
+    // Sync global selection state for the bottom counter
+    console.log('ARGUS: Syncing selection state for dataset:', activeDetailDataset.id);
+    store.dataset_select(activeDetailDataset);
+
     // Mount into Project VFS
-    // For 'Just a Folder' drafts, we mount data under ~/projects/NAME/data/DATASET_NAME
+    // For 'Just a Folder' drafts, we mount data under ~/projects/NAME/input/DATASET_NAME
     const projectBase: string = `/home/user/projects/${gatherTargetProject.name}`;
-    try { globals.vcs.dir_create(`${projectBase}/data`); } catch { /* exists */ }
+    try { globals.vcs.dir_create(`${projectBase}/input`); } catch { /* exists */ }
     
     // Mount the gathered subtree
     const dsDir: string = activeDetailDataset.name.replace(/\s+/g, '_');
-    globals.vcs.tree_unmount(`${projectBase}/data/${dsDir}`);
-    globals.vcs.tree_mount(`${projectBase}/data/${dsDir}`, subtree);
+    globals.vcs.tree_unmount(`${projectBase}/input/${dsDir}`);
+    globals.vcs.tree_mount(`${projectBase}/input/${dsDir}`, subtree);
 
     // Update UI
     projectStrip_render();
@@ -1440,6 +1589,11 @@ function datasetDetail_close(): void {
     overlay.addEventListener('animationend', (): void => {
         overlay.classList.add('hidden');
         overlay.classList.remove('closing');
+
+        // Restore the Intelligence Console (Terminal)
+        if (globals.frameSlot && !globals.frameSlot.state_isOpen()) {
+            globals.frameSlot.frame_open();
+        }
     }, { once: true });
 }
 
@@ -1460,12 +1614,42 @@ function fileCount_total(node: VcsFileNode): number {
 // ============================================================================
 
 /**
+ * Transition from the Search/Gather stage to the Process (Code) stage.
+ * Activated by the "CODE" pill at the bottom of the Search screen.
+ */
+export function proceedToCode_handle(): void {
+    if (gatherTargetProject) {
+        const projectBase = `/home/user/projects/${gatherTargetProject.name}`;
+        // Check if src already exists (initialized)
+        if (globals.vcs.node_stat(`${projectBase}/src`)) {
+            project_activate(gatherTargetProject.id);
+        } else {
+            // Not initialized -> Open Project Detail -> Prompt Init
+            projectDetail_open(gatherTargetProject.id);
+            // Delay slightly to allow population to finish, then overlay init
+            setTimeout(() => {
+                workspace_initialize_interact(gatherTargetProject!.id, gatherTargetProject!);
+            }, 100);
+        }
+    } else {
+        if (globals.terminal) {
+            globals.terminal.println('<span class="warn">● WARNING: NO ACTIVE PROJECT CONTEXT.</span>');
+            globals.terminal.println('○ SELECT AN EXISTING PROJECT OR CLICK "+ NEW" BEFORE PROCEEDING TO CODE.');
+        }
+    }
+}
+
+/**
  * Hook called when entering the Search stage.
  * Opens the terminal frame automatically.
  */
 export function onEnter(): void {
     if (globals.frameSlot) {
-        setTimeout(() => { globals.frameSlot?.frame_open(); }, 10);
+        setTimeout(() => { 
+            globals.frameSlot?.frame_open(); 
+            // Trigger Calypso greeting after frame opens
+            setTimeout(ai_greeting, 800);
+        }, 10);
     }
 }
 

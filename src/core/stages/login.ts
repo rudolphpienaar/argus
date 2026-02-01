@@ -6,9 +6,10 @@
  * @module
  */
 
-import { store } from '../state/store.js';
+import { store, globals } from '../state/store.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
+import { homeDir_scaffold } from '../../vfs/providers/ProjectProvider.js';
 
 type Persona = 'fedml' | 'appdev' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
@@ -22,6 +23,27 @@ type Persona = 'fedml' | 'appdev' | 'annotator' | 'user' | 'provider' | 'scienti
  * after a brief animation.
  */
 export function user_authenticate(): void {
+    const userInput: HTMLInputElement | null = document.getElementById('login-user') as HTMLInputElement;
+    const username: string = userInput?.value.trim() || 'user';
+
+    // Update Shell Identity
+    if (globals.shell) {
+        const homeDir = `/home/${username}`;
+        globals.shell.env_set('USER', username);
+        globals.shell.env_set('HOME', homeDir);
+        globals.shell.env_set('PWD', homeDir);
+        
+        // Ensure VFS home exists
+        homeDir_scaffold(globals.vcs, username);
+        
+        // Move shell to new home
+        try {
+            globals.vcs.cwd_set(homeDir);
+        } catch { /* scaffolding ensures this exists */ }
+        
+        if (globals.terminal) globals.terminal.prompt_sync();
+    }
+
     const btn: HTMLButtonElement | null = document.querySelector('.login-form button') as HTMLButtonElement;
     if (btn) {
         btn.textContent = 'ACCESS GRANTED';

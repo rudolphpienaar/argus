@@ -66,7 +66,11 @@ export function monitor_initialize(): void {
 export function trainingStep_simulate(): void {
     if (!state.trainingJob || state.trainingJob.status !== 'running') return;
 
-    const job: TrainingJob = { ...state.trainingJob };
+    // Create a copy of the job and the lossHistory array to avoid direct state mutation
+    const job: TrainingJob = { 
+        ...state.trainingJob,
+        lossHistory: [...state.trainingJob.lossHistory]
+    };
 
     job.currentEpoch += 0.5;
     if (job.currentEpoch > job.totalEpochs) {

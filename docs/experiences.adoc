@@ -1,0 +1,70 @@
+= ARGUS User Experiences: The SeaGaP-MP Workflow
+:revnumber: 4.6.0
+:revdate: 2026-02-01
+:toc: macro
+:sectanchors:
+
+toc::[]
+
+== Overview
+
+This document outlines the refined user experience (UX) in ARGUS v4.6.0. It describes the "Filesystem First" philosophy, where projects begin as simple directories and evolve into structured workspaces through interactive gathering and explicit initialization.
+
+== 1. Project Initialization: The "Just a Folder" Draft
+
+The workflow begins in the **Search Stage**. To create a new context, the user interacts with the **Project Strip**.
+
+*   **The Beckon Pulse**: The `+ NEW` chip uses a high-visibility "harvest gold" pulse animation to attract the user's attention.
+*   **Draft Creation**: Clicking `+ NEW` immediately creates a "Draft Project" (e.g., `DRAFT-1234`).
+*   **VFS State**: At this stage, the project is "Just a Folder" at `~/projects/DRAFT-XXXX/`. No boilerplate code is generated yet, allowing for a clean, data-centric start.
+*   **Shell Sync**: The Intelligence Console (Terminal) automatically `cd`s into the new project root, and the prompt updates to reflect the new context.
+
+== 2. Discovery: Interaction with MU/TH/UR 6000
+
+With a project context active, the user searches for data.
+
+*   **Intelligence Console**: The user types natural language queries (e.g., "Show me histology data") into the terminal.
+*   **MU/TH/UR Interface**: Responses from the AI Core are rendered in the **MU/TH/UR 6000** style:
+** **Visuals**: LCARS Sky Blue typography with wide tracking and a retro-industrial glow.
+** **Teletype Effect**: Text streams in character-by-character, simulating a real-time link to the Nostromo-era mainframe.
+** **Non-Blocking**: The user can continue typing or interacting with the UI while the AI response is streaming.
+*   **Grid Filtering**: The AI interprets intent. "Search" queries filter the dataset grid, while "Open" queries trigger the asset detail slide-out.
+
+== 3. Assembly: The Gather Cycle
+
+The user assembles their cohort by browsing the catalog.
+
+*   **Persistent Workspace**: As datasets are gathered, they remain visible in a dedicated `WORKSPACE ASSETS` section at the top of the grid. New search results appear below in `SEARCH RESULTS`. This ensures the user never "loses" their active selection during deep searches.
+*   **Granular Selection**: Clicking a dataset tile opens the **Dataset Detail**. Users can long-press files to select specific subsets or click **ADD** to commit the entire dataset.
+*   **Input Mounting**: Gathered data is mounted into the project's virtual filesystem under the `input/` directory (e.g., `~/projects/MY-PROJECT/input/Dataset_Name/`).
+
+== 4. Refinement: Renaming and Context
+
+Drafts can be formalized at any time.
+
+*   **Interactive Rename**: Clicking the **RENAME** pill in the Project Detail overlay allows the user to give the project a meaningful name.
+*   **Atomic Move**: The system moves the VFS directory, updates the project model, and **synchronizes the terminal prompt** instantly to reflect the new path.
+
+== 5. Finalization: The "CODE" Directive
+
+When the user is ready to move from gathering data to writing logic, they use the **CODE** button (available in both the Search grid and the Project Detail).
+
+*   **Smart Branching**:
+** **If Initialized**: If the project already has a `src/` directory, the system jumps straight to the **Process Stage** (IDE).
+** **If Draft**: If the project is uninitialized, the system opens the Project Detail and presents the **SELECT WORKFLOW TYPE** interface.
+*   **Workspace Scaffolding**: The user chooses between a **Standard ChRIS App** or a **Federated ML Task**. The system then:
+1.  Creates the `src/`, `input/`, and `output/` directory structure.
+2.  Populates `src/` with canonically accurate template files (e.g., `app.py`, `Dockerfile`).
+3.  Expands the UI into the **Split-Pane Workspace**.
+
+== 6. Development: The 4-Tab IDE
+
+The formalized workspace provides a professional development environment.
+
+*   **Split-Pane Layout**: The Intelligence Console stays at the top, while the Project Browser and Previewer fill the bottom.
+*   **The 4-Tab Model**: The File Browser is organized into logical views:
+1.  **ROOT**: The entire project repository (including `README.md`, `Dockerfile`).
+2.  **SOURCE**: Focused view of the `src/` directory.
+3.  **INPUT**: Access to all gathered datasets and local uploads.
+4.  **OUTPUT**: Destination for program results and logs.
+*   **Terminal Sync**: Navigating between tabs automatically `cd`s the shell to the corresponding directory, keeping the CLI and GUI in perfect lockstep.

@@ -1,11 +1,11 @@
 {
-  "name": "argus",
-  "version": "4.6.0",
-  "description": "ATLAS Resource Graphical User System",
+    "name": "argus",
+    "version": "4.7.0",
+    "description": "ATLAS Resource Graphical User System - LCARS Prototype",
   "type": "module",
   "scripts": {
     "version:generate": "bash scripts/generate-version.sh",
-    "build": "npm run version:generate && tsc",
+    "build": "npm run version:generate && node scripts/bundle-docs.cjs && tsc",
     "watch": "npm run version:generate && tsc --watch",
     "serve": "npx http-server dist -p 8080 -c-1",
     "dev": "npm run build && npm run serve",

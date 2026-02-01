@@ -16,6 +16,7 @@
 
 import { LCARSTerminal as BaseTerminal } from '../../lcars-framework/ui/Terminal.js';
 import { globals } from '../../core/state/store.js';
+import { Typewriter } from '../anim/Typewriter.js';
 import type { Shell } from '../../vfs/Shell.js';
 import type { ShellResult, FileNode } from '../../vfs/types.js';
 
@@ -49,7 +50,7 @@ export class LCARSTerminal extends BaseTerminal {
     constructor(elementId: string) {
         super({
             elementId,
-            title: 'INTELLIGENCE CONSOLE // VFS LINK ACTIVE',
+            title: 'CALYPSO INTELLIGENCE CONSOLE // VFS LINK ACTIVE',
             welcomeMessage: [
                 'ATLAS Resource Graphical User System [Version 1.4.0]',
                 'Copyright (c) 2026 Federated Computer System',
@@ -123,6 +124,24 @@ export class LCARSTerminal extends BaseTerminal {
         if (this.shell) {
             this.setPrompt(this.shell.prompt_render());
         }
+    }
+
+    /**
+     * Renders text character-by-character to the terminal.
+     * Used for AI responses to simulate the "MU/TH/UR" interface.
+     * 
+     * @param text - The text content to type.
+     * @param styleClass - Optional CSS class (e.g., 'muthur-text').
+     */
+    public async printStream(text: string, styleClass: string = ''): Promise<void> {
+        const line = document.createElement('div');
+        line.className = `line ${styleClass}`;
+        this.output.appendChild(line);
+        
+        const typewriter = new Typewriter(line, 20);
+        await typewriter.type(text);
+        
+        this.scrollToBottom();
     }
 
     // ─── Shell Integration ──────────────────────────────────────

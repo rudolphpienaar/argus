@@ -69,6 +69,8 @@ export function selectionCount_update(): void {
     const countEl: HTMLElement | null = document.getElementById('selection-count');
     const btnToGather: HTMLButtonElement | null = document.getElementById('btn-to-gather') as HTMLButtonElement;
 
+    console.log(`ARGUS: selectionCount_update called. Count: ${count}, Element found: ${!!countEl}`);
+
     if (countEl) {
         countEl.textContent = `${count} dataset${count !== 1 ? 's' : ''} selected`;
     }
