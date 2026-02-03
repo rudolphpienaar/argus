@@ -1,7 +1,9 @@
 = CALYPSO: The AI Core
-:revnumber: 4.7.0
-:revdate: 2026-02-01
+:revnumber: 5.0.0
+:revdate: 2026-02-03
 :toc: macro
+:toclevels: 3
+:sectnums:
 
 toc::[]
 
@@ -22,9 +24,207 @@ While ARGUS provides the graphical framework (the body), CALYPSO provides the lo
 *   **Workflow Guidance:** Suggesting the next logical steps in the SeaGaP (Search, Gather, Process) pipeline.
 *   **Knowledge Retrieval:** She has read-access to the full system documentation (`docs/*.adoc`) and can explain architecture, file structures, and workflows on demand.
 
-== Visual Signature
+== Architecture: The Headless Core
 
-CALYPSO speaks in a distinct dialect, separating her output from standard system logs.
+As of v5.0.0, Calypso is architected as a **DOM-free headless core** that can operate in multiple environments: the browser, a Node.js server, or a CLI. This separation enables the ORACLE testing methodology (see `docs/oracle.adoc`).
+
+=== The Layer Model
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           PRESENTATION LAYER                                │
+│   (Environment-specific adapters)                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   BrowserAdapter          CLIAdapter            NodeAdapter                 │
+│   ┌─────────────┐        ┌─────────────┐       ┌─────────────┐             │
+│   │ Terminal UI │        │   stdout    │       │ Test Harness│             │
+│   │ DOM updates │        │   readline  │       │ Assertions  │             │
+│   └──────┬──────┘        └──────┬──────┘       └──────┬──────┘             │
+│          │                      │                     │                     │
+└──────────┼──────────────────────┼─────────────────────┼─────────────────────┘
+           │                      │                     │
+           └──────────────────────┼─────────────────────┘
+                                  │
+                    CalypsoResponse (actions + message)
+                                  │
+┌─────────────────────────────────┼───────────────────────────────────────────┐
+│                                 ▼                                           │
+│                         CALYPSO CORE                                        │
+│   (DOM-free, pure TypeScript)                                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   CalypsoCore.ts                                                            │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │  command_execute(input: string): Promise<CalypsoResponse>           │   │
+│   │  ├── Shell builtins (ls, cd, cat, tree, etc.)                       │   │
+│   │  ├── Workflow commands (search, add, gather, mount, federate)       │   │
+│   │  └── LLM fallback (natural language → intent → action)              │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   Depends on (all DOM-free):                                                │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│   │     VFS      │  │    Store     │  │    Shell     │  │ LCARSEngine  │   │
+│   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+----
+
+=== CalypsoCore
+
+The `CalypsoCore` class is the central orchestrator. It receives natural language input, classifies intent, executes deterministic operations against the VFS/Store, and returns a structured response.
+
+[source,typescript]
+----
+// src/lcarslm/CalypsoCore.ts
+
+export class CalypsoCore {
+    constructor(
+        private vfs: VirtualFileSystem,
+        private store: Store,
+        private shell: Shell,
+        private engine: LCARSEngine
+    ) {}
+
+    /**
+     * Execute a command (natural language or shell).
+     *
+     * @param input - User input string
+     * @returns Structured response with message and actions
+     */
+    public async command_execute(input: string): Promise<CalypsoResponse> {
+        // 1. Try shell builtins
+        // 2. Try workflow commands
+        // 3. Fall back to LLM
+    }
+}
+----
+
+=== CalypsoResponse
+
+Instead of directly manipulating the DOM, CalypsoCore returns a structured response. Adapters interpret the response according to their environment.
+
+[source,typescript]
+----
+export interface CalypsoResponse {
+    /** Text message to display */
+    message: string;
+
+    /** Actions for the adapter to execute */
+    actions: CalypsoAction[];
+
+    /** Optional state snapshot for verification */
+    state?: {
+        vfs?: VfsSnapshot;
+        store?: Partial<ExtendedState>;
+    };
+}
+
+export type CalypsoAction =
+    | { type: 'dataset_select'; id: string }
+    | { type: 'dataset_open'; id: string }
+    | { type: 'project_create'; name: string }
+    | { type: 'project_open'; id: string }
+    | { type: 'project_rename'; id: string; newName: string }
+    | { type: 'stage_advance'; stage: string }
+    | { type: 'workspace_render'; datasets: Dataset[] }
+    | { type: 'overlay_close' }
+    | { type: 'federation_start' };
+----
+
+=== Adapters
+
+Adapters translate `CalypsoResponse` into environment-specific behavior:
+
+[cols="1,2,2"]
+|===
+| Adapter | Environment | Behavior
+
+| `BrowserAdapter`
+| Web browser (ARGUS UI)
+| Renders to Terminal, manipulates DOM, triggers animations
+
+| `CLIAdapter`
+| `calypso-cli` REPL
+| Prints to stdout, reads from stdin, no DOM
+
+| `NodeAdapter`
+| ORACLE test harness
+| Captures responses, ignores UI actions, enables state assertions
+|===
+
+== Operating Modes
+
+Calypso can run in three modes:
+
+=== Browser Mode (Full ARGUS)
+
+The traditional mode where Calypso runs inside the ARGUS web application.
+
+[source,bash]
+----
+$ make serve
+# Open http://localhost:8080
+# Calypso is available in the Intelligence Console
+----
+
+=== Headless Mode (Standalone Server)
+
+Calypso runs as a Node.js server without a browser. Useful for testing, scripting, and CLI interaction.
+
+[source,bash]
+----
+$ make calypso
+Starting Calypso Server on :8081...
+CalypsoCore initialized (VFS: 47 nodes, Store: clean)
+Ready for connections.
+----
+
+=== CLI Mode (Interactive REPL)
+
+A command-line client connects to either the headless server or the browser's WebSocket bridge.
+
+[source,bash]
+----
+$ make calypso-cli
+╔══════════════════════════════════════════════════════════════╗
+║  CALYPSO CORE V5.0.0                                         ║
+║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
+║  Outcomes                                                    ║
+╚══════════════════════════════════════════════════════════════╝
+Connected to localhost:8081
+
+CALYPSO> search brain mri
+● AFFIRMATIVE. SCAN COMPLETE.
+○ IDENTIFIED 4 DATASET(S) MATCHING QUERY PARAMETERS.
+
+CALYPSO> ls ~/data/cohort/
+(empty)
+
+CALYPSO> add ds-023
+● DATASET GATHERED. MOUNTED TO ~/data/cohort/MGH-BRAIN-MRI/
+
+CALYPSO> tree ~/data/cohort/
+~/data/cohort/
+└── MGH-BRAIN-MRI/
+    ├── images/
+    │   ├── scan_0001.nii.gz
+    │   └── scan_0002.nii.gz
+    ├── masks/
+    │   └── segmentations.nii.gz
+    └── manifest.json
+
+CALYPSO> /snapshot
+{ "path": "~/data/cohort", "children": [...] }
+
+CALYPSO> quit
+Goodbye.
+----
+
+== Visual Signature (Browser Mode)
+
+When running in browser mode, CALYPSO speaks in a distinct visual dialect:
 
 *   **Style:** "MU/TH/UR 6000" (Retro-Industrial / Alien 1979).
 *   **Color:** **LCARS Sky Blue** (Integrated but distinct).
@@ -35,11 +235,39 @@ CALYPSO speaks in a distinct dialect, separating her output from standard system
 
 CALYPSO is helpful but industrial. She uses "I" to refer to herself but maintains a professional, research-focused demeanor.
 
-*   **Startup:** "CALYPSO CORE ONLINE. MY LOGIC CORES ARE PRIMED."
-*   **Affirmation:** "● AFFIRMATIVE."
-*   **Data Presentation:** "○ DISPLAYING RESULTS."
+=== Response Markers
 
-=== Idle Monitoring System
+*   **Affirmation:** `● AFFIRMATIVE.`
+*   **Data Presentation:** `○ DISPLAYING RESULTS.`
+*   **Error:** `>> ERROR: <description>`
+*   **Warning:** `>> WARNING: <description>`
+
+=== Voice Modulation
+
+Users can adjust Calypso's communication style:
+
+[cols="1,2,2"]
+|===
+| Command | Effect | Response Format
+
+| `quiet` / `mute` / `silence`
+| Disable idle monitoring
+| Silent until reactivated
+
+| `speak` / `unmute`
+| Re-enable voice
+| Resumes normal operation
+
+| `soft voice`
+| Use sentence case
+| "Affirmative. Scan complete."
+
+| `normal voice` / `shout`
+| Use uppercase (default)
+| "● AFFIRMATIVE. SCAN COMPLETE."
+|===
+
+=== Idle Monitoring System (Browser Mode)
 
 Calypso proactively monitors user engagement to prevent workflow stalling.
 
@@ -47,3 +275,91 @@ Calypso proactively monitors user engagement to prevent workflow stalling.
 *   **Context Awareness:** She analyzes the current stage and selection buffer to offer specific advice (e.g., "Buffer empty, try searching for..." vs. "Buffer full, ready to code?").
 *   **Persistence:** If inactivity continues, she checks back semi-randomly (every 20-50s) to maintain presence.
 *   **Mute Protocol:** Users can silence her by typing "Mute", "Quiet", or "Silence". She can be reactivated with "Speak" or "Unmute".
+
+NOTE: Idle monitoring is only active in browser mode. Headless mode and CLI mode do not implement idle timers.
+
+== Special Commands
+
+In addition to natural language, Calypso recognizes special commands prefixed with `/`:
+
+[cols="1,3"]
+|===
+| Command | Description
+
+| `/snapshot [path]`
+| Returns JSON snapshot of VFS subtree (default: entire tree)
+
+| `/state`
+| Returns JSON snapshot of Store state
+
+| `/store <property>`
+| Returns specific store property value
+
+| `/reset`
+| Resets VFS and Store to clean state
+
+| `/help`
+| Lists available commands
+
+| `/version`
+| Displays Calypso version and build info
+|===
+
+These commands are primarily used for debugging and ORACLE testing, but are available in all modes.
+
+== Source Structure
+
+[source]
+----
+src/lcarslm/
+├── CalypsoCore.ts          # DOM-free orchestrator (NEW)
+├── engine.ts               # LCARSEngine: LLM client wrapper
+├── client.ts               # OpenAI client
+├── gemini.ts               # Gemini client
+├── types.ts                # CalypsoResponse, CalypsoAction, Intent
+│
+├── adapters/
+│   ├── BrowserAdapter.ts   # Connects CalypsoCore → Terminal + DOM
+│   ├── CLIAdapter.ts       # Connects CalypsoCore → stdout/stdin
+│   └── NodeAdapter.ts      # Connects CalypsoCore → test harness
+│
+└── AIService.ts            # Legacy browser integration (uses BrowserAdapter)
+
+src/cli/
+├── calypso-server.ts       # Headless server entry point
+└── calypso-cli.ts          # CLI REPL client
+----
+
+== Integration with ORACLE
+
+The headless architecture enables the ORACLE testing methodology. See `docs/oracle.adoc` for the full specification.
+
+In summary:
+1. ORACLE test scripts send commands to CalypsoCore
+2. CalypsoCore executes against VFS/Store (deterministic)
+3. Tests assert on resulting state (VFS snapshots, Store properties)
+4. UI rendering is bypassed — testing the logic, not the presentation
+
+This separation allows:
+- Fast CI tests (no browser startup)
+- Fault isolation (core logic vs UI rendering)
+- CLI-based development workflows
+- Scripted automation
+
+== Future Enhancements
+
+=== Planned
+
+1. **Persistent Sessions**: Save/restore VFS and Store state across CLI sessions
+2. **Script Mode**: Execute `.calypso` script files for batch operations
+3. **Remote Mode**: Connect CLI to a remote ARGUS instance for debugging
+4. **Plugin System**: Register custom commands and intent handlers
+
+=== Research
+
+1. **Multi-Agent**: Multiple Calypso instances collaborating on complex workflows
+2. **Learning Mode**: Calypso adapts intent classification based on user corrections
+3. **Voice Interface**: Speech-to-text input, text-to-speech output
+
+---
+_Last updated: {revdate} (v{revnumber})_

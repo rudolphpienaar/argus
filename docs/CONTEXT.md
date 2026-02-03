@@ -2,6 +2,7 @@
 
 ## Recent Refactoring Activity
 
+- **2026-02-03 (v5.0.0)**: **"The Oracle Update"** - Introduced headless Calypso architecture. CalypsoCore is now DOM-free and can run in Node.js without a browser. New `make calypso` target starts a headless server; `make calypso-cli` provides interactive REPL access. Introduced ORACLE testing methodology — reflexive verification through agentic self-testing. Test scripts (`.oracle` files) send natural language commands to CalypsoCore and assert on VFS/Store state. See `docs/oracle.adoc` and `docs/calypso.adoc`.
 - **2026-01-31 (v4.6.0)**: **"The Quality of Life Update"** - Implemented "Filesystem First" workflow. `+ NEW` creates clean Draft Projects without boilerplate. Added `upload` terminal command for local file ingestion (PDF/Images supported with inline preview). Project Detail view adaptively switches between "FILES" (flat) and "SOURCE/DATA" (structured) tabs. Added **RENAME** and **UPLOAD** buttons to the UI. "ADD" on a dataset now defaults to "Add All" if no manual selection is made, and auto-creates a draft project if needed.
 - **2026-01-30 (v4.5.1)**: **"The Framework Codification"** - Formalized the implicit framework patterns into `docs/framework.adoc`: Store + EventBus reactivity, the Slot Pattern (multi-mode overlays), the Populate/Teardown Lifecycle, the Component Pattern (class vs render function), the Provider Pattern (VCS tree builders), the Strip Pattern, the Selectable Mode, Window Binding conventions, CSS architecture, TypeScript conventions, and known extraction candidates. Documents anti-patterns with the actual regressions that taught them.
 - **2026-01-30 (v4.5.0)**: **"The Overlay Guard"** - Replaced fragile shared-DOM innerHTML mutation with a multi-mode slot architecture. The `#asset-detail-overlay` now uses a `data-mode` attribute (`marketplace|project|dataset`) with three slot containers (`#overlay-sidebar-slot`, `#overlay-content-slot`, `#overlay-command-slot`). CSS attribute selectors handle visibility toggling — marketplace originals are never touched by project/dataset views. Eliminated `detailContent_restore()` and all cached innerHTML state. This structurally prevents the class of regression where one consumer corrupts another's DOM. Also fixed workspace→monitor transition: added `workspace_teardown()` to fully collapse split-pane layout, hide asset-detail overlay, and clear slots before `stage_advanceTo('monitor')` — the federation handshake was previously only hiding the federation-overlay, leaving the workspace blocking the monitor stage.
@@ -78,7 +79,20 @@ All user interactions follow the **SeaGaP-MP** workflow:
 | Shell | 57 | Env vars, prompt, builtins, stage transitions, external handlers, cwd change callback |
 | ContentRegistry | 16 | Registration, resolution, VFS integration, 8 template generators |
 | Costs | 3 | Cost estimation engine |
-| **Total** | **140** | |
+| **Unit Total** | **140** | |
+
+### ORACLE Integration Tests
+
+ORACLE tests verify end-to-end workflows via CalypsoCore (see `docs/oracle.adoc`):
+
+| Category | Focus |
+|----------|-------|
+| Smoke | Basic navigation, stage transitions |
+| Integration | Gather workflow, VFS mounting, project lifecycle |
+| Regression | Overlay slot cleanup, state isolation |
+| E2E | Full federated ML developer workflow |
+
+Run with: `make test-oracle`
 
 ## Source Structure
 
@@ -118,4 +132,4 @@ npm run test       # Run 140 unit tests
 ```
 
 ---
-*Last updated: 2026-01-30 (v4.5.1)*
+*Last updated: 2026-02-03 (v5.0.0)*

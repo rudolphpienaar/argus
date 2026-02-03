@@ -1,0 +1,913 @@
+= ORACLE: Reflexive Verification Through Agentic Self-Testing
+:author: ATLAS Project Team
+:revdate: 2026-02-03
+:revnumber: 1.0.0
+:toc: macro
+:toclevels: 3
+:sectnums:
+:icons: font
+
+[.lead]
+_A methodology for integration testing of AI-driven systems using the system's own conversational interface as both test driver and verification oracle._
+
+toc::[]
+
+== Abstract
+
+Modern web applications increasingly incorporate AI-driven interfaces that mediate between user intent and system functionality. Traditional testing approaches — unit tests, end-to-end browser automation, snapshot testing — struggle to verify these systems because the integration seams between AI interpretation, state management, and UI rendering are numerous, asynchronous, and often non-deterministic at the surface level.
+
+This document introduces **ORACLE** (Observational Reflexive Agentic Confirmation of Logical Execution), a testing methodology in which the system's own AI interface serves as the test driver, and internal system state serves as the verification oracle. Rather than testing _around_ the AI layer or mocking it away, ORACLE tests _through_ the AI layer, verifying that natural language commands produce correct deterministic state transformations.
+
+We describe the theoretical foundations, architectural requirements, implementation specifics for the ARGUS system, and a formal test script specification.
+
+== Introduction
+
+=== The Problem: Integration Testing of AI-Mediated Systems
+
+Contemporary applications increasingly feature conversational or agentic interfaces where an AI layer interprets user intent and dispatches to underlying system functions. This architecture introduces a testing challenge:
+
+[cols="1,2,2"]
+|===
+| Testing Approach | Limitation | Consequence
+
+| **Unit Tests**
+| Test functions in isolation
+| Cannot verify that AI correctly routes intent to function
+
+| **E2E Browser Automation**
+| Brittle selectors, visual assertions
+| Breaks on CSS changes; cannot assert semantic state
+
+| **Snapshot Testing**
+| Compares rendered output
+| High false-positive rate; conflates presentation with logic
+
+| **Mocking the AI Layer**
+| Removes non-determinism
+| Does not test the actual user-facing behavior
+|===
+
+The core issue: the **integration seams** — where AI interpretation meets state mutation meets UI rendering — are precisely where bugs occur, yet they are the hardest to test.
+
+=== Observation: Bounded Non-Determinism
+
+In systems like ARGUS, the AI layer (Calypso) does not perform arbitrary computation. It serves as a **natural language router** to deterministic functions:
+
+[source]
+----
+User Input (fuzzy)          AI Interpretation           Deterministic Execution
+─────────────────────────────────────────────────────────────────────────────────
+"add the BCH histology"  →  INTENT: gather_dataset   →  dataset_gather('BCH-HISTO')
+"include BCH set"        →  INTENT: gather_dataset   →  dataset_gather('BCH-HISTO')
+"gather BCH-HISTO-2024"  →  INTENT: gather_dataset   →  dataset_gather('BCH-HISTO')
+----
+
+The non-determinism is **bounded to intent classification**. Once intent is resolved, execution is pure. This means:
+
+1. Multiple surface forms map to the same intent
+2. The same intent always produces the same state transformation
+3. State is verifiable regardless of which surface form was used
+
+=== The ORACLE Insight
+
+If the AI interface can successfully drive a workflow to completion, and the resulting system state is correct, then:
+
+- Intent classification worked
+- State management worked
+- All intermediate integrations worked
+
+**The system can test itself through its own user-facing interface.**
+
+== Background and Related Work
+
+=== Agentic AI Testing
+
+The field of AI-driven test automation has evolved rapidly. Contemporary approaches include:
+
+**External Agent Testing**: Tools like Magnitude, TestZeus Hercules, and SmolAgents use external LLMs to interpret test specifications and drive applications through browser automation <<magnitude>> <<testzeus>>. The AI is a _test tool_, separate from the system under test.
+
+**Agent Simulation**: Platforms like LangWatch simulate multi-agent interactions to verify agent behavior under various scenarios <<langwatch>>. Focus is on testing the AI itself, not the system it controls.
+
+**Visual AI Testing**: Tools like Applitools use computer vision to detect UI regressions <<applitools>>. Assertions are visual, not semantic.
+
+=== Self-Testing Systems
+
+The concept of systems that verify their own behavior has roots in:
+
+**Design by Contract** (Meyer, 1986): Preconditions, postconditions, and invariants embedded in code <<meyer>>.
+
+**Metamorphic Testing** (Chen et al., 1998): Verifying that related inputs produce related outputs according to known relations <<metamorphic>>.
+
+**Autonomous Self-Healing Systems**: Systems that detect and correct their own failures at runtime <<selfhealing>>.
+
+=== Gap in Existing Approaches
+
+No existing methodology addresses the specific case where:
+
+1. An AI interface is the _primary_ user interaction mode
+2. The AI routes to deterministic backend functions
+3. System state (not UI appearance) is the source of truth
+4. The same interface used for production is used for testing
+
+ORACLE fills this gap.
+
+== The ORACLE Methodology
+
+=== Core Principles
+
+[horizontal]
+Reflexivity:: The test driver is the system's own AI interface, not an external tool.
+State Verification:: Assertions target internal state (VFS, Store), not rendered output.
+Semantic Equivalence:: Multiple natural language forms that resolve to the same intent are interchangeable in tests.
+Production Parity:: Tests execute through the exact code path users traverse.
+
+=== Architectural Requirements
+
+For ORACLE to apply, a system must exhibit:
+
+1. **Conversational Interface**: An AI layer that accepts natural language and dispatches to functions.
+2. **Deterministic Core**: Backend functions that produce predictable state given the same inputs.
+3. **Inspectable State**: Internal state that can be serialized and compared (e.g., filesystem tree, store snapshot).
+4. **Programmatic Access**: An API to send commands and retrieve state without browser automation.
+
+=== The Testing Model
+
+[source]
+----
+                    ┌─────────────────────────────────────────────┐
+                    │              TEST HARNESS                   │
+                    │  ┌─────────────────────────────────────┐    │
+                    │  │  Test Script (.oracle file)         │    │
+                    │  │  - Natural language commands        │    │
+                    │  │  - State assertions                 │    │
+                    │  └──────────────┬──────────────────────┘    │
+                    │                 │                           │
+                    │                 ▼                           │
+                    │  ┌─────────────────────────────────────┐    │
+                    │  │  Oracle Test Runner                 │    │
+                    │  │  - Parses script                    │    │
+                    │  │  - Sends commands via API           │    │
+                    │  │  - Retrieves state snapshots        │    │
+                    │  │  - Evaluates assertions             │    │
+                    │  └──────────────┬──────────────────────┘    │
+                    └─────────────────┼───────────────────────────┘
+                                      │ HTTP/WebSocket
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           SYSTEM UNDER TEST                                 │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         AI Layer (Calypso)                          │   │
+│  │   Natural Language Input → Intent Classification → Function Call    │   │
+│  └──────────────────────────────────┬──────────────────────────────────┘   │
+│                                     │                                       │
+│                    NON-DETERMINISTIC BOUNDARY                               │
+│  ═══════════════════════════════════╪═══════════════════════════════════   │
+│                    DETERMINISTIC EXECUTION                                  │
+│                                     │                                       │
+│                                     ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    Core Functions                                   │   │
+│  │   dataset_gather() → store.dataset_select() → cohortTree_build()   │   │
+│  └──────────────────────────────────┬──────────────────────────────────┘   │
+│                                     │                                       │
+│                                     ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    System State                                     │   │
+│  │   VirtualFileSystem    Store    EventBus                           │   │
+│  │   (inspectable)        (inspectable)                               │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+----
+
+=== Assertion Types
+
+ORACLE supports three categories of assertions:
+
+[cols="1,2,2"]
+|===
+| Category | Example | Verification Method
+
+| **State Existence**
+| `vfs_exists: "~/projects/DRAFT/data/BCH-HISTO/"`
+| Check node exists in VFS tree
+
+| **State Content**
+| `vfs_contains: { path: "~/config.yaml", content: "model: unet" }`
+| Read node content, substring/regex match
+
+| **State Snapshot**
+| `vfs_snapshot_matches: "snapshots/gather-complete.json"`
+| Serialize VFS subtree, deep compare to saved snapshot
+
+| **Store State**
+| `store.currentStage: "process"`
+| Read Store property, compare value
+
+| **Output Contains**
+| `output_contains: "Dataset gathered"`
+| Check Calypso's response text (weak assertion, use sparingly)
+|===
+
+== ARGUS Implementation
+
+=== System Context
+
+ARGUS is a Vanilla TypeScript application implementing the SeaGaP-MP workflow (Search, Gather, Process, Monitor, Post) for federated medical imaging. Its AI layer, **Calypso**, interprets natural language commands and dispatches to deterministic functions that manipulate:
+
+- **VirtualFileSystem (VFS)**: In-memory POSIX-like filesystem
+- **Store**: Centralized application state with EventBus
+- **Providers**: Domain-to-filesystem translators (DatasetProvider, ProjectProvider, MarketplaceProvider)
+
+See `docs/vcs.adoc`, `docs/architecture.adoc`, and `docs/calypso.adoc` for detailed specifications.
+
+=== Architectural Fit
+
+ARGUS satisfies all ORACLE requirements:
+
+[cols="1,2"]
+|===
+| Requirement | ARGUS Implementation
+
+| Conversational Interface
+| CalypsoCore accepts natural language, classifies intent, dispatches to functions
+
+| Deterministic Core
+| RPN-named functions (`dataset_gather()`, `project_scaffold()`) with typed inputs/outputs
+
+| Inspectable State
+| VFS exposes `tree_snapshot()`, Store exposes `state_snapshot()`
+
+| Programmatic Access
+| Calypso Server exposes HTTP API; CLI client for interactive use
+|===
+
+=== The CalypsoCore Abstraction
+
+The key architectural decision enabling ORACLE is the **CalypsoCore** — a DOM-free orchestrator that can run in Node.js without a browser. See `docs/calypso.adoc` for the full specification.
+
+[source]
+----
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         CALYPSO CORE (DOM-FREE)                             │
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │  CalypsoCore.command_execute(input: string): CalypsoResponse        │   │
+│   │                                                                     │   │
+│   │  1. Shell builtins    → shell.command_execute()                     │   │
+│   │  2. Workflow commands → workflow_dispatch()                         │   │
+│   │  3. LLM fallback      → engine.query() → intent_dispatch()          │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │  CalypsoResponse                                                    │   │
+│   │  {                                                                  │   │
+│   │    message: "● DATASET GATHERED.",                                  │   │
+│   │    actions: [{ type: 'dataset_select', id: 'ds-012' }],             │   │
+│   │    state: { vfs: <snapshot>, store: <snapshot> }                    │   │
+│   │  }                                                                  │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   Depends on (all DOM-free):                                                │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│   │     VFS      │  │    Store     │  │    Shell     │  │ LCARSEngine  │   │
+│   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+----
+
+This design means:
+- **State mutations happen in CalypsoCore** (deterministic)
+- **UI rendering is delegated to adapters** (environment-specific)
+- **Tests can bypass UI entirely** and assert directly on state
+
+=== Component Architecture
+
+[source]
+----
+src/
+├── lcarslm/
+│   ├── CalypsoCore.ts           # DOM-free orchestrator
+│   ├── engine.ts                # LLM client (already DOM-free)
+│   ├── types.ts                 # CalypsoResponse, CalypsoAction, Intent
+│   └── adapters/
+│       ├── BrowserAdapter.ts    # DOM rendering for web app
+│       ├── CLIAdapter.ts        # stdout/stdin for CLI
+│       └── NodeAdapter.ts       # Test harness integration
+│
+├── cli/
+│   ├── calypso-server.ts        # Headless server entry point
+│   └── calypso-cli.ts           # Interactive REPL client
+│
+├── test/
+│   └── oracle/
+│       ├── OracleTestRunner.ts  # Parses .oracle files, drives tests
+│       ├── OracleClient.ts      # HTTP client for Calypso Server
+│       ├── assertions/
+│       │   ├── VfsAssertions.ts
+│       │   ├── StoreAssertions.ts
+│       │   └── OutputAssertions.ts
+│       └── snapshots/           # Saved state snapshots
+│
+├── vfs/
+│   └── VirtualFileSystem.ts     # tree_snapshot() method
+│
+└── core/
+    └── state/
+        └── store.ts             # state_snapshot() method
+----
+
+=== Calypso Server API
+
+The Calypso Server (`make calypso`) exposes a REST API for programmatic interaction:
+
+[cols="1,2,2"]
+|===
+| Endpoint | Method | Description
+
+| `/calypso/command`
+| POST
+| Send a command to CalypsoCore. Body: `{ "command": "search histology" }`. Returns: `CalypsoResponse`
+
+| `/calypso/vfs/snapshot`
+| GET
+| Returns serialized VFS tree. Query params: `path` (optional subtree root)
+
+| `/calypso/vfs/exists`
+| GET
+| Check if path exists. Query params: `path`. Returns: `{ "exists": true/false }`
+
+| `/calypso/vfs/read`
+| GET
+| Read file content. Query params: `path`. Returns: `{ "content": "..." }`
+
+| `/calypso/store/state`
+| GET
+| Returns serialized Store state
+
+| `/calypso/store/get`
+| GET
+| Get specific store property. Query params: `property`. Returns: `{ "value": ... }`
+
+| `/calypso/reset`
+| POST
+| Reset VFS and Store to clean state for next test
+|===
+
+=== Calypso CLI
+
+The `calypso-cli` tool provides interactive access to a running Calypso instance (headless or browser).
+
+[source,bash]
+----
+# Start headless server
+$ make calypso &
+
+# Connect CLI
+$ make calypso-cli
+----
+
+**CLI Commands:**
+
+[cols="1,3"]
+|===
+| Command | Description
+
+| `<natural language>`
+| Sent to CalypsoCore for processing
+
+| `/snapshot [path]`
+| Display VFS snapshot as JSON
+
+| `/state`
+| Display Store state as JSON
+
+| `/reset`
+| Reset to clean state
+
+| `/help`
+| Show available commands
+
+| `quit` / `exit`
+| Disconnect and exit
+|===
+
+**Example Session:**
+
+[source]
+----
+CALYPSO> search histology datasets
+● AFFIRMATIVE. SCAN COMPLETE.
+○ IDENTIFIED 3 DATASET(S) MATCHING QUERY PARAMETERS.
+  [ds-012] BCH-HISTO-2024 (Histology/Classification)
+  [ds-045] MGH-PATH-SLIDES (Histology/Segmentation)
+  [ds-078] BIDMC-TISSUE-BANK (Histology/Detection)
+
+CALYPSO> add ds-012
+● DATASET GATHERED. MOUNTED TO ~/data/cohort/BCH-HISTO-2024/
+
+CALYPSO> tree ~/data/cohort/
+~/data/cohort/
+└── BCH-HISTO-2024/
+    ├── images/
+    │   ├── slide_0001.svs
+    │   ├── slide_0002.svs
+    │   └── slide_0003.svs
+    └── manifest.json
+
+CALYPSO> /snapshot ~/data/cohort/
+{
+  "name": "cohort",
+  "type": "folder",
+  "path": "/home/user/data/cohort",
+  "children": [
+    {
+      "name": "BCH-HISTO-2024",
+      "type": "folder",
+      "children": [...]
+    }
+  ]
+}
+
+CALYPSO> quit
+Goodbye.
+----
+
+This CLI is useful for:
+- Interactive debugging during development
+- Manual verification of workflows
+- Scripted automation (pipe commands via stdin)
+- Connecting to a running browser session for inspection
+
+=== VFS Snapshot Method
+
+Add to `src/vfs/VirtualFileSystem.ts`:
+
+[source,typescript]
+----
+/**
+ * Serialize a subtree of the VFS for snapshot comparison.
+ *
+ * Returns a deterministic JSON-serializable representation of the tree
+ * structure and file metadata. Content is optionally included.
+ *
+ * @param rootPath - The subtree root (default: '/')
+ * @param includeContent - Whether to include file content (default: false)
+ * @returns Serializable tree snapshot
+ */
+public tree_snapshot(
+    rootPath: string = '/',
+    includeContent: boolean = false
+): VfsSnapshot {
+    const node: FileNode | null = this.node_get(rootPath);
+    if (!node) {
+        throw new Error(`Snapshot root not found: ${rootPath}`);
+    }
+    return this.node_serialize(node, includeContent);
+}
+
+private node_serialize(node: FileNode, includeContent: boolean): VfsSnapshotNode {
+    const serialized: VfsSnapshotNode = {
+        name: node.name,
+        type: node.type,
+        path: node.path,
+    };
+
+    if (node.type === 'file') {
+        serialized.size = node.size;
+        if (includeContent && node.content !== null) {
+            serialized.content = node.content;
+        }
+        if (node.contentGenerator) {
+            serialized.hasGenerator = true;
+        }
+    }
+
+    if (node.type === 'folder' && node.children) {
+        serialized.children = node.children
+            .map((child: FileNode): VfsSnapshotNode => this.node_serialize(child, includeContent))
+            .sort((a: VfsSnapshotNode, b: VfsSnapshotNode): number => a.name.localeCompare(b.name));
+    }
+
+    return serialized;
+}
+----
+
+=== Store Snapshot Method
+
+Add to `src/core/state/store.ts`:
+
+[source,typescript]
+----
+/**
+ * Serialize current store state for snapshot comparison.
+ *
+ * Excludes non-serializable globals (terminal, vcs, shell instances).
+ * Returns only the serializable ExtendedState.
+ *
+ * @returns JSON-serializable state object
+ */
+public state_snapshot(): ExtendedState {
+    return JSON.parse(JSON.stringify(this._state));
+}
+----
+
+== Test Script Specification
+
+=== File Format
+
+Oracle test scripts use YAML with the `.oracle` extension. The format is designed for readability and version control friendliness.
+
+=== Schema
+
+[source,yaml]
+----
+# Test metadata
+name: string                    # Human-readable test name
+description: string             # What this test verifies
+tags: string[]                  # Categorization (smoke, regression, workflow)
+
+# Initial conditions
+setup:
+  persona: string               # Persona to activate (fedml, annotator, etc.)
+  stage: string                 # Starting stage (search, process, etc.)
+  reset: boolean                # Whether to reset state before test (default: true)
+
+# Test steps (executed sequentially)
+steps:
+  - send: string                # Natural language command to Calypso
+    wait: number                # Optional delay in ms after command
+    assert:                     # Assertions to verify after this step
+      - vfs_exists: string                    # Path must exist
+      - vfs_not_exists: string                # Path must not exist
+      - vfs_contains:                         # File must contain text
+          path: string
+          content: string                     # Substring match
+          pattern: string                     # Regex match (alternative)
+      - vfs_snapshot_matches: string          # Path to snapshot file
+      - store.<property>: any                 # Store property must equal value
+      - output_contains: string               # Response contains text (weak)
+      - output_not_contains: string           # Response must not contain
+
+# Final state verification (after all steps)
+final_assertions:
+  - vfs_snapshot_matches: string
+  - store.currentStage: string
+
+# Optional: save snapshot for future comparison
+save_snapshot:
+  path: string                  # VFS path to snapshot
+  file: string                  # Output file in snapshots/
+----
+
+=== Example Test Scripts
+
+==== Smoke Test: Basic Navigation
+
+[source,yaml]
+----
+name: "Smoke: Stage Navigation"
+description: "Verify basic stage transitions work"
+tags: [smoke, navigation]
+
+setup:
+  persona: fedml
+  stage: search
+
+steps:
+  - send: "proceed to process"
+    assert:
+      - store.currentStage: "process"
+      - vfs_exists: "~/src/project/"
+
+  - send: "go back to search"
+    assert:
+      - store.currentStage: "search"
+----
+
+==== Integration Test: Gather Workflow
+
+[source,yaml]
+----
+name: "Integration: Dataset Gathering"
+description: "Verify dataset search, selection, and VFS mounting"
+tags: [integration, gather, vfs]
+
+setup:
+  persona: fedml
+  stage: search
+  reset: true
+
+steps:
+  - send: "search for histology datasets"
+    wait: 500
+    assert:
+      - output_contains: "BCH-HISTO"
+
+  - send: "add BCH-HISTO-2024 to my project"
+    assert:
+      - store.gatheredDatasets:
+          includes: "BCH-HISTO-2024"
+
+  - send: "create new project called TEST-HISTO"
+    assert:
+      - vfs_exists: "~/projects/TEST-HISTO/"
+      - store.activeProject.name: "TEST-HISTO"
+
+  - send: "open project TEST-HISTO"
+    assert:
+      - store.currentStage: "process"
+      - vfs_exists: "~/projects/TEST-HISTO/data/BCH-HISTO-2024/"
+      - vfs_exists: "~/projects/TEST-HISTO/src/train.py"
+
+final_assertions:
+  - vfs_snapshot_matches: "snapshots/gather-workflow-complete.json"
+
+save_snapshot:
+  path: "~/projects/TEST-HISTO/"
+  file: "gather-workflow-complete.json"
+----
+
+==== Regression Test: Overlay Lifecycle
+
+[source,yaml]
+----
+name: "Regression: Overlay Slot Cleanup"
+description: "Verify overlay slots are properly cleared on close (prevents DOM corruption)"
+tags: [regression, overlay, slots]
+
+setup:
+  persona: fedml
+  stage: search
+  reset: true
+
+steps:
+  # Open dataset detail
+  - send: "show details for BCH-HISTO-2024"
+    assert:
+      - store.overlayMode: "dataset"
+
+  # Close it
+  - send: "close"
+    assert:
+      - store.overlayMode: "none"
+
+  # Open marketplace
+  - send: "open marketplace"
+    assert:
+      - store.marketplaceOpen: true
+
+  # Open an asset detail
+  - send: "show details for pl-dcm2niix"
+    assert:
+      - store.overlayMode: "marketplace"
+
+  # Close and verify no DOM corruption (overlay returns to correct state)
+  - send: "close"
+    assert:
+      - store.overlayMode: "none"
+      - store.marketplaceOpen: true
+----
+
+==== End-to-End Test: Full Workflow
+
+[source,yaml]
+----
+name: "E2E: Federated ML Developer Workflow"
+description: "Complete workflow from search through federation"
+tags: [e2e, workflow, fedml]
+
+setup:
+  persona: fedml
+  stage: search
+  reset: true
+
+steps:
+  # Discovery
+  - send: "find brain MRI datasets with segmentation masks"
+    wait: 1000
+
+  - send: "add MGH-BRAIN-SEG to project"
+
+  - send: "also add BCH-BRAIN-2024"
+
+  # Project setup
+  - send: "create project BRAIN-SEG-STUDY"
+    assert:
+      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/"
+
+  - send: "open project"
+    assert:
+      - store.currentStage: "process"
+      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/src/train.py"
+      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/data/MGH-BRAIN-SEG/"
+      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/data/BCH-BRAIN-2024/"
+
+  # Development
+  - send: "cat train.py"
+    assert:
+      - output_contains: "torch"
+      - output_contains: "FederatedTrainer"
+
+  - send: "analyze cohort"
+    assert:
+      - output_contains: "MODALITY CHECK"
+
+  # Simulation
+  - send: "simulate federation"
+    wait: 2000
+    assert:
+      - output_contains: "SIMULATION COMPLETE"
+      - store.simulationPassed: true
+
+  # Federalization
+  - send: "federate and launch"
+    wait: 3000
+    assert:
+      - store.currentStage: "monitor"
+
+final_assertions:
+  - store.activeJob.status: "running"
+  - vfs_exists: "~/projects/BRAIN-SEG-STUDY/output/"
+----
+
+== Test Execution
+
+=== Makefile Targets
+
+[source,makefile]
+----
+# Start headless Calypso server (port 8081)
+calypso:
+	npx ts-node src/cli/calypso-server.ts
+
+# Start interactive CLI client
+calypso-cli:
+	npx ts-node src/cli/calypso-cli.ts
+
+# Run ORACLE tests (starts server, runs tests, stops server)
+test-oracle:
+	npm run test:oracle
+
+# Run ORACLE tests with verbose output
+test-oracle-verbose:
+	npm run test:oracle -- --verbose
+----
+
+=== Running Tests
+
+[source,bash]
+----
+# Run all ORACLE tests
+make test-oracle
+
+# Run specific test file
+npm run test:oracle -- tests/oracle/gather-workflow.oracle
+
+# Run tests by tag
+npm run test:oracle -- --tag=smoke
+npm run test:oracle -- --tag=regression
+
+# Run with verbose output
+make test-oracle-verbose
+
+# Generate new snapshots (for baseline)
+npm run test:oracle -- --update-snapshots
+----
+
+=== Manual Testing with CLI
+
+For interactive debugging, use the CLI alongside the test:
+
+[source,bash]
+----
+# Terminal 1: Start Calypso server
+$ make calypso
+
+# Terminal 2: Run CLI for manual exploration
+$ make calypso-cli
+CALYPSO> search histology
+CALYPSO> add ds-012
+CALYPSO> /snapshot ~/data/cohort/
+
+# Terminal 3: Run specific test against same server
+$ npm run test:oracle -- tests/oracle/gather-workflow.oracle
+----
+
+=== CI Integration
+
+Oracle tests integrate with existing CI pipelines:
+
+[source,yaml]
+----
+# .github/workflows/test.yml
+jobs:
+  oracle-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server
+        run: npm run serve &
+
+      - name: Wait for server
+        run: npx wait-on http://localhost:8080
+
+      - name: Run Oracle tests
+        run: npm run test:oracle
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-failures
+          path: tests/oracle/failures/
+----
+
+== Limitations and Considerations
+
+=== When ORACLE Is Appropriate
+
+- Systems with AI/conversational interfaces as primary interaction mode
+- Applications where internal state is the source of truth
+- Workflows that span multiple stages/components
+- Regression testing of integration seams
+
+=== When ORACLE Is Not Appropriate
+
+- Pure unit testing of isolated functions (use standard unit tests)
+- Visual regression testing (use screenshot comparison tools)
+- Performance/load testing (use dedicated profiling tools)
+- Testing the AI model itself (use LLM evaluation frameworks)
+
+=== AI Reliability
+
+ORACLE assumes the AI layer has sufficient reliability to consistently classify intents. If the AI frequently misclassifies:
+
+1. Tests will fail on assertions (correct behavior — the system is broken)
+2. High test flakiness may indicate AI training issues
+3. Consider adding retry logic with backoff for known-flaky classifications
+
+=== Snapshot Maintenance
+
+State snapshots require maintenance as the system evolves:
+
+- Run `--update-snapshots` when intentional changes occur
+- Review snapshot diffs in code review
+- Consider snapshot granularity (full tree vs. subtree)
+
+== Future Work
+
+=== Planned Enhancements
+
+1. **Parallel Test Execution**: Run independent tests concurrently with isolated VFS instances
+2. **Fuzzing Mode**: Generate random valid command sequences to discover edge cases
+3. **Coverage Mapping**: Track which deterministic functions are exercised by which tests
+4. **Visual Assertions**: Optional DOM state assertions for UI-critical tests
+5. **Time Travel Debugging**: Record full state history for failed tests
+
+=== Research Directions
+
+1. **Adversarial Testing**: Intentionally ambiguous commands to verify graceful degradation
+2. **Multi-User Simulation**: Test concurrent sessions and state isolation
+3. **LLM-Generated Tests**: Use a second LLM to generate test scenarios from documentation
+
+== Conclusion
+
+ORACLE represents a paradigm shift in testing AI-mediated systems. By embracing the AI interface as the test driver rather than testing around it, we achieve:
+
+- **Production parity**: Tests traverse the exact code path users do
+- **Integration coverage**: The most bug-prone seams are directly exercised
+- **Self-documentation**: Test scripts serve as executable workflow documentation
+- **Regression detection**: State-based assertions catch integration failures that unit tests miss
+
+The reflexive nature of ORACLE — using the system to test itself — is not a limitation but a feature. If Calypso cannot successfully drive a workflow, neither can a user. The test failure surface equals the user failure surface.
+
+[bibliography]
+== References
+
+- [[[magnitude]]] Sharma, S. "A Review of Open-Source AI-Driven UI Test Automation Frameworks (2025)." Medium, 2025. https://medium.com/@ss-tech/a-review-of-open-source-ai-driven-ui-test-automation-frameworks-2025-4b957cdf822d
+
+- [[[testzeus]]] TestZeus. "Hercules: AI-Driven Test Automation." 2025. https://github.com/test-zeus-ai/testzeus-hercules
+
+- [[[langwatch]]] LangWatch. "Agent Testing with Simulations." 2025. https://langwatch.ai/blog/the-4-best-llm-evaluation-platforms-in-2025-why-langwatch-eedefines-the-category-with-agent-testing-(with-simulations)
+
+- [[[applitools]]] Applitools. "Visual AI Testing Platform." https://applitools.com
+
+- [[[meyer]]] Meyer, B. "Design by Contract." IEEE Computer, 1992. https://doi.org/10.1109/2.161279
+
+- [[[metamorphic]]] Chen, T.Y., Cheung, S.C., Yiu, S.M. "Metamorphic Testing: A New Approach for Generating Next Test Cases." Technical Report HKUST-CS98-01, 1998.
+
+- [[[selfhealing]]] Kephart, J.O., Chess, D.M. "The Vision of Autonomic Computing." IEEE Computer, 2003. https://doi.org/10.1109/MC.2003.1160055
+
+- [[[qualizeal]]] QualiZeal. "The Rise of Agentic AI: Transforming Software Testing in 2025 and Beyond." 2025. https://qualizeal.com/the-rise-of-agentic-ai-transforming-software-testing-in-2025-and-beyond/
+
+- [[[testgrid]]] TestGrid. "Agentic AI Testing: The Future of Autonomous Software QA." 2025. https://testgrid.io/blog/agentic-ai-testing/
+
+---
+_Last updated: {revdate} (v{revnumber})_

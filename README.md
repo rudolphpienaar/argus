@@ -52,6 +52,32 @@ make build
 
 # Start the local development server (http://localhost:8080)
 make serve
+
+# Start headless Calypso server (no browser required)
+make calypso
+
+# Connect to Calypso via CLI
+make calypso-cli
+```
+
+### Calypso CLI
+
+ARGUS features a headless AI core that can be accessed via command line:
+
+```bash
+$ make calypso-cli
+CALYPSO> search brain MRI datasets
+● AFFIRMATIVE. SCAN COMPLETE.
+○ IDENTIFIED 4 DATASET(S) MATCHING QUERY PARAMETERS.
+
+CALYPSO> add ds-023
+● DATASET GATHERED. MOUNTED TO ~/data/cohort/MGH-BRAIN-MRI/
+
+CALYPSO> tree ~/data/cohort/
+~/data/cohort/
+└── MGH-BRAIN-MRI/
+    ├── images/
+    └── manifest.json
 ```
 
 ## Documentation
@@ -59,6 +85,8 @@ make serve
 *   **[Developer Onboarding](docs/onboarding.adoc)**: Start here to understand the mental model and codebase structure.
 *   **[Framework Patterns](docs/framework.adoc)**: A guide to the architectural conventions (RPN naming, Store/Events) used in the project.
 *   **[VCS Specification](docs/vcs.adoc)**: Details on the in-memory filesystem and provider architecture.
+*   **[Calypso AI Core](docs/calypso.adoc)**: The headless AI layer — architecture, CLI usage, and adapters.
+*   **[ORACLE Testing](docs/oracle.adoc)**: Reflexive verification methodology using Calypso as the test driver.
 
 ## Acknowledgments
 
