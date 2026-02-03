@@ -13,6 +13,20 @@ import { homeDir_scaffold } from '../../vfs/providers/ProjectProvider.js';
 
 type Persona = 'fedml' | 'appdev' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
+/**
+ * Hook called when entering the Login stage.
+ */
+export function stage_enter(): void {
+    // Initialization for login stage if needed
+}
+
+/**
+ * Hook called when exiting the Login stage.
+ */
+export function stage_exit(): void {
+    // Teardown logic if needed
+}
+
 // ============================================================================
 // Authentication
 // ============================================================================

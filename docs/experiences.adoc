@@ -57,7 +57,34 @@ When the user is ready to move from gathering data to writing logic, they use th
 2.  Populates `src/` with canonically accurate template files (e.g., `app.py`, `Dockerfile`).
 3.  Expands the UI into the **Split-Pane Workspace**.
 
-== 6. Development: The 4-Tab IDE
+== 6. Analysis: The Heterogeneity Check
+
+Before committing to a federated training run, the engineer must validate that the gathered cohort is statistically viable. Training on non-IID (Independent and Identically Distributed) data—for example, mixing X-Ray and MRI modalities, or having one site with 90% positive labels and another with 10%—can cause the global model to fail.
+
+*   **Command**: `analyze cohort`
+*   **Visual Output**: The terminal renders an ASCII-based statistical report:
+    1.  **Modality Check**: Verifies all sites provide the same imaging modality. Flags mismatches (e.g., "WARNING: MIXED MODALITIES DETECTED").
+    2.  **Distribution Sparklines**: Visualizes label balance per site using text-based histograms (e.g., `[####----]`).
+*   **Workflow**: If the analysis reveals high heterogeneity, the user can return to the Gather stage to adjust the cohort or add preprocessing steps to the `src/` code to normalize the data.
+
+== 7. Development: The Local Loop
+
+Before simulating federation, the developer must verify that their training code runs correctly on the local machine. This mirrors the standard "edit-run-debug" loop of traditional development.
+
+*   **Command**: `python train.py`
+*   **Behavior**: The shell executes the script against the local `input/` directory (which contains the gathered cohort).
+*   **Purpose**: Validates syntax, data loading, and model convergence on the raw data, ignoring all federation complexity.
+
+== 8. Simulation: The Phantom Federation
+
+To bridge the gap between local development and global deployment, ARGUS enforces a "Phantom Federation" step. This allows the developer to test their federation logic (aggregation, privacy noise, serialization) in a local sandbox before deploying to secure partners.
+
+*   **Command**: `simulate federation`
+*   **Mechanism**: The system virtually shards the local gathered data into multiple "Phantom Nodes" (e.g., `phantom-1`, `phantom-2`).
+*   **Execution**: The training code runs against these phantom nodes locally.
+*   **Gatekeeper**: The **FEDERALIZE** button is initially **LOCKED**. It only unlocks after a successful simulation run proves that the code is federation-ready.
+
+== 9. Development: The 4-Tab IDE
 
 The formalized workspace provides a professional development environment.
 

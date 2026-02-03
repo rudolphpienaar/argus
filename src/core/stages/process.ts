@@ -27,13 +27,14 @@ import { projectDir_populate } from '../../vfs/providers/ProjectProvider.js';
  * Populates the project directory, clears terminal, enables developer mode,
  * and opens the terminal frame.
  */
-export function onEnter(): void {
+export function stage_enter(): void {
     const t: LCARSTerminal | null = globals.terminal;
     const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
     const terminalScreen: HTMLElement | null = consoleEl?.querySelector('.lcars-terminal-screen') as HTMLElement;
 
     const projectName: string = globals.shell?.env_get('PROJECT') || 'default';
-    projectDir_populate(globals.vcs, 'user', projectName);
+    const username: string = globals.shell?.env_get('USER') || 'user';
+    projectDir_populate(globals.vcs, username, projectName);
 
     if (t) {
         t.clear();
@@ -48,13 +49,15 @@ export function onEnter(): void {
     if (globals.frameSlot) {
         globals.frameSlot.frame_open();
     }
+
+    populate_ide();
 }
 
 /**
  * Hook called when exiting the Process stage.
  * Disables developer mode on the terminal screen.
  */
-export function onExit(): void {
+export function stage_exit(): void {
     const consoleEl: HTMLElement | null = document.getElementById('intelligence-console');
     const terminalScreen: HTMLElement | null = consoleEl?.querySelector('.lcars-terminal-screen') as HTMLElement;
     if (terminalScreen) {
@@ -97,7 +100,8 @@ export function populate_ide(): void {
     let viewRootPath: string;
     
     if (projectName) {
-        viewRootPath = `/home/user/projects/${projectName}`;
+        const username: string = globals.shell?.env_get('USER') || 'user';
+        viewRootPath = `/home/${username}/projects/${projectName}`;
     } else {
         viewRootPath = globals.vcs.cwd_get();
     }
@@ -208,9 +212,24 @@ export function ide_openFile(filename: string, _type: string): void {
 /**
  * Launches federated training.
  * Ignored if a training job is already running.
+ * Requires successful simulation pass.
  */
 export function training_launch(): void {
     if (state.trainingJob && state.trainingJob.status === 'running') return;
+
+    // Gatekeeper: Check for simulation pass
+    const project: string | undefined = globals.shell?.env_get('PROJECT');
+    if (project) {
+        const passPath = `/home/user/projects/${project}/output/.simulation_pass`;
+        if (!globals.vcs.node_stat(passPath)) {
+            if (globals.terminal) {
+                globals.terminal.println('<span class="error">>> ERROR: FEDERALIZATION LOCKED.</span>');
+                globals.terminal.println('<span class="warn">>> YOU MUST RUN "simulate federation" AND PASS VERIFICATION FIRST.</span>');
+            }
+            return;
+        }
+    }
+
     federation_sequence();
 }
 

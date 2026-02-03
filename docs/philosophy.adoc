@@ -34,7 +34,9 @@ The Process stage encompasses the actual work users perform on gathered resource
 
 Despite this variation, the Process stage shares common characteristics across personas. Work occurs within the security boundary of appropriate Trusted Domains, ensuring that raw data never leaves institutional control. The MERIDIAN architecture guarantees that processing applications conform to defined security levels, with most applications operating at Level 0 where no external network access is permitted.
 
-For the Developer persona specifically, the Process stage contains significant complexity that the interface must make tractable. Users write standard training code as if working with local data, and ATLAS handles the transformation into federated learning workflows. This transcoding represents substantial value but also substantial machinery. The interface should provide appropriate visibility into this transformation, building user trust without overwhelming them with implementation details.
+For the Developer persona specifically, the Process stage contains significant complexity that the interface must make tractable. Users write standard training code as if working with local data, and ATLAS handles the transformation into federated learning workflows. This transcoding represents substantial value but also substantial machinery.
+
+To bridge the gap between this "local mental model" and the "global execution reality," ARGUS imposes a **Simulation Loop**. Before code can be deployed to partners, it must pass a local "Phantom Federation" check. This ensures that the developer's code can withstand the serialization, aggregation, and privacy noise injection inherent to federation, all within a safe local sandbox. The interface should provide appropriate visibility into this transformation, building user trust without overwhelming them with implementation details.
 
 === Monitor
 

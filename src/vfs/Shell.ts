@@ -314,6 +314,36 @@ export class Shell {
             }
         });
 
+        this.builtin_add('python', 'Execute a Python script locally', async (args: string[]): Promise<ShellResult> => {
+            if (args.length === 0) {
+                return result_err('python: missing file operand', 1);
+            }
+            const scriptPath: string = args[0];
+            try {
+                if (!this.vfs.node_stat(scriptPath)) {
+                    return result_err(`python: can't open file '${scriptPath}': [Errno 2] No such file or directory`, 2);
+                }
+                
+                // Ensure readable
+                this.vfs.node_read(scriptPath);
+
+                // Mock execution
+                let output: string = `<span class="highlight">[PYTHON EXECUTION: ${scriptPath}]</span>\n`;
+                output += `> Loading local data from input/...\n`;
+                output += `> Model initialized (ResNet50).\n`;
+                output += `> Epoch 1/5: Loss 0.823 [====================] 100%\n`;
+                output += `> Epoch 2/5: Loss 0.612 [====================] 100%\n`;
+                output += `> Epoch 3/5: Loss 0.445 [====================] 100%\n`;
+                output += `> Epoch 4/5: Loss 0.312 [====================] 100%\n`;
+                output += `> Epoch 5/5: Loss 0.201 [====================] 100%\n`;
+                output += `<span class="success">> Training complete. Accuracy: 94.2%</span>`;
+
+                return result_ok(output);
+            } catch (e: unknown) {
+                return result_err(e instanceof Error ? e.message : String(e), 1);
+            }
+        });
+
         this.builtin_add('mkdir', 'Create directory', (args: string[]): ShellResult => {
             if (args.length === 0) {
                 return result_err('mkdir: missing operand', 1);
@@ -451,6 +481,55 @@ export class Shell {
 
                 const count: number = await files_ingest(files, destination);
                 return result_ok(`<span class="success">Successfully uploaded ${count} file(s) to ${destination}</span>`);
+            } catch (e: unknown) {
+                return result_err(e instanceof Error ? e.message : String(e), 1);
+            }
+        });
+
+        this.builtin_add('analyze', 'Perform statistical analysis on cohort', async (args: string[]): Promise<ShellResult> => {
+            if (args[0] !== 'cohort') {
+                return result_err('Usage: analyze cohort', 1);
+            }
+            
+            const project: string | undefined = this.env.get('PROJECT');
+            if (!project) {
+                return result_err('analyze: No active project context ($PROJECT not set)', 1);
+            }
+
+            try {
+                const { cohort_analyze } = await import('../core/analysis/CohortProfiler.js');
+                const report: string = cohort_analyze(this.vfs, `/home/${this.username}/projects/${project}/input`);
+                return result_ok(report);
+            } catch (e: unknown) {
+                return result_err(e instanceof Error ? e.message : String(e), 1);
+            }
+        });
+
+        this.builtin_add('simulate', 'Run a local federation simulation', async (args: string[]): Promise<ShellResult> => {
+            if (args[0] !== 'federation') {
+                return result_err('Usage: simulate federation', 1);
+            }
+            
+            const project: string | undefined = this.env.get('PROJECT');
+            if (!project) {
+                return result_err('simulate: No active project context ($PROJECT not set)', 1);
+            }
+
+            try {
+                const { federation_simulate } = await import('../core/simulation/PhantomFederation.js');
+                const result = await federation_simulate(this.vfs, `/home/${this.username}/projects/${project}`);
+                
+                const output = result.logs.map((l: string): string => {
+                    if (l.startsWith('ERROR')) return `<span class="error">${l}</span>`;
+                    if (l.startsWith('>>')) return `<span class="highlight">${l}</span>`;
+                    return `<span class="dim">${l}</span>`;
+                }).join('\n');
+
+                if (result.success) {
+                    return result_ok(output + '\n<span class="success">SIMULATION COMPLETE. FEDERALIZATION UNLOCKED.</span>');
+                } else {
+                    return result_err(output, 1);
+                }
             } catch (e: unknown) {
                 return result_err(e instanceof Error ? e.message : String(e), 1);
             }

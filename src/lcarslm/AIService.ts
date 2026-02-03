@@ -10,11 +10,12 @@
 import { state, globals, store } from '../core/state/store.js';
 import type { Dataset } from '../core/models/types.js';
 import type { QueryResponse } from './types.js';
-import { datasetDetail_open, workspace_render, proceedToCode_handle } from '../core/stages/search.js';
+import { datasetDetail_open, workspace_render, proceedToCode_handle, gatherTargetProject_get, project_rename_execute } from '../core/stages/search.js';
 // ─── Idle Monitoring ────────────────────────────────────────
 
 let idleTimer: number | null = null;
 let isMuted: boolean = false;
+let isSoftVoice: boolean = false;
 let isAiBusy: boolean = false;
 let hasSpokenOnce: boolean = false;
 let hasGreeted: boolean = false;
@@ -42,6 +43,9 @@ function idle_trigger(): void {
     const user = globals.shell?.env_get('USER')?.toUpperCase() || 'USER';
     const stage = state.currentStage;
     const selectionCount = state.selectedDatasets.length;
+    
+    const targetProject = gatherTargetProject_get();
+    const isDraft = targetProject && targetProject.name.startsWith('DRAFT-');
 
     // Contextual Thoughts
     let thoughts: string[] = [];
@@ -53,6 +57,13 @@ function idle_trigger(): void {
                 `THE CATALOG IS VAST. I CAN FILTER BY MODALITY IF YOU WISH.`,
                 `AWAITING QUERY INPUT.`,
                 `SYSTEM STATUS: IDLE. READY FOR SEARCH PARAMETERS.`
+            ];
+        } else if (isDraft) {
+            thoughts = [
+                `I DETECT AN UNNAMED DRAFT PROJECT. SUGGESTION: CLICK "RENAME" IN THE PROJECT DETAIL TO FORMALIZE.`,
+                `BEFORE PROCEEDING, CONSIDER GIVING THIS COHORT A DESCRIPTIVE NAME.`,
+                `DRAFT STATUS CONFIRMED. RENAME PROTOCOLS AVAILABLE.`,
+                `YOU HAVE ${selectionCount} DATASETS GATHERED. PERHAPS FINALIZE THE PROJECT NAME?`
             ];
         } else {
             thoughts = [
@@ -80,8 +91,11 @@ function idle_trigger(): void {
     if (!hasSpokenOnce || Math.random() > 0.3) {
         hasSpokenOnce = true;
         const thought = thoughts[Math.floor(Math.random() * thoughts.length)];
-        const msg = `\n${user}: ${thought}`;
-        t.printStream(msg, 'muthur-text');
+        const msg = `\n${user}: ${speech_format(thought)}`;
+        
+        // Transient prompt: stays for 6 seconds then disappears
+        const cssClass = isSoftVoice ? 'muthur-text soft-voice' : 'muthur-text';
+        t.printTransientStream(msg, cssClass, 6000);
     }
 
     // Reset timer with "semi-random" longer delay (20s - 50s)
@@ -116,9 +130,18 @@ export function ai_greeting(): void {
     ];
     const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
 
-    const msg = `CALYPSO CORE V4.6.0 ONLINE.\n> ${randomGreeting}\n\nI AM CALYPSO:\nCOGNITIVE ALGORITHMS & LOGIC YIELDING PREDICTIVE SCIENTIFIC OUTCOMES.\n\nREADY TO ASSIST WITH COHORT DISCOVERY.`;
+    const msg = `CALYPSO CORE V5.0.0 ONLINE.\n> ${randomGreeting}\n\nI AM CALYPSO:\nCOGNITIVE ALGORITHMS & LOGIC YIELDING PREDICTIVE SCIENTIFIC OUTCOMES.\n\nREADY TO ASSIST WITH COHORT DISCOVERY.`;
     
     t.printStream(msg, 'muthur-text');
+}
+
+/**
+ * Formats text based on voice settings.
+ * If soft voice is active, converts ALL CAPS to Sentence case.
+ */
+function speech_format(text: string): string {
+    if (!isSoftVoice) return text;
+    return text.toLowerCase().replace(/(^\s*\w)|([.!?]\s*\w)/g, c => c.toUpperCase());
 }
 
 /**
@@ -130,7 +153,7 @@ export async function ai_query(query: string): Promise<void> {
     const t = globals.terminal;
     if (!t) return;
 
-    // Intercept Mute Commands
+    // Intercept Mute/Voice Commands
     const q = query.toLowerCase();
     if (q.includes('quiet') || q.includes('silence') || q.includes('mute')) {
         isMuted = true;
@@ -138,10 +161,20 @@ export async function ai_query(query: string): Promise<void> {
         t.printStream(`[COMMAND ACKNOWLEDGED] SILENT MODE ACTIVE. I WILL REMAIN DORMANT.`, 'muthur-text');
         return;
     }
-    if (q.includes('unmute') || q.includes('speak') || q.includes('voice')) {
+    if (q.includes('unmute') || q.includes('speak') || q.includes('voice') && !q.includes('soft') && !q.includes('shout')) {
         isMuted = false;
         idle_reset(IDLE_BASE_MS);
         t.printStream(`[COMMAND ACKNOWLEDGED] VOICE INTERFACE RESTORED.`, 'muthur-text');
+        return;
+    }
+    if (q.includes('stop shouting') || q.includes('soft voice') || q.includes('quiet voice')) {
+        isSoftVoice = true;
+        t.printStream(`[COMMAND ACKNOWLEDGED] VOICE MODULATION: SOFT.`, 'muthur-text soft-voice');
+        return;
+    }
+    if (q.includes('normal voice') || q.includes('shout') || q.includes('loud voice')) {
+        isSoftVoice = false;
+        t.printStream(`[COMMAND ACKNOWLEDGED] VOICE MODULATION: STANDARD.`, 'muthur-text');
         return;
     }
 
@@ -153,7 +186,8 @@ export async function ai_query(query: string): Promise<void> {
 
         try {
             const selectedIds: string[] = state.selectedDatasets.map((ds: Dataset): string => ds.id);
-            const response: QueryResponse = await globals.lcarsEngine.query(query, selectedIds);
+            const promptModifier = isSoftVoice ? " (RESPONSE FORMAT: Use mixed-case sentence structure. Do not use all-caps.)" : "";
+            const response: QueryResponse = await globals.lcarsEngine.query(query + promptModifier, selectedIds, isSoftVoice);
 
             await aiResponse_process(response);
         } catch (e: unknown) {
@@ -203,15 +237,28 @@ async function aiResponse_process(response: QueryResponse): Promise<void> {
         setTimeout(proceedToCode_handle, 1000);
     }
 
+    const renameMatch: RegExpMatchArray | null = response.answer.match(/\[ACTION: RENAME (.*?)\]/);
+    if (renameMatch) {
+        const newName: string = renameMatch[1].trim();
+        const target = gatherTargetProject_get();
+        if (target) {
+            project_rename_execute(target, newName);
+        } else {
+            t.println('<span class="error">>> ERROR: NO ACTIVE PROJECT CONTEXT FOR RENAME.</span>');
+        }
+    }
+
     const cleanAnswer: string = response.answer
         .replace(/\[SELECT: ds-[0-9]+\]/g, '')
         .replace(/\[ACTION: PROCEED\]/g, '')
         .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
         .replace(/\[FILTER:.*?\]/g, '')
+        .replace(/\[ACTION: RENAME.*?\]/g, '')
         .trim();
 
     // Render with MU/TH/UR style (streaming blue text)
-    await t.printStream(cleanAnswer, 'muthur-text');
+    const cssClass = isSoftVoice ? 'muthur-text soft-voice' : 'muthur-text';
+    await t.printStream(cleanAnswer, cssClass);
 
     if (state.currentStage === 'search' && response.answer.includes('[ACTION: SHOW_DATASETS]')) {
         let datasetsToShow: Dataset[] = response.relevantDatasets;

@@ -9,9 +9,6 @@
 import { state, globals, store } from '../state/store.js';
 import { events, Events } from '../state/events.js';
 import { gutter_setStatus } from '../../ui/gutters.js';
-import { filesystem_build, costs_calculate } from '../stages/gather.js';
-import { monitor_initialize } from '../stages/monitor.js';
-import { populate_ide } from '../stages/process.js';
 import type { AppState } from '../models/types.js';
 
 /** Tracks which SeaGaP stages have been visited for back-navigation. */
@@ -34,14 +31,10 @@ events.on(Events.STAGE_CHANGED, (newStage: AppState['currentStage']): void => {
     if (globals.terminal) globals.terminal.prompt_sync();
 
     if (newStage === 'gather') {
-        filesystem_build();
-        costs_calculate();
         gutter_setStatus(2, 'active');
     } else if (newStage === 'process') {
-        populate_ide();
         gutter_setStatus(3, 'active');
     } else if (newStage === 'monitor') {
-        setTimeout(monitor_initialize, 50);
         gutter_setStatus(4, 'active');
     } else if (newStage === 'post') {
         gutter_setStatus(5, 'active');

@@ -59,7 +59,7 @@ export function telemetry_setup(): void {
             id: `station-${stage}`,
             targetId: `tele-${stage}`,
             generator: new StationTelemetryGenerator(
-                getStationProvider(stage),
+                stationProvider_get(stage),
                 () => document.getElementById(`station-${stage}`)?.classList.contains('active') || false
             ),
             renderer: new HTMLRenderer()
@@ -71,7 +71,7 @@ export function telemetry_setup(): void {
  * Returns the content provider function for a specific stage.
  * Note: In a fully modular system, these would be separate classes.
  */
-function getStationProvider(stage: string) {
+function stationProvider_get(stage: string) {
     switch (stage) {
         case 'search':
             return (isActive: boolean, t: number, timeStr: string) => {

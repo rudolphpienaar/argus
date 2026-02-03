@@ -40,7 +40,7 @@ Replace scattered `window.foo = foo` assignments with a centralized registry tha
 
 ### Phase 4: Modularize Stage Lifecycle
 Invert control for stage transitions. Instead of `argus.ts` manually setting up stages, each stage module should export lifecycle hooks.
-*   **Goal**: `argus.ts` calls `currentStage.onExit()` -> `nextStage.onEnter()`.
+*   **Goal**: `argus.ts` calls `currentStage.stage_exit()` -> `nextStage.stage_enter()`.
 *   **Target**: Update `src/core/stages/*.ts`
 *   **Status**: **COMPLETE**
 
@@ -51,6 +51,6 @@ Invert control for stage transitions. Instead of `argus.ts` manually setting up 
 *   **Plan Locked**: Established `docs/framework.md` as the source of truth.
 *   **Refactor**: Extracted `src/core/logic/commands.ts` (Command Router) and `src/lcarslm/AIService.ts` (AI Service) from `argus.ts`. Reduced `argus.ts` size by ~150 lines. Build successful.
 *   **Refactor**: Extracted `src/core/logic/WindowBindings.ts`. Standardized all `window` assignments and type declarations. Cleaned up entry point boilerplate. Build successful.
-*   **Refactor**: Implemented Stage Lifecycle hooks (`onEnter`/`onExit`) in `src/core/stages/`. Inverted control in `argus.ts` stage transition handler. Entry point is now primarily orchestration, not business logic. Build successful.
+*   **Refactor**: Implemented Stage Lifecycle hooks (`stage_enter`/`stage_exit`) in `src/core/stages/`. Inverted control in `argus.ts` stage transition handler. Entry point is now primarily orchestration, not business logic. Build successful.
 *   **Documentation**: Created `docs/onboarding.adoc` as a high-level narrative guide for new developers. Updated `docs/architecture.adoc` and `docs/framework.adoc` to reflect the new modular patterns.
 

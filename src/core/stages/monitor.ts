@@ -17,11 +17,11 @@ import type { TrainingJob, TrustedDomainNode } from '../models/types.js';
 // ============================================================================
 
 /**
- * Initializes the monitor stage.
+ * Hook called when entering the Monitor stage.
  * Creates a training job if none exists, sets up the loss chart canvas,
  * renders initial node status, and starts the training simulation interval.
  */
-export function monitor_initialize(): void {
+export function stage_enter(): void {
     if (!state.trainingJob) {
         store.trainingJob_set({
             id: `job-${Date.now()}`,
@@ -53,6 +53,14 @@ export function monitor_initialize(): void {
 
     if (globals.trainingInterval) clearInterval(globals.trainingInterval);
     globals.trainingInterval = window.setInterval(trainingStep_simulate, 500);
+}
+
+/**
+ * Hook called when exiting the Monitor stage.
+ * No-op for now.
+ */
+export function stage_exit(): void {
+    // Teardown if needed
 }
 
 // ============================================================================

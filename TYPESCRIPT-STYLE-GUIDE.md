@@ -360,3 +360,24 @@ if (phase1_years > 0 && year < startYear + phase1_years) {
     return phase1_amount / Math.max(phase1_years, 1);
 }
 ```
+
+---
+
+## Architecture & Safety Mandates
+
+**Adherence to these rules is mandatory to prevent structural regression.**
+
+### 1. No Truncated Writes
+**NEVER** execute a `replace` operation based on a file read that was truncated.
+*   **The Risk:** Using a truncated block (e.g., code ending in `// ...`) as a replacement target silently deletes the omitted logic.
+*   **The Rule:** You **MUST** read the specific target lines fully before modifying them. If `read_file` returns truncated content, perform a second read with `offset` to capture the complete context.
+
+### 2. Pattern Adherence (No Shortcuts)
+Before modifying UI logic, consult `docs/framework.adoc`.
+*   **The Risk:** Shortcuts like inline `onclick` strings bypass the architecture's event binding system, leading to scope errors ("function not defined") and fragility.
+*   **The Rule:** Implement the defined pattern. For UI components, use the **Component Pattern** with explicit `addEventListener` in your controller logic, or register bindings in `WindowBindings.ts` if using global handlers.
+
+### 3. Atomic Verification
+After refactoring a function or component:
+*   **The Risk:** A syntactically correct change may sever the link between the UI (View) and the Logic (Provider).
+*   **The Rule:** Verify that the **caller** (e.g., the button ID) and the **callee** (the event listener) match exactly. Ensure imports are updated if function names change.

@@ -9,7 +9,7 @@
 
 import { store } from '../state/store.js';
 import { stage_advanceTo, station_click, stage_next } from './navigation.js';
-import { catalog_search, dataset_toggle, lcarslm_auth, lcarslm_reset, lcarslm_simulate, project_activate, projectDetail_open, datasetDetail_open, proceedToCode_handle } from '../stages/search.js';
+import { catalog_search, dataset_toggle, lcarslm_auth, lcarslm_reset, lcarslm_simulate, project_activate, projectDetail_open, datasetDetail_open, proceedToCode_handle, template_select, dataset_add } from '../stages/search.js';
 import { filePreview_show } from '../stages/gather.js';
 import { training_launch, terminal_toggle, ide_openFile } from '../stages/process.js';
 import { training_abort } from '../stages/monitor.js';
@@ -43,7 +43,9 @@ declare global {
         project_activate: typeof project_activate;
         projectDetail_open: typeof projectDetail_open;
         datasetDetail_open: typeof datasetDetail_open;
+        dataset_add: typeof dataset_add;
         proceedToCode_handle: typeof proceedToCode_handle;
+        template_select: typeof template_select;
         ide_openFile: typeof ide_openFile;
         store: typeof store;
     }
@@ -78,7 +80,9 @@ export function windowBindings_initialize(uiHandlers: {
     window.project_activate = project_activate;
     window.projectDetail_open = projectDetail_open;
     window.datasetDetail_open = datasetDetail_open;
+    window.dataset_add = dataset_add;
     window.proceedToCode_handle = proceedToCode_handle;
+    window.template_select = template_select;
     window.ide_openFile = ide_openFile;
     window.store = store;
 }

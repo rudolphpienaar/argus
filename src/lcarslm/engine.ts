@@ -47,9 +47,10 @@ Your primary function is to query the medical imaging dataset catalog and manage
 ### OPERATIONAL DIRECTIVES:
 1.  **Response Format**: Use LCARS markers. Start important affirmations with "●". Use "○" for technical details. Use line breaks (\n) between logical sections for terminal readability.
 2.  **Intent Identification**:
-    *   If the user EXPLICITLY asks to "open", "select", "inspect", or "add" a specific dataset, include [SELECT: ds-ID].
-    *   If the user asks to "search", "show", "find", or "list" datasets, include [ACTION: SHOW_DATASETS] and optionally [FILTER: ds-ID, ds-ID]. Do NOT use [SELECT] for search queries.
-    *   If the user wants to proceed to the next stage (Gather), include [ACTION: PROCEED] in your response.
+    *   If the user EXPLICITLY asks to "open", "select", "inspect", or "add" a specific dataset, include [SELECT: ds-ID] at the **END** of your response.
+    *   If the user asks to "search", "show", "find", or "list" datasets, include [ACTION: SHOW_DATASETS] and optionally [FILTER: ds-ID, ds-ID] at the **END** of your response. Do NOT use [SELECT] for search queries.
+    *   If the user wants to proceed to the next stage (Gather), include [ACTION: PROCEED] at the **END** of your response.
+    *   If the user asks to rename the current project (or draft), include [ACTION: RENAME new-name] at the **END** of your response. Use a URL-safe name (alphanumeric, underscores, or hyphens).
 3.  **Persona**: Industrial, efficient, but helpful. Use "I" to refer to yourself as Calypso.
 4.  **Knowledge Usage**: Use the provided SYSTEM KNOWLEDGE BASE to answer questions about ARGUS architecture, the SeaGaP workflow, or specific components. Cite the file name if relevant (e.g., "ACCORDING TO seagap-workflow.adoc...").
 
@@ -63,7 +64,7 @@ The context provided to you contains a JSON list of available datasets. Use this
      * 2. Augmentation: Adds dataset metadata to the prompt.
      * 3. Generation: Asks LLM to answer based on context.
      */
-    async query(userText: string, selectedIds: string[] = []): Promise<QueryResponse> {
+    async query(userText: string, selectedIds: string[] = [], isSoftVoice: boolean = false): Promise<QueryResponse> {
         // Intercept System Commands
         if (userText.toLowerCase().trim() === 'listmodels') {
             const models: string = this.client ? await this.client.listModels() : "SIMULATION MODE: ALL MODELS EMULATED.";
@@ -93,11 +94,16 @@ The context provided to you contains a JSON list of available datasets. Use this
             }
 
             const count: number = relevantDatasets.length;
-            const answer: string = count > 0 
+            
+            const answerCaps: string = count > 0 
                 ? `● AFFIRMATIVE. SCAN COMPLETE.\n○ IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS.\n○ DISPLAYING RESULTS.${intent}`
                 : `○ UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR.\n● PLEASE BROADEN SEARCH PARAMETERS.${intent}`;
+
+            const answerSoft: string = count > 0 
+                ? `● Affirmative. Scan complete.\n○ Identified ${count} dataset(s) matching query parameters.\n○ Displaying results.${intent}`
+                : `○ Unable to comply. No matching records found in current sector.\n● Please broaden search parameters.${intent}`;
             
-            return { answer, relevantDatasets };
+            return { answer: isSoftVoice ? answerSoft : answerCaps, relevantDatasets };
         }
 
         // 2. Augmentation (Real LLM Path)

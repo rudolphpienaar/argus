@@ -136,22 +136,22 @@ export async function command_dispatch(cmd: string, args: string[]): Promise<voi
 Stage transitions (Search -> Process) require setup and teardown logic (e.g., opening the terminal, populating the IDE). Hardcoding this in `argus.ts` makes it a "God Object."
 
 === Solution
-Invert control. Each stage module exports `onEnter()` and `onExit()` hooks. The orchestrator simply calls them.
+Invert control. Each stage module exports `stage_enter()` and `stage_exit()` hooks. The orchestrator simply calls them.
 
 [source,typescript]
 ----
 // src/core/stages/process.ts
-export function onEnter(): void {
+export function stage_enter(): void {
     projectDir_populate(...);
     globals.frameSlot.frame_open();
 }
-export function onExit(): void {
+export function stage_exit(): void {
     // Cleanup
 }
 
 // argus.ts
 const newHandler = STAGE_HANDLERS[stageName];
-if (newHandler) newHandler.onEnter();
+if (newHandler) newHandler.stage_enter();
 ----
 
 == The Window Binding Registry Pattern

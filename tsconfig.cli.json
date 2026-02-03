@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "outDir": "./dist/cli",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "src/cli/**/*",
+    "src/lcarslm/CalypsoCore.ts",
+    "src/lcarslm/types.ts",
+    "src/lcarslm/adapters/**/*",
+    "src/vfs/**/*",
+    "src/core/models/types.ts",
+    "src/core/data/datasets.ts"
+  ]
+}

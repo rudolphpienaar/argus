@@ -7,6 +7,20 @@
  */
 
 /**
+ * Hook called when entering the Post stage.
+ */
+export function stage_enter(): void {
+    // Initialization for post stage if needed
+}
+
+/**
+ * Hook called when exiting the Post stage.
+ */
+export function stage_exit(): void {
+    // Teardown logic if needed
+}
+
+/**
  * Publishes the trained model to the marketplace.
  */
 export function model_publish(): void {

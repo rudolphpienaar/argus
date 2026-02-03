@@ -29,6 +29,14 @@ Raw code assets (`train.py`) are not executed locally. Instead, the `federate` c
 
 The sequence is orchestrated by `federation_sequence()` in `process.ts`, decomposed into four phases: `federationOverlay_initialize()`, `federationBuild_run()`, `federationDistribution_run()`, and `federationHandshake_run()`.
 
+=== 3.2 The Simulation Loop (Local Testbed)
+Before federalization, code must pass a **Phantom Federation** check. This local simulation validates that:
+1.  **Serialization**: Model weights can be serialized and deserialized.
+2.  **Aggregation**: The aggregation algorithm converges on local data shards.
+3.  **Privacy**: Differential privacy noise budgets are respected.
+
+The `simulate` command shards the local VFS `input/` directory into ephemeral "Phantom Nodes" and runs the federation cycle in-memory. Only successful simulation unlocks the external federation capability.
+
 == 4. Virtual Computer System (VCS)
 A complete Virtual Computer System (`src/vfs/`) provides the stateful runtime environment underlying the ARGUS Intelligence Terminal. The VCS comprises:
 

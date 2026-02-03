@@ -43,7 +43,7 @@ The application logic is decoupled from the main entry point (`argus.ts`) into s
 === Stage Lifecycle
 **`src/core/logic/Lifecycle.ts`**
 *   **Role**: Defines the contract for stage transitions.
-*   **Pattern**: Each stage module exports `onEnter()` and `onExit()` hooks. The main orchestrator (`argus.ts`) calls these hooks during transitions, inverting control and keeping the entry point clean.
+*   **Pattern**: Each stage module exports `stage_enter()` and `stage_exit()` hooks. The main orchestrator (`argus.ts`) calls these hooks during transitions, inverting control and keeping the entry point clean.
 
 === Window Bindings
 **`src/core/logic/WindowBindings.ts`**

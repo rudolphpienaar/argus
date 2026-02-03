@@ -11,7 +11,7 @@
  * NOTE: Business logic is delegated to specialized modules:
  * - Command Routing -> src/core/logic/commands.ts
  * - AI RAG Logic -> src/lcarslm/AIService.ts
- * - Stage Setup -> src/core/stages/* (onEnter/onExit hooks)
+ * - Stage Setup -> src/core/stages/* (stage_enter/stage_exit hooks)
  * - DOM Bindings -> src/core/logic/WindowBindings.ts
  *
  * @module
@@ -33,7 +33,7 @@ import { stage_advanceTo, stage_next, station_click, stageIndicators_initialize,
 import { filesystem_build, filePreview_show, costs_calculate } from './core/stages/gather.js';
 import { training_launch, terminal_toggle, ide_openFile } from './core/stages/process.js';
 import { gutter_setStatus } from './ui/gutters.js';
-import { monitor_initialize, training_abort } from './core/stages/monitor.js';
+import { training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
 import { marketplace_initialize } from './marketplace/view.js';
@@ -62,15 +62,21 @@ import * as gatherStage from './core/stages/gather.js';
 let terminal: LCARSTerminal | null = null;
 let workflowTracker: WorkflowTracker | null = null;
 
+/** Interface for modules that provide stage lifecycle hooks. */
+interface StageHandler {
+    stage_enter?: () => void;
+    stage_exit?: () => void;
+}
+
 /** Mapping of stage names to their lifecycle handlers. */
-const STAGE_HANDLERS: Record<string, { onEnter: () => void; onExit: () => void }> = {
-    'login': { onEnter: (): void => {}, onExit: (): void => {} },
-    'role-selection': { onEnter: (): void => {}, onExit: (): void => {} },
+const STAGE_HANDLERS: Record<string, StageHandler> = {
+    'login': { stage_enter: (): void => {}, stage_exit: (): void => {} },
+    'role-selection': { stage_enter: (): void => {}, stage_exit: (): void => {} },
     'search': searchStage,
-    'gather': gatherStage as any, // Cast for now, will add hooks if needed
+    'gather': gatherStage,
     'process': processStage,
-    'monitor': monitorStage as any,
-    'post': postStage as any
+    'monitor': monitorStage,
+    'post': postStage
 };
 
 let currentStageName: string = 'login';
@@ -284,8 +290,8 @@ function stageChange_handle(event: CustomEvent): void {
     if (consoleEl && terminal) {
         // 1. Teardown current stage
         const oldHandler = STAGE_HANDLERS[currentStageName];
-        if (oldHandler && typeof oldHandler.onExit === 'function') {
-            oldHandler.onExit();
+        if (oldHandler && typeof oldHandler.stage_exit === 'function') {
+            oldHandler.stage_exit();
         }
 
         // 2. Universal setup
@@ -299,8 +305,8 @@ function stageChange_handle(event: CustomEvent): void {
         // 3. Initialize new stage
         currentStageName = stageName;
         const newHandler = STAGE_HANDLERS[stageName];
-        if (newHandler && typeof newHandler.onEnter === 'function') {
-            newHandler.onEnter();
+        if (newHandler && typeof newHandler.stage_enter === 'function') {
+            newHandler.stage_enter();
         }
 
         terminal.prompt_sync();

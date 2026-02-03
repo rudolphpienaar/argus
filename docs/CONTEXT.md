@@ -126,9 +126,15 @@ src/
 ## How to Run
 
 ```bash
+# Browser Mode (Full ARGUS UI)
 npm run build      # Compile TypeScript
 npm run serve      # http://localhost:8080 (or 'make serve')
 npm run test       # Run 140 unit tests
+
+# Headless Mode (Calypso CLI)
+make calypso       # Start headless server on port 8081
+make calypso-cli   # Start interactive CLI client
+make test-oracle   # Run ORACLE integration tests
 ```
 
 ---

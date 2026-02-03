@@ -144,6 +144,32 @@ export class LCARSTerminal extends BaseTerminal {
         this.scrollToBottom();
     }
 
+    /**
+     * Renders text, waits, and then removes it via reverse-typewriter.
+     * Used for non-persistent interruptions (idle prompts).
+     * 
+     * @param text - The text content.
+     * @param styleClass - CSS class.
+     * @param duration - How long to wait before backspacing (default 5s).
+     */
+    public async printTransientStream(text: string, styleClass: string = '', duration: number = 5000): Promise<void> {
+        const line = document.createElement('div');
+        line.className = `line ${styleClass}`;
+        this.output.appendChild(line);
+        
+        const typewriter = new Typewriter(line, 20);
+        await typewriter.type(text);
+        
+        // Wait
+        await new Promise(resolve => setTimeout(resolve, duration));
+        
+        // Backspace
+        await typewriter.backspace();
+        
+        // Remove from DOM
+        line.remove();
+    }
+
     // ─── Shell Integration ──────────────────────────────────────
 
     /**

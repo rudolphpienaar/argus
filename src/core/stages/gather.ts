@@ -15,6 +15,26 @@ import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import type { CostEstimate } from '../models/types.js';
 
 // ============================================================================
+// Lifecycle Hooks
+// ============================================================================
+
+/**
+ * Hook called when entering the Gather stage.
+ * Rebuilds the filesystem and recalculates costs.
+ */
+export function stage_enter(): void {
+    filesystem_build();
+    costs_calculate();
+}
+
+/**
+ * Hook called when exiting the Gather stage.
+ */
+export function stage_exit(): void {
+    // Teardown if needed
+}
+
+// ============================================================================
 // Filesystem Generation
 // ============================================================================
 

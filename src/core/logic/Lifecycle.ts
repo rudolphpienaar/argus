@@ -11,7 +11,7 @@
  */
 export interface StageHandler {
     /** Called when entering the stage. */
-    onEnter: () => void;
+    stage_enter: () => void;
     /** Called when exiting the stage. */
-    onExit: () => void;
+    stage_exit: () => void;
 }

@@ -53,4 +53,30 @@ export class Typewriter {
             typeChar();
         });
     }
+
+    /**
+     * Removes text character-by-character from the element.
+     * 
+     * @returns Promise that resolves when backspacing is complete.
+     */
+    public backspace(): Promise<void> {
+        return new Promise((resolve) => {
+            this.element.classList.add('muthur-cursor');
+            
+            const deleteChar = () => {
+                const currentText = this.element.textContent || '';
+                if (currentText.length > 0) {
+                    this.element.textContent = currentText.substring(0, currentText.length - 1);
+                    
+                    const variance = Math.random() * 10 - 5;
+                    setTimeout(deleteChar, (this.speed / 2) + variance); // Backspacing is usually faster
+                } else {
+                    this.element.classList.remove('muthur-cursor');
+                    resolve();
+                }
+            };
+
+            deleteChar();
+        });
+    }
 }

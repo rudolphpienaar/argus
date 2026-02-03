@@ -43,6 +43,14 @@ To support a more flexible "Filesystem First" workflow, ARGUS now supports **Dra
 4.  **Rich Preview**: The Project Detail view detects the flat structure and shows a single **"FILES"** tab. It supports inline preview of uploaded PDFs and images.
 5.  **Progressive Structure**: When you `ADD` a dataset from the catalog, it appears as a `data/` folder alongside your uploads. Only when you decide to write code does the `src/` structure become necessary.
 
+### Implicit Creation (The "Gather First" Flow)
+
+If the user adds a dataset (via the "ADD" button or "DONE" in detail view) while *no project is active* (no chip selected), the system **automatically creates a new Draft Project** to house the gathered data.
+
+*   **VFS**: A new draft directory is created (e.g., `~/projects/DRAFT-5678/`).
+*   **Notification**: The Intelligence Console confirms: "NO ACTIVE PROJECT DETECTED. INITIATING NEW DRAFT WORKSPACE [DRAFT-5678]. COHORT MOUNTED."
+*   **State**: The new draft becomes the active gather target.
+
 ### Project Renaming
 
 Draft projects can be renamed at any time via the **RENAME** pill in the Project Detail overlay. This moves the underlying VFS directory and updates all references, preserving your gathered data and uploads.
@@ -171,6 +179,7 @@ Once the user has gathered data from one or more datasets:
 4. The FileBrowser's DATA tab shows the merged gathered data.
 5. The terminal is mounted at the project root with access to both `/src` and `/data`.
 6. The user proceeds to write code, configure training, and federalize.
+7. **Simulation**: Before federalizing, the user runs `simulate federation` to validate the code against a local "Phantom Federation" of data shards. This unlocks the "FEDERALIZE" action.
 
 If no project was the gather target ("+ NEW" mode), the gathered data is stashed and can be associated with a new project when one is created.
 

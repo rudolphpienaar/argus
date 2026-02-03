@@ -427,11 +427,11 @@ describe('Shell', () => {
             expect(vfs.cwd_get()).toBe('/home/fedml/projects/study-01/src');
         });
 
-        it('should cd to project data for gather stage with $PROJECT', () => {
+        it('should cd to project input for gather stage with $PROJECT', () => {
             shell.env_set('PROJECT', 'study-01');
-            vfs.dir_create('/home/fedml/projects/study-01/data');
+            vfs.dir_create('/home/fedml/projects/study-01/input');
             shell.stage_enter('gather');
-            expect(vfs.cwd_get()).toBe('/home/fedml/projects/study-01/data');
+            expect(vfs.cwd_get()).toBe('/home/fedml/projects/study-01/input');
         });
 
         it('should cd to project src for monitor stage with $PROJECT', () => {
@@ -451,6 +451,23 @@ describe('Shell', () => {
             vfs.cwd_set('/tmp');
             shell.stage_enter('search');
             expect(vfs.cwd_get()).toBe('/home/fedml');
+        });
+    });
+
+    // ─── Builtin: python ────────────────────────────────────────
+
+    describe('python', () => {
+        it('should execute a python script', async () => {
+            vfs.file_create('/home/fedml/script.py', 'print("hello")');
+            const result: ShellResult = await shell.command_execute('python script.py');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('[PYTHON EXECUTION: script.py]');
+        });
+
+        it('should fail if script missing', async () => {
+            const result: ShellResult = await shell.command_execute('python missing.py');
+            expect(result.exitCode).toBe(2);
+            expect(result.stderr).toContain('No such file');
         });
     });
 

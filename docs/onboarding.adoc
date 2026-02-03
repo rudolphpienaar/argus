@@ -37,8 +37,8 @@ ARGUS isn't just a website; it simulates a computer.
 The app moves through stages (Search -> Process -> Monitor).
 
 *   **Entry Point:** `src/argus.ts` is the orchestrator.
-*   **Lifecycle:** Each stage module (e.g., `src/core/stages/process.ts`) exports `onEnter()` and `onExit()` hooks.
-*   **Control Flow:** The orchestrator calls `currentStage.onExit()` -> `nextStage.onEnter()`.
+*   **Lifecycle:** Each stage module (e.g., `src/core/stages/process.ts`) exports `stage_enter()` and `stage_exit()` hooks.
+*   **Control Flow:** The orchestrator calls `currentStage.stage_exit()` -> `nextStage.stage_enter()`.
 
 == Codebase Tour
 
@@ -113,7 +113,7 @@ That's it. The `CommandRouter` automatically intercepts it before checking the A
 == "Hello World": Adding a Stage
 
 1.  **Create `src/core/stages/mystage.ts`**:
-    Implement `onEnter()` and `onExit()`.
+    Implement `stage_enter()` and `stage_exit()`.
 
 2.  **Register in `src/argus.ts`**:
     Import it and add it to `STAGE_HANDLERS`.

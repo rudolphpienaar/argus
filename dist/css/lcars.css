@@ -2242,6 +2242,11 @@ body.state-locked .next-pill {
     white-space: pre-wrap;
 }
 
+.muthur-text.soft-voice {
+    text-transform: none;
+    letter-spacing: normal;
+}
+
 /* Optional: Blinking cursor block for the AI typing effect */
 .muthur-cursor::after {
     content: '█';
