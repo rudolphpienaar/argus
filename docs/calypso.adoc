@@ -189,7 +189,7 @@ Ready for connections.
 
 === CLI Mode (Interactive REPL)
 
-A command-line client connects to either the headless server or the browser's WebSocket bridge.
+A command-line client connects to the headless server. (Connection to the browser via WebSocket bridge is planned).
 
 [source,bash]
 ----
