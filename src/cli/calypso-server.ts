@@ -26,7 +26,8 @@ import { homeDir_scaffold } from '../vfs/providers/ProjectProvider.js';
 import type { CalypsoResponse } from '../lcarslm/types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
-import { VERSION } from '../generated/version.js';
+import { VERSION, GIT_HASH } from '../generated/version.js';
+import { store, globals } from '../core/state/store.js';
 
 // ─── Environment Loading ───────────────────────────────────────────────────
 
@@ -60,67 +61,48 @@ env_load();
 const PORT: number = parseInt(process.env.CALYPSO_PORT || '8081', 10);
 const HOST: string = process.env.CALYPSO_HOST || 'localhost';
 
-// ─── Headless Store Implementation ─────────────────────────────────────────
+// ─── Global Store Adapter ──────────────────────────────────────────────────
 
 /**
- * Minimal store implementation for headless mode.
- * Holds state in memory without EventBus dependencies.
+ * Adapter to expose the global store to CalypsoCore via the interface.
  */
-class HeadlessStore implements CalypsoStoreActions {
-    private _state: {
-        currentStage: AppState['currentStage'];
-        selectedDatasets: Dataset[];
-        activeProject: { id: string; name: string } | null;
-        marketplaceOpen: boolean;
-        installedAssets: string[];
-    };
-
-    constructor() {
-        this._state = {
-            currentStage: 'search',
-            selectedDatasets: [],
-            activeProject: null,
-            marketplaceOpen: false,
-            installedAssets: []
-        };
-    }
-
+class GlobalStoreAdapter implements CalypsoStoreActions {
     public state_get(): Partial<AppState> {
         return {
-            currentStage: this._state.currentStage,
-            selectedDatasets: [...this._state.selectedDatasets],
-            activeProject: this._state.activeProject as AppState['activeProject'],
-            marketplaceOpen: this._state.marketplaceOpen,
-            installedAssets: [...this._state.installedAssets]
+            currentStage: store.state.currentStage,
+            selectedDatasets: [...store.state.selectedDatasets],
+            activeProject: store.state.activeProject,
+            marketplaceOpen: store.state.marketplaceOpen,
+            installedAssets: [...store.state.installedAssets]
         };
     }
 
     public reset(): void {
-        this._state.currentStage = 'search';
-        this._state.selectedDatasets = [];
-        this._state.activeProject = null;
+        // We can't fully reset the singleton store without a method, 
+        // but we can clear specific state.
+        store.selection_clear();
+        store.project_unload();
+        store.stage_set('search');
     }
 
     public dataset_select(dataset: Dataset): void {
-        if (!this._state.selectedDatasets.some(ds => ds.id === dataset.id)) {
-            this._state.selectedDatasets.push(dataset);
-        }
+        store.dataset_select(dataset);
     }
 
     public dataset_deselect(id: string): void {
-        this._state.selectedDatasets = this._state.selectedDatasets.filter(ds => ds.id !== id);
+        store.dataset_deselect(id);
     }
 
     public datasets_getSelected(): Dataset[] {
-        return this._state.selectedDatasets;
+        return store.state.selectedDatasets;
     }
 
     public project_getActive(): { id: string; name: string } | null {
-        return this._state.activeProject;
+        return store.state.activeProject;
     }
 
     public stage_set(stage: AppState['currentStage']): void {
-        this._state.currentStage = stage;
+        store.stage_set(stage);
     }
 }
 
@@ -131,9 +113,16 @@ class HeadlessStore implements CalypsoStoreActions {
  */
 function calypso_initialize(): CalypsoCore {
     const username = 'developer';
+    
+    // Initialize the global singletons
+    // This is critical because ProjectManager imports 'globals' directly!
     const vfs = new VirtualFileSystem(username);
-    const store = new HeadlessStore();
+    globals.vcs = vfs;
+    
     const shell = new Shell(vfs, username);
+    globals.shell = shell;
+
+    const storeAdapter = new GlobalStoreAdapter();
 
     // Scaffold home directory
     homeDir_scaffold(vfs, username);
@@ -166,7 +155,7 @@ function calypso_initialize(): CalypsoCore {
         console.log('  Set OPENAI_API_KEY or GEMINI_API_KEY via environment or .env file');
     }
 
-    const core = new CalypsoCore(vfs, shell, store, {
+    const core = new CalypsoCore(vfs, shell, storeAdapter, {
         simulationMode: !hasApiKey,
         llmConfig: hasApiKey ? {
             provider: openaiKey ? 'openai' : 'gemini',
