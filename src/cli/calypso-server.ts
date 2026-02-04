@@ -347,7 +347,7 @@ const server = http.createServer(request_handle);
 
 server.listen(PORT, HOST, () => {
     const vString = `V${VERSION}`;
-    const innerWidth = 60;
+    const innerWidth = 64;
     
     const line_format = (text: string): string => {
         const label = `  ${text}`;

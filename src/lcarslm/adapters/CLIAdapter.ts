@@ -79,7 +79,7 @@ export class CLIAdapter {
      */
     public banner_render(): string {
         const vString = `V${VERSION}`;
-        const innerWidth = 60;
+        const innerWidth = 64;
         
         // Helper to format a line inside the box
         const line_format = (text: string, color: string = ''): string => {
