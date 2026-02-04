@@ -26,7 +26,7 @@ import { homeDir_scaffold } from '../vfs/providers/ProjectProvider.js';
 import type { CalypsoResponse } from '../lcarslm/types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
-import { VERSION } from '../generated/version.js';
+import { VERSION, GIT_HASH } from '../generated/version.js';
 
 // ─── Environment Loading ───────────────────────────────────────────────────
 
@@ -144,8 +144,18 @@ function calypso_initialize(): CalypsoCore {
     shell.env_set('PERSONA', 'fedml');
 
     // Check for API keys - enable real LLM if available
-    const openaiKey = process.env.OPENAI_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+    let openaiKey = process.env.OPENAI_API_KEY;
+    let geminiKey = process.env.GEMINI_API_KEY;
+
+    // Handle case where Makefile sets both to the same value
+    if (openaiKey && openaiKey === geminiKey) {
+        if (openaiKey.startsWith('sk-')) {
+            geminiKey = undefined; // It's OpenAI
+        } else if (openaiKey.startsWith('AIza')) {
+            openaiKey = undefined; // It's Gemini
+        }
+    }
+
     const hasApiKey = !!(openaiKey || geminiKey);
 
     if (hasApiKey) {
@@ -336,9 +346,10 @@ async function request_handle(req: http.IncomingMessage, res: http.ServerRespons
 const server = http.createServer(request_handle);
 
 server.listen(PORT, HOST, () => {
+    const vString = `V${VERSION}-${GIT_HASH}`;
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║  CALYPSO SERVER V${VERSION}${' '.repeat(43 - VERSION.length)}║
+║  CALYPSO SERVER ${vString}${' '.repeat(44 - vString.length)}║
 ╚══════════════════════════════════════════════════════════════╝
 
 Listening on http://${HOST}:${PORT}

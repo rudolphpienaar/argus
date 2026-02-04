@@ -8,7 +8,7 @@
  */
 
 import type { CalypsoResponse, CalypsoAction } from '../types.js';
-import { VERSION } from '../../generated/version.js';
+import { VERSION, GIT_HASH } from '../../generated/version.js';
 
 /**
  * ANSI color codes for terminal output.
@@ -78,9 +78,10 @@ export class CLIAdapter {
      * Render a welcome banner.
      */
     public banner_render(): string {
+        const vString = `V${VERSION}-${GIT_HASH}`;
         return `
 ${COLORS.cyan}╔══════════════════════════════════════════════════════════════╗
-║  ${COLORS.bright}CALYPSO CORE V${VERSION}${COLORS.reset}${COLORS.cyan}${' '.repeat(45 - VERSION.length)}║
+║  ${COLORS.bright}CALYPSO CORE ${vString}${COLORS.reset}${COLORS.cyan}${' '.repeat(46 - vString.length)}║
 ║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
 ║  Outcomes                                                    ║
 ╚══════════════════════════════════════════════════════════════╝${COLORS.reset}
