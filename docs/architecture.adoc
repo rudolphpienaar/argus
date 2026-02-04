@@ -35,6 +35,14 @@ The application logic is decoupled from the main entry point (`argus.ts`) into s
 *   **Flow**: Terminal Input -> Shell (builtin check) -> CommandRouter (workflow check) -> AIService (NL query).
 *   **Commands Handled**: `search`, `add`, `review`, `gather`, `mount`, `simulate`.
 
+=== The Intent Layer (Local IAS)
+**`src/core/logic/ProjectManager.ts`**
+*   **Role**: Bridges the gap between high-level intents ("Gather this dataset") and low-level system operations (VFS mounting, Store mutation, Shell sync).
+*   **Architecture**: Implements the **Intent-Action Service (IAS)** pattern locally.
+    - **Concept**: Calypso (or the Web UI) should not orchestrate complex multi-step state mutations. Instead, they call a single "Intent Function" (e.g., `project_gather()`) which encapsulates the procedural logic.
+    - **Parallel**: This mirrors the external **Intent-Action Service** proposal for the ATLAS backend (https://github.com/FNNDSC/intent-server), where an intermediate service translates declarative API intents into procedural orchestration.
+*   **Key Function**: `project_gather(dataset)` — Handles draft project creation, VFS initialization, store updates, and tree mounting in one atomic operation.
+
 === AI Service
 **`src/lcarslm/AIService.ts`**
 *   **Role**: Manages the RAG (Retrieval Augmented Generation) loop with the LLM backend.

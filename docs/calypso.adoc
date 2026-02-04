@@ -75,6 +75,12 @@ As of v5.0.0, Calypso is architected as a **DOM-free headless core** that can op
 
 The `CalypsoCore` class is the central orchestrator. It receives natural language input, classifies intent, executes deterministic operations against the VFS/Store, and returns a structured response.
 
+**Integration with Intent Layer:**
+Calypso relies on the **Intent Layer** (`src/core/logic/ProjectManager.ts`) to execute complex procedural logic. Instead of manually manipulating the VFS, Store, and Shell in sequence, Calypso calls high-level intent functions like `project_gather()`. This ensures that:
+1.  **Atomicity**: Complex operations (like creating a draft project and mounting data) happen all-or-nothing.
+2.  **Parity**: Headless Calypso executes the exact same logic as the Web UI.
+3.  **Simplicity**: The AI only needs to map natural language to a single function call.
+
 [source,typescript]
 ----
 // src/lcarslm/CalypsoCore.ts
@@ -95,7 +101,7 @@ export class CalypsoCore {
      */
     public async command_execute(input: string): Promise<CalypsoResponse> {
         // 1. Try shell builtins
-        // 2. Try workflow commands
+        // 2. Try workflow commands (delegates to Intent Layer)
         // 3. Fall back to LLM
     }
 }

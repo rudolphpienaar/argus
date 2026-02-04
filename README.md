@@ -10,8 +10,9 @@ The project draws its naming from two figures in Greek mythology, representing t
 
 *   **ATLAS** (The Titan) was condemned to hold up the celestial spheres for eternity. In our context, ATLAS is the massive, distributed infrastructure that bears the weight of the federated learning ecosystem—computing, storage, and secure networking across institutions.
 *   **ARGUS** (The Giant) was Argus Panoptes, the "all-seeing" watchman with a hundred eyes. In our context, ARGUS is the interface that provides vigilance and visibility. It acts as the hundred eyes of the developer, monitoring the distributed training jobs, datasets, and secure enclaves that ATLAS supports.
+*   **CALYPSO** (The Nymph) was "the concealer" who lived on the island of Ogygia. In our context, CALYPSO is the "Ghost in the Machine"—the hidden intelligence layer that bridges the gap between infrastructure and interface. She translates complex system states into natural language and guides the user through the intricate web of federated resources.
 
-**Atlas supports the weight; Argus sees the details.**
+**Atlas supports the weight; Argus sees the details; Calypso understands the intent.**
 
 ## The Concept
 
@@ -79,6 +80,30 @@ CALYPSO> tree ~/data/cohort/
     ├── images/
     └── manifest.json
 ```
+
+## The Calypso AI Core
+
+Calypso is the system's "Ghost in the Machine" — an intent-based AI agent that bridges the gap between natural language user requests and deterministic system actions.
+
+### Dual-Mode Architecture
+
+Calypso is architected as a **DOM-free core** that can operate in two distinct environments:
+
+1.  **Embedded Mode (Browser)**: Runs directly inside the web application. It has full access to the browser's DOM for visual effects (like the "teletype" streaming text) and directly manipulates the client-side state.
+2.  **Headless Mode (Server)**: Runs as a standalone Node.js process (`make calypso`). It maintains its own independent state (VFS, Store) and is primarily used for:
+    *   **Automated Testing**: The ORACLE test runner drives this headless instance to verify workflows without a browser.
+    *   **Remote Management**: The CLI tool connects here to perform administrative tasks or scripted operations.
+
+### The CLI Tool
+
+The `calypso-cli` is a remote terminal interface for the **Headless Mode**.
+
+```bash
+$ make calypso       # Terminal 1: Start the headless mind
+$ make calypso-cli   # Terminal 2: Connect the interface
+```
+
+*Note: Currently, the CLI connects only to the headless server (port 8081). It does not bridge to the active browser session (port 8080), meaning actions taken in the CLI will not update your open web tab. This "Bridge Mode" is planned for a future release.*
 
 ## Documentation
 

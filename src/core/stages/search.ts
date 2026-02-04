@@ -23,6 +23,7 @@ import { overlaySlots_clear } from '../logic/OverlayUtils.js';
 import { resizeHandle_attach } from '../../ui/interactions/ResizeHandle.js';
 import { files_prompt, files_ingest } from '../logic/FileUploader.js';
 import { projectContext_get } from '../logic/ProjectContext.js';
+import { project_gather } from '../logic/ProjectManager.js';
 import { SYSTEM_KNOWLEDGE } from '../data/knowledge.js';
 
 // ============================================================================
@@ -1445,61 +1446,14 @@ function gather_execute(dataset: Dataset, subtree: VcsFileNode, selectedPaths: s
         subtree
     });
 
-    // Auto-create draft project if none active
-    if (!gatherTargetProject) {
-        console.log('ARGUS: Auto-creating draft project from gather action');
-        const timestamp = Date.now();
-        const shortId = timestamp.toString().slice(-4);
-        const draftProject: Project = {
-            id: `draft-${timestamp}`,
-            name: `DRAFT-${shortId}`,
-            description: 'New project workspace',
-            created: new Date(),
-            lastModified: new Date(),
-            datasets: []
-        };
-        MOCK_PROJECTS.push(draftProject);
-        gatherTargetProject = draftProject;
-        
-        // Refresh strip to show new draft
-        projectStrip_render();
-
-        // Mount in VFS and activate context
-        const paths = projectContext_get(draftProject);
-        // Create clean project root only - NO BOILERPLATE
-        globals.vcs.dir_create(paths.root);
-
-        if (globals.shell) {
-            globals.shell.command_execute(`cd ${paths.root}`);
-            globals.shell.env_set('PROJECT', draftProject.name);
-            if (globals.terminal) globals.terminal.prompt_sync();
-        }
-        
-        if (globals.terminal) {
-            globals.terminal.println('<span class="muthur-text">NO ACTIVE PROJECT DETECTED.</span>');
-            globals.terminal.println(`<span class="muthur-text">INITIATING NEW DRAFT WORKSPACE [${draftProject.name}].</span>`);
-            globals.terminal.println('<span class="muthur-text">COHORT MOUNTED.</span>');
-        }
-    }
-
-    // Add dataset to project model (for UI count) if not already present
-    const alreadyLinked = gatherTargetProject.datasets.some(ds => ds.id === dataset.id);
-    if (!alreadyLinked) {
-        gatherTargetProject.datasets.push(dataset);
-    }
-
-    // Sync global selection state for the bottom counter
-    console.log('ARGUS: Syncing selection state for dataset:', dataset.id);
-    store.dataset_select(dataset);
-
-    // Mount into Project VFS
-    const paths = projectContext_get(gatherTargetProject);
-    try { globals.vcs.dir_create(paths.input); } catch { /* exists */ }
+    // Delegate to ProjectManager for VFS mounting and auto-draft creation
+    const project = project_gather(dataset, subtree, gatherTargetProject);
     
-    // Mount the gathered subtree
-    const dsDir: string = dataset.name.replace(/\s+/g, '_');
-    globals.vcs.tree_unmount(`${paths.input}/${dsDir}`);
-    globals.vcs.tree_mount(`${paths.input}/${dsDir}`, subtree);
+    // Update local gather target reference if we created a new draft
+    gatherTargetProject = project;
+    
+    // Refresh strip to reflect new project or updated counts
+    projectStrip_render();
 
     // Update UI Card
     const card = document.querySelector(`.market-card[data-id="${dataset.id}"]`);

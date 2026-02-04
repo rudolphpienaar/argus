@@ -27,6 +27,7 @@ import type {
 } from './types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
+import { project_gather } from '../core/logic/ProjectManager.js';
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -415,14 +416,15 @@ WORKFLOW COMMANDS:
             );
         }
 
-        this.storeActions.dataset_select(dataset);
+        // Delegate to ProjectManager to handle draft creation and VFS mounting
+        const activeProject = project_gather(dataset);
 
         const actions: CalypsoAction[] = [
             { type: 'dataset_select', id: dataset.id }
         ];
 
         return this.response_create(
-            `● DATASET GATHERED: ${dataset.name} [${dataset.id}]`,
+            `● DATASET GATHERED: ${dataset.name} [${dataset.id}]\n○ MOUNTED TO [${activeProject.name}]`,
             actions,
             true
         );
