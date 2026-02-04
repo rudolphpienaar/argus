@@ -8,6 +8,7 @@
  */
 
 import type { CalypsoResponse, CalypsoAction } from '../types.js';
+import { VERSION } from '../../generated/version.js';
 
 /**
  * ANSI color codes for terminal output.
@@ -79,7 +80,7 @@ export class CLIAdapter {
     public banner_render(): string {
         return `
 ${COLORS.cyan}╔══════════════════════════════════════════════════════════════╗
-║  ${COLORS.bright}CALYPSO CORE V5.0.0${COLORS.reset}${COLORS.cyan}                                         ║
+║  ${COLORS.bright}CALYPSO CORE V${VERSION}${COLORS.reset}${COLORS.cyan}${' '.repeat(45 - VERSION.length)}║
 ║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
 ║  Outcomes                                                    ║
 ╚══════════════════════════════════════════════════════════════╝${COLORS.reset}

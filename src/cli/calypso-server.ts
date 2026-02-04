@@ -24,6 +24,7 @@ import { homeDir_scaffold } from '../vfs/providers/ProjectProvider.js';
 import type { CalypsoResponse } from '../lcarslm/types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
+import { VERSION } from '../generated/version.js';
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 
@@ -308,7 +309,7 @@ const server = http.createServer(request_handle);
 server.listen(PORT, HOST, () => {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║  CALYPSO SERVER V5.0.0                                       ║
+║  CALYPSO SERVER V${VERSION}${' '.repeat(43 - VERSION.length)}║
 ╚══════════════════════════════════════════════════════════════╝
 
 Listening on http://${HOST}:${PORT}
