@@ -16,6 +16,8 @@
  */
 
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import { URL } from 'url';
 import { CalypsoCore, type CalypsoStoreActions } from '../lcarslm/CalypsoCore.js';
 import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
@@ -25,6 +27,33 @@ import type { CalypsoResponse } from '../lcarslm/types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { VERSION } from '../generated/version.js';
+
+// ─── Environment Loading ───────────────────────────────────────────────────
+
+/**
+ * Simple .env loader to avoid dependencies.
+ * Loads GEMINI_API_KEY or OPENAI_API_KEY from .env file in CWD.
+ */
+function env_load(): void {
+    const envPath = path.join(process.cwd(), '.env');
+    if (fs.existsSync(envPath)) {
+        console.log('Loading configuration from .env');
+        const content = fs.readFileSync(envPath, 'utf-8');
+        content.split('\n').forEach(line => {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+                const [key, ...valParts] = trimmed.split('=');
+                const val = valParts.join('=').trim().replace(/^["']|["']$/g, ''); // strip quotes
+                if (!process.env[key.trim()]) {
+                    process.env[key.trim()] = val;
+                }
+            }
+        });
+    }
+}
+
+// Load env before configuration
+env_load();
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 
@@ -123,7 +152,7 @@ function calypso_initialize(): CalypsoCore {
         console.log(`AI Core: ${openaiKey ? 'OpenAI' : 'Gemini'} API key detected`);
     } else {
         console.log('AI Core: No API key found (simulation mode)');
-        console.log('  Set OPENAI_API_KEY or GEMINI_API_KEY to enable AI');
+        console.log('  Set OPENAI_API_KEY or GEMINI_API_KEY via environment or .env file');
     }
 
     const core = new CalypsoCore(vfs, shell, store, {

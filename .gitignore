@@ -24,3 +24,4 @@ npm-debug.log*
 # TypeScript cache
 *.tsbuildinfo
 SESSION-STATE.md
+.calypso-secret

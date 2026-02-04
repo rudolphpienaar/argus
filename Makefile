@@ -57,7 +57,7 @@ argus: clean install build
 
 calypso:
 	@echo "Starting Calypso headless server..."
-	npx tsx src/cli/calypso-server.ts
+	GEMINI_API_KEY=$(KEY) OPENAI_API_KEY=$(KEY) npx tsx src/cli/calypso-server.ts
 
 calypso-cli:
 	@echo "Starting Calypso CLI client..."
