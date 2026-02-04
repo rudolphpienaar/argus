@@ -347,10 +347,14 @@ const server = http.createServer(request_handle);
 
 server.listen(PORT, HOST, () => {
     const vString = `V${VERSION}`;
+    const innerWidth = 60;
+    const label = `  CALYPSO SERVER ${vString}`;
+    const padding = ' '.repeat(innerWidth - label.length);
+    
     console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║  CALYPSO SERVER ${vString}${' '.repeat(43 - vString.length)}║
-╚══════════════════════════════════════════════════════════════╝
+╔${'═'.repeat(innerWidth)}╗
+║${label}${padding}║
+╚${'═'.repeat(innerWidth)}╝
 
 Listening on http://${HOST}:${PORT}
 

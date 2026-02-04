@@ -79,12 +79,16 @@ export class CLIAdapter {
      */
     public banner_render(): string {
         const vString = `V${VERSION}`;
+        const innerWidth = 60;
+        const label = `  CALYPSO CORE ${vString}`;
+        const padding = ' '.repeat(innerWidth - label.length);
+
         return `
-${COLORS.cyan}╔══════════════════════════════════════════════════════════════╗
-║  ${COLORS.bright}CALYPSO CORE ${vString}${COLORS.reset}${COLORS.cyan}${' '.repeat(45 - vString.length)}║
+${COLORS.cyan}╔${'═'.repeat(innerWidth)}╗
+║  ${COLORS.bright}CALYPSO CORE ${vString}${COLORS.reset}${COLORS.cyan}${' '.repeat(innerWidth - (`  CALYPSO CORE ${vString}`).length)}║
 ║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
 ║  Outcomes                                                    ║
-╚══════════════════════════════════════════════════════════════╝${COLORS.reset}
+╚${'═'.repeat(innerWidth)}╝${COLORS.reset}
 `;
     }
 
