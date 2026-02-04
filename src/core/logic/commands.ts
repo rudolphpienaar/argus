@@ -12,9 +12,10 @@ import { globals } from '../state/store.js';
 import { DATASETS } from '../data/datasets.js';
 import type { Dataset } from '../models/types.js';
 import { stage_advanceTo } from './navigation.js';
-import { catalog_search, dataset_toggle, lcarslm_simulate } from '../stages/search.js';
+import { catalog_search, lcarslm_simulate } from '../stages/search.js';
 import { filesystem_build, costs_calculate } from '../stages/gather.js';
 import { ai_query } from '../../lcarslm/AIService.js';
+import { project_gather } from './ProjectManager.js';
 
 /**
  * Handles workflow commands typed into the terminal.
@@ -69,7 +70,10 @@ function workflow_dispatch(cmd: string, args: string[]): boolean {
         const targetId: string = args[0];
         const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean => ds.id === targetId || ds.name.toLowerCase().includes(targetId.toLowerCase()));
         if (dataset) {
-            dataset_toggle(dataset.id);
+            // Use Intent Layer to ensure VFS mount and Draft creation
+            const project = project_gather(dataset);
+            t.println(`● ADDED DATASET: [${dataset.id}]`);
+            t.println(`○ MOUNTED TO PROJECT: [${project.name}]`);
         } else {
             t.println(`<span class="error">>> ERROR: DATASET "${targetId}" NOT FOUND.</span>`);
         }
