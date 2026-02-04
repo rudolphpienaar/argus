@@ -23,7 +23,7 @@ import { overlaySlots_clear } from '../logic/OverlayUtils.js';
 import { resizeHandle_attach } from '../../ui/interactions/ResizeHandle.js';
 import { files_prompt, files_ingest } from '../logic/FileUploader.js';
 import { projectContext_get } from '../logic/ProjectContext.js';
-import { project_gather } from '../logic/ProjectManager.js';
+import { project_gather, project_rename } from '../logic/ProjectManager.js';
 import { SYSTEM_KNOWLEDGE } from '../data/knowledge.js';
 
 // ============================================================================
@@ -820,69 +820,17 @@ function project_rename_interact(project: Project): void {
     }
 
     project_rename(project, newName);
-}
-
-/**
- * Performs the actual rename operation: moves VFS directory, 
- * updates model, syncs shell context, and refreshes UI.
- * 
- * @param project - The project to rename.
- * @param newName - The new name (sanitized).
- */
-export function project_rename(project: Project, newName: string): void {
-    const oldName = project.name;
-    const username = globals.shell?.env_get('USER') || 'user';
-    const oldPath = `/home/${username}/projects/${oldName}`;
-    const newPath = `/home/${username}/projects/${newName}`;
-
-    try {
-        // 1. Move VFS directory
-        if (globals.vcs.node_stat(oldPath)) {
-            globals.vcs.node_move(oldPath, newPath);
-        } else {
-            globals.vcs.dir_create(newPath);
-            globals.vcs.dir_create(`${newPath}/src`);
-            globals.vcs.dir_create(`${newPath}/input`);
-            globals.vcs.dir_create(`${newPath}/output`);
-        }
-
-        // 2. Update Project Model
-        project.name = newName;
-
-        // 3. Update Shell Context if active
-        const shellProject = globals.shell?.env_get('PROJECT');
-        if (shellProject === oldName) {
-            globals.shell?.env_set('PROJECT', newName);
-            const currentCwd = globals.vcs.cwd_get();
-            if (currentCwd.startsWith(oldPath)) {
-                const newCwd = currentCwd.replace(oldPath, newPath);
-                globals.shell?.command_execute(`cd ${newCwd}`);
-            }
-        }
-
-        // 4. UI Refresh
-        projectStrip_render();
-        
-        const nameEl: HTMLElement | null = document.getElementById('detail-name');
-        if (nameEl) nameEl.textContent = newName.toUpperCase();
-        
-        const overlay = document.getElementById('asset-detail-overlay');
-        const lcarsFrame = document.getElementById('detail-lcars-frame');
-        if (overlay && lcarsFrame && !overlay.classList.contains('hidden')) {
-            projectDetail_populate(project, project.id, overlay, lcarsFrame);
-        }
-
-        if (globals.terminal) {
-            globals.terminal.println(`● PROJECT RENAMED: [${oldName}] -> [${newName}]`);
-            globals.terminal.println(`○ VFS PATH MOVED TO ${newPath}`);
-            globals.terminal.prompt_sync();
-        }
-
-    } catch (e: unknown) {
-        console.error('Rename failed', e);
-        if (typeof alert === 'function') {
-            alert(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
-        }
+    
+    // UI Refresh (Specific to Search Stage)
+    projectStrip_render();
+    
+    const nameEl: HTMLElement | null = document.getElementById('detail-name');
+    if (nameEl) nameEl.textContent = newName.toUpperCase();
+    
+    const overlay = document.getElementById('asset-detail-overlay');
+    const lcarsFrame = document.getElementById('detail-lcars-frame');
+    if (overlay && lcarsFrame && !overlay.classList.contains('hidden')) {
+        projectDetail_populate(project, project.id, overlay, lcarsFrame);
     }
 }
 

@@ -27,7 +27,8 @@ import type {
 } from './types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
-import { project_gather } from '../core/logic/ProjectManager.js';
+import { MOCK_PROJECTS } from '../core/data/projects.js';
+import { project_gather, project_rename } from '../core/logic/ProjectManager.js';
 import { VERSION } from '../generated/version.js';
 
 /**
@@ -594,9 +595,16 @@ WORKFLOW COMMANDS:
         const renameMatch: RegExpMatchArray | null = response.answer.match(/\[ACTION: RENAME (.*?)\]/);
         if (renameMatch) {
             const newName: string = renameMatch[1].trim();
-            const activeProject = this.storeActions.project_getActive();
-            if (activeProject) {
-                actions.push({ type: 'project_rename', id: activeProject.id, newName });
+            const activeMeta = this.storeActions.project_getActive();
+            
+            if (activeMeta) {
+                // Find full project object to pass to logic
+                const project = MOCK_PROJECTS.find(p => p.id === activeMeta.id);
+                if (project) {
+                    // CRITICAL: Execute side effect for Headless VFS
+                    project_rename(project, newName);
+                }
+                actions.push({ type: 'project_rename', id: activeMeta.id, newName });
             }
         }
 

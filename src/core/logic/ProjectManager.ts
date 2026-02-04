@@ -137,3 +137,59 @@ export function project_gather(
 
     return project;
 }
+
+/**
+ * Renames a project by moving its VFS directory and updating the model.
+ * Syncs the shell context if the active project is renamed.
+ * 
+ * @param project - The project to rename.
+ * @param newName - The new name (sanitized).
+ */
+export function project_rename(project: Project, newName: string): void {
+    const oldName = project.name;
+    const username = globals.shell?.env_get('USER') || 'user';
+    const oldPath = `/home/${username}/projects/${oldName}`;
+    const newPath = `/home/${username}/projects/${newName}`;
+
+    try {
+        // 1. Move VFS directory
+        if (globals.vcs.node_stat(oldPath)) {
+            globals.vcs.node_move(oldPath, newPath);
+        } else {
+            globals.vcs.dir_create(newPath);
+            try { globals.vcs.dir_create(`${newPath}/src`); } catch {}
+            try { globals.vcs.dir_create(`${newPath}/input`); } catch {}
+            try { globals.vcs.dir_create(`${newPath}/output`); } catch {}
+        }
+
+        // 2. Update Project Model
+        project.name = newName;
+
+        // 3. Update Shell Context if active
+        const shellProject = globals.shell?.env_get('PROJECT');
+        if (shellProject === oldName) {
+            globals.shell?.env_set('PROJECT', newName);
+            const currentCwd = globals.vcs.cwd_get();
+            if (currentCwd.startsWith(oldPath)) {
+                const newCwd = currentCwd.replace(oldPath, newPath);
+                globals.shell?.command_execute(`cd ${newCwd}`);
+            }
+        }
+
+        if (globals.terminal) {
+            globals.terminal.println(`● PROJECT RENAMED: [${oldName}] -> [${newName}]`);
+            globals.terminal.println(`○ VFS PATH MOVED TO ${newPath}`);
+            if (globals.shell) {
+                // Force prompt update in case CWD changed
+                // (Though command_execute(cd) handles it, prompt_sync forces redraw)
+                // In headless, prompt is rendered by CLIAdapter automatically.
+            }
+        }
+
+    } catch (e: unknown) {
+        console.error('Rename failed', e);
+        if (globals.terminal) {
+            globals.terminal.println(`<span class="error">>> ERROR: RENAME FAILED. ${e instanceof Error ? e.message : String(e)}</span>`);
+        }
+    }
+}
