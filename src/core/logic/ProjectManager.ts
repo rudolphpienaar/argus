@@ -117,22 +117,38 @@ export function project_gather(
     // 4. Mount to VFS
     const paths = projectContext_get(project);
     
-    // Ensure input dir exists (lazy creation for draft mode)
+    // Ensure parent dir exists
     try { 
-        if (!globals.vcs.node_stat(paths.input)) {
-            globals.vcs.dir_create(paths.input); 
+        if (!globals.vcs.node_stat(paths.root)) {
+            globals.vcs.dir_create(paths.root); 
         }
-    } catch { /* ignore if already exists */ }
+    } catch { /* ignore */ }
 
-    // Mount the gathered subtree
-    const mountTree = subtree || cohortTree_build([dataset]);
-    const dsDir = dataset.name.replace(/\s+/g, '_');
-    
-    try {
-        globals.vcs.tree_unmount(`${paths.input}/${dsDir}`);
-        globals.vcs.tree_mount(`${paths.input}/${dsDir}`, mountTree);
-    } catch (e) {
-        console.error('VFS Mount failed:', e);
+    if (subtree) {
+        // Partial gather: Mount specific subtree at separate path to avoid overwriting unified tree
+        // This results in input/Dataset_Name/training/Dataset_Name/... which is redundant but safe for partials
+        const dsDir = dataset.name.replace(/\s+/g, '_');
+        try {
+            // Ensure input dir exists
+            if (!globals.vcs.node_stat(paths.input)) {
+                globals.vcs.dir_create(paths.input);
+            }
+            globals.vcs.tree_unmount(`${paths.input}/${dsDir}`);
+            globals.vcs.tree_mount(`${paths.input}/${dsDir}`, subtree);
+        } catch (e) {
+            console.error('VFS Partial Mount failed:', e);
+        }
+    } else {
+        // Full gather: Rebuild unified cohort tree for ALL project datasets
+        // This creates standard structure: input/training/DS1, input/training/DS2
+        const unifiedTree = cohortTree_build(project.datasets);
+        try {
+            // Mount at input/ (replacing 'data' root name with 'input')
+            globals.vcs.tree_unmount(paths.input);
+            globals.vcs.tree_mount(paths.input, unifiedTree);
+        } catch (e) {
+            console.error('VFS Unified Mount failed:', e);
+        }
     }
 
     return project;
