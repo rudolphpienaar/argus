@@ -22,6 +22,8 @@ export class LCARSEngine {
     private client: OpenAIClient | GeminiClient | null;
     private systemPrompt: string;
     private isSimulated: boolean = false;
+    private history: ChatMessage[] = [];
+    private readonly MAX_HISTORY = 10;
 
     /**
      * Creates a new LCARSEngine instance.
@@ -129,16 +131,27 @@ The context provided to you contains a JSON list of available datasets. Use this
             ? `USER CURRENT SELECTION: ${selectedIds.join(', ')}`
             : "USER CURRENT SELECTION: NONE";
 
+        // Add user message to history
+        this.history.push({ role: 'user', content: userText });
+        
+        // Prune history if too long (keep system prompts + last N)
+        if (this.history.length > this.MAX_HISTORY) {
+            this.history = this.history.slice(this.history.length - this.MAX_HISTORY);
+        }
+
         const messages: ChatMessage[] = [
             { role: 'system', content: this.systemPrompt },
             { role: 'system', content: `AVAILABLE DATASETS: ${context}` },
             { role: 'system', content: `EXISTING USER PROJECTS: ${projectContext}` },
             { role: 'system', content: selectedContext },
-            { role: 'user', content: userText }
+            ...this.history
         ];
 
         // 3. Generation
         const answer: string = await this.client!.chat(messages);
+
+        // Add assistant response to history
+        this.history.push({ role: 'assistant', content: answer });
 
         return {
             answer,
