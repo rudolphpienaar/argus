@@ -18,6 +18,7 @@
 import * as readline from 'readline';
 import http from 'http';
 import type { CalypsoResponse } from '../lcarslm/types.js';
+import { cliAdapter } from '../lcarslm/adapters/CLIAdapter.js';
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 
@@ -202,15 +203,9 @@ function message_style(message: string): string {
  * Print the banner.
  */
 function banner_print(): void {
-    console.log(`
-${COLORS.cyan}╔══════════════════════════════════════════════════════════════╗
-║  ${COLORS.yellow}${COLORS.bright}CALYPSO CORE V5.0.0${COLORS.reset}${COLORS.cyan}                                         ║
-║  ${COLORS.white}Cognitive Algorithms & Logic Yielding Predictive Scientific${COLORS.cyan} ║
-║  ${COLORS.white}Outcomes${COLORS.cyan}                                                    ║
-╚══════════════════════════════════════════════════════════════╝${COLORS.reset}
-${COLORS.dim}Connected to ${HOST}:${PORT}${COLORS.reset}
-${COLORS.dim}Type "/help" for commands, "quit" to exit.${COLORS.reset}
-`);
+    console.log(cliAdapter.banner_render());
+    console.log(`${COLORS.dim}Connected to ${HOST}:${PORT}${COLORS.reset}`);
+    console.log(`${COLORS.dim}Type "/help" for commands, "quit" to exit.${COLORS.reset}\n`);
 }
 
 // ─── Tab Completion ─────────────────────────────────────────────────────────
