@@ -28,7 +28,7 @@ import type {
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { project_gather } from '../core/logic/ProjectManager.js';
-import { VERSION, GIT_HASH } from '../generated/version.js';
+import { VERSION } from '../generated/version.js';
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -178,7 +178,7 @@ export class CalypsoCore {
      * Get version information.
      */
     public version_get(): string {
-        return `CALYPSO CORE V${VERSION}-${GIT_HASH}`;
+        return `CALYPSO CORE V${VERSION}`;
     }
 
     // ─── Special Commands (/command) ───────────────────────────────────────

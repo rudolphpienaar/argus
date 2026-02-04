@@ -26,7 +26,7 @@ import { homeDir_scaffold } from '../vfs/providers/ProjectProvider.js';
 import type { CalypsoResponse } from '../lcarslm/types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
-import { VERSION, GIT_HASH } from '../generated/version.js';
+import { VERSION } from '../generated/version.js';
 
 // ─── Environment Loading ───────────────────────────────────────────────────
 
@@ -346,7 +346,7 @@ async function request_handle(req: http.IncomingMessage, res: http.ServerRespons
 const server = http.createServer(request_handle);
 
 server.listen(PORT, HOST, () => {
-    const vString = `V${VERSION}-${GIT_HASH}`;
+    const vString = `V${VERSION}`;
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
 ║  CALYPSO SERVER ${vString}${' '.repeat(43 - vString.length)}║

@@ -8,7 +8,7 @@
  */
 
 import type { CalypsoResponse, CalypsoAction } from '../types.js';
-import { VERSION, GIT_HASH } from '../../generated/version.js';
+import { VERSION } from '../../generated/version.js';
 
 /**
  * ANSI color codes for terminal output.
@@ -78,7 +78,7 @@ export class CLIAdapter {
      * Render a welcome banner.
      */
     public banner_render(): string {
-        const vString = `V${VERSION}-${GIT_HASH}`;
+        const vString = `V${VERSION}`;
         return `
 ${COLORS.cyan}╔══════════════════════════════════════════════════════════════╗
 ║  ${COLORS.bright}CALYPSO CORE ${vString}${COLORS.reset}${COLORS.cyan}${' '.repeat(45 - vString.length)}║
