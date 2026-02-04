@@ -130,16 +130,17 @@ class HeadlessStore implements CalypsoStoreActions {
  * Initialize CalypsoCore with headless dependencies.
  */
 function calypso_initialize(): CalypsoCore {
-    const vfs = new VirtualFileSystem();
+    const username = 'developer';
+    const vfs = new VirtualFileSystem(username);
     const store = new HeadlessStore();
-    const shell = new Shell(vfs);
+    const shell = new Shell(vfs, username);
 
     // Scaffold home directory
-    homeDir_scaffold(vfs);
+    homeDir_scaffold(vfs, username);
 
     // Initialize shell
-    shell.env_set('USER', 'developer');
-    shell.env_set('HOME', '/home/developer');
+    shell.env_set('USER', username);
+    shell.env_set('HOME', `/home/${username}`);
     shell.env_set('STAGE', 'search');
     shell.env_set('PERSONA', 'fedml');
 
