@@ -10,7 +10,7 @@ import { LogGenerator } from '../lcars-framework/telemetry/generators/LogGenerat
 import { ListRenderer } from '../lcars-framework/telemetry/renderers/ListRenderer.js';
 import { LogRenderer } from '../lcars-framework/telemetry/renderers/LogRenderer.js';
 import { HTMLRenderer } from '../lcars-framework/telemetry/renderers/HTMLRenderer.js';
-import { StationTelemetryGenerator } from '../lcars-framework/telemetry/generators/StationTelemetryGenerator.js';
+import { StationTelemetryGenerator, StationContentProvider } from '../lcars-framework/telemetry/generators/StationTelemetryGenerator.js';
 import { state } from '../core/state/store.js';
 import type { AppState } from '../core/models/types.js';
 
@@ -25,8 +25,8 @@ export function telemetry_setup(): void {
         generator: new ProcessGenerator(),
         renderer: new ListRenderer<ProcessInfo>(
             '  PID USER     %CPU %MEM COMMAND',
-            (p) => {
-                const cpuClass = parseFloat(p.cpu) > 80 ? 'warn' : 'highlight';
+            (p: ProcessInfo): string => {
+                const cpuClass: string = parseFloat(p.cpu) > 80 ? 'warn' : 'highlight';
                 return `<span class="${cpuClass}">${p.pid.toString().padEnd(5)} ${p.usr.padEnd(8)} ${p.cpu.padStart(4)} ${p.mem.padStart(4)} ${p.cmd}</span>`;
             }
         )
@@ -39,7 +39,7 @@ export function telemetry_setup(): void {
         generator: new NetworkGenerator(),
         renderer: new ListRenderer<NetworkIface>(
             'IFACE    RX (GB)   TX (GB)   STATUS',
-            (n) => `${n.name.padEnd(8)} ${n.rx.padStart(7)}   ${n.tx.padStart(7)}   <span class="${n.statusClass || 'highlight'}">${n.status}</span>`
+            (n: NetworkIface): string => `${n.name.padEnd(8)} ${n.rx.padStart(7)}   ${n.tx.padStart(7)}   <span class="${n.statusClass || 'highlight'}">${n.status}</span>`
         )
     });
 
@@ -71,7 +71,7 @@ export function telemetry_setup(): void {
  * Returns the content provider function for a specific stage.
  * Note: In a fully modular system, these would be separate classes.
  */
-function stationProvider_get(stage: string) {
+function stationProvider_get(stage: string): StationContentProvider {
     switch (stage) {
         case 'search':
             return (isActive: boolean, t: number, timeStr: string) => {

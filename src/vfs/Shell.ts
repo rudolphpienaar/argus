@@ -299,6 +299,55 @@ export class Shell {
             }
         });
 
+        this.builtin_add('tree', 'Display directory tree', (args: string[]): ShellResult => {
+            const target: string = args[0] || '.';
+            try {
+                const resolved: string = this.vfs.path_resolve(target);
+                const root: FileNode | null = this.vfs.node_stat(resolved);
+                if (!root) {
+                    return result_err(`tree: '${target}': No such file or directory`, 1);
+                }
+                if (root.type !== 'folder') {
+                    return result_ok(root.name);
+                }
+
+                const lines: string[] = [];
+                let dirCount: number = 0;
+                let fileCount: number = 0;
+
+                const subtree_render = (node: FileNode, prefix: string): void => {
+                    const children: FileNode[] = (node.children || []).slice().sort(
+                        (a: FileNode, b: FileNode): number => a.name.localeCompare(b.name)
+                    );
+                    for (let i: number = 0; i < children.length; i++) {
+                        const child: FileNode = children[i];
+                        const isLast: boolean = i === children.length - 1;
+                        const connector: string = isLast ? '└── ' : '├── ';
+                        const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
+                        lines.push(`${prefix}${connector}${name}`);
+
+                        if (child.type === 'folder') {
+                            dirCount++;
+                            const nextPrefix: string = prefix + (isLast ? '    ' : '│   ');
+                            subtree_render(child, nextPrefix);
+                        } else {
+                            fileCount++;
+                        }
+                    }
+                };
+
+                lines.push(`${root.name}/`);
+                dirCount++; // count root
+                subtree_render(root, '');
+                lines.push('');
+                lines.push(`${dirCount} director${dirCount === 1 ? 'y' : 'ies'}, ${fileCount} file${fileCount === 1 ? '' : 's'}`);
+
+                return result_ok(lines.join('\n'));
+            } catch (e: unknown) {
+                return result_err(e instanceof Error ? e.message : String(e), 1);
+            }
+        });
+
         this.builtin_add('cat', 'Print file contents', (args: string[]): ShellResult => {
             if (args.length === 0) {
                 return result_err('cat: missing operand', 1);

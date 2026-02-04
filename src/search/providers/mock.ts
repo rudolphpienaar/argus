@@ -18,14 +18,14 @@ export class MockProvider implements SearchProvider {
 
     async search(query: string, context: string): Promise<SearchResponse> {
         const startTime = performance.now();
-        const terms = query.toLowerCase().split(' ').filter(t => t.length > 2);
+        const terms: string[] = query.toLowerCase().split(' ').filter((t: string): boolean => t.length > 2);
         const results: SearchResult[] = [];
 
         // Parse the context string back into something checking-able (hacky but self-contained)
         // In a real app, we'd just pass the raw dataset objects, but we're sticking to the "Context String" contract
         const entries = context.split('--------------------------------------------------');
 
-        entries.forEach(entry => {
+        entries.forEach((entry: string): void => {
             const idMatch = entry.match(/ID: (.*)\n/);
             if (!idMatch) return;
             
@@ -33,7 +33,7 @@ export class MockProvider implements SearchProvider {
             const lowerEntry = entry.toLowerCase();
             let matches = 0;
 
-            terms.forEach(term => {
+            terms.forEach((term: string): void => {
                 if (lowerEntry.includes(term)) matches++;
             });
 
@@ -41,7 +41,7 @@ export class MockProvider implements SearchProvider {
                 results.push({
                     datasetId: id,
                     confidence: matches / terms.length,
-                    reason: `Matched terms: ${terms.filter(t => lowerEntry.includes(t)).join(', ')}`
+                    reason: `Matched terms: ${terms.filter((t: string): boolean => lowerEntry.includes(t)).join(', ')}`
                 });
             }
         });

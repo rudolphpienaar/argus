@@ -344,7 +344,7 @@ const FDA_RST_TOOLS = [
     }
 ];
 
-FDA_RST_TOOLS.forEach((tool) => {
+FDA_RST_TOOLS.forEach((tool: { id: string; name: string; description: string; area: string }): void => {
     assets.push({
         id: tool.id,
         name: tool.name,
@@ -371,9 +371,9 @@ FDA_RST_TOOLS.forEach((tool) => {
 });
 
 // Populate related assets (3 random assets of same type for each)
-assets.forEach(asset => {
-    const sameType = assets.filter(a => a.type === asset.type && a.id !== asset.id);
-    const relatedIds = array_getRandomItems(sameType, 3).map(a => a.id);
+assets.forEach((asset: MarketplaceAsset): void => {
+    const sameType: MarketplaceAsset[] = assets.filter((a: MarketplaceAsset): boolean => a.type === asset.type && a.id !== asset.id);
+    const relatedIds: string[] = array_getRandomItems(sameType, 3).map((a: MarketplaceAsset): string => a.id);
     asset.related = relatedIds;
 });
 

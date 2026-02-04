@@ -47,7 +47,7 @@ export function project_initialize(project: Project): void {
         if (!globals.vcs.node_stat(paths.root)) {
             globals.vcs.dir_create(paths.root);
         }
-    } catch (e) {
+    } catch (e: unknown) {
         console.error('Failed to initialize project VFS:', e);
     }
 }
@@ -98,14 +98,14 @@ export function project_gather(
                 globals.shell.command_execute(`cd ${paths.root}`);
                 globals.shell.env_set('PROJECT', project.name);
                 if (globals.terminal) globals.terminal.prompt_sync();
-            } catch (e) {
+            } catch (e: unknown) {
                 console.error('Shell sync failed:', e);
             }
         }
     }
 
     // 2. Add to project model
-    const alreadyLinked = project.datasets.some(ds => ds.id === dataset.id);
+    const alreadyLinked: boolean = project.datasets.some((ds: Dataset): boolean => ds.id === dataset.id);
     if (!alreadyLinked) {
         project.datasets.push(dataset);
     }
@@ -135,7 +135,7 @@ export function project_gather(
             }
             globals.vcs.tree_unmount(`${paths.input}/${dsDir}`);
             globals.vcs.tree_mount(`${paths.input}/${dsDir}`, subtree);
-        } catch (e) {
+        } catch (e: unknown) {
             console.error('VFS Partial Mount failed:', e);
         }
     } else {
@@ -146,7 +146,7 @@ export function project_gather(
             // Mount at input/ (replacing 'data' root name with 'input')
             globals.vcs.tree_unmount(paths.input);
             globals.vcs.tree_mount(paths.input, unifiedTree);
-        } catch (e) {
+        } catch (e: unknown) {
             console.error('VFS Unified Mount failed:', e);
         }
     }

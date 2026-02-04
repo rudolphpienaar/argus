@@ -40,8 +40,8 @@ function env_load(): void {
     if (fs.existsSync(envPath)) {
         console.log('Loading configuration from .env');
         const content = fs.readFileSync(envPath, 'utf-8');
-        content.split('\n').forEach(line => {
-            const trimmed = line.trim();
+        content.split('\n').forEach((line: string): void => {
+            const trimmed: string = line.trim();
             if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
                 const [key, ...valParts] = trimmed.split('=');
                 const val = valParts.join('=').trim().replace(/^["']|["']$/g, ''); // strip quotes
@@ -110,9 +110,9 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 
 /**
  * Initialize CalypsoCore with headless dependencies.
+ * @param username - The username for VFS scaffolding (default: 'developer')
  */
-function calypso_initialize(): CalypsoCore {
-    const username = 'developer';
+function calypso_initialize(username: string = 'developer'): CalypsoCore {
     
     // Initialize the global singletons
     // This is critical because ProjectManager imports 'globals' directly!
@@ -132,6 +132,7 @@ function calypso_initialize(): CalypsoCore {
     shell.env_set('HOME', `/home/${username}`);
     shell.env_set('STAGE', 'search');
     shell.env_set('PERSONA', 'fedml');
+    shell.env_set('PS1', '$USER@CALYPSO:[$PWD]> ');
 
     // Check for API keys - enable real LLM if available
     let openaiKey = process.env.OPENAI_API_KEY;
@@ -180,7 +181,7 @@ async function body_parse(req: http.IncomingMessage): Promise<Record<string, unk
         req.on('end', () => {
             try {
                 resolve(body ? JSON.parse(body) : {});
-            } catch (e) {
+            } catch (e: unknown) {
                 reject(new Error('Invalid JSON'));
             }
         });
@@ -302,6 +303,28 @@ async function request_handle(req: http.IncomingMessage, res: http.ServerRespons
             return;
         }
 
+        // GET /calypso/prompt - Get current prompt
+        if (path === '/calypso/prompt' && method === 'GET') {
+            json_send(res, { prompt: calypso.prompt_get() });
+            return;
+        }
+
+        // POST /calypso/login - Login with username (reinitializes system)
+        if (path === '/calypso/login' && method === 'POST') {
+            try {
+                const body = await body_parse(req);
+                const username: string = (body.username as string) || 'developer';
+                // Sanitize username (alphanumeric, underscore, hyphen only)
+                const sanitized: string = username.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'developer';
+                calypso = calypso_initialize(sanitized);
+                console.log(`Login: User "${sanitized}" authenticated`);
+                json_send(res, { message: 'Login successful', username: sanitized });
+            } catch (e: unknown) {
+                json_send(res, { error: 'Login failed' }, 400);
+            }
+            return;
+        }
+
         // GET / - Health check
         if (path === '/' && method === 'GET') {
             json_send(res, {
@@ -310,13 +333,15 @@ async function request_handle(req: http.IncomingMessage, res: http.ServerRespons
                 status: 'running',
                 endpoints: [
                     'POST /calypso/command',
+                    'POST /calypso/login',
                     'GET  /calypso/vfs/snapshot',
                     'GET  /calypso/vfs/exists',
                     'GET  /calypso/vfs/read',
                     'GET  /calypso/store/state',
                     'GET  /calypso/store/get',
                     'POST /calypso/reset',
-                    'GET  /calypso/version'
+                    'GET  /calypso/version',
+                    'GET  /calypso/prompt'
                 ]
             });
             return;
@@ -325,7 +350,7 @@ async function request_handle(req: http.IncomingMessage, res: http.ServerRespons
         // 404 for unknown routes
         json_send(res, { error: 'Not found', path }, 404);
 
-    } catch (e) {
+    } catch (e: unknown) {
         const error = e instanceof Error ? e.message : 'Unknown error';
         json_send(res, { error }, 500);
     }
@@ -354,10 +379,12 @@ Listening on http://${HOST}:${PORT}
 
 Endpoints:
   POST /calypso/command      - Execute a command
+  POST /calypso/login        - Login with username
   GET  /calypso/vfs/snapshot - Get VFS tree snapshot
   GET  /calypso/vfs/exists   - Check if path exists
   GET  /calypso/vfs/read     - Read file content
   GET  /calypso/store/state  - Get store state
+  GET  /calypso/prompt       - Get current CLI prompt
   POST /calypso/reset        - Reset to clean state
 
 Press Ctrl+C to stop.

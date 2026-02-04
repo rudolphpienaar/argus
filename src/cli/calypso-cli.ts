@@ -17,7 +17,7 @@
 
 import * as readline from 'readline';
 import http from 'http';
-import type { CalypsoResponse } from '../lcarslm/types.js';
+import type { CalypsoResponse, CalypsoAction } from '../lcarslm/types.js';
 import { cliAdapter } from '../lcarslm/adapters/CLIAdapter.js';
 
 // ─── Configuration ─────────────────────────────────────────────────────────
@@ -31,7 +31,9 @@ const BASE_URL: string = `http://${HOST}:${PORT}`;
 // Dark background optimized colors (bright variants)
 const COLORS = {
     reset: '\x1b[0m',
-    bright: '\x1b[1m',
+    bright: '\x1b[1m',         // Bold
+    italic: '\x1b[3m',         // Italic
+    underline: '\x1b[4m',      // Underline
     dim: '\x1b[90m',           // Bright black (gray)
     cyan: '\x1b[96m',          // Bright cyan
     yellow: '\x1b[93m',        // Bright yellow
@@ -39,8 +41,36 @@ const COLORS = {
     green: '\x1b[92m',         // Bright green
     blue: '\x1b[94m',          // Bright blue
     magenta: '\x1b[95m',       // Bright magenta
-    white: '\x1b[97m'          // Bright white
+    white: '\x1b[97m',         // Bright white
+    hideCursor: '\x1b[?25l',
+    showCursor: '\x1b[?25h'
 };
+
+// ─── Spinner ────────────────────────────────────────────────────────────────
+
+const SPINNER_FRAMES: readonly string[] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/**
+ * Starts a thinking spinner on the current line.
+ * Returns a stop function that clears the spinner.
+ */
+function spinner_start(label: string = 'CALYPSO thinking'): () => void {
+    let frameIdx: number = 0;
+    process.stdout.write(COLORS.hideCursor);
+
+    const timer: NodeJS.Timeout = setInterval((): void => {
+        const frame: string = SPINNER_FRAMES[frameIdx % SPINNER_FRAMES.length];
+        process.stdout.write(`\r${COLORS.cyan}${frame}${COLORS.reset} ${COLORS.dim}${label}...${COLORS.reset}  `);
+        frameIdx++;
+    }, 80);
+
+    return (): void => {
+        clearInterval(timer);
+        // Clear the spinner line and reset cursor
+        process.stdout.write(`\r${' '.repeat(label.length + 10)}\r`);
+        process.stdout.write(COLORS.showCursor);
+    };
+}
 
 // ─── HTTP Client ───────────────────────────────────────────────────────────
 
@@ -69,7 +99,7 @@ async function command_send(command: string): Promise<CalypsoResponse> {
                 try {
                     const response = JSON.parse(body) as CalypsoResponse;
                     resolve(response);
-                } catch (e) {
+                } catch (e: unknown) {
                     reject(new Error(`Invalid response: ${body}`));
                 }
             });
@@ -85,6 +115,65 @@ async function command_send(command: string): Promise<CalypsoResponse> {
 }
 
 /**
+ * Fetch current prompt from server and apply colors.
+ */
+async function prompt_fetch(): Promise<string> {
+    return new Promise((resolve) => {
+        const req = http.request({
+            hostname: HOST,
+            port: PORT,
+            path: '/calypso/prompt',
+            method: 'GET'
+        }, (res: http.IncomingMessage): void => {
+            let body = '';
+            res.on('data', (chunk: Buffer | string): void => { body += chunk; });
+            res.on('end', (): void => {
+                try {
+                    const data = JSON.parse(body) as { prompt: string };
+                    // Parse prompt parts: user@CALYPSO:[path]>
+                    const match: RegExpMatchArray | null = data.prompt.match(/^([^@]+)@([^:]+):\[([^\]]+)\]>\s*$/);
+                    if (match) {
+                        const [, user, host, path] = match;
+                        resolve(`${COLORS.green}${user}${COLORS.reset}@${COLORS.cyan}${host}${COLORS.reset}:[${COLORS.magenta}${path}${COLORS.reset}]> `);
+                    } else {
+                        // Fallback: return raw prompt with basic styling
+                        resolve(`${COLORS.cyan}${data.prompt}${COLORS.reset}`);
+                    }
+                } catch {
+                    resolve(`${COLORS.yellow}CALYPSO>${COLORS.reset} `);
+                }
+            });
+        });
+        req.on('error', (): void => resolve(`${COLORS.yellow}CALYPSO>${COLORS.reset} `));
+        req.end();
+    });
+}
+
+/**
+ * Send login request to server with username.
+ */
+async function login_send(username: string): Promise<boolean> {
+    return new Promise((resolve) => {
+        const postData = JSON.stringify({ username });
+        const req = http.request({
+            hostname: HOST,
+            port: PORT,
+            path: '/calypso/login',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        }, (res: http.IncomingMessage): void => {
+            resolve(res.statusCode === 200);
+        });
+        req.on('error', (): void => resolve(false));
+        req.write(postData);
+        req.end();
+    });
+}
+
+/**
  * Check if server is running.
  */
 async function server_ping(): Promise<boolean> {
@@ -94,11 +183,11 @@ async function server_ping(): Promise<boolean> {
             port: PORT,
             path: '/calypso/version',
             method: 'GET'
-        }, (res) => {
+        }, (res: http.IncomingMessage): void => {
             resolve(res.statusCode === 200);
         });
 
-        req.on('error', () => resolve(false));
+        req.on('error', (): void => resolve(false));
         req.end();
     });
 }
@@ -120,7 +209,7 @@ function table_render(tableText: string): string {
 
         const cells = line.split('|')
             .slice(1, -1)  // Remove empty first/last from | split
-            .map(cell => cell.trim().replace(/\*\*/g, '')); // Remove bold markers
+            .map((cell: string): string => cell.trim().replace(/\*\*/g, '')); // Remove bold markers
         if (cells.length > 0) {
             rows.push(cells);
         }
@@ -131,21 +220,21 @@ function table_render(tableText: string): string {
     // Calculate column widths
     const colWidths: number[] = [];
     for (const row of rows) {
-        row.forEach((cell, i) => {
+        row.forEach((cell: string, i: number): void => {
             colWidths[i] = Math.max(colWidths[i] || 0, cell.length);
         });
     }
 
     // Build output with box drawing
     const hLine = '─';
-    const topBorder = `┌${colWidths.map(w => hLine.repeat(w + 2)).join('┬')}┐`;
-    const midBorder = `├${colWidths.map(w => hLine.repeat(w + 2)).join('┼')}┤`;
-    const botBorder = `└${colWidths.map(w => hLine.repeat(w + 2)).join('┴')}┘`;
+    const topBorder: string = `┌${colWidths.map((w: number): string => hLine.repeat(w + 2)).join('┬')}┐`;
+    const midBorder: string = `├${colWidths.map((w: number): string => hLine.repeat(w + 2)).join('┼')}┤`;
+    const botBorder: string = `└${colWidths.map((w: number): string => hLine.repeat(w + 2)).join('┴')}┘`;
 
     const output: string[] = [topBorder];
 
-    rows.forEach((row, rowIdx) => {
-        const paddedCells = row.map((cell, i) => ` ${cell.padEnd(colWidths[i])} `);
+    rows.forEach((row: string[], rowIdx: number): void => {
+        const paddedCells: string[] = row.map((cell: string, i: number): string => ` ${cell.padEnd(colWidths[i])} `);
         const rowLine = `│${paddedCells.join('│')}│`;
 
         if (rowIdx === 0) {
@@ -186,6 +275,14 @@ function message_style(message: string): string {
         .replace(/<span class="error">(.*?)<\/span>/g, `${COLORS.red}$1${COLORS.reset}`)
         // Strip any remaining HTML tags
         .replace(/<[^>]+>/g, '')
+        // Markdown bold (**text**) → bright white bold (must precede italic)
+        .replace(/\*\*([^*]+)\*\*/g, `${COLORS.bright}${COLORS.white}$1${COLORS.reset}`)
+        // Markdown italic (*text*) → italic
+        .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, `${COLORS.italic}$1${COLORS.reset}`)
+        // Markdown inline code (`text`) → yellow
+        .replace(/`([^`]+)`/g, `${COLORS.yellow}$1${COLORS.reset}`)
+        // Markdown headers (### text) → bold cyan
+        .replace(/^(#{1,4})\s+(.+)$/gm, `${COLORS.bright}${COLORS.cyan}$2${COLORS.reset}`)
         // Affirmation markers (bright green bullet)
         .replace(/●/g, `${COLORS.green}●${COLORS.reset}`)
         // Data markers (bright cyan circle)
@@ -222,8 +319,8 @@ function dir_list(path: string): Promise<string[]> {
             path: `/calypso/command`,
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
-        }, (res) => {
-            let body = '';
+        }, (res: http.IncomingMessage): void => {
+            let body: string = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => {
                 try {
@@ -264,7 +361,7 @@ async function completer(line: string): Promise<[string[], string]> {
     // Complete commands if first word
     if (words.length === 1 && !line.endsWith(' ')) {
         const allCommands = [...pathCommands, 'search', 'add', 'gather', 'mount', 'federate', 'pwd', 'env', 'whoami', 'help', 'quit'];
-        const matches = allCommands.filter(c => c.startsWith(lastWord));
+        const matches: string[] = allCommands.filter((c: string): boolean => c.startsWith(lastWord));
         return [matches, lastWord];
     }
 
@@ -283,11 +380,11 @@ async function completer(line: string): Promise<[string[], string]> {
             prefix = '';
         }
 
-        const entries = await dir_list(dirPath);
-        const matches = entries
-            .filter(name => name.startsWith(prefix))
-            .map(name => {
-                const base = lastWord.includes('/')
+        const entries: string[] = await dir_list(dirPath);
+        const matches: string[] = entries
+            .filter((name: string): boolean => name.startsWith(prefix))
+            .map((name: string): string => {
+                const base: string = lastWord.includes('/')
                     ? lastWord.substring(0, lastWord.lastIndexOf('/') + 1)
                     : (dirPath === '.' ? '' : dirPath + '/');
                 return base + name;
@@ -298,8 +395,8 @@ async function completer(line: string): Promise<[string[], string]> {
 
     // Complete dataset IDs for add/remove
     if (cmd === 'add' || cmd === 'remove') {
-        const dsIds = ['ds-001', 'ds-002', 'ds-003', 'ds-004', 'ds-005', 'ds-006'];
-        const matches = dsIds.filter(id => id.startsWith(lastWord));
+        const dsIds: string[] = ['ds-001', 'ds-002', 'ds-003', 'ds-004', 'ds-005', 'ds-006'];
+        const matches: string[] = dsIds.filter((id: string): boolean => id.startsWith(lastWord));
         return [matches, lastWord];
     }
 
@@ -307,6 +404,30 @@ async function completer(line: string): Promise<[string[], string]> {
 }
 
 // ─── REPL ──────────────────────────────────────────────────────────────────
+
+/**
+ * Prompt user for login credentials (SSH-style).
+ */
+async function login_prompt(): Promise<string> {
+    return new Promise((resolve) => {
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+
+        console.log(`${COLORS.cyan}╔════════════════════════════════════════════════════════════════╗${COLORS.reset}`);
+        console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.bright}CALYPSO TERMINAL ACCESS${COLORS.reset}                                       ${COLORS.cyan}║${COLORS.reset}`);
+        console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.dim}Secure connection to ARGUS Federation Network${COLORS.reset}                 ${COLORS.cyan}║${COLORS.reset}`);
+        console.log(`${COLORS.cyan}╚════════════════════════════════════════════════════════════════╝${COLORS.reset}`);
+        console.log();
+
+        rl.question(`${COLORS.yellow}login as:${COLORS.reset} `, (answer: string) => {
+            rl.close();
+            const username: string = answer.trim() || 'developer';
+            resolve(username);
+        });
+    });
+}
 
 /**
  * Main REPL loop.
@@ -320,12 +441,42 @@ async function repl_start(): Promise<void> {
         process.exit(1);
     }
 
+    // Login prompt (SSH-style)
+    const username: string = await login_prompt();
+
+    // Send login to server to initialize with username
+    const loginSuccess: boolean = await login_send(username);
+    if (!loginSuccess) {
+        console.error(`${COLORS.red}>> Login failed${COLORS.reset}`);
+        process.exit(1);
+    }
+
+    console.log(`${COLORS.dim}Authenticating ${username}...${COLORS.reset}`);
+    console.log(`${COLORS.green}● Access granted.${COLORS.reset}`);
+    console.log();
+
     banner_print();
+
+    // Fetch personalized greeting from LLM
+    try {
+        const stopGreetSpinner: () => void = spinner_start('CALYPSO initializing');
+        const greetingResponse = await command_send(`/greet ${username}`);
+        stopGreetSpinner();
+        if (greetingResponse.message) {
+            console.log(message_style(greetingResponse.message));
+            console.log();
+        }
+    } catch {
+        // Greeting is optional - continue if it fails
+    }
+
+    // Fetch initial prompt from server
+    let currentPrompt: string = await prompt_fetch();
 
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: `${COLORS.yellow}CALYPSO>${COLORS.reset} `,
+        prompt: currentPrompt,
         completer: (line: string, callback: (err: Error | null, result: [string[], string]) => void) => {
             completer(line).then(result => callback(null, result)).catch(() => callback(null, [[], line]));
         }
@@ -350,16 +501,23 @@ async function repl_start(): Promise<void> {
         }
 
         try {
+            const stopSpinner: () => void = spinner_start();
             const response = await command_send(input);
+            stopSpinner();
+
             const styled = message_style(response.message);
             console.log(styled);
 
             // Show actions in verbose mode (can be toggled with env var)
             if (process.env.CALYPSO_VERBOSE === 'true' && response.actions.length > 0) {
-                const actionTypes = response.actions.map(a => a.type).join(', ');
+                const actionTypes: string = response.actions.map((a: CalypsoAction): string => a.type).join(', ');
                 console.log(`${COLORS.dim}[Actions: ${actionTypes}]${COLORS.reset}`);
             }
-        } catch (e) {
+
+            // Update prompt (pwd may have changed)
+            currentPrompt = await prompt_fetch();
+            rl.setPrompt(currentPrompt);
+        } catch (e: unknown) {
             const error = e instanceof Error ? e.message : 'Unknown error';
             console.log(`${COLORS.red}>> ERROR: ${error}${COLORS.reset}`);
         }

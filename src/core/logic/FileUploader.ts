@@ -93,7 +93,7 @@ export async function files_ingest(files: File[], destination: string): Promise<
             const path = `${destination}/${file.name}`;
             vcs.file_create(path, content);
             count++;
-        } catch (e) {
+        } catch (e: unknown) {
             console.error(`Failed to ingest ${file.name}:`, e);
         }
     }

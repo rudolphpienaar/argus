@@ -11,7 +11,7 @@ export interface TelemetryGenerator<T> {
     /**
      * Produces the next set of data based on a tick cycle.
      */
-    generate(cycle: number, context?: any): T;
+    generate(cycle: number, context?: unknown): T;
 }
 
 /**
@@ -29,7 +29,7 @@ export interface TelemetryRenderer<T> {
  */
 export interface TelemetryRegistryEntry {
     id: string;
-    generator: TelemetryGenerator<any>;
-    renderer: TelemetryRenderer<any>;
+    generator: TelemetryGenerator<unknown>;
+    renderer: TelemetryRenderer<unknown>;
     targetId: string;
 }

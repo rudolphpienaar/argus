@@ -12,8 +12,8 @@ export class ListRenderer<T> implements TelemetryRenderer<T[]> {
     ) {}
 
     render(data: T[], element: HTMLElement): void {
-        let html = `<span class="dim">${this.headerHtml}</span>\n`;
-        data.forEach(item => {
+        let html: string = `<span class="dim">${this.headerHtml}</span>\n`;
+        data.forEach((item: T): void => {
             html += this.itemFormatter(item) + '\n';
         });
         element.innerHTML = html;

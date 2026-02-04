@@ -5,7 +5,7 @@
 
 import { TelemetryGenerator } from '../types.js';
 
-export type StationContentProvider = (isActive: boolean, cycle: number, timeStr: string, context?: any) => string;
+export type StationContentProvider = (isActive: boolean, cycle: number, timeStr: string, context?: unknown) => string;
 
 export class StationTelemetryGenerator implements TelemetryGenerator<string> {
     constructor(
@@ -13,8 +13,9 @@ export class StationTelemetryGenerator implements TelemetryGenerator<string> {
         private isActiveProvider: () => boolean
     ) {}
 
-    generate(cycle: number, context?: any): string {
-        const t = cycle + (context?.offset || 0);
+    generate(cycle: number, context?: unknown): string {
+        const offset: number = (context !== null && typeof context === 'object' && 'offset' in context && typeof (context as { offset?: number }).offset === 'number') ? (context as { offset: number }).offset : 0;
+        const t: number = cycle + offset;
         const timeStr = String(t % 10000).padStart(4, '0');
         const isActive = this.isActiveProvider();
         

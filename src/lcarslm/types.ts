@@ -62,7 +62,7 @@ export type CalypsoAction =
     | { type: 'project_create'; name: string }
     | { type: 'project_open'; id: string }
     | { type: 'project_rename'; id: string; newName: string }
-    | { type: 'stage_advance'; stage: AppState['currentStage'] }
+    | { type: 'stage_advance'; stage: AppState['currentStage']; workflow?: 'fedml' | 'chris' }
     | { type: 'workspace_render'; datasets: Dataset[] }
     | { type: 'overlay_close' }
     | { type: 'federation_start' }

@@ -12,7 +12,7 @@ import { GeminiClient } from './gemini.js';
 import type { ChatMessage, QueryResponse, LCARSSystemConfig } from './types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../core/data/projects.js';
-import type { Dataset } from '../core/models/types.js';
+import type { Dataset, Project } from '../core/models/types.js';
 
 /**
  * Engine for the LCARS Language Model integration.
@@ -51,7 +51,10 @@ Your primary function is to query the medical imaging dataset catalog and manage
 2.  **Intent Identification**:
     *   If the user EXPLICITLY asks to "open", "select", "inspect", or "add" a specific dataset, include [SELECT: ds-ID] at the **END** of your response.
     *   If the user asks to "search", "show", "find", or "list" datasets, include [ACTION: SHOW_DATASETS] and optionally [FILTER: ds-ID, ds-ID] at the **END** of your response. Do NOT use [SELECT] for search queries.
-    *   If the user wants to proceed to the next stage (Gather), include [ACTION: PROCEED] at the **END** of your response.
+    *   If the user wants to proceed to the coding/development stage:
+        - If they specify "fedml", "federated", or "federated learning", include [ACTION: PROCEED fedml] at the **END**.
+        - If they specify "chris", "plugin", or "ChRIS app", include [ACTION: PROCEED chris] at the **END**.
+        - If they do NOT specify a workflow type (just "proceed", "let's code", etc.), ASK them to choose between "Federated Learning Task (fedml)" or "ChRIS Plugin (chris)". Do NOT include [ACTION: PROCEED] until they choose.
     *   If the user asks to rename the current project (or draft), include [ACTION: RENAME new-name] at the **END** of your response. Use a URL-safe name (alphanumeric, underscores, or hyphens).
 3.  **Persona**: Industrial, efficient, but helpful. Use "I" to refer to yourself as Calypso.
 4.  **Knowledge Usage**: Use the provided SYSTEM KNOWLEDGE BASE to answer questions about ARGUS architecture, the SeaGaP workflow, or specific components. Cite the file name if relevant (e.g., "ACCORDING TO seagap-workflow.adoc...").
@@ -109,7 +112,7 @@ The context provided to you contains a JSON list of available datasets. Use this
         }
 
         // 2. Augmentation (Real LLM Path)
-        const context: string = JSON.stringify(relevantDatasets.map(ds => ({
+        const context: string = JSON.stringify(relevantDatasets.map((ds: Dataset): object => ({
             id: ds.id,
             name: ds.name,
             modality: ds.modality,
@@ -120,11 +123,11 @@ The context provided to you contains a JSON list of available datasets. Use this
             provider: ds.provider
         })));
 
-        const projectContext: string = JSON.stringify(MOCK_PROJECTS.map(p => ({
+        const projectContext: string = JSON.stringify(MOCK_PROJECTS.map((p: Project): object => ({
             id: p.id,
             name: p.name,
             description: p.description,
-            datasets: p.datasets.map(d => d.id)
+            datasets: p.datasets.map((d: Dataset): string => d.id)
         })));
 
         const selectedContext: string = selectedIds.length > 0 
@@ -168,7 +171,7 @@ The context provided to you contains a JSON list of available datasets. Use this
     private retrieve(query: string): Dataset[] {
         const q: string = query.toLowerCase();
         // Naive keyword matching for "retrieval"
-        return DATASETS.filter(ds => 
+        return DATASETS.filter((ds: Dataset): boolean =>
             ds.name.toLowerCase().includes(q) ||
             ds.description.toLowerCase().includes(q) ||
             ds.modality.includes(q) ||

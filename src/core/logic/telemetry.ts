@@ -99,10 +99,10 @@ export function telemetry_update(): void {
         ];
         
         // Sort by CPU
-        procs.sort((a, b) => parseFloat(b.cpu) - parseFloat(a.cpu));
+        procs.sort((a: { pid: number; usr: string; cpu: string; mem: string; cmd: string }, b: { pid: number; usr: string; cpu: string; mem: string; cmd: string }): number => parseFloat(b.cpu) - parseFloat(a.cpu));
         
         let html: string = '<span class="dim">  PID USER     %CPU %MEM COMMAND</span>\n';
-        procs.forEach(p => {
+        procs.forEach((p: { pid: number; usr: string; cpu: string; mem: string; cmd: string }): void => {
             const cpuClass: string = parseFloat(p.cpu) > 80 ? 'warn' : 'highlight';
             html += `<span class="${cpuClass}">${p.pid.toString().padEnd(5)} ${p.usr.padEnd(8)} ${p.cpu.padStart(4)} ${p.mem.padStart(4)} ${p.cmd}</span>\n`;
         });

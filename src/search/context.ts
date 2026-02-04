@@ -16,7 +16,7 @@ import type { Dataset } from '../core/models/types.js';
  * @returns A single formatted string describing all datasets.
  */
 export function catalog_vectorize(datasets: Dataset[]): string {
-    return datasets.map(ds => {
+    return datasets.map((ds: Dataset): string => {
         return `
 ID: ${ds.id}
 Name: ${ds.name}

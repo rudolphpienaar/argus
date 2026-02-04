@@ -1,7 +1,7 @@
 = ORACLE: Reflexive Verification Through Agentic Self-Testing
 :author: ATLAS Project Team
-:revdate: 2026-02-03
-:revnumber: 1.0.0
+:revdate: 2026-02-04
+:revnumber: 1.1.0
 :toc: macro
 :toclevels: 3
 :sectnums:
@@ -351,6 +351,18 @@ The Calypso Server (`make calypso`) exposes a REST API for programmatic interact
 | `/calypso/reset`
 | POST
 | Reset VFS and Store to clean state for next test
+
+| `/calypso/login`
+| POST
+| Login with username. Body: `{ "username": "rudolph" }`. Reinitializes VFS with user home.
+
+| `/calypso/prompt`
+| GET
+| Returns current shell prompt string (e.g., `rudolph@CALYPSO:[~/projects]> `)
+
+| `/calypso/version`
+| GET
+| Returns Calypso version string
 |===
 
 === Calypso CLI
@@ -395,17 +407,17 @@ $ make calypso-cli
 
 [source]
 ----
-CALYPSO> search histology datasets
+user@CALYPSO:[~]> search histology datasets
 ● AFFIRMATIVE. SCAN COMPLETE.
 ○ IDENTIFIED 3 DATASET(S) MATCHING QUERY PARAMETERS.
   [ds-012] BCH-HISTO-2024 (Histology/Classification)
   [ds-045] MGH-PATH-SLIDES (Histology/Segmentation)
   [ds-078] BIDMC-TISSUE-BANK (Histology/Detection)
 
-CALYPSO> add ds-012
+user@CALYPSO:[~]> add ds-012
 ● DATASET GATHERED. MOUNTED TO ~/data/cohort/BCH-HISTO-2024/
 
-CALYPSO> tree ~/data/cohort/
+user@CALYPSO:[~]> tree ~/data/cohort/
 ~/data/cohort/
 └── BCH-HISTO-2024/
     ├── images/
@@ -414,7 +426,7 @@ CALYPSO> tree ~/data/cohort/
     │   └── slide_0003.svs
     └── manifest.json
 
-CALYPSO> /snapshot ~/data/cohort/
+user@CALYPSO:[~]> /snapshot ~/data/cohort/
 {
   "name": "cohort",
   "type": "folder",
@@ -428,7 +440,7 @@ CALYPSO> /snapshot ~/data/cohort/
   ]
 }
 
-CALYPSO> quit
+user@CALYPSO:[~]> quit
 Goodbye.
 ----
 
@@ -785,9 +797,9 @@ $ make calypso
 
 # Terminal 2: Run CLI for manual exploration
 $ make calypso-cli
-CALYPSO> search histology
-CALYPSO> add ds-012
-CALYPSO> /snapshot ~/data/cohort/
+user@CALYPSO:[~]> search histology
+user@CALYPSO:[~]> add ds-012
+user@CALYPSO:[~]> /snapshot ~/data/cohort/
 
 # Terminal 3: Run specific test against same server
 $ npm run test:oracle -- tests/oracle/gather-workflow.oracle

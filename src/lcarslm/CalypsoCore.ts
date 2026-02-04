@@ -25,10 +25,11 @@ import type {
     VfsSnapshotNode,
     QueryResponse
 } from './types.js';
-import type { Dataset, AppState } from '../core/models/types.js';
+import type { Dataset, AppState, Project } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../core/data/projects.js';
 import { project_gather, project_rename } from '../core/logic/ProjectManager.js';
+import { projectDir_populate } from '../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../generated/version.js';
 
 /**
@@ -55,6 +56,19 @@ export class CalypsoCore {
     private knowledge: Record<string, string> | undefined;
     private activeProvider: 'openai' | 'gemini' | null = null;
     private activeModel: string | null = null;
+
+    /** Recently mentioned datasets for anaphora resolution ("that", "it", "them") */
+    private lastMentionedDatasets: Dataset[] = [];
+
+    /** Singular anaphoric tokens that refer to the last-mentioned dataset */
+    private static readonly ANAPHORA_SINGULAR: ReadonlySet<string> = new Set([
+        'that', 'it', 'this'
+    ]);
+
+    /** Plural anaphoric tokens that refer to all recently mentioned datasets */
+    private static readonly ANAPHORA_PLURAL: ReadonlySet<string> = new Set([
+        'them', 'those', 'these', 'all', 'both', 'everything'
+    ]);
 
     // Store reference for state access (injected as interface to avoid circular deps)
     private storeActions: CalypsoStoreActions;
@@ -95,7 +109,14 @@ export class CalypsoCore {
 
         // Check for special commands (prefixed with /)
         if (trimmed.startsWith('/')) {
-            return this.special_dispatch(trimmed);
+            const specialResult: CalypsoResponse = this.special_dispatch(trimmed);
+            // Handle async commands (like /greet)
+            if (specialResult.message === '__GREET_ASYNC__') {
+                const parts: string[] = trimmed.slice(1).split(/\s+/);
+                const username: string = parts[1] || this.shell.env_get('USER') || 'user';
+                return this.greeting_generate(username);
+            }
+            return specialResult;
         }
 
         // Try shell builtins first
@@ -180,6 +201,14 @@ export class CalypsoCore {
      */
     public version_get(): string {
         return `CALYPSO CORE V${VERSION}`;
+    }
+
+    /**
+     * Get the current prompt string (for CLI clients).
+     * Format: <user>@CALYPSO:[pwd]>
+     */
+    public prompt_get(): string {
+        return this.shell.prompt_render();
     }
 
     // ─── Special Commands (/command) ───────────────────────────────────────
@@ -314,8 +343,131 @@ WORKFLOW COMMANDS:
                 return this.response_create(help, [], true);
             }
 
+            case 'greet': {
+                // Return null to signal async handling needed
+                return this.response_create('__GREET_ASYNC__', [], true);
+            }
+
             default:
                 return this.response_create(`Unknown special command: /${cmd}`, [], false);
+        }
+    }
+
+    /**
+     * Generate a personalized greeting via the LLM.
+     */
+    private async greeting_generate(username: string): Promise<CalypsoResponse> {
+        // Summarize available datasets for context
+        const datasetSummary: string = DATASETS.map((ds: Dataset): string =>
+            `${ds.id}: ${ds.name} (${ds.modality}, ${ds.imageCount} images, ${ds.provider})`
+        ).join('\n');
+
+        const totalImages: number = DATASETS.reduce((sum: number, ds: Dataset): number => sum + ds.imageCount, 0);
+        const modalities: string[] = [...new Set(DATASETS.map((ds: Dataset): string => ds.modality))];
+        const providers: string[] = [...new Set(DATASETS.map((ds: Dataset): string => ds.provider))];
+
+        if (!this.engine) {
+            return this.response_create(
+                `● Welcome, ${username}. I am CALYPSO, ready to assist with your medical imaging workflows.\n` +
+                `○ The ATLAS catalog currently contains ${DATASETS.length} datasets with ${totalImages.toLocaleString()} total images across ${modalities.length} modalities.`,
+                [], true
+            );
+        }
+
+        const greetingPrompt: string = `You are greeting user "${username}" who just logged into the ARGUS system.
+
+AVAILABLE DATASETS IN ATLAS CATALOG:
+${datasetSummary}
+
+CATALOG SUMMARY:
+- Total datasets: ${DATASETS.length}
+- Total images: ${totalImages.toLocaleString()}
+- Modalities: ${modalities.join(', ')}
+- Providers: ${providers.join(', ')}
+
+Generate a greeting that:
+1. Welcomes ${username} warmly but professionally (1-2 sentences)
+2. Mentions ONE specific interesting fact about the available datasets (e.g., highlight a unique dataset, the variety of modalities, or a notable provider)
+3. Optionally adds ONE brief fact about federated learning or medical AI
+
+Keep total response under 120 words. Use LCARS markers: ● for affirmations/greetings, ○ for data/facts. Do NOT include any [ACTION:] or [SELECT:] tags.`;
+
+        try {
+            const response: QueryResponse = await this.engine.query(greetingPrompt, [], true);
+            // Clean any action markers that might slip through
+            const cleanMessage: string = response.answer
+                .replace(/\[ACTION:.*?\]/g, '')
+                .replace(/\[SELECT:.*?\]/g, '')
+                .replace(/\[FILTER:.*?\]/g, '')
+                .trim();
+            return this.response_create(cleanMessage, [], true);
+        } catch {
+            return this.response_create(
+                `● Welcome, ${username}. I am CALYPSO, your AI assistant for the ARGUS Federation Network.\n` +
+                `○ The ATLAS catalog contains ${DATASETS.length} datasets spanning ${modalities.join(', ')} modalities.`,
+                [], true
+            );
+        }
+    }
+
+    // ─── Conversation Context / Anaphora ─────────────────────────────────
+
+    /**
+     * Resolve an anaphoric reference ("that", "it", "them", etc.)
+     * against the most recently mentioned datasets.
+     *
+     * Singular tokens return the last-mentioned dataset.
+     * Plural tokens return all recently mentioned datasets.
+     *
+     * @param token - The user's word to resolve (e.g. "that", "them")
+     * @returns Matching datasets, or empty array if not an anaphora
+     */
+    private anaphora_resolve(token: string): Dataset[] {
+        const normalized: string = token.toLowerCase().trim();
+
+        if (this.lastMentionedDatasets.length === 0) {
+            return [];
+        }
+
+        if (CalypsoCore.ANAPHORA_SINGULAR.has(normalized)) {
+            // Return the last (most recently) mentioned dataset
+            return [this.lastMentionedDatasets[this.lastMentionedDatasets.length - 1]];
+        }
+
+        if (CalypsoCore.ANAPHORA_PLURAL.has(normalized)) {
+            return [...this.lastMentionedDatasets];
+        }
+
+        return [];
+    }
+
+    /**
+     * Scan text for dataset ID references (ds-XXX) and update
+     * the conversation context for future anaphora resolution.
+     *
+     * @param text - Text to scan (LLM response, search output, etc.)
+     */
+    private context_updateFromText(text: string): void {
+        const idPattern: RegExp = /\bds-(\d{3})\b/gi;
+        const mentioned: Dataset[] = [];
+        const seen: Set<string> = new Set();
+        let match: RegExpExecArray | null;
+
+        while ((match = idPattern.exec(text)) !== null) {
+            const id: string = `ds-${match[1]}`;
+            if (!seen.has(id)) {
+                seen.add(id);
+                const dataset: Dataset | undefined = DATASETS.find(
+                    (ds: Dataset): boolean => ds.id === id
+                );
+                if (dataset) {
+                    mentioned.push(dataset);
+                }
+            }
+        }
+
+        if (mentioned.length > 0) {
+            this.lastMentionedDatasets = mentioned;
         }
     }
 
@@ -375,6 +527,9 @@ WORKFLOW COMMANDS:
             ds.provider.toLowerCase().includes(q)
         );
 
+        // Update conversation context so "add that" etc. can resolve
+        this.lastMentionedDatasets = results;
+
         const actions: CalypsoAction[] = [
             { type: 'workspace_render', datasets: results }
         ];
@@ -400,15 +555,29 @@ WORKFLOW COMMANDS:
 
     /**
      * Add a dataset to the selection.
+     *
+     * Resolution order:
+     *   1. Exact dataset ID match (e.g. "ds-006")
+     *   2. Name substring match (e.g. "histology")
+     *   3. Anaphora resolution (e.g. "that", "it", "this")
      */
     private workflow_add(targetId: string): CalypsoResponse {
         if (!targetId) {
             return this.response_create('Usage: add <dataset-id>', [], false);
         }
 
-        const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean =>
+        // 1. Exact ID or name substring match
+        let dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean =>
             ds.id === targetId || ds.name.toLowerCase().includes(targetId.toLowerCase())
         );
+
+        // 2. Anaphora resolution ("that", "it", "this", etc.)
+        if (!dataset) {
+            const resolved: Dataset[] = this.anaphora_resolve(targetId);
+            if (resolved.length > 0) {
+                dataset = resolved[0];
+            }
+        }
 
         if (!dataset) {
             return this.response_create(
@@ -417,6 +586,9 @@ WORKFLOW COMMANDS:
                 false
             );
         }
+
+        // Update context: the just-added dataset is now "that"
+        this.lastMentionedDatasets = [dataset];
 
         // Delegate to ProjectManager to handle draft creation and VFS mounting
         const activeProject = project_gather(dataset);
@@ -455,11 +627,22 @@ WORKFLOW COMMANDS:
 
     /**
      * Review gathered datasets. Optionally adds a dataset first.
+     * Supports anaphora: "gather that" adds the last-mentioned dataset,
+     * "gather them" / "gather those" adds all recently mentioned datasets.
      */
     private workflow_gather(targetId?: string): CalypsoResponse {
         if (targetId) {
-            // Implicit add
-            this.workflow_add(targetId);
+            // Check for plural anaphora first (e.g. "gather them", "gather those")
+            const resolved: Dataset[] = this.anaphora_resolve(targetId);
+            if (resolved.length > 1) {
+                // Add all resolved datasets
+                for (const ds of resolved) {
+                    this.workflow_add(ds.id);
+                }
+            } else {
+                // Single add (handles direct IDs, names, and singular anaphora)
+                this.workflow_add(targetId);
+            }
         }
 
         const datasets: Dataset[] = this.storeActions.datasets_getSelected();
@@ -568,6 +751,9 @@ WORKFLOW COMMANDS:
     private llmResponse_process(response: QueryResponse): CalypsoResponse {
         const actions: CalypsoAction[] = [];
 
+        // Update conversation context from dataset IDs mentioned in LLM response
+        this.context_updateFromText(response.answer);
+
         // Extract [SELECT: ds-xxx] intent
         const selectMatch: RegExpMatchArray | null = response.answer.match(/\[SELECT: (ds-[0-9]+)\]/);
         if (selectMatch) {
@@ -578,9 +764,41 @@ WORKFLOW COMMANDS:
             actions.push({ type: 'dataset_open', id: dsId });
         }
 
-        // Extract [ACTION: PROCEED] intent
-        if (response.answer.includes('[ACTION: PROCEED]')) {
-            actions.push({ type: 'stage_advance', stage: 'process' });
+        // Extract [ACTION: PROCEED <type>] intent
+        // Type can be 'fedml' or 'chris' - only scaffold if type is specified
+        const proceedMatch: RegExpMatchArray | null = response.answer.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
+        if (proceedMatch) {
+            const workflowType: 'fedml' | 'chris' | undefined = proceedMatch[1]?.toLowerCase() as 'fedml' | 'chris' | undefined;
+
+            // Only scaffold if workflow type is explicitly specified
+            if (workflowType) {
+                const activeMeta = this.storeActions.project_getActive();
+                if (activeMeta) {
+                    const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
+                    if (project) {
+                        const username: string = this.shell.env_get('USER') || 'developer';
+                        const projectBase: string = `/home/${username}/projects/${project.name}`;
+
+                        // Create src/ with scaffolding based on workflow type
+                        if (workflowType === 'fedml') {
+                            projectDir_populate(this.vfs, username, project.name);
+                        } else if (workflowType === 'chris') {
+                            this.chrisProject_scaffold(projectBase);
+                        }
+
+                        // Create output/ directory
+                        try {
+                            this.vfs.dir_create(`${projectBase}/output`);
+                        } catch { /* already exists */ }
+
+                        // Update shell stage and persona
+                        this.shell.env_set('STAGE', 'process');
+                        this.shell.env_set('PERSONA', workflowType);
+                    }
+                }
+                actions.push({ type: 'stage_advance', stage: 'process', workflow: workflowType });
+            }
+            // If no workflow type specified, Calypso should have asked - no action needed
         }
 
         // Extract [ACTION: SHOW_DATASETS] intent
@@ -604,7 +822,7 @@ WORKFLOW COMMANDS:
             
             if (activeMeta) {
                 // Find full project object to pass to logic
-                const project = MOCK_PROJECTS.find(p => p.id === activeMeta.id);
+                const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
                 if (project) {
                     // CRITICAL: Execute side effect for Headless VFS
                     project_rename(project, newName);
@@ -616,13 +834,47 @@ WORKFLOW COMMANDS:
         // Clean up the answer (remove intent markers)
         const cleanAnswer: string = response.answer
             .replace(/\[SELECT: ds-[0-9]+\]/g, '')
-            .replace(/\[ACTION: PROCEED\]/g, '')
+            .replace(/\[ACTION: PROCEED(?:\s+(?:fedml|chris))?\]/gi, '')
             .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
             .replace(/\[FILTER:.*?\]/g, '')
             .replace(/\[ACTION: RENAME.*?\]/g, '')
             .trim();
 
         return this.response_create(cleanAnswer, actions, true);
+    }
+
+    // ─── Project Scaffolding ──────────────────────────────────────────────
+
+    /**
+     * Scaffold a ChRIS plugin project structure.
+     * Creates src/ with Dockerfile, argument parser, and plugin entry point.
+     */
+    private chrisProject_scaffold(projectBase: string): void {
+        const srcPath: string = `${projectBase}/src`;
+
+        // Create directories
+        this.vfs.dir_create(srcPath);
+        this.vfs.dir_create(`${srcPath}/app`);
+
+        // Create ChRIS plugin files
+        const files: Array<[string, string]> = [
+            ['Dockerfile', 'chris-dockerfile'],
+            ['requirements.txt', 'chris-requirements'],
+            ['README.md', 'chris-readme'],
+            ['app/__init__.py', 'chris-init'],
+            ['app/main.py', 'chris-main'],
+            ['app/parser.py', 'chris-parser']
+        ];
+
+        for (const [fileName, generatorKey] of files) {
+            const filePath: string = `${srcPath}/${fileName}`;
+            this.vfs.file_create(filePath);
+            const node: FileNode | null = this.vfs.node_stat(filePath);
+            if (node) {
+                node.contentGenerator = generatorKey;
+                node.content = null;
+            }
+        }
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────

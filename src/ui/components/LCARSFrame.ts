@@ -106,7 +106,7 @@ export function lcarsFrame_create(config: LCARSFrameConfig): LCARSFrameElements 
     sidebar.className = 'lcars-sidebar';
 
     const panelElements: HTMLElement[] = [];
-    panels.forEach((panelConfig, index) => {
+    panels.forEach((panelConfig: LCARSPanelConfig, index: number): void => {
         const panel = lcarsPanel_create(panelConfig, index, panels.length);
         panelElements.push(panel);
         sidebar.appendChild(panel);
@@ -196,7 +196,7 @@ export function lcarsTopBar_create(config: LCARSTopBarConfig): HTMLElement {
     bar.style.setProperty('--lcars-hue', String(hue));
     bar.style.setProperty('--lcars-gap', `${gap}px`);
 
-    segments.forEach((segConfig, index) => {
+    segments.forEach((segConfig: LCARSTopBarSegment, index: number): void => {
         const segment = document.createElement('div');
         segment.className = `lcars-bar-segment ${segConfig.className || ''}`.trim();
         segment.dataset.shade = String(segConfig.shade ?? ((index % 4) + 1));
@@ -225,7 +225,7 @@ export function lcarsTopBar_create(config: LCARSTopBarConfig): HTMLElement {
  * Sets the active panel in an LCARS sidebar.
  */
 export function lcarsSidebar_setActive(sidebar: HTMLElement, panelId: string): void {
-    sidebar.querySelectorAll<HTMLElement>('.lcars-panel').forEach(panel => {
+    sidebar.querySelectorAll<HTMLElement>('.lcars-panel').forEach((panel: HTMLElement): void => {
         panel.classList.toggle('active', panel.dataset.panelId === panelId);
     });
 }

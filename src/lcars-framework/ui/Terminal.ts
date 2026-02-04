@@ -79,7 +79,7 @@ export class LCARSTerminal {
         this.bindEvents();
         
         if (welcomeMessage) {
-            welcomeMessage.forEach(msg => this.println(msg));
+            welcomeMessage.forEach((msg: string): void => this.println(msg));
         }
 
         // Register default commands
@@ -88,7 +88,7 @@ export class LCARSTerminal {
             description: 'Display available commands',
             execute: () => {
                 this.println('<span class="success">AVAILABLE COMMANDS:</span>');
-                this.commands.forEach(cmd => {
+                this.commands.forEach((cmd: TerminalCommand): void => {
                     this.println(`  <span class="highlight">${cmd.name.padEnd(12)}</span> - ${cmd.description}`);
                 });
             }

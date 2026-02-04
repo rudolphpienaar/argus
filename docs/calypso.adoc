@@ -1,6 +1,6 @@
 = CALYPSO: The AI Core
-:revnumber: 5.0.0
-:revdate: 2026-02-03
+:revnumber: 5.1.11
+:revdate: 2026-02-04
 :toc: macro
 :toclevels: 3
 :sectnums:
@@ -130,13 +130,16 @@ export interface CalypsoResponse {
 export type CalypsoAction =
     | { type: 'dataset_select'; id: string }
     | { type: 'dataset_open'; id: string }
+    | { type: 'dataset_deselect'; id: string }
     | { type: 'project_create'; name: string }
     | { type: 'project_open'; id: string }
     | { type: 'project_rename'; id: string; newName: string }
-    | { type: 'stage_advance'; stage: string }
+    | { type: 'stage_advance'; stage: string; workflow?: 'fedml' | 'chris' }
     | { type: 'workspace_render'; datasets: Dataset[] }
     | { type: 'overlay_close' }
-    | { type: 'federation_start' };
+    | { type: 'federation_start' }
+    | { type: 'marketplace_open' }
+    | { type: 'marketplace_close' };
 ----
 
 === Adapters
@@ -189,44 +192,83 @@ Ready for connections.
 
 === CLI Mode (Interactive REPL)
 
-A command-line client connects to the headless server. (Connection to the browser via WebSocket bridge is planned).
+A command-line client connects to the headless server. The CLI provides an SSH-style login experience, dynamic prompt with username and working directory, a spinner during async operations, and markdown-to-ANSI rendering of LLM responses.
 
 [source,bash]
 ----
 $ make calypso-cli
 ╔══════════════════════════════════════════════════════════════╗
-║  CALYPSO CORE V5.0.0                                         ║
+║  CALYPSO CORE V5.1.11                                        ║
 ║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
 ║  Outcomes                                                    ║
 ╚══════════════════════════════════════════════════════════════╝
 Connected to localhost:8081
 
-CALYPSO> search brain mri
-● AFFIRMATIVE. SCAN COMPLETE.
-○ IDENTIFIED 4 DATASET(S) MATCHING QUERY PARAMETERS.
+┌──────────────────────────────────────────────┐
+│  CALYPSO REMOTE ACCESS TERMINAL              │
+│  Authorized personnel only.                  │
+└──────────────────────────────────────────────┘
+login: rudolph
 
-CALYPSO> ls ~/data/cohort/
-(empty)
+● Welcome, rudolph. I am CALYPSO, ready to assist with your
+  medical imaging workflows.
+○ The ATLAS catalog currently contains 6 datasets with 982
+  total images across 4 modalities.
 
-CALYPSO> add ds-023
-● DATASET GATHERED. MOUNTED TO ~/data/cohort/MGH-BRAIN-MRI/
+rudolph@CALYPSO:[~]> search histology
+● FOUND 1 MATCHING DATASET(S):
+  [ds-006] Histology Segmentation (Pathology/Segmentation)
 
-CALYPSO> tree ~/data/cohort/
-~/data/cohort/
-└── MGH-BRAIN-MRI/
-    ├── images/
-    │   ├── scan_0001.nii.gz
-    │   └── scan_0002.nii.gz
-    ├── masks/
-    │   └── segmentations.nii.gz
-    └── manifest.json
+rudolph@CALYPSO:[~]> add that
+● DATASET GATHERED: Histology Segmentation [ds-006]
+○ MOUNTED TO [DRAFT-1234]
 
-CALYPSO> /snapshot
-{ "path": "~/data/cohort", "children": [...] }
+rudolph@CALYPSO:[~/projects/DRAFT-1234]> tree input
+input/
+├── ds-006/
+│   ├── images/
+│   └── metadata.json
+└── manifest.json
 
-CALYPSO> quit
+3 directories, 2 files
+
+rudolph@CALYPSO:[~/projects/DRAFT-1234]> quit
 Goodbye.
 ----
+
+==== CLI Features
+
+**Dynamic Prompt**: The prompt displays `<user>@CALYPSO:[<cwd>]>` with ANSI color coding (green user, cyan host, magenta path). It updates after every command to reflect the current working directory.
+
+**SSH-Style Login**: On startup, the CLI presents a login box. The entered username becomes the VFS home directory owner (e.g., `/home/rudolph/`).
+
+**LLM Greeting**: After login, Calypso generates a personalized greeting via the LLM, including facts about the available ATLAS datasets.
+
+**Spinner**: A braille-animation spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) with "CALYPSO thinking..." displays during all async LLM operations.
+
+**Markdown Rendering**: LLM responses containing markdown are rendered with ANSI formatting:
+
+[cols="1,2"]
+|===
+| Markdown Syntax | Terminal Rendering
+
+| `**bold text**`
+| Bold bright white
+
+| `*italic text*`
+| Italic
+
+| `` `code` ``
+| Yellow
+
+| `### Heading`
+| Bold cyan
+
+| `\|table\|rows\|`
+| Box-drawing characters (┌─┬─┐)
+|===
+
+**Anaphora Resolution**: Pronouns like "that", "it", "this" in workflow commands (e.g., `add that`, `gather it`) resolve to the most recently discussed dataset(s). Plural forms ("them", "those") resolve to all recently mentioned datasets.
 
 == Visual Signature (Browser Mode)
 
@@ -291,6 +333,12 @@ In addition to natural language, Calypso recognizes special commands prefixed wi
 [cols="1,3"]
 |===
 | Command | Description
+
+| `/status`
+| Show system status (AI core mode, VFS, project, selected datasets)
+
+| `/key <provider> <key>`
+| Set API key at runtime (`openai` or `gemini`). Activates real LLM mode.
 
 | `/snapshot [path]`
 | Returns JSON snapshot of VFS subtree (default: entire tree)

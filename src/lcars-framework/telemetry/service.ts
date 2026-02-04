@@ -51,7 +51,7 @@ export class TelemetryService {
             try {
                 const data = entry.generator.generate(this.tickCount);
                 entry.renderer.render(data, target);
-            } catch (err) {
+            } catch (err: unknown) {
                 console.error(`Telemetry error in entry [${entry.id}]:`, err);
             }
         }
@@ -60,7 +60,7 @@ export class TelemetryService {
     /**
      * Manually triggers a specific entry (useful for static updates).
      */
-    updateEntry(id: string, context?: any): void {
+    updateEntry(id: string, context?: unknown): void {
         const entry = this.entries.find(e => e.id === id);
         if (!entry) return;
 

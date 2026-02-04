@@ -23,9 +23,9 @@ export class ProcessGenerator implements TelemetryGenerator<ProcessInfo[]> {
     ];
 
     generate(): ProcessInfo[] {
-        return this.baseProcs.map(p => ({
+        return this.baseProcs.map((p: ProcessInfo): ProcessInfo => ({
             ...p,
             cpu: (Math.random() * (p.cmd === 'python3 train.py' ? 95 : 20)).toFixed(1)
-        })).sort((a, b) => parseFloat(b.cpu) - parseFloat(a.cpu));
+        })).sort((a: ProcessInfo, b: ProcessInfo): number => parseFloat(b.cpu) - parseFloat(a.cpu));
     }
 }

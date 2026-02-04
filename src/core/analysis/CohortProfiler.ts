@@ -41,12 +41,12 @@ interface CohortValidation {
 export function cohort_validate(vfs: VirtualFileSystem, projectInputPath: string): CohortValidation {
     try {
         if (!vfs.node_stat(projectInputPath)) {
-            return { stats: createEmptyStats(), isMixedModality: false, hasSkewedLabels: false, error: 'NO INPUT DATA FOUND. GATHER DATASETS FIRST.' };
+            return { stats: emptyStats_create(), isMixedModality: false, hasSkewedLabels: false, error: 'NO INPUT DATA FOUND. GATHER DATASETS FIRST.' };
         }
 
         const sites: FileNode[] = vfs.dir_list(projectInputPath).filter((node: FileNode) => node.type === 'folder');
         if (sites.length === 0) {
-            return { stats: createEmptyStats(), isMixedModality: false, hasSkewedLabels: false, error: 'COHORT IS EMPTY.' };
+            return { stats: emptyStats_create(), isMixedModality: false, hasSkewedLabels: false, error: 'COHORT IS EMPTY.' };
         }
 
         const stats: CohortStats = {
@@ -70,7 +70,7 @@ export function cohort_validate(vfs: VirtualFileSystem, projectInputPath: string
                     const meta = JSON.parse(content);
                     modality = meta.modality || 'unknown';
                 }
-            } catch (e) { /* ignore read errors */ }
+            } catch (e: unknown) { /* ignore read errors */ }
 
             try {
                 const images: FileNode[] = vfs.dir_list(`${site.path}/images`);
@@ -103,7 +103,7 @@ export function cohort_validate(vfs: VirtualFileSystem, projectInputPath: string
 
     } catch (e: unknown) {
         return { 
-            stats: createEmptyStats(), 
+            stats: emptyStats_create(), 
             isMixedModality: false, 
             hasSkewedLabels: false, 
             error: e instanceof Error ? e.message : String(e) 
@@ -111,7 +111,7 @@ export function cohort_validate(vfs: VirtualFileSystem, projectInputPath: string
     }
 }
 
-function createEmptyStats(): CohortStats {
+function emptyStats_create(): CohortStats {
     return { totalSites: 0, modalities: {}, providers: {}, sites: [] };
 }
 

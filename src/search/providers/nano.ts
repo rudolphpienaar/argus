@@ -31,7 +31,7 @@ export class GeminiNanoProvider implements SearchProvider {
         try {
             const caps = await window.ai.languageModel.capabilities();
             return caps.available !== 'no';
-        } catch (e) {
+        } catch (e: unknown) {
             return false;
         }
     }
@@ -81,7 +81,7 @@ ${context}
                 latency: performance.now() - startTime
             };
 
-        } catch (e) {
+        } catch (e: unknown) {
             console.error("Gemini Nano Error:", e);
             return {
                 explanation: "I encountered an error processing your request with the onboard AI.",

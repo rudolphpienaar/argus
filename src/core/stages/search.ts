@@ -180,8 +180,8 @@ export function workspace_render(datasets: Dataset[], isSearchActive: boolean): 
 
     // 1. Identify gathered datasets that are NOT in the current search results
     const gatheredMissing: Dataset[] = [];
-    gatheredDatasets.forEach((entry) => {
-        if (!datasets.some(ds => ds.id === entry.dataset.id)) {
+    gatheredDatasets.forEach((entry: GatheredEntry): void => {
+        if (!datasets.some((ds: Dataset): boolean => ds.id === entry.dataset.id)) {
             gatheredMissing.push(entry.dataset);
         }
     });
@@ -605,7 +605,7 @@ function projectDetail_populate(
     if (sidebarSlot) {
         sidebarSlot.innerHTML = '';
 
-        tabs.forEach((tab): void => {
+        tabs.forEach((tab: { id: string; label: string; shade: number }): void => {
             const panel: HTMLAnchorElement = document.createElement('a');
             panel.className = 'lcars-panel';
             panel.href = `#${tab.id}`;
@@ -721,7 +721,7 @@ function projectDetail_populate(
 
                 // Refresh view to show new files
                 projectDetail_populate(project, projectId, overlay, lcarsFrame);
-            } catch (err) {
+            } catch (err: unknown) {
                 console.error('Upload failed', err);
             }
         });
@@ -752,7 +752,7 @@ function projectDetail_populate(
  * Called from the UI when a user chooses a template.
  */
 export function template_select(projectId: string, type: 'fedml' | 'chris'): void {
-    const project = MOCK_PROJECTS.find(p => p.id === projectId);
+    const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === projectId);
     if (!project) return;
 
     // Populate project structure
@@ -849,7 +849,7 @@ function vfsTree_build(path: string): VcsFileNode | null {
         // Best to use dir_list to get fresh children.
         if (node.type === 'folder') {
             const children = globals.vcs.dir_list(path);
-            const populatedChildren = children.map(child => vfsTree_build(child.path)).filter((n): n is VcsFileNode => n !== null);
+            const populatedChildren: VcsFileNode[] = children.map((child: VcsFileNode): VcsFileNode | null => vfsTree_build(child.path)).filter((n): n is VcsFileNode => n !== null);
             return {
                 ...node,
                 children: populatedChildren
@@ -1421,7 +1421,7 @@ function gather_execute(dataset: Dataset, subtree: VcsFileNode, selectedPaths: s
  * Gathers the *entire* dataset immediately.
  */
 export function dataset_add(datasetId: string): void {
-    const dataset = DATASETS.find(ds => ds.id === datasetId);
+    const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean => ds.id === datasetId);
     if (!dataset) return;
 
     if (gatheredDatasets.has(datasetId)) {
@@ -1561,7 +1561,7 @@ export async function proceedToCode_handle(): Promise<void> {
                     // Pause for impact
                     await new Promise(resolve => setTimeout(resolve, 3000));
                 }
-            } catch (e) { /* ignore analysis errors during transition */ }
+            } catch (e: unknown) { /* ignore analysis errors during transition */ }
         }
 
         // Check if src already exists (initialized)

@@ -70,13 +70,13 @@ export class GeminiClient {
         try {
             // Extract system context
             const systemContext: string = messages
-                .filter(m => m.role === 'system')
-                .map(m => m.content)
+                .filter((m: ChatMessage): boolean => m.role === 'system')
+                .map((m: ChatMessage): string => m.content)
                 .join('\n\n');
 
             const userMessages: Array<{ role: string; parts: Array<{ text: string }> }> = messages
-                .filter(m => m.role !== 'system')
-                .map(m => ({
+                .filter((m: ChatMessage): boolean => m.role !== 'system')
+                .map((m: ChatMessage): { role: string; parts: Array<{ text: string }> } => ({
                     role: m.role === 'user' ? 'user' : 'model',
                     parts: [{ text: m.content }]
                 }));

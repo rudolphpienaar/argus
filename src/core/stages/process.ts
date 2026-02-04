@@ -181,7 +181,7 @@ function ideTree_build(path: string): VfsFileNode | null {
             // Clone to avoid mutating VFS state if we modify children for display
             return {
                 ...node,
-                children: children.map(c => ideTree_build(c.path)).filter((n): n is VfsFileNode => n !== null)
+                children: children.map((c: VfsFileNode): VfsFileNode | null => ideTree_build(c.path)).filter((n): n is VfsFileNode => n !== null)
             };
         }
         return node;
@@ -360,7 +360,7 @@ function federationNetwork_init(nodes: TrustedDomainNode[], container: HTMLEleme
 
     const hubCenter = getCenter(hubIcon);
 
-    nodes.forEach((_node, i) => {
+    nodes.forEach((_node: TrustedDomainNode, i: number): void => {
         const nodeIcon = document.getElementById(`node-icon-${i}`);
         if (!nodeIcon) return;
 

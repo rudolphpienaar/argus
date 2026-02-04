@@ -46,7 +46,7 @@ export class CLIAdapter {
 
         // In verbose mode, show actions
         if (this.verbose && response.actions.length > 0) {
-            console.log(`${COLORS.dim}[Actions: ${response.actions.map(a => a.type).join(', ')}]${COLORS.reset}`);
+            console.log(`${COLORS.dim}[Actions: ${response.actions.map((a: CalypsoAction): string => a.type).join(', ')}]${COLORS.reset}`);
         }
     }
 
