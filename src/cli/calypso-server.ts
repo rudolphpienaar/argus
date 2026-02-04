@@ -348,12 +348,16 @@ const server = http.createServer(request_handle);
 server.listen(PORT, HOST, () => {
     const vString = `V${VERSION}`;
     const innerWidth = 60;
-    const label = `  CALYPSO SERVER ${vString}`;
-    const padding = ' '.repeat(innerWidth - label.length);
     
+    const line_format = (text: string): string => {
+        const label = `  ${text}`;
+        const padding = ' '.repeat(Math.max(0, innerWidth - label.length));
+        return `║${label}${padding}║`;
+    };
+
     console.log(`
 ╔${'═'.repeat(innerWidth)}╗
-║${label}${padding}║
+${line_format(`CALYPSO SERVER ${vString}`)}
 ╚${'═'.repeat(innerWidth)}╝
 
 Listening on http://${HOST}:${PORT}

@@ -80,14 +80,19 @@ export class CLIAdapter {
     public banner_render(): string {
         const vString = `V${VERSION}`;
         const innerWidth = 60;
-        const label = `  CALYPSO CORE ${vString}`;
-        const padding = ' '.repeat(innerWidth - label.length);
+        
+        // Helper to format a line inside the box
+        const line_format = (text: string, color: string = ''): string => {
+            const label = `  ${text}`;
+            const padding = ' '.repeat(Math.max(0, innerWidth - label.length));
+            return `║${color}${label}${COLORS.reset}${COLORS.cyan}${padding}║`;
+        };
 
         return `
 ${COLORS.cyan}╔${'═'.repeat(innerWidth)}╗
-║  ${COLORS.bright}CALYPSO CORE ${vString}${COLORS.reset}${COLORS.cyan}${' '.repeat(innerWidth - (`  CALYPSO CORE ${vString}`).length)}║
-║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
-║  Outcomes                                                    ║
+${line_format(`CALYPSO CORE ${vString}`, COLORS.bright)}
+${line_format('Cognitive Algorithms & Logic Yielding Predictive Scientific')}
+${line_format('Outcomes')}
 ╚${'═'.repeat(innerWidth)}╝${COLORS.reset}
 `;
     }
