@@ -349,7 +349,7 @@ server.listen(PORT, HOST, () => {
     const vString = `V${VERSION}-${GIT_HASH}`;
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║  CALYPSO SERVER ${vString}${' '.repeat(44 - vString.length)}║
+║  CALYPSO SERVER ${vString}${' '.repeat(43 - vString.length)}║
 ╚══════════════════════════════════════════════════════════════╝
 
 Listening on http://${HOST}:${PORT}

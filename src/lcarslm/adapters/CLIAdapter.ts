@@ -81,7 +81,7 @@ export class CLIAdapter {
         const vString = `V${VERSION}-${GIT_HASH}`;
         return `
 ${COLORS.cyan}╔══════════════════════════════════════════════════════════════╗
-║  ${COLORS.bright}CALYPSO CORE ${vString}${COLORS.reset}${COLORS.cyan}${' '.repeat(46 - vString.length)}║
+║  ${COLORS.bright}CALYPSO CORE ${vString}${COLORS.reset}${COLORS.cyan}${' '.repeat(45 - vString.length)}║
 ║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
 ║  Outcomes                                                    ║
 ╚══════════════════════════════════════════════════════════════╝${COLORS.reset}
