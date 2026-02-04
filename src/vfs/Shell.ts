@@ -465,6 +465,11 @@ export class Shell {
 
         this.builtin_add('upload', 'Upload local files to current directory', async (args: string[]): Promise<ShellResult> => {
             try {
+                // Check if running in browser environment
+                if (typeof document === 'undefined') {
+                    return result_err('upload: Command only available in browser mode. Use "cp" for server-local files.', 1);
+                }
+
                 // Dynamically import to avoid circular dependencies/browser-only code at top level
                 const { files_prompt, files_ingest } = await import('../core/logic/FileUploader.js');
                 
