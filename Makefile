@@ -56,10 +56,12 @@ argus: clean install build
 # ─── Calypso (Headless AI Core) ─────────────────────────────────────────────
 
 calypso:
+	bash scripts/generate-version.sh
 	@echo "Starting Calypso headless server..."
 	GEMINI_API_KEY=$(KEY) OPENAI_API_KEY=$(KEY) npx tsx src/cli/calypso-server.ts
 
 calypso-cli:
+	bash scripts/generate-version.sh
 	@echo "Starting Calypso CLI client..."
 	npx tsx src/cli/calypso-cli.ts
 
