@@ -6,13 +6,24 @@ ARGUS (**A**TLAS **R**esource **G**raphical **U**ser **S**ystem) is the conceptu
 
 ## The Mythological Metaphor
 
-The project draws its naming from two figures in Greek mythology, representing the relationship between the infrastructure and the user interface:
+The project draws its naming from three figures in Greek mythology, representing the relationship between the infrastructure, the user interface, and the intelligence:
 
 *   **ATLAS** (The Titan) was condemned to hold up the celestial spheres for eternity. In our context, ATLAS is the massive, distributed infrastructure that bears the weight of the federated learning ecosystem—computing, storage, and secure networking across institutions.
 *   **ARGUS** (The Giant) was Argus Panoptes, the "all-seeing" watchman with a hundred eyes. In our context, ARGUS is the interface that provides vigilance and visibility. It acts as the hundred eyes of the developer, monitoring the distributed training jobs, datasets, and secure enclaves that ATLAS supports.
 *   **CALYPSO** (The Nymph) was "the concealer" who lived on the island of Ogygia. In our context, CALYPSO is the "Ghost in the Machine"—the hidden intelligence layer that bridges the gap between infrastructure and interface. She translates complex system states into natural language and guides the user through the intricate web of federated resources.
 
 **Atlas supports the weight; Argus sees the details; Calypso understands the intent.**
+
+### Calypso and the Intent Layer
+
+Calypso is not just a chatbot; she is the system's **Intent Engine**. She implements the **Intent-Action Service (IAS)** pattern (see [intent-server](https://github.com/FNNDSC/intent-server)), bridging the "impedance mismatch" between the user's high-level goals ("Gather this dataset") and the system's low-level declarative APIs.
+
+When you speak to Calypso, she:
+1.  **Decodes** your natural language into a semantic Intent (e.g., `[ACTION: GATHER]`).
+2.  **Orchestrates** the complex procedural logic required to fulfill that intent (creating draft projects, mounting virtual filesystems, syncing shell contexts).
+3.  **Executes** the side effects on the underlying infrastructure (ATLAS/VFS).
+
+This architecture ensures that the system's capabilities are accessible through both the graphical interface (ARGUS) and the headless command line (Calypso CLI) with absolute parity.
 
 ## The Concept
 
