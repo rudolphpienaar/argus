@@ -345,7 +345,7 @@ WORKFLOW COMMANDS:
 
             case 'gather':
             case 'review':
-                return this.workflow_gather();
+                return this.workflow_gather(args[0]);
 
             case 'mount':
                 return this.workflow_mount();
@@ -454,9 +454,14 @@ WORKFLOW COMMANDS:
     }
 
     /**
-     * Review gathered datasets.
+     * Review gathered datasets. Optionally adds a dataset first.
      */
-    private workflow_gather(): CalypsoResponse {
+    private workflow_gather(targetId?: string): CalypsoResponse {
+        if (targetId) {
+            // Implicit add
+            this.workflow_add(targetId);
+        }
+
         const datasets: Dataset[] = this.storeActions.datasets_getSelected();
 
         if (datasets.length === 0) {
