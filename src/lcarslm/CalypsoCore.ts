@@ -564,7 +564,11 @@ WORKFLOW COMMANDS:
         // Extract [SELECT: ds-xxx] intent
         const selectMatch: RegExpMatchArray | null = response.answer.match(/\[SELECT: (ds-[0-9]+)\]/);
         if (selectMatch) {
-            actions.push({ type: 'dataset_open', id: selectMatch[1] });
+            const dsId = selectMatch[1];
+            // CRITICAL: Ensure VFS mounting happens for AI selections
+            // We call workflow_add to trigger project_gather() and draft creation
+            this.workflow_add(dsId);
+            actions.push({ type: 'dataset_open', id: dsId });
         }
 
         // Extract [ACTION: PROCEED] intent
