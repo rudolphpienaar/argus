@@ -16,14 +16,14 @@ The project draws its naming from three figures in Greek mythology, representing
 
 ### Calypso and the Intent Layer
 
-Calypso is not just a chatbot; she is the system's **Intent Engine**. She implements the **Intent-Action Service (IAS)** pattern (see [intent-server](https://github.com/FNNDSC/intent-server)), bridging the "impedance mismatch" between the user's high-level goals ("Gather this dataset") and the system's low-level declarative APIs.
+Calypso is not just a chatbot; she is the system's **Intent Engine**. She implements the **Intent-Action Service (IAS)** pattern (see [intent-server](https://github.com/FNNDSC/intent-server)), bridging the "impedance mismatch" between the user's high-level goals and the system's low-level declarative APIs.
 
 When you speak to Calypso, she:
-1.  **Decodes** your natural language into a semantic Intent (e.g., `[ACTION: GATHER]`).
-2.  **Orchestrates** the complex procedural logic required to fulfill that intent (creating draft projects, mounting virtual filesystems, syncing shell contexts).
-3.  **Executes** the side effects on the underlying infrastructure (ATLAS/VFS).
+1.  **Matches** your natural language to a single, atomic **Intent** (e.g., `[ACTION: GATHER]`).
+2.  **Dispatches** that intent to the system's **Intent Layer** (e.g., `ProjectManager`).
+3.  **The Intent Layer** then **orchestrates** the complex procedural logic required to fulfill the request (creating draft projects, mounting virtual filesystems, syncing shell contexts).
 
-This architecture ensures that the system's capabilities are accessible through both the graphical interface (ARGUS) and the headless command line (Calypso CLI) with absolute parity.
+By offloading orchestration to a deterministic logic layer, Calypso remains a reliable matchmaker while the system ensures absolute consistency between its graphical and headless interfaces.
 
 ## The Concept
 
