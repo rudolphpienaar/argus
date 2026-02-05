@@ -27,6 +27,18 @@ export async function federation_simulate(vfs: VirtualFileSystem, projectPath: s
     const logs: string[] = [];
     logs.push('PHANTOM FEDERATION: INITIALIZING...');
 
+    // 0. Statistical Check (Heterogeneity)
+    const { cohort_validate } = await import('../analysis/CohortProfiler.js');
+    const validation = cohort_validate(vfs, `${projectPath}/input`);
+    if (validation.isMixedModality || validation.hasSkewedLabels) {
+        logs.push('>> ERROR: COHORT HETEROGENEITY DETECTED.');
+        if (validation.isMixedModality) logs.push('   - Mixed modalities detected in cohort.');
+        if (validation.hasSkewedLabels) logs.push('   - Significant label skew detected between nodes.');
+        logs.push('>> USE "analyze cohort" FOR A DETAILED REPORT.');
+        logs.push('>> SIMULATION ABORTED.');
+        return { success: false, logs, metrics: { accuracy: 0, loss: 0, privacyEpsilon: 0 } };
+    }
+
     // 1. Shard Data
     const inputPath = `${projectPath}/input`;
     if (!vfs.node_stat(inputPath)) {

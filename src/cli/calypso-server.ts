@@ -22,6 +22,8 @@ import { URL } from 'url';
 import { CalypsoCore, type CalypsoStoreActions } from '../lcarslm/CalypsoCore.js';
 import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import { Shell } from '../vfs/Shell.js';
+import { ContentRegistry } from '../vfs/content/ContentRegistry.js';
+import { ALL_GENERATORS } from '../vfs/content/templates/index.js';
 import { homeDir_scaffold } from '../vfs/providers/ProjectProvider.js';
 import type { CalypsoResponse } from '../lcarslm/types.js';
 import type { Dataset, AppState } from '../core/models/types.js';
@@ -118,6 +120,11 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
     // This is critical because ProjectManager imports 'globals' directly!
     const vfs = new VirtualFileSystem(username);
     globals.vcs = vfs;
+    
+    // Connect ContentRegistry to VFS for lazy content generation
+    const registry = new ContentRegistry();
+    registry.generators_registerAll(ALL_GENERATORS);
+    registry.vfs_connect(vfs);
     
     const shell = new Shell(vfs, username);
     globals.shell = shell;

@@ -281,17 +281,21 @@ export class Shell {
         this.builtin_add('ls', 'List directory contents', (args: string[]): ShellResult => {
             const target: string = args[0] || '.';
             try {
-                const children: FileNode[] = this.vfs.dir_list(
-                    this.vfs.path_resolve(target)
-                );
+                const resolvedDir: string = this.vfs.path_resolve(target);
+                const children: FileNode[] = this.vfs.dir_list(resolvedDir);
                 const lines: string[] = children.map((child: FileNode): string => {
                     let colorClass: string = 'file';
                     if (child.type === 'folder') colorClass = 'dir';
                     else if (child.name.endsWith('.py') || child.name.endsWith('.sh')) colorClass = 'exec';
 
+                    // Trigger lazy generation if needed to get correct size
+                    if (child.type === 'file' && child.content === null && child.contentGenerator) {
+                        this.vfs.node_read(`${resolvedDir}/${child.name}`);
+                    }
+
                     const size: string = child.size || '0 B';
                     const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
-                    return `<span class="${colorClass}">${name.padEnd(24)}</span> <span class="dim">${size}</span>`;
+                    return `<span class="${colorClass}">${name.padEnd(24)}</span> <span class="size-highlight">${size}</span>`;
                 });
                 return result_ok(lines.join('\n'));
             } catch (e: unknown) {
@@ -315,7 +319,7 @@ export class Shell {
                 let dirCount: number = 0;
                 let fileCount: number = 0;
 
-                const subtree_render = (node: FileNode, prefix: string): void => {
+                const subtree_render = (node: FileNode, prefix: string, nodePath: string): void => {
                     const children: FileNode[] = (node.children || []).slice().sort(
                         (a: FileNode, b: FileNode): number => a.name.localeCompare(b.name)
                     );
@@ -324,12 +328,19 @@ export class Shell {
                         const isLast: boolean = i === children.length - 1;
                         const connector: string = isLast ? '└── ' : '├── ';
                         const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
+                        const childPath: string = `${nodePath}/${child.name}`;
+
+                        // Initialize lazy files
+                        if (child.type === 'file' && child.content === null && child.contentGenerator) {
+                            this.vfs.node_read(childPath);
+                        }
+
                         lines.push(`${prefix}${connector}${name}`);
 
                         if (child.type === 'folder') {
                             dirCount++;
                             const nextPrefix: string = prefix + (isLast ? '    ' : '│   ');
-                            subtree_render(child, nextPrefix);
+                            subtree_render(child, nextPrefix, childPath);
                         } else {
                             fileCount++;
                         }
@@ -338,7 +349,7 @@ export class Shell {
 
                 lines.push(`${root.name}/`);
                 dirCount++; // count root
-                subtree_render(root, '');
+                subtree_render(root, '', resolved);
                 lines.push('');
                 lines.push(`${dirCount} director${dirCount === 1 ? 'y' : 'ies'}, ${fileCount} file${fileCount === 1 ? '' : 's'}`);
 

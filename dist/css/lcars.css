@@ -1668,6 +1668,7 @@ body.state-locked .seagap-panel {
 .tele-content span.highlight { color: var(--canary); }
 .tele-content span.dim { opacity: 0.5; }
 .tele-content span.warn { color: var(--tomato); }
+.tele-content span.size-highlight { color: var(--canary); font-weight: bold; }
 
 @media (max-width: 1000px) {
     body.state-locked .telemetry-wrapper {

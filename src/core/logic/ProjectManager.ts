@@ -188,7 +188,11 @@ export function project_rename(project: Project, newName: string): void {
             const currentCwd = globals.vcs.cwd_get();
             if (currentCwd.startsWith(oldPath)) {
                 const newCwd = currentCwd.replace(oldPath, newPath);
-                globals.shell?.command_execute(`cd ${newCwd}`);
+                try {
+                    globals.vcs.cwd_set(newCwd);
+                } catch (e: unknown) {
+                    console.error('Failed to update CWD after rename:', e);
+                }
             }
         }
 

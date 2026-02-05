@@ -509,9 +509,48 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             case 'code':
                 return this.workflow_proceed();
 
+            case 'rename':
+                let nameArg: string = args.join(' ');
+                if (nameArg.toLowerCase().startsWith('to ')) {
+                    nameArg = nameArg.substring(3).trim();
+                }
+                return this.workflow_rename(nameArg);
+
             default:
                 return null; // Fall through to LLM
         }
+    }
+
+    /**
+     * Rename the active project.
+     */
+    private workflow_rename(newName: string): CalypsoResponse {
+        if (!newName) {
+            return this.response_create('Usage: rename <new-name>', [], false);
+        }
+
+        const activeMeta = this.storeActions.project_getActive();
+        if (!activeMeta) {
+            return this.response_create('>> ERROR: NO ACTIVE PROJECT TO RENAME.', [], false);
+        }
+
+        const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
+        if (!project) {
+            return this.response_create('>> ERROR: PROJECT MODEL NOT FOUND.', [], false);
+        }
+
+        // Execute deterministic side effect
+        project_rename(project, newName);
+
+        const actions: CalypsoAction[] = [
+            { type: 'project_rename', id: project.id, newName }
+        ];
+
+        return this.response_create(
+            `● PROJECT RENAMED: [${newName}]`,
+            actions,
+            true
+        );
     }
 
     /**

@@ -1,0 +1,104 @@
+= ARGUS: Intent-Action Switchboard Registry
+:author: ATLAS Project Team
+:revdate: 2026-02-04
+:revnumber: 1.0.0
+:toc: macro
+:toclevels: 3
+:sectnums:
+
+toc::[]
+
+== Philosophy
+
+ARGUS follows an **Intent-Action Design** pattern. The system is architected as a "switchboard" of deterministic, single-function-call actions. 
+
+* **First-Class Intents**: Manual commands that a user can type directly into the terminal or CLI (e.g., `add ds-001`, `rename my-project`).
+* **Agentic Intents**: Natural language requests interpreted by CALYPSO, which then "flips the switch" on a corresponding First-Class Intent or system function.
+
+This separation ensures that the AI is not "guessing" how to perform work; it is simply a natural language interface for a robust, deterministic API.
+
+== The Switchboard Mapping
+
+|===
+| Intent | Agentic Marker (LLM) | First-Class Command | Deterministic Function | VFS / State Effect
+
+| **SEARCH**
+| `[ACTION: SHOW_DATASETS]`
+| `search <query>`
+| `workspace_render`
+| Filters catalog; updates mention buffer.
+
+| **GATHER**
+| `[SELECT: ds-XXX]`
+| `add <id>`
+| `project_gather(dataset)`
+| Auto-creates Draft; mounts VFS to `~/input/`.
+
+| **RENAME**
+| `[ACTION: RENAME <name>]`
+| `rename <name>`
+| `project_rename(project, name)`
+| `mv` project directory; updates Store state.
+
+| **PROCEED (FEDML)**
+| `[ACTION: PROCEED fedml]`
+| `proceed` / `mount`
+| `projectDir_populate()`
+| Scaffolds `train.py`; advances stage to Process.
+
+| **PROCEED (CHRIS)**
+| `[ACTION: PROCEED chris]`
+| `proceed` / `mount`
+| `chrisProject_scaffold()`
+| Scaffolds ChRIS plugin; advances stage to Process.
+
+| **FEDERATE**
+| (LLM reasoning)
+| `federate`
+| `federation_sequence()`
+| Triggers build/distribute/monitor workflow.
+|===
+
+== Anaphora Resolution
+
+CALYPSO maintains a context buffer of recently mentioned datasets. This allows fuzzy intents to resolve to specific First-Class IDs.
+
+[cols="1,2"]
+|===
+| Token | Resolution
+
+| **Singular** (`that`, `it`, `this`)
+| Resolves to the *last* mentioned dataset ID.
+
+| **Plural** (`them`, `those`, `all`)
+| Resolves to *all* recently mentioned dataset IDs.
+|===
+
+== Special System Commands
+
+These intents are primarily for environment control and ORACLE verification.
+
+[cols="1,3"]
+|===
+| Command | Effect
+
+| `/status`
+| Show system status (AI Core, VFS, Project context).
+
+| `/snapshot [path]`
+| Returns JSON serialization of the VFS subtree.
+
+| `/state`
+| Returns JSON snapshot of Store state.
+
+| `/reset`
+| Resets VFS and Store to clean state.
+|===
+
+== Iteration Strategy
+
+To add a new capability to ARGUS:
+1. Implement the deterministic logic in `ProjectManager.ts`.
+2. Expose it as a **First-Class Intent** in `CalypsoCore.ts` (`workflow_dispatch`).
+3. Define an **Agentic Intent** (LLM marker) and update the system prompt in `LCARSEngine` to recognize it.
+4. Codify the mapping in this document.
