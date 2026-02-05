@@ -40,6 +40,12 @@ This separation ensures that the AI is not "guessing" how to perform work; it is
 | `project_rename(project, name)`
 | `mv` project directory; updates Store state.
 
+| **HARMONIZE**
+| (LLM reasoning)
+| `harmonize cohort`
+| `project_harmonize(project)`
+| Creates `.harmonized` marker; bypasses non-IID gates.
+
 | **PROCEED (FEDML)**
 | `[ACTION: PROCEED fedml]`
 | `proceed` / `mount`

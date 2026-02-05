@@ -2,6 +2,12 @@
 
 ## Recent Refactoring Activity
 
+- **2026-02-04 (v6.0.0)**: **"The Local Loop Update"** - Implemented a strict, multi-tier execution model for Federated ML.
+    - **Tier 1: Local Loop**: Enhanced `python` command with realistic PyTorch logs and a `.local_pass` certification.
+    - **Tier 2: Simulation**: Gated `simulate federation` to require successful local training and statistical cohort viability.
+    - **Tier 3: The ATLAS Factory**: Re-architected `federate` to include automated transformation phases: "Flower-ization" (FL hooks), "ChRIS-ification" (containerization), and "Dispatch" (broadcast).
+    - **The Switchboard**: Codified the Intent-Action strategy in `docs/intents.adoc`, promoting `rename` and `harmonize` to first-class intents.
+    - **Harmonization**: Implemented `harmonize cohort` to resolve non-IID risks (mixed modalities/label skew) detected by `analyze cohort`.
 - **2026-02-03 (v5.0.0)**: **"The Oracle Update"** - Introduced headless Calypso architecture. CalypsoCore is now DOM-free and can run in Node.js without a browser. New `make calypso` target starts a headless server; `make calypso-cli` provides interactive REPL access. Introduced ORACLE testing methodology — reflexive verification through agentic self-testing. Test scripts (`.oracle` files) send natural language commands to CalypsoCore and assert on VFS/Store state. See `docs/oracle.adoc` and `docs/calypso.adoc`.
 - **2026-01-31 (v4.6.0)**: **"The Quality of Life Update"** - Implemented "Filesystem First" workflow. `+ NEW` creates clean Draft Projects without boilerplate. Added `upload` terminal command for local file ingestion (PDF/Images supported with inline preview). Project Detail view adaptively switches between "FILES" (flat) and "SOURCE/DATA" (structured) tabs. Added **RENAME** and **UPLOAD** buttons to the UI. "ADD" on a dataset now defaults to "Add All" if no manual selection is made, and auto-creates a draft project if needed.
 - **2026-01-30 (v4.5.1)**: **"The Framework Codification"** - Formalized the implicit framework patterns into `docs/framework.adoc`: Store + EventBus reactivity, the Slot Pattern (multi-mode overlays), the Populate/Teardown Lifecycle, the Component Pattern (class vs render function), the Provider Pattern (VCS tree builders), the Strip Pattern, the Selectable Mode, Window Binding conventions, CSS architecture, TypeScript conventions, and known extraction candidates. Documents anti-patterns with the actual regressions that taught them.

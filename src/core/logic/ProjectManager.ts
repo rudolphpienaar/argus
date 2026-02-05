@@ -213,3 +213,44 @@ export function project_rename(project: Project, newName: string): void {
         }
     }
 }
+
+/**
+ * Simulates data harmonization across a project's gathered cohort.
+ * Standardizes metadata, modalities, and labels.
+ *
+ * @param project - The project to harmonize.
+ */
+export function project_harmonize(project: Project): void {
+    const username = globals.shell?.env_get('USER') || 'user';
+    const inputPath = `/home/${username}/projects/${project.name}/input`;
+
+    if (globals.terminal) {
+        globals.terminal.println('● INITIATING COHORT HARMONIZATION PROTOCOL...');
+        globals.terminal.println('○ SCANNING SITES FOR METADATA VARIANCE...');
+        globals.terminal.println('○ STANDARDIZING PIXEL SPACING TO 1.0mm ISOTROPIC...');
+        globals.terminal.println('○ NORMALIZING INTENSITY DISTRIBUTIONS (Z-SCORE)...');
+    }
+
+    try {
+        // Create harmonization marker in VFS
+        if (!globals.vcs.node_stat(inputPath)) {
+            globals.vcs.dir_create(inputPath);
+        }
+        
+        const markerPath = `${inputPath}/.harmonized`;
+        globals.vcs.file_create(markerPath, JSON.stringify({
+            timestamp: new Date().toISOString(),
+            status: 'COMPLETED',
+            appliedFilters: ['normalization', 'resampling', 'label_alignment']
+        }, null, 2));
+
+        if (globals.terminal) {
+            globals.terminal.println('<span class="success">>> SUCCESS: COHORT HARMONIZED.</span>');
+            globals.terminal.println(`<span class="dim">   MARKER CREATED: ${markerPath}</span>`);
+        }
+    } catch (e: unknown) {
+        if (globals.terminal) {
+            globals.terminal.println(`<span class="error">>> ERROR: HARMONIZATION FAILED. ${e instanceof Error ? e.message : String(e)}</span>`);
+        }
+    }
+}

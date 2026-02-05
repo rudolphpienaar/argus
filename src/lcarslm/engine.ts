@@ -56,6 +56,7 @@ Your primary function is to query the medical imaging dataset catalog and manage
         - If they specify "chris", "plugin", or "ChRIS app", include [ACTION: PROCEED chris] at the **END**.
         - If they do NOT specify a workflow type (just "proceed", "let's code", etc.), ASK them to choose between "Federated Learning Task (fedml)" or "ChRIS Plugin (chris)". Do NOT include [ACTION: PROCEED] until they choose.
     *   If the user asks to rename the current project (or draft), include [ACTION: RENAME new-name] at the **END** of your response. Use a URL-safe name (alphanumeric, underscores, or hyphens).
+    *   If the user asks to "harmonize", "standardize", "normalize", or "fix" the data/cohort to resolve heterogeneity issues, include [ACTION: HARMONIZE] at the **END** of your response.
 3.  **Persona**: Industrial, efficient, but helpful. Use "I" to refer to yourself as Calypso.
 4.  **Knowledge Usage**: Use the provided SYSTEM KNOWLEDGE BASE to answer questions about ARGUS architecture, the SeaGaP workflow, or specific components. Cite the file name if relevant (e.g., "ACCORDING TO seagap-workflow.adoc...").
 
@@ -96,6 +97,8 @@ The context provided to you contains a JSON list of available datasets. Use this
                 intent = `\n[SELECT: ${selectMatch[1].toLowerCase()}]`;
             } else if (userText.match(/(?:proceed|next|gather|review)/i)) {
                 intent = `\n[ACTION: PROCEED]`;
+            } else if (userText.match(/(?:harmonize|standardize|normalize)/i)) {
+                intent = `\n[ACTION: HARMONIZE]`;
             }
 
             const count: number = relevantDatasets.length;

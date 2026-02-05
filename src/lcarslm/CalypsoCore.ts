@@ -516,9 +516,37 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                 }
                 return this.workflow_rename(nameArg);
 
+            case 'harmonize':
+                return this.workflow_harmonize();
+
             default:
                 return null; // Fall through to LLM
         }
+    }
+
+    /**
+     * Harmonize the active project's cohort.
+     */
+    private workflow_harmonize(): CalypsoResponse {
+        const activeMeta = this.storeActions.project_getActive();
+        if (!activeMeta) {
+            return this.response_create('>> ERROR: NO ACTIVE PROJECT TO HARMONIZE.', [], false);
+        }
+
+        const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
+        if (!project) {
+            return this.response_create('>> ERROR: PROJECT MODEL NOT FOUND.', [], false);
+        }
+
+        // Import side effect logic from ProjectManager
+        const { project_harmonize } = require('../core/logic/ProjectManager.js');
+        project_harmonize(project);
+
+        return this.response_create(
+            `● COHORT HARMONIZATION COMPLETE.`,
+            [],
+            true
+        );
     }
 
     /**
@@ -728,12 +756,36 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
      * Start federation sequence.
      */
     private workflow_federate(): CalypsoResponse {
+        const username = this.shell.env_get('USER') || 'user';
+        const projectName = this.shell.env_get('PROJECT');
+        
+        if (globals.terminal) {
+            globals.terminal.println('● INITIATING ATLAS FACTORY SEQUENCE...');
+            globals.terminal.println(`○ INGESTING SOURCE: /home/${username}/projects/${projectName}/src/train.py`);
+            
+            // Phase 1: Flower-ization
+            globals.terminal.println('○ INJECTING Flower PROTOCOLS (Client/Server hooks)...');
+            globals.terminal.println('○ WRAPPING TRAIN LOOP INTO Flower.Client OBJECT...');
+            
+            // Phase 2: ChRIS-ification
+            globals.terminal.println('○ GENERATING MERIDIAN CONTAINER (ChRIS-ification)...');
+            globals.terminal.println('○ BUILDING Dockerfile AND manifest.json...');
+            
+            // Phase 3: Dispatch
+            globals.terminal.println('○ DISTRIBUTING CONTAINER TO TRUSTED DOMAINS...');
+            globals.terminal.println('  [BCH] -> DISPATCHED');
+            globals.terminal.println('  [MGH] -> DISPATCHED');
+            globals.terminal.println('  [BIDMC] -> DISPATCHED');
+            
+            globals.terminal.println('<span class="success">● DISPATCH COMPLETE. HANDSHAKE IN PROGRESS...</span>');
+        }
+
         const actions: CalypsoAction[] = [
             { type: 'federation_start' }
         ];
 
         return this.response_create(
-            '● INITIATING FEDERATION SEQUENCE...',
+            '● FEDERATION PROTOCOLS ACTIVE.',
             actions,
             true
         );
@@ -870,6 +922,19 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             }
         }
 
+        // Extract [ACTION: HARMONIZE] intent
+        if (response.answer.includes('[ACTION: HARMONIZE]')) {
+            const activeMeta = this.storeActions.project_getActive();
+            if (activeMeta) {
+                const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
+                if (project) {
+                    // Execute the side effect
+                    const { project_harmonize } = require('../core/logic/ProjectManager.js');
+                    project_harmonize(project);
+                }
+            }
+        }
+
         // Clean up the answer (remove intent markers)
         const cleanAnswer: string = response.answer
             .replace(/\[SELECT: ds-[0-9]+\]/g, '')
@@ -877,6 +942,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
             .replace(/\[FILTER:.*?\]/g, '')
             .replace(/\[ACTION: RENAME.*?\]/g, '')
+            .replace(/\[ACTION: HARMONIZE\]/g, '')
             .trim();
 
         return this.response_create(cleanAnswer, actions, true);

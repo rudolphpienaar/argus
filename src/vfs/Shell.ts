@@ -380,23 +380,38 @@ export class Shell {
             }
             const scriptPath: string = args[0];
             try {
-                if (!this.vfs.node_stat(scriptPath)) {
+                const resolved: string = this.vfs.path_resolve(scriptPath);
+                if (!this.vfs.node_stat(resolved)) {
                     return result_err(`python: can't open file '${scriptPath}': [Errno 2] No such file or directory`, 2);
                 }
                 
-                // Ensure readable
-                this.vfs.node_read(scriptPath);
+                // Ensure readable (triggers lazy content if needed)
+                this.vfs.node_read(resolved);
 
-                // Mock execution
-                let output: string = `<span class="highlight">[PYTHON EXECUTION: ${scriptPath}]</span>\n`;
-                output += `> Loading local data from input/...\n`;
-                output += `> Model initialized (ResNet50).\n`;
-                output += `> Epoch 1/5: Loss 0.823 [====================] 100%\n`;
-                output += `> Epoch 2/5: Loss 0.612 [====================] 100%\n`;
-                output += `> Epoch 3/5: Loss 0.445 [====================] 100%\n`;
-                output += `> Epoch 4/5: Loss 0.312 [====================] 100%\n`;
-                output += `> Epoch 5/5: Loss 0.201 [====================] 100%\n`;
-                output += `<span class="success">> Training complete. Accuracy: 94.2%</span>`;
+                // Mock Local Training Execution
+                let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
+                output += `○ Loading torch and meridian.data...\n`;
+                output += `○ Found 1,240 images in ./input/\n`;
+                output += `○ Model: ResNet50 (Pretrained=True)\n`;
+                output += `○ Device: NVIDIA A100-SXM4 (Simulated)\n\n`;
+                
+                output += `--- TRAINING LOG ---\n`;
+                output += `Epoch 1/5 [#####---------------] 25% | Loss: 0.8234 | Acc: 0.64\n`;
+                await new Promise(r => setTimeout(resolve, 200)); // Brief pause
+                output += `Epoch 2/5 [##########----------] 50% | Loss: 0.5121 | Acc: 0.78\n`;
+                output += `Epoch 3/5 [###############-----] 75% | Loss: 0.3245 | Acc: 0.88\n`;
+                output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;
+                output += `Epoch 5/5 [####################] 100% | Loss: 0.1542 | Acc: 0.95\n\n`;
+                
+                output += `<span class="success">>> LOCAL TRAINING COMPLETE.</span>\n`;
+                output += `<span class="dim">   Model weights saved to: ./output/model.pth</span>\n`;
+                output += `<span class="dim">   Validation metrics saved to: ./output/stats.json</span>`;
+
+                // Mark project as locally validated
+                const projectDir = this.vfs.path_resolve('.');
+                try {
+                    this.vfs.file_create(`${projectDir}/.local_pass`, new Date().toISOString());
+                } catch { /* ignore */ }
 
                 return result_ok(output);
             } catch (e: unknown) {
@@ -582,7 +597,14 @@ export class Shell {
 
             try {
                 const { federation_simulate } = await import('../core/simulation/PhantomFederation.js');
-                const result = await federation_simulate(this.vfs, `/home/${this.username}/projects/${project}`);
+                const projectPath = `/home/${this.username}/projects/${project}`;
+                
+                // GATING: Ensure local training has run
+                if (!this.vfs.node_stat(`${projectPath}/.local_pass`)) {
+                    return result_err(`simulate: Local validation required. Run "python train.py" first.`, 1);
+                }
+
+                const result = await federation_simulate(this.vfs, projectPath);
                 
                 const output = result.logs.map((l: string): string => {
                     if (l.startsWith('ERROR')) return `<span class="error">${l}</span>`;
@@ -595,6 +617,30 @@ export class Shell {
                 } else {
                     return result_err(output, 1);
                 }
+            } catch (e: unknown) {
+                return result_err(e instanceof Error ? e.message : String(e), 1);
+            }
+        });
+
+        this.builtin_add('harmonize', 'Standardize and normalize cohort datasets', async (args: string[]): Promise<ShellResult> => {
+            if (args[0] !== 'cohort') {
+                return result_err('Usage: harmonize cohort', 1);
+            }
+
+            const project: string | undefined = this.env.get('PROJECT');
+            if (!project) {
+                return result_err('harmonize: No active project context ($PROJECT not set)', 1);
+            }
+
+            try {
+                const { MOCK_PROJECTS } = await import('../core/data/projects.js');
+                const { project_harmonize } = await import('../core/logic/ProjectManager.js');
+                
+                const model = MOCK_PROJECTS.find(p => p.name === project);
+                if (!model) return result_err('harmonize: Project model not found', 1);
+
+                project_harmonize(model);
+                return result_ok('');
             } catch (e: unknown) {
                 return result_err(e instanceof Error ? e.message : String(e), 1);
             }
