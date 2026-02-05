@@ -757,35 +757,33 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
      */
     private workflow_federate(): CalypsoResponse {
         const username = this.shell.env_get('USER') || 'user';
-        const projectName = this.shell.env_get('PROJECT');
-        
-        if (globals.terminal) {
-            globals.terminal.println('● INITIATING ATLAS FACTORY SEQUENCE...');
-            globals.terminal.println(`○ INGESTING SOURCE: /home/${username}/projects/${projectName}/src/train.py`);
-            
-            // Phase 1: Flower-ization
-            globals.terminal.println('○ INJECTING Flower PROTOCOLS (Client/Server hooks)...');
-            globals.terminal.println('○ WRAPPING TRAIN LOOP INTO Flower.Client OBJECT...');
-            
-            // Phase 2: ChRIS-ification
-            globals.terminal.println('○ GENERATING MERIDIAN CONTAINER (ChRIS-ification)...');
-            globals.terminal.println('○ BUILDING Dockerfile AND manifest.json...');
-            
-            // Phase 3: Dispatch
-            globals.terminal.println('○ DISTRIBUTING CONTAINER TO TRUSTED DOMAINS...');
-            globals.terminal.println('  [BCH] -> DISPATCHED');
-            globals.terminal.println('  [MGH] -> DISPATCHED');
-            globals.terminal.println('  [BIDMC] -> DISPATCHED');
-            
-            globals.terminal.println('<span class="success">● DISPATCH COMPLETE. HANDSHAKE IN PROGRESS...</span>');
-        }
+        const projectName = this.shell.env_get('PROJECT') || 'DRAFT';
+
+        // Build federation sequence message for headless operation
+        const lines: string[] = [
+            '● INITIATING ATLAS FACTORY SEQUENCE...',
+            `○ INGESTING SOURCE: /home/${username}/projects/${projectName}/src/train.py`,
+            '',
+            '○ INJECTING Flower PROTOCOLS (Client/Server hooks)...',
+            '○ WRAPPING TRAIN LOOP INTO Flower.Client OBJECT...',
+            '',
+            '○ GENERATING MERIDIAN CONTAINER (ChRIS-ification)...',
+            '○ BUILDING Dockerfile AND manifest.json...',
+            '',
+            '○ DISTRIBUTING CONTAINER TO TRUSTED DOMAINS...',
+            '  [BCH] -> DISPATCHED',
+            '  [MGH] -> DISPATCHED',
+            '  [BIDMC] -> DISPATCHED',
+            '',
+            '<span class="success">● DISPATCH COMPLETE. HANDSHAKE IN PROGRESS...</span>'
+        ];
 
         const actions: CalypsoAction[] = [
             { type: 'federation_start' }
         ];
 
         return this.response_create(
-            '● FEDERATION PROTOCOLS ACTIVE.',
+            lines.join('\n'),
             actions,
             true
         );

@@ -13,6 +13,20 @@ toc::[]
 **Acronym:** **C**ognitive **A**lgorithms & **L**ogic **Y**ielding **P**redictive **S**cientific **O**utcomes
 **Role:** The Intelligence Layer of the ARGUS System.
 
+=== Namesake
+
+CALYPSO carries a layered homage spanning Greek mythology and Star Trek:
+
+**The Myth (Homer's Odyssey):** Calypso was a nymph who lived on the island of Ogygia. When the shipwrecked Odysseus washed ashore, she rescued him and kept him on her island for seven years, offering immortality if he would stay. Her name derives from the Greek _kalyptō_ — "to conceal" or "to hide." Where the mythological Calypso concealed Odysseus _from_ the world, our CALYPSO conceals complexity _for_ the user.
+
+**Star Trek: Short Treks "Calypso" (2018):** In this episode, set a thousand years after _Discovery_, a wounded soldier named Craft is rescued by **Zora** — the starship's evolved artificial intelligence. Like the mythological nymph, Zora nurses Craft back to health, forms a bond with him, and ultimately helps him return home to his family. The _Discovery_ series finale (2024) revealed that Zora waited alone for a millennium to ensure this encounter would happen.
+
+**The Double Homage:** ARGUS pays tribute to Star Trek twice over:
+
+1. The entire visual language is **LCARS** — the Library Computer Access/Retrieval System designed by Michael Okuda for _The Next Generation_. This is the same interface paradigm that Zora would have used aboard the Discovery.
+
+2. The name "Calypso" directly invokes Zora's episode — an AI manifesting through LCARS, patiently guiding users through unfamiliar territory, concealing complexity so they can focus on their mission and eventually reach their destination.
+
 == Lore & Function
 
 CALYPSO is the "Ghost in the Machine" — the artificial intelligence interface that bridges the gap between the human user and the massive, federated complexity of the ATLAS network.

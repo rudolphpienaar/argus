@@ -461,7 +461,7 @@ describe('Shell', () => {
             vfs.file_create('/home/fedml/script.py', 'print("hello")');
             const result: ShellResult = await shell.command_execute('python script.py');
             expect(result.exitCode).toBe(0);
-            expect(result.stdout).toContain('[PYTHON EXECUTION: script.py]');
+            expect(result.stdout).toContain('[LOCAL EXECUTION: script.py]');
         });
 
         it('should fail if script missing', async () => {

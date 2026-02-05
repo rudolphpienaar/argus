@@ -68,10 +68,10 @@ describe('ProjectManager', () => {
             // 4. Dataset should be selected in store
             expect(store.state.selectedDatasets).toContain(dataset);
             
-            // 5. VFS should be mounted
+            // 5. VFS should be mounted (cohort tree structure: input/training/{dsDir}/...)
             const username = globals.shell?.env_get('USER') || 'user';
             const dsDir = dataset.name.replace(/\s+/g, '_');
-            const path = `/home/${username}/projects/${project.name}/input/${dsDir}/manifest.json`;
+            const path = `/home/${username}/projects/${project.name}/input/training/${dsDir}/manifest.json`;
             expect(globals.vcs.node_stat(path)).not.toBeNull();
         });
 

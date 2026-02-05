@@ -100,7 +100,7 @@ export function cohort_validate(vfs: VirtualFileSystem, projectInputPath: string
         let isMixedModality = uniqueModalities.length > 1;
 
         // Check for Harmonization Marker
-        const isHarmonized = vfs.vfs_exists ? vfs.vfs_exists(`${projectInputPath}/.harmonized`) : vfs.node_stat(`${projectInputPath}/.harmonized`) !== null;
+        const isHarmonized = vfs.node_stat(`${projectInputPath}/.harmonized`) !== null;
         if (isHarmonized) {
             isMixedModality = false;
             hasSkewedLabels = false;
@@ -143,7 +143,7 @@ export function cohort_analyze(vfs: VirtualFileSystem, projectInputPath: string)
     const { stats, isMixedModality } = validation;
 
     // 0. Harmonization Status
-    const isHarmonized = vfs.vfs_exists ? vfs.vfs_exists(`${projectInputPath}/.harmonized`) : vfs.node_stat(`${projectInputPath}/.harmonized`) !== null;
+    const isHarmonized = vfs.node_stat(`${projectInputPath}/.harmonized`) !== null;
     report.push('[HARMONIZATION STATUS]');
     if (isHarmonized) {
         report.push('  ● STATUS: <span class="success">HARMONIZED</span>');

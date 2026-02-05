@@ -397,7 +397,7 @@ export class Shell {
                 
                 output += `--- TRAINING LOG ---\n`;
                 output += `Epoch 1/5 [#####---------------] 25% | Loss: 0.8234 | Acc: 0.64\n`;
-                await new Promise(r => setTimeout(resolve, 200)); // Brief pause
+                await new Promise(r => setTimeout(r, 200)); // Brief pause
                 output += `Epoch 2/5 [##########----------] 50% | Loss: 0.5121 | Acc: 0.78\n`;
                 output += `Epoch 3/5 [###############-----] 75% | Loss: 0.3245 | Acc: 0.88\n`;
                 output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;

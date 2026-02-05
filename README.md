@@ -10,9 +10,19 @@ The project draws its naming from three figures in Greek mythology, representing
 
 *   **ATLAS** (The Titan) was condemned to hold up the celestial spheres for eternity. In our context, ATLAS is the massive, distributed infrastructure that bears the weight of the federated learning ecosystem—computing, storage, and secure networking across institutions.
 *   **ARGUS** (The Giant) was Argus Panoptes, the "all-seeing" watchman with a hundred eyes. In our context, ARGUS is the interface that provides vigilance and visibility. It acts as the hundred eyes of the developer, monitoring the distributed training jobs, datasets, and secure enclaves that ATLAS supports.
-*   **CALYPSO** (The Nymph) was "the concealer" who lived on the island of Ogygia. In our context, CALYPSO is the "Ghost in the Machine"—the hidden intelligence layer that bridges the gap between infrastructure and interface. She translates complex system states into natural language and guides the user through the intricate web of federated resources.
+*   **CALYPSO** (The Nymph) was "the concealer" who lived on the island of Ogygia. In Homer's *Odyssey*, she rescued the shipwrecked Odysseus and kept him on her island for seven years, offering him immortality if he would stay. Her name derives from the Greek *kalyptō* — "to conceal" or "to hide." In our context, CALYPSO is the "Ghost in the Machine"—the hidden intelligence layer that bridges the gap between infrastructure and interface. But where the mythological Calypso concealed Odysseus *from* the world, our CALYPSO conceals complexity *for* the user, translating intricate system states into natural language and guiding users through the federated landscape.
 
 **Atlas supports the weight; Argus sees the details; Calypso understands the intent.**
+
+### The Star Trek Connection
+
+ARGUS pays double homage to *Star Trek*:
+
+1.  **LCARS Interface**: The entire visual language is modeled on the **Library Computer Access/Retrieval System** designed by Michael Okuda for *Star Trek: The Next Generation*. LCARS wasn't just aesthetic—it was a vision of how humans might interact with starship computers through intuitive, information-dense panels. ARGUS brings that vision to life as a working interface for federated machine learning.
+
+2.  **Calypso and Zora**: The name "Calypso" is also a direct reference to the *Star Trek: Short Treks* episode **"Calypso"** (2018). In that episode, set a thousand years in the future, a wounded soldier named Craft is rescued by **Zora**—the USS Discovery's evolved artificial intelligence. Like the mythological nymph, Zora nurses Craft back to health, bonds with him, and wishes he would stay—but ultimately helps him return home. The *Discovery* series finale (2024) revealed that Zora was assigned to wait alone for a millennium to ensure this encounter would happen.
+
+    Our CALYPSO embodies the same archetype: a patient, helpful AI presence that guides users through unfamiliar territory. She manifests through an LCARS interface—the same design language that Zora would have used aboard the Discovery. The mythological thread (concealment, guidance, eventual release) weaves through both the Greek original and its Star Trek interpretation, landing here as an AI that conceals complexity so users can focus on their mission.
 
 ### Calypso and the Intent Layer
 
