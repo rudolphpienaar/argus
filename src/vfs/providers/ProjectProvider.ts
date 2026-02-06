@@ -11,6 +11,8 @@
 
 import type { VirtualFileSystem } from '../VirtualFileSystem.js';
 import type { FileNode } from '../types.js';
+import type { Project } from '../../core/models/types.js';
+import { MOCK_PROJECTS } from '../../core/data/projects.js';
 
 /**
  * Scaffolds the home directory structure for a persona.
@@ -73,6 +75,73 @@ export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'use
     if (nodesNode) {
         nodesNode.contentGenerator = 'node-registry';
         nodesNode.content = null;
+    }
+
+    // Mount existing projects from mock repository
+    projects_mount(vfs, username, MOCK_PROJECTS);
+}
+
+/**
+ * Mounts existing projects into the VFS at ~/projects/{name}/.
+ * Creates a basic project structure for each project.
+ *
+ * @param vfs - The VirtualFileSystem instance.
+ * @param username - The persona username.
+ * @param projects - Array of projects to mount.
+ */
+export function projects_mount(vfs: VirtualFileSystem, username: string, projects: Project[]): void {
+    const projectsDir: string = `/home/${username}/projects`;
+
+    for (const project of projects) {
+        const projectPath: string = `${projectsDir}/${project.name}`;
+        const srcPath: string = `${projectPath}/src`;
+
+        // Create project directory structure
+        vfs.dir_create(projectPath);
+        vfs.dir_create(srcPath);
+        vfs.dir_create(`${srcPath}/.meridian`);
+        vfs.dir_create(`${projectPath}/data`);
+        vfs.dir_create(`${projectPath}/results`);
+
+        // Create project metadata file
+        vfs.file_create(`${projectPath}/project.json`);
+        const metaNode: FileNode | null = vfs.node_stat(`${projectPath}/project.json`);
+        if (metaNode) {
+            metaNode.content = JSON.stringify({
+                id: project.id,
+                name: project.name,
+                description: project.description,
+                created: project.created.toISOString(),
+                lastModified: project.lastModified.toISOString(),
+                datasetCount: project.datasets.length
+            }, null, 2);
+        }
+
+        // Create README with project info
+        vfs.file_create(`${projectPath}/README.md`);
+        const readmeNode: FileNode | null = vfs.node_stat(`${projectPath}/README.md`);
+        if (readmeNode) {
+            const datasetList: string = project.datasets.map(d => `- ${d.name} (${d.provider})`).join('\n');
+            readmeNode.content = `# ${project.name}\n\n${project.description}\n\n## Datasets\n\n${datasetList}\n`;
+        }
+
+        // Project files with content generators
+        const files: Array<[string, string]> = [
+            ['src/train.py', 'train'],
+            ['src/config.yaml', 'config'],
+            ['src/requirements.txt', 'requirements'],
+            ['src/.meridian/manifest.json', 'manifest']
+        ];
+
+        for (const [fileName, generatorKey] of files) {
+            const filePath: string = `${projectPath}/${fileName}`;
+            vfs.file_create(filePath);
+            const node: FileNode | null = vfs.node_stat(filePath);
+            if (node) {
+                node.contentGenerator = generatorKey;
+                node.content = null;
+            }
+        }
     }
 }
 

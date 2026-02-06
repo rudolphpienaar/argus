@@ -149,10 +149,29 @@ async function prompt_fetch(): Promise<string> {
     });
 }
 
+/** Workflow summary from server */
+interface WorkflowSummary {
+    id: string;
+    name: string;
+    persona: string;
+    description: string;
+    stageCount: number;
+}
+
+/** Login response from server */
+interface LoginResponse {
+    success: boolean;
+    username: string;
+    workflows: WorkflowSummary[];
+}
+
 /**
  * Send login request to server with username.
+ *
+ * @param username - The username to login with
+ * @returns Login response with available workflows
  */
-async function login_send(username: string): Promise<boolean> {
+async function login_send(username: string): Promise<LoginResponse> {
     return new Promise((resolve) => {
         const postData = JSON.stringify({ username });
         const req = http.request({
@@ -165,11 +184,93 @@ async function login_send(username: string): Promise<boolean> {
                 'Content-Length': Buffer.byteLength(postData)
             }
         }, (res: http.IncomingMessage): void => {
+            let body: string = '';
+            res.on('data', (chunk: Buffer): void => { body += chunk.toString(); });
+            res.on('end', (): void => {
+                try {
+                    const data = JSON.parse(body);
+                    resolve({
+                        success: res.statusCode === 200,
+                        username: data.username || username,
+                        workflows: data.workflows || []
+                    });
+                } catch {
+                    resolve({ success: false, username, workflows: [] });
+                }
+            });
+        });
+        req.on('error', (): void => resolve({ success: false, username, workflows: [] }));
+        req.write(postData);
+        req.end();
+    });
+}
+
+/**
+ * Send persona/workflow selection to server.
+ *
+ * @param workflowId - The workflow ID to set (or 'skip' for none)
+ * @returns True if successful
+ */
+async function persona_send(workflowId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+        const postData = JSON.stringify({ workflowId });
+        const req = http.request({
+            hostname: HOST,
+            port: PORT,
+            path: '/calypso/persona',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        }, (res: http.IncomingMessage): void => {
             resolve(res.statusCode === 200);
         });
         req.on('error', (): void => resolve(false));
         req.write(postData);
         req.end();
+    });
+}
+
+/**
+ * Prompt user to select a persona/workflow (conversational style).
+ *
+ * Called after Calypso greets the user, so she asks about workflow preference.
+ *
+ * @param workflows - Available workflows from server
+ * @param rl - Existing readline interface to reuse
+ * @returns Selected workflow ID or 'skip'
+ */
+async function persona_prompt(workflows: WorkflowSummary[], rl: readline.Interface): Promise<string> {
+    return new Promise((resolve) => {
+        // Calypso asks about workflow preference
+        console.log();
+        console.log(message_style(`I can guide you through a **structured workflow** if you'd like. Here are the available paths:`));
+        console.log();
+
+        // Display available workflows conversationally
+        workflows.forEach((wf: WorkflowSummary, idx: number): void => {
+            console.log(`  ${COLORS.cyan}${idx + 1}.${COLORS.reset} ${COLORS.bright}${wf.name}${COLORS.reset}`);
+            console.log(`     ${COLORS.dim}${wf.description} (${wf.stageCount} steps)${COLORS.reset}`);
+        });
+        console.log(`  ${COLORS.cyan}${workflows.length + 1}.${COLORS.reset} ${COLORS.dim}No guidance needed - I'll explore freely${COLORS.reset}`);
+        console.log();
+
+        // Pause the main REPL and ask
+        rl.pause();
+        rl.question(`${COLORS.yellow}Which workflow would you like to follow? [1-${workflows.length + 1}]:${COLORS.reset} `, (answer: string) => {
+            const choice: number = parseInt(answer.trim(), 10);
+
+            if (isNaN(choice) || choice < 1 || choice > workflows.length + 1) {
+                // Default to first workflow
+                resolve(workflows[0]?.id || 'skip');
+            } else if (choice === workflows.length + 1) {
+                resolve('skip');
+            } else {
+                resolve(workflows[choice - 1].id);
+            }
+            rl.resume();
+        });
     });
 }
 
@@ -445,30 +546,17 @@ async function repl_start(): Promise<void> {
     const username: string = await login_prompt();
 
     // Send login to server to initialize with username
-    const loginSuccess: boolean = await login_send(username);
-    if (!loginSuccess) {
+    const loginResponse: LoginResponse = await login_send(username);
+    if (!loginResponse.success) {
         console.error(`${COLORS.red}>> Login failed${COLORS.reset}`);
         process.exit(1);
     }
 
-    console.log(`${COLORS.dim}Authenticating ${username}...${COLORS.reset}`);
+    console.log(`${COLORS.dim}Authenticating ${loginResponse.username}...${COLORS.reset}`);
     console.log(`${COLORS.green}● Access granted.${COLORS.reset}`);
     console.log();
 
     banner_print();
-
-    // Fetch personalized greeting from LLM
-    try {
-        const stopGreetSpinner: () => void = spinner_start('CALYPSO initializing');
-        const greetingResponse = await command_send(`/greet ${username}`);
-        stopGreetSpinner();
-        if (greetingResponse.message) {
-            console.log(message_style(greetingResponse.message));
-            console.log();
-        }
-    } catch {
-        // Greeting is optional - continue if it fails
-    }
 
     // Fetch initial prompt from server
     let currentPrompt: string = await prompt_fetch();
@@ -481,6 +569,38 @@ async function repl_start(): Promise<void> {
             completer(line).then(result => callback(null, result)).catch(() => callback(null, [[], line]));
         }
     });
+
+    // Fetch personalized greeting from LLM
+    try {
+        const stopGreetSpinner: () => void = spinner_start('CALYPSO initializing');
+        const greetingResponse = await command_send(`/greet ${username}`);
+        stopGreetSpinner();
+        if (greetingResponse.message) {
+            console.log(message_style(greetingResponse.message));
+        }
+    } catch {
+        // Greeting is optional - continue if it fails
+    }
+
+    // Calypso asks about workflow preference (after greeting)
+    if (loginResponse.workflows.length > 0) {
+        const selectedWorkflowId: string = await persona_prompt(loginResponse.workflows, rl);
+
+        // Send selection to server
+        const personaSuccess: boolean = await persona_send(selectedWorkflowId);
+        if (personaSuccess) {
+            console.log();
+            if (selectedWorkflowId === 'skip') {
+                console.log(message_style(`No problem! I'm here whenever you need guidance. Just ask.`));
+            } else {
+                const selected: WorkflowSummary | undefined = loginResponse.workflows.find(
+                    (w: WorkflowSummary): boolean => w.id === selectedWorkflowId
+                );
+                console.log(message_style(`**${selected?.name || selectedWorkflowId}** activated. I'll guide you through each step.`));
+            }
+        }
+    }
+    console.log();
 
     rl.prompt();
 

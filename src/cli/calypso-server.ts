@@ -325,10 +325,56 @@ async function request_handle(req: http.IncomingMessage, res: http.ServerRespons
                 const sanitized: string = username.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'developer';
                 calypso = calypso_initialize(sanitized);
                 console.log(`Login: User "${sanitized}" authenticated`);
-                json_send(res, { message: 'Login successful', username: sanitized });
+
+                // Return available workflows for persona selection
+                const workflows = calypso.workflows_available();
+                json_send(res, {
+                    message: 'Login successful',
+                    username: sanitized,
+                    workflows
+                });
             } catch (e: unknown) {
                 json_send(res, { error: 'Login failed' }, 400);
             }
+            return;
+        }
+
+        // POST /calypso/persona - Set persona/workflow
+        if (path === '/calypso/persona' && method === 'POST') {
+            try {
+                const body = await body_parse(req);
+                const workflowId: string | null = (body.workflowId as string) || null;
+
+                if (workflowId === 'none' || workflowId === 'skip' || !workflowId) {
+                    calypso.workflow_set(null);
+                    console.log(`Persona: Workflow guidance disabled`);
+                    json_send(res, {
+                        message: 'Workflow guidance disabled',
+                        workflow: null
+                    });
+                } else {
+                    const success = calypso.workflow_set(workflowId);
+                    if (success) {
+                        const workflows = calypso.workflows_available();
+                        const selected = workflows.find(w => w.id === workflowId);
+                        console.log(`Persona: Workflow set to "${workflowId}"`);
+                        json_send(res, {
+                            message: `Workflow set: ${selected?.name || workflowId}`,
+                            workflow: selected
+                        });
+                    } else {
+                        json_send(res, { error: `Unknown workflow: ${workflowId}` }, 400);
+                    }
+                }
+            } catch (e: unknown) {
+                json_send(res, { error: 'Failed to set persona' }, 400);
+            }
+            return;
+        }
+
+        // GET /calypso/workflows - List available workflows
+        if (path === '/calypso/workflows' && method === 'GET') {
+            json_send(res, { workflows: calypso.workflows_available() });
             return;
         }
 

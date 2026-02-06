@@ -112,4 +112,7 @@ export interface CalypsoCoreConfig {
 
     /** LLM configuration (required if not in simulation mode) */
     llmConfig?: LCARSSystemConfig;
+
+    /** Workflow ID to use (default: 'fedml') */
+    workflowId?: string;
 }

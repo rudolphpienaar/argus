@@ -28,9 +28,16 @@ import type {
 import type { Dataset, AppState, Project } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../core/data/projects.js';
-import { project_gather, project_rename } from '../core/logic/ProjectManager.js';
+import { project_gather, project_rename, project_harmonize } from '../core/logic/ProjectManager.js';
 import { projectDir_populate } from '../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../generated/version.js';
+import { WorkflowEngine } from '../core/workflows/WorkflowEngine.js';
+import type {
+    WorkflowDefinition,
+    WorkflowState,
+    WorkflowContext,
+    TransitionResult
+} from '../core/workflows/types.js';
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -70,8 +77,29 @@ export class CalypsoCore {
         'them', 'those', 'these', 'all', 'both', 'everything'
     ]);
 
+    /** Map of workflow commands to their intent identifiers */
+    private static readonly COMMAND_TO_INTENT: Readonly<Record<string, string>> = {
+        'search': 'SEARCH',
+        'add': 'ADD',
+        'gather': 'GATHER',
+        'review': 'GATHER',
+        'harmonize': 'HARMONIZE',
+        'proceed': 'PROCEED',
+        'code': 'CODE',
+        'train': 'TRAIN',
+        'python': 'PYTHON',
+        'federate': 'FEDERATE',
+        'mount': 'PROCEED'
+    };
+
     // Store reference for state access (injected as interface to avoid circular deps)
     private storeActions: CalypsoStoreActions;
+
+    /** Active workflow definition */
+    private workflowDefinition: WorkflowDefinition;
+
+    /** Current workflow state (completed stages, skip counts) */
+    private workflowState: WorkflowState;
 
     constructor(
         private vfs: VirtualFileSystem,
@@ -82,6 +110,11 @@ export class CalypsoCore {
         this.storeActions = storeActions;
         this.simulationMode = config.simulationMode ?? false;
         this.knowledge = config.knowledge;
+
+        // Initialize workflow engine with default 'fedml' workflow
+        const workflowId: string = config.workflowId ?? 'fedml';
+        this.workflowDefinition = WorkflowEngine.definition_load(workflowId);
+        this.workflowState = WorkflowEngine.state_create(workflowId);
 
         if (config.llmConfig && !this.simulationMode) {
             this.engine = new LCARSEngine(config.llmConfig, config.knowledge);
@@ -193,7 +226,8 @@ export class CalypsoCore {
      */
     public reset(): void {
         this.storeActions.reset();
-        // VFS reset would go here if needed
+        this.workflowState = WorkflowEngine.state_create(this.workflowDefinition.id);
+        this.lastMentionedDatasets = [];
     }
 
     /**
@@ -209,6 +243,56 @@ export class CalypsoCore {
      */
     public prompt_get(): string {
         return this.shell.prompt_render();
+    }
+
+    /**
+     * Set the active workflow by ID.
+     *
+     * @param workflowId - Workflow ID ('fedml', 'chris', etc.) or null to disable
+     * @returns True if workflow was set, false if not found
+     */
+    public workflow_set(workflowId: string | null): boolean {
+        if (!workflowId) {
+            // Disable workflow enforcement by setting a permissive state
+            this.workflowState = {
+                workflowId: 'none',
+                completedStages: [],
+                skipCounts: {}
+            };
+            return true;
+        }
+
+        try {
+            this.workflowDefinition = WorkflowEngine.definition_load(workflowId);
+            this.workflowState = WorkflowEngine.state_create(workflowId);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Get the current workflow ID.
+     *
+     * @returns Current workflow ID or 'none' if disabled
+     */
+    public workflow_get(): string {
+        return this.workflowState.workflowId;
+    }
+
+    /**
+     * Get available workflows for selection.
+     *
+     * @returns Array of workflow summaries
+     */
+    public workflows_available(): Array<{
+        id: string;
+        name: string;
+        persona: string;
+        description: string;
+        stageCount: number;
+    }> {
+        return WorkflowEngine.workflows_summarize();
     }
 
     // ─── Special Commands (/command) ───────────────────────────────────────
@@ -320,9 +404,15 @@ export class CalypsoCore {
                 );
             }
 
+            case 'workflow': {
+                const progress: string = this.workflow_progress();
+                return this.response_create(progress, [], true);
+            }
+
             case 'help': {
                 const help: string = `CALYPSO SPECIAL COMMANDS:
   /status           - Show system status (AI, VFS, project)
+  /workflow         - Show workflow progress and next step
   /key <provider> <key> - Set API key (openai|gemini)
   /snapshot [path]  - Display VFS snapshot as JSON
   /state            - Display Store state as JSON
@@ -338,7 +428,9 @@ WORKFLOW COMMANDS:
   search <query>    - Search dataset catalog
   add <dataset-id>  - Add dataset to selection
   gather            - Review gathered datasets
-  mount             - Mount VFS and proceed to process stage
+  harmonize         - Harmonize cohort data
+  proceed / code    - Scaffold project code
+  python train.py   - Run local training
   federate          - Start federation sequence`;
                 return this.response_create(help, [], true);
             }
@@ -471,10 +563,117 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         }
     }
 
+    // ─── Workflow Engine Integration ────────────────────────────────────────
+
+    /**
+     * Build the workflow context for validation checks.
+     *
+     * @returns WorkflowContext with store, vfs, and project path
+     */
+    private workflowContext_build(): WorkflowContext {
+        const activeMeta = this.storeActions.project_getActive();
+        const username: string = this.shell.env_get('USER') || 'user';
+        const projectPath: string = activeMeta
+            ? `/home/${username}/projects/${activeMeta.name}`
+            : `/home/${username}/projects/DRAFT`;
+
+        return {
+            store: {
+                selectedDatasets: { length: this.storeActions.datasets_getSelected().length }
+            },
+            vfs: {
+                exists: (path: string): boolean => {
+                    const resolved: string = path.replace(/\$\{project\}/g, projectPath);
+                    return this.vfs.node_stat(resolved) !== null;
+                }
+            },
+            project: projectPath
+        };
+    }
+
+    /**
+     * Check workflow constraints for a command and return warning if needed.
+     *
+     * @param cmd - The command being executed
+     * @returns TransitionResult with allowed status and warnings
+     */
+    private workflow_checkTransition(cmd: string): TransitionResult {
+        const intent: string | undefined = CalypsoCore.COMMAND_TO_INTENT[cmd];
+        if (!intent) {
+            // Command not tracked by workflow — allow
+            return {
+                allowed: true,
+                warning: null,
+                reason: null,
+                suggestion: null,
+                skipCount: 0,
+                hardBlock: false,
+                skippedStageId: null
+            };
+        }
+
+        const context: WorkflowContext = this.workflowContext_build();
+        return WorkflowEngine.transition_check(
+            this.workflowState,
+            this.workflowDefinition,
+            intent,
+            context
+        );
+    }
+
+    /**
+     * Format a workflow warning into a user-friendly message.
+     *
+     * @param transition - The transition result with warning details
+     * @returns Formatted warning string
+     */
+    private workflowWarning_format(transition: TransitionResult): string {
+        const lines: string[] = [];
+        lines.push(`○ <span class="warning">WARNING: ${transition.warning}</span>`);
+
+        // Include full reason on second+ warning
+        if (transition.reason) {
+            lines.push('');
+            lines.push(transition.reason);
+        }
+
+        if (transition.suggestion) {
+            lines.push('');
+            lines.push(`  → ${transition.suggestion}`);
+        }
+
+        return lines.join('\n');
+    }
+
+    /**
+     * Mark a workflow stage as complete based on the command executed.
+     *
+     * @param cmd - The command that was executed
+     */
+    private workflowStage_complete(cmd: string): void {
+        const intent: string | undefined = CalypsoCore.COMMAND_TO_INTENT[cmd];
+        if (!intent) return;
+
+        const stage = WorkflowEngine.stage_forIntent(this.workflowDefinition, intent);
+        if (stage) {
+            WorkflowEngine.stage_complete(this.workflowState, stage.id);
+        }
+    }
+
+    /**
+     * Get current workflow progress summary.
+     *
+     * @returns Human-readable progress string
+     */
+    public workflow_progress(): string {
+        return WorkflowEngine.progress_summarize(this.workflowState, this.workflowDefinition);
+    }
+
     // ─── Workflow Commands ─────────────────────────────────────────────────
 
     /**
      * Dispatch workflow commands (search, add, gather, mount, etc.).
+     * Checks workflow constraints before execution and issues warnings.
      *
      * @param input - Full input string
      * @returns Response if handled, null to fall through to LLM
@@ -484,44 +683,78 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         const cmd: string = parts[0].toLowerCase();
         const args: string[] = parts.slice(1);
 
+        // Check workflow constraints
+        const transition: TransitionResult = this.workflow_checkTransition(cmd);
+        let warningPrefix: string = '';
+
+        if (!transition.allowed && transition.skippedStageId) {
+            // Increment skip counter and format warning
+            WorkflowEngine.skip_increment(this.workflowState, transition.skippedStageId);
+            warningPrefix = this.workflowWarning_format(transition) + '\n\n';
+        }
+
+        // Execute the command
+        let response: CalypsoResponse | null = null;
+
         switch (cmd) {
             case 'search':
-                return this.workflow_search(args.join(' '));
+                response = this.workflow_search(args.join(' '));
+                break;
 
             case 'add':
-                return this.workflow_add(args[0]);
+                response = await this.workflow_add(args[0]);
+                break;
 
             case 'remove':
             case 'deselect':
-                return this.workflow_remove(args[0]);
+                response = this.workflow_remove(args[0]);
+                break;
 
             case 'gather':
             case 'review':
-                return this.workflow_gather(args[0]);
+                response = await this.workflow_gather(args[0]);
+                break;
 
             case 'mount':
-                return this.workflow_mount();
+                response = this.workflow_mount();
+                break;
 
             case 'federate':
-                return this.workflow_federate();
+                response = this.workflow_federate();
+                break;
 
             case 'proceed':
             case 'code':
-                return this.workflow_proceed();
+                response = this.workflow_proceed();
+                break;
 
             case 'rename':
                 let nameArg: string = args.join(' ');
                 if (nameArg.toLowerCase().startsWith('to ')) {
                     nameArg = nameArg.substring(3).trim();
                 }
-                return this.workflow_rename(nameArg);
+                response = this.workflow_rename(nameArg);
+                break;
 
             case 'harmonize':
-                return this.workflow_harmonize();
+                response = this.workflow_harmonize();
+                break;
 
             default:
                 return null; // Fall through to LLM
         }
+
+        // If we got a response, prepend warning (if any) and mark stage complete
+        if (response) {
+            if (warningPrefix && response.success) {
+                response.message = warningPrefix + response.message;
+            }
+            if (response.success) {
+                this.workflowStage_complete(cmd);
+            }
+        }
+
+        return response;
     }
 
     /**
@@ -538,8 +771,6 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             return this.response_create('>> ERROR: PROJECT MODEL NOT FOUND.', [], false);
         }
 
-        // Import side effect logic from ProjectManager
-        const { project_harmonize } = require('../core/logic/ProjectManager.js');
         project_harmonize(project);
 
         return this.response_create(
@@ -926,8 +1157,6 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             if (activeMeta) {
                 const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
                 if (project) {
-                    // Execute the side effect
-                    const { project_harmonize } = require('../core/logic/ProjectManager.js');
                     project_harmonize(project);
                 }
             }

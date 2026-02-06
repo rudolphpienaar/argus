@@ -381,3 +381,19 @@ Before modifying UI logic, consult `docs/framework.adoc`.
 After refactoring a function or component:
 *   **The Risk:** A syntactically correct change may sever the link between the UI (View) and the Logic (Provider).
 *   **The Rule:** Verify that the **caller** (e.g., the button ID) and the **callee** (the event listener) match exactly. Ensure imports are updated if function names change.
+
+### 4. ES Modules Only — No `require()`
+This project uses ES modules (`"type": "module"` in `package.json`). **NEVER** use CommonJS `require()`.
+*   **The Risk:** `require()` throws `ReferenceError: require is not defined` at runtime in ES module contexts. This error may not surface until that specific code path executes, making it easy to miss during development.
+*   **The Rule:** Always use ES module `import` syntax:
+    ```typescript
+    // ✓ GOOD: ES module import at top of file
+    import { project_harmonize } from '../core/logic/ProjectManager.js';
+
+    // ✓ GOOD: Dynamic import (if truly needed at runtime)
+    const { project_harmonize } = await import('../core/logic/ProjectManager.js');
+
+    // ✗ BAD: CommonJS require (will fail at runtime)
+    const { project_harmonize } = require('../core/logic/ProjectManager.js');
+    ```
+*   **Lint Rule:** Consider enabling `@typescript-eslint/no-require-imports` to catch this automatically.

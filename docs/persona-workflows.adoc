@@ -1,0 +1,750 @@
+= Persona Workflows: Declarative Experience Definitions
+:revnumber: 1.0.0
+:revdate: 2026-02-05
+:toc: macro
+:toclevels: 3
+:sectnums:
+
+toc::[]
+
+== Overview
+
+Persona Workflows are **declarative YAML specifications** that define the expected sequence of operations for a given user persona. They serve three purposes:
+
+1. **Enforcement**: Prevent users from skipping critical steps (e.g., harmonization before federation)
+2. **Education**: Explain _why_ each step matters when users attempt to skip ahead
+3. **Guidance**: Help Calypso suggest the logical next action
+
+Rather than hardcoding workflow logic in `CalypsoCore`, we externalize it as data. This makes workflows:
+
+- **Configurable** without code changes
+- **Testable** via ORACLE assertions
+- **Extensible** for new personas or regulatory contexts
+
+== Design Philosophy
+
+=== The DAG Model
+
+Each workflow is a **Directed Acyclic Graph (DAG)** of steps. Each step:
+
+- Has a unique identifier
+- Declares which **intents** it handles
+- Declares which **prior steps** it requires (dependencies)
+- Specifies a **validation condition** to confirm completion
+- Provides **educational warnings** when users try to skip it
+
+[source]
+----
+    ┌──────────┐
+    │  gather  │
+    └────┬─────┘
+         │
+         ▼
+    ┌──────────┐
+    │harmonize │  ◄─── "Federated learning requires consistent data formats..."
+    └────┬─────┘
+         │
+         ▼
+    ┌──────────┐
+    │   code   │
+    └────┬─────┘
+         │
+         ▼
+    ┌──────────┐
+    │  train   │  ◄─── "Running locally first catches errors early..."
+    └────┬─────┘
+         │
+         ▼
+    ┌──────────┐
+    │ federate │
+    └──────────┘
+----
+
+=== Soft Enforcement via Auto-Suggest
+
+Workflows use **soft enforcement** rather than hard blocks:
+
+1. **First skip attempt**: Calypso warns with the short message and suggestion
+2. **Second skip attempt**: Calypso warns with the full reason
+3. **Third+ attempt**: Calypso allows the action (user knows what they're doing)
+
+This balances guardrails with user autonomy. Power users can override; novices get guidance.
+
+== YAML Schema
+
+=== Top-Level Structure
+
+[source,yaml]
+----
+# workflows/fedml.yml
+name: "Federated ML Workflow"
+id: fedml
+persona: fedml
+description: |
+  Full SeaGaP-MP pipeline for federated learning on medical imaging.
+  Guides the user from dataset discovery through federation dispatch.
+
+stages:
+  - id: gather
+    # ... stage definition
+  - id: harmonize
+    # ... stage definition
+----
+
+=== Stage Definition
+
+Each stage has the following fields:
+
+[cols="2,1,4"]
+|===
+| Field | Required | Description
+
+| `id`
+| Yes
+| Unique identifier for the stage (snake_case)
+
+| `name`
+| Yes
+| Human-readable stage name for display
+
+| `intents`
+| Yes
+| Array of intent keywords that this stage handles (e.g., `[SEARCH, ADD]`)
+
+| `requires`
+| No
+| Array of stage IDs that must be completed first (empty = entry point)
+
+| `validation`
+| No
+| Condition object to verify stage completion
+
+| `skip_warning`
+| No
+| Warning configuration when user tries to skip this stage
+|===
+
+=== Validation Object
+
+[source,yaml]
+----
+validation:
+  condition: "store.selectedDatasets.length > 0"
+  error_message: "No datasets selected. Use 'add <dataset>' first."
+----
+
+The `condition` is a JavaScript expression evaluated against the runtime context:
+
+- `store.*` — Access to Store state
+- `vfs.exists(path)` — Check VFS path existence
+- `${project}` — Interpolated to active project path
+
+=== Skip Warning Object
+
+[source,yaml]
+----
+skip_warning:
+  short: "Cohort not harmonized."
+  reason: |
+    Federated learning requires consistent data formats across sites.
+    Without harmonization, your model may fail on heterogeneous inputs
+    (different resolutions, naming conventions, or label schemas).
+  suggestion: "Run 'harmonize' to standardize your cohort."
+  max_warnings: 2
+----
+
+[cols="2,1,4"]
+|===
+| Field | Required | Description
+
+| `short`
+| Yes
+| Brief one-line warning (shown on first skip attempt)
+
+| `reason`
+| Yes
+| Detailed explanation of _why_ this step matters
+
+| `suggestion`
+| Yes
+| Concrete command or action to resolve the skip
+
+| `max_warnings`
+| No
+| Number of warnings before allowing skip (default: 2)
+|===
+
+== Reference Workflows
+
+=== FedML Workflow (`fedml.yml`)
+
+The primary workflow for federated machine learning developers.
+
+[source,yaml]
+----
+name: "Federated ML Workflow"
+id: fedml
+persona: fedml
+description: |
+  Full SeaGaP-MP pipeline for federated learning on medical imaging.
+  Guides the user from dataset discovery through federation dispatch.
+
+stages:
+  - id: gather
+    name: "Cohort Assembly"
+    intents: [SEARCH, ADD, GATHER]
+    requires: []
+    validation:
+      condition: "store.selectedDatasets.length > 0"
+      error_message: "No datasets in cohort."
+
+  - id: harmonize
+    name: "Data Harmonization"
+    intents: [HARMONIZE]
+    requires: [gather]
+    validation:
+      condition: "vfs.exists('${project}/input/.harmonized')"
+      error_message: "Cohort not harmonized."
+    skip_warning:
+      short: "Cohort not harmonized."
+      reason: |
+        Federated learning requires consistent data formats across sites.
+        Without harmonization, your model may fail on heterogeneous inputs
+        (different resolutions, naming conventions, or label schemas).
+
+        Harmonization applies:
+        - Image resampling to consistent resolution
+        - Filename normalization
+        - Label schema alignment
+        - Metadata standardization
+      suggestion: "Run 'harmonize' to standardize your cohort."
+      max_warnings: 2
+
+  - id: code
+    name: "Code Development"
+    intents: [PROCEED, CODE]
+    requires: [harmonize]
+    validation:
+      condition: "vfs.exists('${project}/src/train.py')"
+      error_message: "No training code scaffolded."
+    skip_warning:
+      short: "Project structure not scaffolded."
+      reason: |
+        The FedML workflow requires a train.py with Flower client hooks
+        and a properly configured Dockerfile for containerization.
+
+        Scaffolding generates:
+        - src/train.py (with Flower client wrapper)
+        - src/Dockerfile (MERIDIAN-compatible)
+        - src/manifest.json (ChRIS plugin metadata)
+      suggestion: "Run 'proceed' or 'code' to generate the project structure."
+      max_warnings: 2
+
+  - id: train
+    name: "Local Validation"
+    intents: [TRAIN, PYTHON]
+    requires: [code]
+    validation:
+      condition: "vfs.exists('${project}/.local_pass')"
+      error_message: "Local training not validated."
+    skip_warning:
+      short: "Local training not validated."
+      reason: |
+        Federation distributes your code to remote sites where debugging
+        is difficult or impossible. Running locally first catches:
+        - Import errors and missing dependencies
+        - Data loading issues
+        - Model architecture problems
+        - Memory and resource constraints
+
+        A successful local run creates a .local_pass marker.
+      suggestion: "Run 'python train.py' to validate locally."
+      max_warnings: 2
+
+  - id: federate
+    name: "Federation Dispatch"
+    intents: [FEDERATE]
+    requires: [train]
+    validation:
+      condition: "true"
+      error_message: ""
+    # No skip_warning — terminal step
+----
+
+=== ChRIS Plugin Workflow (`chris.yml`)
+
+For developers building standalone ChRIS plugins (non-federated).
+
+[source,yaml]
+----
+name: "ChRIS Plugin Workflow"
+id: chris
+persona: appdev
+description: |
+  Pipeline for building and deploying ChRIS plugins.
+  Simpler than FedML — no harmonization or federation steps.
+
+stages:
+  - id: gather
+    name: "Test Data Assembly"
+    intents: [SEARCH, ADD, GATHER]
+    requires: []
+    validation:
+      condition: "store.selectedDatasets.length > 0"
+
+  - id: code
+    name: "Plugin Development"
+    intents: [PROCEED, CODE]
+    requires: [gather]
+    validation:
+      condition: "vfs.exists('${project}/src/main.py')"
+    skip_warning:
+      short: "Plugin structure not scaffolded."
+      reason: |
+        ChRIS plugins require a specific directory structure with
+        main.py, Dockerfile, and chris_plugin_info.json.
+      suggestion: "Run 'proceed chris' to scaffold the plugin."
+      max_warnings: 2
+
+  - id: test
+    name: "Local Testing"
+    intents: [TEST, PYTHON]
+    requires: [code]
+    validation:
+      condition: "vfs.exists('${project}/.test_pass')"
+    skip_warning:
+      short: "Plugin not tested locally."
+      reason: |
+        ChRIS plugins run in isolated containers. Local testing
+        verifies argument parsing, file I/O, and error handling.
+      suggestion: "Run 'python main.py --help' to verify the plugin."
+      max_warnings: 2
+
+  - id: publish
+    name: "Plugin Publication"
+    intents: [PUBLISH, DEPLOY]
+    requires: [test]
+----
+
+== Implementation Architecture
+
+=== Module Structure
+
+[source]
+----
+src/
+├── core/
+│   └── workflows/
+│       ├── types.ts              # Type definitions
+│       ├── WorkflowEngine.ts     # Loader, validator, state machine
+│       ├── WorkflowEngine.test.ts
+│       └── definitions/          # YAML files
+│           ├── fedml.yml
+│           ├── chris.yml
+│           └── annotation.yml
+----
+
+=== Type Definitions (`types.ts`)
+
+[source,typescript]
+----
+/**
+ * @file Workflow Type Definitions
+ *
+ * Type definitions for declarative persona workflow specifications.
+ *
+ * @module
+ */
+
+/**
+ * Validation condition for stage completion.
+ */
+export interface StageValidation {
+    /** JavaScript expression evaluated against runtime context */
+    condition: string;
+    /** Error message when validation fails */
+    error_message: string;
+}
+
+/**
+ * Warning configuration when user attempts to skip a required stage.
+ */
+export interface SkipWarning {
+    /** Brief one-line warning (first skip attempt) */
+    short: string;
+    /** Detailed explanation of why this step matters */
+    reason: string;
+    /** Concrete command or action to resolve */
+    suggestion: string;
+    /** Number of warnings before allowing skip (default: 2) */
+    max_warnings: number;
+}
+
+/**
+ * A single stage in a workflow DAG.
+ */
+export interface WorkflowStage {
+    /** Unique identifier (snake_case) */
+    id: string;
+    /** Human-readable display name */
+    name: string;
+    /** Intent keywords this stage handles */
+    intents: string[];
+    /** Stage IDs that must complete before this one */
+    requires: string[];
+    /** Condition to verify stage completion */
+    validation: StageValidation | null;
+    /** Warning when user tries to skip */
+    skip_warning: SkipWarning | null;
+}
+
+/**
+ * Complete workflow definition loaded from YAML.
+ */
+export interface WorkflowDefinition {
+    /** Workflow display name */
+    name: string;
+    /** Unique workflow identifier */
+    id: string;
+    /** Associated persona */
+    persona: string;
+    /** Detailed description */
+    description: string;
+    /** Ordered list of stages */
+    stages: WorkflowStage[];
+}
+
+/**
+ * Runtime state for an active workflow.
+ */
+export interface WorkflowState {
+    /** Active workflow ID */
+    workflowId: string;
+    /** IDs of completed stages */
+    completedStages: string[];
+    /** Skip warning counts per stage */
+    skipCounts: Record<string, number>;
+}
+
+/**
+ * Result of a workflow transition check.
+ */
+export interface TransitionResult {
+    /** Whether the transition is allowed */
+    allowed: boolean;
+    /** Warning message if not allowed (null if allowed) */
+    warning: string | null;
+    /** Suggestion for user (null if allowed) */
+    suggestion: string | null;
+    /** Number of times this skip has been attempted */
+    skipCount: number;
+    /** Whether this is a hard block (false = soft warning) */
+    hardBlock: boolean;
+}
+----
+
+=== WorkflowEngine API (`WorkflowEngine.ts`)
+
+[source,typescript]
+----
+/**
+ * @file WorkflowEngine - Declarative Workflow State Machine
+ *
+ * Loads workflow definitions from YAML and enforces stage transitions
+ * with educational soft-blocking.
+ *
+ * @module
+ * @see docs/persona-workflows.adoc
+ */
+
+export class WorkflowEngine {
+    /**
+     * Load a workflow definition from YAML file.
+     *
+     * @param workflowId - The workflow identifier (e.g., 'fedml')
+     * @returns The parsed workflow definition
+     * @throws {Error} If workflow file not found or invalid
+     */
+    static definition_load(workflowId: string): WorkflowDefinition;
+
+    /**
+     * Create a new workflow state for tracking progress.
+     *
+     * @param workflowId - The workflow to initialize
+     * @returns Fresh workflow state with no completed stages
+     */
+    static state_create(workflowId: string): WorkflowState;
+
+    /**
+     * Check if a transition to the given intent is allowed.
+     *
+     * @param state - Current workflow state
+     * @param definition - Workflow definition
+     * @param intent - The intent the user is attempting
+     * @param context - Runtime context for validation (store, vfs)
+     * @returns Transition result with allowed status and warnings
+     */
+    static transition_check(
+        state: WorkflowState,
+        definition: WorkflowDefinition,
+        intent: string,
+        context: WorkflowContext
+    ): TransitionResult;
+
+    /**
+     * Mark a stage as completed in the workflow state.
+     *
+     * @param state - Current workflow state (mutated)
+     * @param stageId - Stage to mark complete
+     */
+    static stage_complete(state: WorkflowState, stageId: string): void;
+
+    /**
+     * Increment the skip counter for a stage.
+     *
+     * @param state - Current workflow state (mutated)
+     * @param stageId - Stage being skipped
+     * @returns New skip count
+     */
+    static skip_increment(state: WorkflowState, stageId: string): number;
+
+    /**
+     * Find which stage handles a given intent.
+     *
+     * @param definition - Workflow definition
+     * @param intent - Intent keyword to look up
+     * @returns The stage that handles this intent, or null
+     */
+    static stage_forIntent(
+        definition: WorkflowDefinition,
+        intent: string
+    ): WorkflowStage | null;
+
+    /**
+     * Get the next suggested stage based on current progress.
+     *
+     * @param state - Current workflow state
+     * @param definition - Workflow definition
+     * @returns The next incomplete stage, or null if workflow complete
+     */
+    static stage_next(
+        state: WorkflowState,
+        definition: WorkflowDefinition
+    ): WorkflowStage | null;
+
+    /**
+     * Check if all dependencies for a stage are satisfied.
+     *
+     * @param state - Current workflow state
+     * @param stage - Stage to check
+     * @returns True if all required stages are complete
+     */
+    static dependencies_satisfied(
+        state: WorkflowState,
+        stage: WorkflowStage
+    ): boolean;
+}
+----
+
+=== Integration with CalypsoCore
+
+Before executing an intent, `CalypsoCore` consults the `WorkflowEngine`:
+
+[source,typescript]
+----
+// In CalypsoCore.command_execute()
+
+// 1. Identify the intent
+const intent: string = this.intent_classify(input);
+
+// 2. Check workflow constraints
+const transition: TransitionResult = WorkflowEngine.transition_check(
+    this.workflowState,
+    this.workflowDefinition,
+    intent,
+    { store: this.storeActions, vfs: this.vfs }
+);
+
+// 3. Handle soft blocks
+if (!transition.allowed) {
+    if (transition.hardBlock) {
+        return this.response_create(
+            `>> ERROR: ${transition.warning}`,
+            [],
+            false
+        );
+    }
+
+    // Soft warning — return warning but don't block
+    const warningMessage: string = transition.skipCount === 1
+        ? `○ WARNING: ${transition.warning}\n  ${transition.suggestion}`
+        : `○ WARNING: ${transition.warning}\n\n${this.workflowStage_getReason(intent)}\n\n  ${transition.suggestion}`;
+
+    // Increment skip counter
+    WorkflowEngine.skip_increment(this.workflowState, this.currentStageId);
+
+    // Still execute, but prepend warning
+    const response: CalypsoResponse = await this.intent_execute(intent, args);
+    response.message = `${warningMessage}\n\n${response.message}`;
+    return response;
+}
+
+// 4. Execute normally
+const response: CalypsoResponse = await this.intent_execute(intent, args);
+
+// 5. Update workflow state on success
+if (response.success) {
+    const stage: WorkflowStage | null = WorkflowEngine.stage_forIntent(
+        this.workflowDefinition,
+        intent
+    );
+    if (stage) {
+        WorkflowEngine.stage_complete(this.workflowState, stage.id);
+    }
+}
+
+return response;
+----
+
+== Store Integration
+
+The workflow state is persisted in the Store:
+
+[source,typescript]
+----
+interface ExtendedState extends AppState {
+    // ... existing fields
+
+    /** Active workflow identifier */
+    currentWorkflow: string | null;
+
+    /** Workflow progress state */
+    workflowState: WorkflowState | null;
+}
+----
+
+This allows:
+
+- Workflow state to survive page reloads (browser mode)
+- `/status` to show current workflow progress
+- ORACLE tests to assert on workflow state
+
+== Testing Strategy
+
+=== Unit Tests (`WorkflowEngine.test.ts`)
+
+[source,typescript]
+----
+describe('WorkflowEngine', () => {
+    describe('definition_load', () => {
+        it('should load fedml workflow', () => { ... });
+        it('should throw on missing workflow', () => { ... });
+    });
+
+    describe('transition_check', () => {
+        it('should allow gather without prerequisites', () => { ... });
+        it('should warn on skipping harmonize (first time)', () => { ... });
+        it('should warn with reason on second skip', () => { ... });
+        it('should allow skip after max_warnings', () => { ... });
+    });
+
+    describe('dependencies_satisfied', () => {
+        it('should return true for entry stages', () => { ... });
+        it('should return false when requires not met', () => { ... });
+    });
+});
+----
+
+=== ORACLE Integration Tests
+
+[source,yaml]
+----
+# tests/oracle/workflow-enforcement.oracle
+name: "Workflow: Skip Warning Enforcement"
+tags: [workflow, fedml, warning]
+setup:
+  persona: fedml
+  workflow: fedml
+
+steps:
+  - send: "search brain MRI"
+    assert:
+      - output_contains: "IDENTIFIED"
+
+  - send: "add ds-005"
+    assert:
+      - store.selectedDatasets.length == 1
+
+  # Skip harmonize, go straight to code
+  - send: "proceed"
+    assert:
+      - output_contains: "WARNING"
+      - output_contains: "Cohort not harmonized"
+      - output_contains: "harmonize"
+
+  # Try again — should get full reason
+  - send: "code"
+    assert:
+      - output_contains: "WARNING"
+      - output_contains: "consistent data formats"
+
+  # Third time — should allow (user knows what they're doing)
+  - send: "proceed"
+    assert:
+      - output_not_contains: "WARNING"
+      - output_contains: "INITIATING CODE PROTOCOLS"
+----
+
+== Future Extensions
+
+=== Branching Workflows
+
+Some workflows may have optional branches:
+
+[source,yaml]
+----
+stages:
+  - id: code
+    requires: [harmonize]
+    # OR relationship — either path works
+    requires_any: [harmonize, import_existing]
+----
+
+=== Persona-Specific Overrides
+
+A persona may have stricter requirements:
+
+[source,yaml]
+----
+# workflows/fda-submission.yml
+stages:
+  - id: harmonize
+    skip_warning:
+      max_warnings: 0  # Hard block — FDA requires harmonization
+----
+
+=== Workflow Composition
+
+Workflows could inherit from base workflows:
+
+[source,yaml]
+----
+# workflows/fedml-strict.yml
+extends: fedml
+overrides:
+  - stage: harmonize
+    skip_warning:
+      max_warnings: 0
+----
+
+== Summary
+
+Persona Workflows externalize the implicit knowledge of "what comes next" into declarative, educational YAML specifications. This:
+
+1. **Prevents errors** by catching skipped steps
+2. **Teaches users** why each step matters
+3. **Respects autonomy** by allowing overrides after warnings
+4. **Enables testing** via clear state transitions
+5. **Supports extension** for new personas and contexts
+
+The mythological parallel: just as Calypso guided Odysseus but ultimately let him choose his path, our workflow system guides users while respecting their agency.
