@@ -74,13 +74,14 @@ export interface WorkflowDefinition {
 /**
  * Runtime state for an active workflow.
  *
+ * Note: Stage completion is determined by VFS markers, not stored here.
+ * This state only tracks skip warning counts for soft-blocking.
+ *
  * @property workflowId - Active workflow ID
- * @property completedStages - IDs of completed stages
  * @property skipCounts - Skip warning counts per stage
  */
 export interface WorkflowState {
     workflowId: string;
-    completedStages: string[];
     skipCounts: Record<string, number>;
 }
 

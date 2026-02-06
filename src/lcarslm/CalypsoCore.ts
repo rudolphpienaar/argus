@@ -168,6 +168,40 @@ export class CalypsoCore {
             return workflowResult;
         }
 
+        // Intercept workflow-related queries for deterministic guidance
+        // These bypass the LLM to provide accurate, state-aware responses
+        const lowerInput: string = trimmed.toLowerCase();
+        const workflowPatterns: RegExp[] = [
+            // "What's next" style queries
+            /^what('?s| is| should be)?\s*(the\s+)?next/i,
+            /^next\??$/i,
+            /^what\s+(now|should\s+i\s+do)/i,
+            /^what\s+do\s+i\s+do/i,
+            /^help\s+me/i,
+            /^guide\s+me/i,
+            /^suggest/i,
+            /^how\s+do\s+i\s+(proceed|continue|start)/i,
+            // Status and progress queries
+            /^(show\s+)?(my\s+)?status/i,
+            /^(show\s+)?(my\s+)?progress/i,
+            /^where\s+am\s+i/i,
+            /^what\s+stage/i,
+            /^which\s+stage/i,
+            /^current\s+stage/i,
+            // Harmonization queries (ensure user gets proper guidance)
+            /do\s+i\s+need\s+to\s+harmonize/i,
+            /should\s+i\s+harmonize/i,
+            /what('?s| is)\s+harmoniz/i,
+            /why\s+(do\s+i\s+need\s+to\s+|should\s+i\s+)?harmonize/i,
+            /before\s+(i\s+)?(can\s+)?(code|train|proceed)/i,
+            /can\s+i\s+skip\s+harmoniz/i
+        ];
+
+        if (workflowPatterns.some((pattern: RegExp): boolean => pattern.test(lowerInput))) {
+            const guidance: string = this.workflow_nextStep();
+            return this.response_create(guidance, [], true);
+        }
+
         // Fall through to LLM
         return this.llm_query(trimmed);
     }
@@ -256,7 +290,6 @@ export class CalypsoCore {
             // Disable workflow enforcement by setting a permissive state
             this.workflowState = {
                 workflowId: 'none',
-                completedStages: [],
                 skipCounts: {}
             };
             return true;
@@ -409,10 +442,16 @@ export class CalypsoCore {
                 return this.response_create(progress, [], true);
             }
 
+            case 'next': {
+                const guidance: string = this.workflow_nextStep();
+                return this.response_create(guidance, [], true);
+            }
+
             case 'help': {
                 const help: string = `CALYPSO SPECIAL COMMANDS:
   /status           - Show system status (AI, VFS, project)
-  /workflow         - Show workflow progress and next step
+  /next             - Show suggested next step with commands
+  /workflow         - Show workflow progress summary
   /key <provider> <key> - Set API key (openai|gemini)
   /snapshot [path]  - Display VFS snapshot as JSON
   /state            - Display Store state as JSON
@@ -427,11 +466,13 @@ SHELL COMMANDS:
 WORKFLOW COMMANDS:
   search <query>    - Search dataset catalog
   add <dataset-id>  - Add dataset to selection
-  gather            - Review gathered datasets
-  harmonize         - Harmonize cohort data
-  proceed / code    - Scaffold project code
+  gather            - Create project from selection
+  harmonize         - Standardize cohort for federation
+  proceed / code    - Scaffold training environment
   python train.py   - Run local training
-  federate          - Start federation sequence`;
+  federate          - Start federation sequence
+
+TIP: Type /next anytime to see what to do next!`;
                 return this.response_create(help, [], true);
             }
 
@@ -666,7 +707,182 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
      * @returns Human-readable progress string
      */
     public workflow_progress(): string {
-        return WorkflowEngine.progress_summarize(this.workflowState, this.workflowDefinition);
+        const context: WorkflowContext = this.workflowContext_build();
+        return WorkflowEngine.progress_summarize(this.workflowDefinition, context);
+    }
+
+    /**
+     * Build workflow context string for LLM injection.
+     *
+     * This gives the LLM awareness of the current workflow state so it can
+     * provide appropriate guidance and not suggest skipping required steps.
+     *
+     * @returns Formatted workflow context for system prompt injection
+     */
+    private workflowContext_forLLM(): string {
+        const context: WorkflowContext = this.workflowContext_build();
+        const completedStages: string[] = WorkflowEngine.stages_completed(this.workflowDefinition, context);
+        const nextStage = WorkflowEngine.stage_next(this.workflowDefinition, context);
+        const activeMeta = this.storeActions.project_getActive();
+
+        const lines: string[] = [];
+        lines.push('### CURRENT WORKFLOW STATE');
+        lines.push(`- Workflow: ${this.workflowDefinition.name}`);
+        lines.push(`- Completed stages: ${completedStages.length > 0 ? completedStages.join(', ') : 'none'}`);
+
+        if (nextStage) {
+            lines.push(`- Next required: ${nextStage.id} (${nextStage.name})`);
+        } else {
+            lines.push('- Status: All stages complete');
+        }
+
+        if (activeMeta) {
+            lines.push(`- Active project: ${activeMeta.name}`);
+        } else {
+            lines.push('- Active project: none');
+        }
+
+        // Add specific guidance for the LLM based on workflow state
+        if (nextStage?.id === 'harmonize') {
+            lines.push('');
+            lines.push('IMPORTANT: User must run `harmonize` before proceeding to code/training.');
+            lines.push('Do NOT suggest skipping harmonization. If user asks to code or train,');
+            lines.push('remind them to harmonize first.');
+        } else if (nextStage?.id === 'gather' && completedStages.length === 0) {
+            lines.push('');
+            lines.push('IMPORTANT: User has not started the workflow. Guide them to search for');
+            lines.push('datasets first using `search <query>`, then `add <id>` to build a cohort.');
+        } else if (nextStage?.id === 'code') {
+            lines.push('');
+            lines.push('Data is harmonized. User can now proceed to code development with `proceed` or `code`.');
+        } else if (nextStage?.id === 'train') {
+            lines.push('');
+            lines.push('Code scaffolded. User should run local training with `python train.py` before federation.');
+        }
+
+        return lines.join('\n');
+    }
+
+    /**
+     * Generate smart, actionable next-step guidance based on workflow state.
+     * Queries VFS markers to determine actual stage completion.
+     *
+     * @returns Structured guidance with specific command suggestions
+     */
+    public workflow_nextStep(): string {
+        const context: WorkflowContext = this.workflowContext_build();
+        const activeMeta = this.storeActions.project_getActive();
+        const selectedDatasets: Dataset[] = this.storeActions.datasets_getSelected();
+        const nextStage = WorkflowEngine.stage_next(this.workflowDefinition, context);
+        const completedStages: string[] = WorkflowEngine.stages_completed(this.workflowDefinition, context);
+
+        const lines: string[] = [];
+        lines.push(`● **CALYPSO GUIDANCE** — ${this.workflowDefinition.name}`);
+        lines.push('');
+
+        // Check if we have a project
+        if (!activeMeta) {
+            // No project — user needs to search/gather datasets first
+            if (selectedDatasets.length === 0) {
+                lines.push('○ You have no datasets selected yet.');
+                lines.push('');
+                lines.push('**Suggested next step:**');
+                lines.push('  `search <query>` — Find datasets (e.g., `search brain MRI`)');
+                lines.push('  `add <id>` — Add a dataset to your selection');
+                lines.push('');
+                lines.push('*Example:* `search histology` then `add ds-006`');
+            } else {
+                lines.push(`○ You have ${selectedDatasets.length} dataset(s) selected but no active project.`);
+                lines.push('');
+                lines.push('**Suggested next step:**');
+                lines.push('  `gather` — Create a draft project from selected datasets');
+            }
+            return lines.join('\n');
+        }
+
+        // We have an active project
+        const projectName: string = activeMeta.name;
+        const isDraft: boolean = projectName.startsWith('DRAFT-');
+
+        lines.push(`○ Project: **${projectName}**`);
+
+        // Check if project should be renamed
+        if (isDraft) {
+            lines.push('');
+            lines.push('**Tip:** Give your project a meaningful name:');
+            lines.push('  `rename <name>` — e.g., `rename lung-nodule-study`');
+        }
+        lines.push('');
+
+        // Check workflow stage
+        if (!nextStage) {
+            // All stages complete
+            lines.push('● **Workflow complete!** All stages have been completed.');
+            lines.push('');
+            lines.push('You can now:');
+            lines.push('  `federate` — Start the federated training run');
+            return lines.join('\n');
+        }
+
+        // Determine what's missing based on the next stage
+        const stageId: string = nextStage.id;
+
+        switch (stageId) {
+            case 'gather':
+                lines.push('**Next step: Gather datasets**');
+                lines.push('  `search <query>` — Find relevant datasets');
+                lines.push('  `add <id>` — Add to your cohort');
+                lines.push('  `gather` — Create project from selection');
+                break;
+
+            case 'harmonize':
+                lines.push('**Next step: Data Harmonization** ⚠️');
+                lines.push('');
+                lines.push('Before training, your cohort **must** be standardized for federated learning.');
+                lines.push('This ensures consistent image formats, metadata, and quality metrics across all sites.');
+                lines.push('');
+                lines.push('  `harmonize` — Run the harmonization engine');
+                lines.push('');
+                lines.push('*This step is required before proceeding to model development.*');
+                break;
+
+            case 'code':
+                lines.push('**Next step: Model Development**');
+                lines.push('');
+                lines.push('Your data is harmonized and ready. Now define your model architecture.');
+                lines.push('');
+                lines.push('  `proceed` or `code` — Scaffold the training environment');
+                lines.push('');
+                lines.push('This will generate `train.py`, `config.yaml`, and other boilerplate.');
+                break;
+
+            case 'train':
+                lines.push('**Next step: Local Training**');
+                lines.push('');
+                lines.push('Test your model locally before federation.');
+                lines.push('');
+                lines.push('  `python train.py` — Run local training');
+                lines.push('  `python train.py --epochs 5` — Quick validation run');
+                break;
+
+            case 'federate':
+                lines.push('**Next step: Federated Training**');
+                lines.push('');
+                lines.push('Local training complete. Ready to distribute across nodes.');
+                lines.push('');
+                lines.push('  `federate` — Initialize the federation sequence');
+                break;
+
+            default:
+                lines.push(`**Next stage:** ${nextStage.name}`);
+                lines.push(`  Available commands: ${nextStage.intents.map(i => `\`${i.toLowerCase()}\``).join(', ')}`);
+        }
+
+        // Show progress indicator
+        lines.push('');
+        lines.push(`Progress: ${completedStages.length}/${this.workflowDefinition.stages.length} stages complete`);
+
+        return lines.join('\n');
     }
 
     // ─── Workflow Commands ─────────────────────────────────────────────────
@@ -759,6 +975,8 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
 
     /**
      * Harmonize the active project's cohort.
+     * Returns a special marker __HARMONIZE_ANIMATE__ that CLI adapters
+     * can detect to run an interactive terminal animation.
      */
     private workflow_harmonize(): CalypsoResponse {
         const activeMeta = this.storeActions.project_getActive();
@@ -773,8 +991,10 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
 
         project_harmonize(project);
 
+        // Return special marker for CLI to run animation
+        // The marker tells the adapter to run harmonization animation
         return this.response_create(
-            `● COHORT HARMONIZATION COMPLETE.`,
+            `__HARMONIZE_ANIMATE__`,
             [],
             true
         );
@@ -1039,6 +1259,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
 
     /**
      * Query the LLM for natural language processing.
+     * Injects workflow context so LLM is aware of current state.
      */
     private async llm_query(input: string): Promise<CalypsoResponse> {
         if (!this.engine) {
@@ -1052,8 +1273,16 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         const selectedIds: string[] = this.storeActions.datasets_getSelected()
             .map((ds: Dataset): string => ds.id);
 
+        // Build workflow context for LLM awareness
+        const workflowContext: string = this.workflowContext_forLLM();
+
         try {
-            const response: QueryResponse = await this.engine.query(input, selectedIds, false);
+            const response: QueryResponse = await this.engine.query(
+                input,
+                selectedIds,
+                false,
+                workflowContext
+            );
             return this.llmResponse_process(response);
         } catch (e: unknown) {
             const errorMsg: string = e instanceof Error ? e.message : 'UNKNOWN ERROR';

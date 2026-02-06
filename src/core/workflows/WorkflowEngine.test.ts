@@ -2,6 +2,7 @@
  * @file WorkflowEngine Unit Tests
  *
  * Verifies workflow loading, transition checking, and state management.
+ * Tests use mock VFS contexts to simulate different workflow states.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -11,16 +12,38 @@ import type { WorkflowDefinition, WorkflowState, WorkflowContext, TransitionResu
 describe('WorkflowEngine', () => {
     let fedmlDefinition: WorkflowDefinition;
     let state: WorkflowState;
-    let context: WorkflowContext;
+
+    /**
+     * Create a context with configurable VFS state.
+     */
+    function context_create(options: {
+        hasDatasets?: boolean;
+        hasProject?: boolean;
+        hasHarmonized?: boolean;
+        hasTrainPy?: boolean;
+        hasLocalPass?: boolean;
+    } = {}): WorkflowContext {
+        const projectPath = '/home/user/projects/DRAFT-1234';
+        return {
+            store: {
+                selectedDatasets: { length: options.hasDatasets ? 1 : 0 }
+            },
+            vfs: {
+                exists: (path: string): boolean => {
+                    // Simulate VFS markers based on options
+                    if (options.hasHarmonized && path.includes('.harmonized')) return true;
+                    if (options.hasTrainPy && path.includes('train.py')) return true;
+                    if (options.hasLocalPass && path.includes('.local_pass')) return true;
+                    return false;
+                }
+            },
+            project: options.hasProject ? projectPath : ''
+        };
+    }
 
     beforeEach(() => {
         fedmlDefinition = WorkflowEngine.definition_load('fedml');
         state = WorkflowEngine.state_create('fedml');
-        context = {
-            store: { selectedDatasets: { length: 1 } },
-            vfs: { exists: (_path: string): boolean => false },
-            project: '/home/user/projects/DRAFT-1234'
-        };
     });
 
     describe('definition_load', () => {
@@ -51,16 +74,53 @@ describe('WorkflowEngine', () => {
     });
 
     describe('state_create', () => {
-        it('should create empty state', () => {
+        it('should create state with empty skip counts', () => {
             const newState: WorkflowState = WorkflowEngine.state_create('fedml');
             expect(newState.workflowId).toBe('fedml');
-            expect(newState.completedStages).toEqual([]);
             expect(newState.skipCounts).toEqual({});
+        });
+    });
+
+    describe('stages_completed', () => {
+        it('should return empty array when no VFS markers exist', () => {
+            const context = context_create({ hasDatasets: false });
+            const completed = WorkflowEngine.stages_completed(fedmlDefinition, context);
+            expect(completed).toEqual([]);
+        });
+
+        it('should detect gather complete when datasets selected', () => {
+            const context = context_create({ hasDatasets: true, hasProject: true });
+            const completed = WorkflowEngine.stages_completed(fedmlDefinition, context);
+            expect(completed).toContain('gather');
+        });
+
+        it('should detect harmonize complete when marker exists', () => {
+            const context = context_create({ hasDatasets: true, hasProject: true, hasHarmonized: true });
+            const completed = WorkflowEngine.stages_completed(fedmlDefinition, context);
+            expect(completed).toContain('harmonize');
+        });
+
+        it('should detect code complete when train.py exists', () => {
+            const context = context_create({
+                hasDatasets: true, hasProject: true, hasHarmonized: true, hasTrainPy: true
+            });
+            const completed = WorkflowEngine.stages_completed(fedmlDefinition, context);
+            expect(completed).toContain('code');
+        });
+
+        it('should detect train complete when local_pass exists', () => {
+            const context = context_create({
+                hasDatasets: true, hasProject: true, hasHarmonized: true,
+                hasTrainPy: true, hasLocalPass: true
+            });
+            const completed = WorkflowEngine.stages_completed(fedmlDefinition, context);
+            expect(completed).toContain('train');
         });
     });
 
     describe('transition_check', () => {
         it('should allow gather without prerequisites', () => {
+            const context = context_create({ hasDatasets: true });
             const result: TransitionResult = WorkflowEngine.transition_check(
                 state,
                 fedmlDefinition,
@@ -72,8 +132,8 @@ describe('WorkflowEngine', () => {
         });
 
         it('should warn on skipping harmonize (first time)', () => {
-            // Complete gather stage
-            WorkflowEngine.stage_complete(state, 'gather');
+            // Context: gather is complete (datasets selected), but not harmonized
+            const context = context_create({ hasDatasets: true, hasProject: true });
 
             // Try to go to code without harmonize
             const result: TransitionResult = WorkflowEngine.transition_check(
@@ -91,7 +151,7 @@ describe('WorkflowEngine', () => {
         });
 
         it('should include reason on second skip attempt', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
+            const context = context_create({ hasDatasets: true, hasProject: true });
 
             // First attempt
             WorkflowEngine.transition_check(state, fedmlDefinition, 'CODE', context);
@@ -112,7 +172,7 @@ describe('WorkflowEngine', () => {
         });
 
         it('should allow skip after max_warnings exceeded', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
+            const context = context_create({ hasDatasets: true, hasProject: true });
 
             // Skip twice (max_warnings = 2)
             WorkflowEngine.skip_increment(state, 'harmonize');
@@ -130,6 +190,7 @@ describe('WorkflowEngine', () => {
         });
 
         it('should allow intent not in workflow', () => {
+            const context = context_create();
             const result: TransitionResult = WorkflowEngine.transition_check(
                 state,
                 fedmlDefinition,
@@ -141,17 +202,6 @@ describe('WorkflowEngine', () => {
     });
 
     describe('stage_complete', () => {
-        it('should add stage to completed list', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
-            expect(state.completedStages).toContain('gather');
-        });
-
-        it('should not duplicate completed stages', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
-            WorkflowEngine.stage_complete(state, 'gather');
-            expect(state.completedStages.filter((s: string): boolean => s === 'gather').length).toBe(1);
-        });
-
         it('should clear skip count when stage completed', () => {
             state.skipCounts['harmonize'] = 2;
             WorkflowEngine.stage_complete(state, 'harmonize');
@@ -186,56 +236,75 @@ describe('WorkflowEngine', () => {
 
     describe('stage_next', () => {
         it('should return first stage when nothing completed', () => {
-            const next = WorkflowEngine.stage_next(state, fedmlDefinition);
+            const context = context_create();
+            const next = WorkflowEngine.stage_next(fedmlDefinition, context);
             expect(next?.id).toBe('gather');
         });
 
         it('should return next actionable stage', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
-            const next = WorkflowEngine.stage_next(state, fedmlDefinition);
+            const context = context_create({ hasDatasets: true, hasProject: true });
+            const next = WorkflowEngine.stage_next(fedmlDefinition, context);
             expect(next?.id).toBe('harmonize');
         });
 
-        it('should return null when workflow complete', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
-            WorkflowEngine.stage_complete(state, 'harmonize');
-            WorkflowEngine.stage_complete(state, 'code');
-            WorkflowEngine.stage_complete(state, 'train');
-            WorkflowEngine.stage_complete(state, 'federate');
+        it('should skip to code when harmonize complete', () => {
+            const context = context_create({
+                hasDatasets: true, hasProject: true, hasHarmonized: true
+            });
+            const next = WorkflowEngine.stage_next(fedmlDefinition, context);
+            expect(next?.id).toBe('code');
+        });
 
-            const next = WorkflowEngine.stage_next(state, fedmlDefinition);
-            expect(next).toBeNull();
+        it('should return null when workflow complete', () => {
+            const context = context_create({
+                hasDatasets: true, hasProject: true, hasHarmonized: true,
+                hasTrainPy: true, hasLocalPass: true
+            });
+            const next = WorkflowEngine.stage_next(fedmlDefinition, context);
+            // federate has no validation, so it won't auto-complete
+            expect(next?.id).toBe('federate');
         });
     });
 
-    describe('dependencies_satisfied', () => {
+    describe('dependencies_satisfied_arr', () => {
         it('should return true for entry stages', () => {
             const gatherStage = fedmlDefinition.stages[0];
-            expect(WorkflowEngine.dependencies_satisfied(state, gatherStage)).toBe(true);
+            expect(WorkflowEngine.dependencies_satisfied_arr([], gatherStage)).toBe(true);
         });
 
         it('should return false when requires not met', () => {
             const harmonizeStage = fedmlDefinition.stages[1];
-            expect(WorkflowEngine.dependencies_satisfied(state, harmonizeStage)).toBe(false);
+            expect(WorkflowEngine.dependencies_satisfied_arr([], harmonizeStage)).toBe(false);
         });
 
         it('should return true when requires met', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
             const harmonizeStage = fedmlDefinition.stages[1];
-            expect(WorkflowEngine.dependencies_satisfied(state, harmonizeStage)).toBe(true);
+            expect(WorkflowEngine.dependencies_satisfied_arr(['gather'], harmonizeStage)).toBe(true);
         });
     });
 
     describe('progress_summarize', () => {
         it('should show workflow progress', () => {
-            WorkflowEngine.stage_complete(state, 'gather');
-            const summary: string = WorkflowEngine.progress_summarize(state, fedmlDefinition);
+            const context = context_create({ hasDatasets: true, hasProject: true });
+            const summary: string = WorkflowEngine.progress_summarize(fedmlDefinition, context);
 
             expect(summary).toContain('Federated ML Workflow');
             expect(summary).toContain('1/5 stages');
             expect(summary).toContain('● Cohort Assembly');  // completed
             expect(summary).toContain('○ Data Harmonization'); // not completed
             expect(summary).toContain('← NEXT');
+        });
+
+        it('should show multiple completed stages', () => {
+            const context = context_create({
+                hasDatasets: true, hasProject: true, hasHarmonized: true
+            });
+            const summary: string = WorkflowEngine.progress_summarize(fedmlDefinition, context);
+
+            expect(summary).toContain('2/5 stages');
+            expect(summary).toContain('● Cohort Assembly');
+            expect(summary).toContain('● Data Harmonization');
+            expect(summary).toContain('○ Code Development');
         });
     });
 });

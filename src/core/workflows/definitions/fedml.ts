@@ -108,10 +108,7 @@ A successful local run creates a .local_pass marker.`,
             name: 'Federation Dispatch',
             intents: ['FEDERATE'],
             requires: ['train'],
-            validation: {
-                condition: 'true',
-                error_message: ''
-            },
+            validation: null,  // Action stage, no auto-completion
             skip_warning: null
         }
     ]

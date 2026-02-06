@@ -72,6 +72,117 @@ function spinner_start(label: string = 'CALYPSO thinking'): () => void {
     };
 }
 
+// ─── Harmonization Animation ───────────────────────────────────────────────
+
+/**
+ * Runs an animated harmonization sequence in the terminal.
+ * Creates a btop-style progress display with fake metrics.
+ */
+async function harmonization_animate(): Promise<void> {
+    const WIDTH: number = 64;
+    const BAR_WIDTH: number = 40;
+
+    // Analysis phases with fake metrics
+    const phases: Array<{ name: string; metrics: string[] }> = [
+        {
+            name: 'DICOM Header Analysis',
+            metrics: ['Patient ID normalization', 'Study date validation', 'Modality tag verification']
+        },
+        {
+            name: 'Image Geometry Check',
+            metrics: ['Pixel spacing validation', 'Slice thickness analysis', 'Orientation matrix check']
+        },
+        {
+            name: 'Intensity Normalization',
+            metrics: ['Histogram equalization', 'Window/level standardization', 'Bit depth conversion']
+        },
+        {
+            name: 'Metadata Reconciliation',
+            metrics: ['Institution code mapping', 'Series description cleanup', 'Annotation format sync']
+        },
+        {
+            name: 'Quality Metrics Generation',
+            metrics: ['SNR calculation', 'Artifact detection', 'Coverage completeness']
+        }
+    ];
+
+    process.stdout.write(COLORS.hideCursor);
+
+    // Draw header box
+    console.log();
+    console.log(`${COLORS.cyan}╔${'═'.repeat(WIDTH)}╗${COLORS.reset}`);
+    console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.bright}${COLORS.yellow}CALYPSO HARMONIZATION ENGINE${COLORS.reset}${' '.repeat(WIDTH - 31)}${COLORS.cyan}║${COLORS.reset}`);
+    console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.dim}Standardizing cohort for federated learning${COLORS.reset}${' '.repeat(WIDTH - 45)}${COLORS.cyan}║${COLORS.reset}`);
+    console.log(`${COLORS.cyan}╠${'═'.repeat(WIDTH)}╣${COLORS.reset}`);
+
+    // Process each phase
+    for (let phaseIdx = 0; phaseIdx < phases.length; phaseIdx++) {
+        const phase = phases[phaseIdx];
+
+        // Phase header
+        console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
+        console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${phase.name}${COLORS.reset}${' '.repeat(WIDTH - phase.name.length - 5)}${COLORS.cyan}║${COLORS.reset}`);
+
+        // Animate progress bar
+        for (let progress = 0; progress <= 100; progress += 5) {
+            const filled: number = Math.floor((progress / 100) * BAR_WIDTH);
+            const empty: number = BAR_WIDTH - filled;
+            const bar: string = `${COLORS.green}${'█'.repeat(filled)}${COLORS.dim}${'░'.repeat(empty)}${COLORS.reset}`;
+
+            // Pick a metric to display based on progress
+            const metricIdx: number = Math.min(Math.floor((progress / 100) * phase.metrics.length), phase.metrics.length - 1);
+            const metric: string = phase.metrics[metricIdx];
+            const metricPadded: string = metric.padEnd(30);
+
+            process.stdout.write(`\r${COLORS.cyan}║${COLORS.reset}    [${bar}] ${COLORS.yellow}${progress.toString().padStart(3)}%${COLORS.reset} ${COLORS.dim}${metricPadded}${COLORS.reset}${COLORS.cyan}║${COLORS.reset}`);
+
+            await sleep_ms(30 + Math.random() * 40);
+        }
+        console.log(); // Move to next line after progress complete
+    }
+
+    // Summary stats
+    console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
+    console.log(`${COLORS.cyan}╠${'═'.repeat(WIDTH)}╣${COLORS.reset}`);
+    console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.bright}HARMONIZATION SUMMARY${COLORS.reset}                                          ${COLORS.cyan}║${COLORS.reset}`);
+    console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
+
+    // Fake stats with typewriter effect
+    const stats: string[] = [
+        `  ${COLORS.green}✓${COLORS.reset} Images processed:     ${COLORS.yellow}1,247${COLORS.reset}`,
+        `  ${COLORS.green}✓${COLORS.reset} Metadata fields:      ${COLORS.yellow}18,705${COLORS.reset}`,
+        `  ${COLORS.green}✓${COLORS.reset} Format conversions:   ${COLORS.yellow}312${COLORS.reset}`,
+        `  ${COLORS.green}✓${COLORS.reset} Quality score:        ${COLORS.yellow}94.7%${COLORS.reset}`,
+        `  ${COLORS.green}✓${COLORS.reset} Federation ready:     ${COLORS.green}YES${COLORS.reset}`
+    ];
+
+    for (const stat of stats) {
+        const padding: string = ' '.repeat(WIDTH - stripAnsi(stat).length - 2);
+        console.log(`${COLORS.cyan}║${COLORS.reset}${stat}${padding}${COLORS.cyan}║${COLORS.reset}`);
+        await sleep_ms(100);
+    }
+
+    console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
+    console.log(`${COLORS.cyan}╚${'═'.repeat(WIDTH)}╝${COLORS.reset}`);
+    console.log();
+
+    process.stdout.write(COLORS.showCursor);
+}
+
+/**
+ * Sleep for specified milliseconds.
+ */
+function sleep_ms(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Strip ANSI codes from string for length calculation.
+ */
+function stripAnsi(str: string): string {
+    return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
 // ─── HTTP Client ───────────────────────────────────────────────────────────
 
 /**
@@ -625,8 +736,15 @@ async function repl_start(): Promise<void> {
             const response = await command_send(input);
             stopSpinner();
 
-            const styled = message_style(response.message);
-            console.log(styled);
+            // Check for special animation markers
+            if (response.message === '__HARMONIZE_ANIMATE__') {
+                // Run the harmonization animation
+                await harmonization_animate();
+                console.log(message_style(`● **COHORT HARMONIZATION COMPLETE.** Data is now standardized for federated training.`));
+            } else {
+                const styled = message_style(response.message);
+                console.log(styled);
+            }
 
             // Show actions in verbose mode (can be toggled with env var)
             if (process.env.CALYPSO_VERBOSE === 'true' && response.actions.length > 0) {

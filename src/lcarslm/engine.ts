@@ -70,7 +70,12 @@ The context provided to you contains a JSON list of available datasets. Use this
      * 2. Augmentation: Adds dataset metadata to the prompt.
      * 3. Generation: Asks LLM to answer based on context.
      */
-    async query(userText: string, selectedIds: string[] = [], isSoftVoice: boolean = false): Promise<QueryResponse> {
+    async query(
+        userText: string,
+        selectedIds: string[] = [],
+        isSoftVoice: boolean = false,
+        workflowContext?: string
+    ): Promise<QueryResponse> {
         // Intercept System Commands
         if (userText.toLowerCase().trim() === 'listmodels') {
             const models: string = this.client ? await this.client.listModels() : "SIMULATION MODE: ALL MODELS EMULATED.";
@@ -150,6 +155,7 @@ The context provided to you contains a JSON list of available datasets. Use this
             { role: 'system', content: `AVAILABLE DATASETS: ${context}` },
             { role: 'system', content: `EXISTING USER PROJECTS: ${projectContext}` },
             { role: 'system', content: selectedContext },
+            ...(workflowContext ? [{ role: 'system' as const, content: workflowContext }] : []),
             ...this.history
         ];
 

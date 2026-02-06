@@ -1,9 +1,12 @@
 /**
  * @file WorkflowEngine - Declarative Workflow State Machine
  *
- * Loads workflow definitions from YAML and enforces stage transitions
- * with educational soft-blocking. Workflows are DAGs where each stage
- * declares its dependencies and provides skip warnings.
+ * Manages workflow state by querying VFS markers as the single source of truth.
+ * Stage completion is determined by evaluating validation conditions against
+ * actual VFS/store state, not by maintaining an in-memory counter.
+ *
+ * Workflows are DAGs where each stage declares its dependencies and provides
+ * skip warnings for educational soft-blocking.
  *
  * @module
  * @see docs/persona-workflows.adoc
@@ -31,8 +34,12 @@ const WORKFLOW_REGISTRY: Record<string, WorkflowDefinition> = {
 /**
  * Workflow engine for declarative workflow state management.
  *
+ * Uses VFS markers as the single source of truth for stage completion.
+ * Stage completion is determined by evaluating each stage's validation
+ * condition against the runtime context (VFS, store).
+ *
  * Provides static methods for loading definitions, checking transitions,
- * and managing workflow state. Uses soft enforcement with educational
+ * and determining workflow progress. Uses soft enforcement with educational
  * warnings rather than hard blocks.
  */
 export class WorkflowEngine {
@@ -91,33 +98,72 @@ export class WorkflowEngine {
     }
 
     /**
-     * Create a fresh workflow state for tracking progress.
+     * Create a fresh workflow state for tracking skip counts.
+     *
+     * Note: Stage completion is determined by VFS markers, not by this state.
+     * This state only tracks skip warning counts for soft-blocking.
      *
      * @param workflowId - The workflow to initialize
-     * @returns Fresh workflow state with no completed stages
+     * @returns Fresh workflow state with empty skip counts
      *
      * @example
      * ```typescript
      * const state = WorkflowEngine.state_create('fedml');
-     * // state.completedStages = []
      * // state.skipCounts = {}
      * ```
      */
     static state_create(workflowId: string): WorkflowState {
         return {
             workflowId,
-            completedStages: [],
             skipCounts: {}
         };
     }
 
     /**
+     * Get list of completed stage IDs by evaluating validation conditions.
+     *
+     * This is the SINGLE SOURCE OF TRUTH for stage completion.
+     * Each stage's validation condition is evaluated against the VFS/store
+     * to determine if the stage is complete.
+     *
+     * @param definition - Workflow definition
+     * @param context - Runtime context (store, vfs, project path)
+     * @returns Array of stage IDs that have passed their validation
+     *
+     * @example
+     * ```typescript
+     * const completed = WorkflowEngine.stages_completed(definition, context);
+     * // ['gather', 'harmonize'] if those stages' validations pass
+     * ```
+     */
+    static stages_completed(
+        definition: WorkflowDefinition,
+        context: WorkflowContext
+    ): string[] {
+        const completed: string[] = [];
+
+        for (const stage of definition.stages) {
+            // Stage with no validation is never auto-completed
+            if (!stage.validation) {
+                continue;
+            }
+
+            // Evaluate the validation condition against VFS/store
+            if (WorkflowEngine.validation_evaluate(stage.validation, context)) {
+                completed.push(stage.id);
+            }
+        }
+
+        return completed;
+    }
+
+    /**
      * Check if a transition to the given intent is allowed.
      *
-     * Returns a TransitionResult indicating whether the intent can proceed,
-     * and if not, provides warnings and suggestions.
+     * Queries VFS to determine current stage completion, then checks
+     * if the target stage's dependencies are satisfied.
      *
-     * @param state - Current workflow state
+     * @param state - Workflow state (for skip counts only)
      * @param definition - Workflow definition
      * @param intent - The intent the user is attempting (uppercase)
      * @param context - Runtime context for validation (store, vfs, project path)
@@ -148,14 +194,17 @@ export class WorkflowEngine {
             return WorkflowEngine.result_allowed();
         }
 
+        // Get completed stages from VFS (single source of truth)
+        const completedStages: string[] = WorkflowEngine.stages_completed(definition, context);
+
         // Check if target stage is already completed
-        if (state.completedStages.includes(targetStage.id)) {
+        if (completedStages.includes(targetStage.id)) {
             return WorkflowEngine.result_allowed();
         }
 
         // Find unsatisfied dependencies
         const unsatisfied: WorkflowStage[] = WorkflowEngine.dependencies_unsatisfied(
-            state,
+            completedStages,
             definition,
             targetStage
         );
@@ -200,16 +249,17 @@ export class WorkflowEngine {
     }
 
     /**
-     * Mark a stage as completed in the workflow state.
+     * Clear skip count for a stage when it's properly completed.
+     *
+     * Note: Stage completion is determined by VFS markers, not by this method.
+     * This only clears the skip warning counter.
      *
      * @param state - Current workflow state (mutated in place)
-     * @param stageId - Stage ID to mark complete
+     * @param stageId - Stage ID to clear skip count for
      */
     static stage_complete(state: WorkflowState, stageId: string): void {
-        if (!state.completedStages.includes(stageId)) {
-            state.completedStages.push(stageId);
-        }
-        // Clear skip count when stage is properly completed
+        // VFS markers are the source of truth for completion.
+        // This method only clears skip counts.
         delete state.skipCounts[stageId];
     }
 
@@ -248,24 +298,28 @@ export class WorkflowEngine {
     /**
      * Get the next suggested stage based on current progress.
      *
-     * Returns the first incomplete stage whose dependencies are all satisfied.
+     * Queries VFS to determine completed stages, then returns the first
+     * incomplete stage whose dependencies are all satisfied.
      *
-     * @param state - Current workflow state
      * @param definition - Workflow definition
+     * @param context - Runtime context (store, vfs, project path)
      * @returns The next actionable stage, or null if workflow complete
      */
     static stage_next(
-        state: WorkflowState,
-        definition: WorkflowDefinition
+        definition: WorkflowDefinition,
+        context: WorkflowContext
     ): WorkflowStage | null {
+        // Get completed stages from VFS (single source of truth)
+        const completedStages: string[] = WorkflowEngine.stages_completed(definition, context);
+
         for (const stage of definition.stages) {
             // Skip completed stages
-            if (state.completedStages.includes(stage.id)) {
+            if (completedStages.includes(stage.id)) {
                 continue;
             }
 
             // Check if dependencies are satisfied
-            if (WorkflowEngine.dependencies_satisfied(state, stage)) {
+            if (WorkflowEngine.dependencies_satisfied_arr(completedStages, stage)) {
                 return stage;
             }
         }
@@ -275,36 +329,36 @@ export class WorkflowEngine {
     /**
      * Check if all dependencies for a stage are satisfied.
      *
-     * @param state - Current workflow state
+     * @param completedStages - Array of completed stage IDs
      * @param stage - Stage to check
      * @returns True if all required stages are complete
      */
-    static dependencies_satisfied(
-        state: WorkflowState,
+    static dependencies_satisfied_arr(
+        completedStages: string[],
         stage: WorkflowStage
     ): boolean {
         return stage.requires.every(
-            (reqId: string): boolean => state.completedStages.includes(reqId)
+            (reqId: string): boolean => completedStages.includes(reqId)
         );
     }
 
     /**
      * Get list of unsatisfied dependencies for a stage.
      *
-     * @param state - Current workflow state
+     * @param completedStages - Array of completed stage IDs
      * @param definition - Workflow definition
      * @param stage - Stage to check
      * @returns Array of stages that are required but not completed
      */
     static dependencies_unsatisfied(
-        state: WorkflowState,
+        completedStages: string[],
         definition: WorkflowDefinition,
         stage: WorkflowStage
     ): WorkflowStage[] {
         const unsatisfied: WorkflowStage[] = [];
 
         for (const reqId of stage.requires) {
-            if (!state.completedStages.includes(reqId)) {
+            if (!completedStages.includes(reqId)) {
                 const reqStage: WorkflowStage | undefined = definition.stages.find(
                     (s: WorkflowStage): boolean => s.id === reqId
                 );
@@ -351,23 +405,26 @@ export class WorkflowEngine {
     /**
      * Get a summary of workflow progress.
      *
-     * @param state - Current workflow state
+     * Queries VFS to determine which stages are complete.
+     *
      * @param definition - Workflow definition
+     * @param context - Runtime context (store, vfs, project path)
      * @returns Human-readable progress summary
      */
     static progress_summarize(
-        state: WorkflowState,
-        definition: WorkflowDefinition
+        definition: WorkflowDefinition,
+        context: WorkflowContext
     ): string {
         const total: number = definition.stages.length;
-        const completed: number = state.completedStages.length;
-        const nextStage: WorkflowStage | null = WorkflowEngine.stage_next(state, definition);
+        const completedStages: string[] = WorkflowEngine.stages_completed(definition, context);
+        const completed: number = completedStages.length;
+        const nextStage: WorkflowStage | null = WorkflowEngine.stage_next(definition, context);
 
         let summary: string = `Workflow: ${definition.name}\n`;
         summary += `Progress: ${completed}/${total} stages\n\n`;
 
         for (const stage of definition.stages) {
-            const isComplete: boolean = state.completedStages.includes(stage.id);
+            const isComplete: boolean = completedStages.includes(stage.id);
             const marker: string = isComplete ? '●' : '○';
             summary += `  ${marker} ${stage.name}`;
             if (nextStage && stage.id === nextStage.id) {
