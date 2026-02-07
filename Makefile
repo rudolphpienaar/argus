@@ -2,7 +2,7 @@
 #
 # Build and manage the ARGUS UI prototype
 
-.PHONY: help install build serve dev clean watch argus calypso calypso-cli test-oracle
+.PHONY: help install build serve dev clean watch argus calypso calypso-cli test-oracle test-oracle-verbose
 
 help:
 	@echo "ARGUS Makefile"
@@ -21,6 +21,7 @@ help:
 	@echo "  make calypso      - Start headless Calypso server (port 8081)"
 	@echo "  make calypso-cli  - Start interactive CLI client"
 	@echo "  make test-oracle  - Run ORACLE integration tests"
+	@echo "  make test-oracle-verbose - Run ORACLE tests with verbose output"
 
 install:
 	@echo "Installing dependencies..."
@@ -67,4 +68,12 @@ calypso-cli:
 
 test-oracle:
 	@echo "Running ORACLE integration tests..."
-	@echo "(Not yet implemented - see docs/oracle.adoc)"
+	@echo "Building latest JS artifacts for ORACLE runner..."
+	@npm run build > /dev/null
+	node scripts/oracle-runner.mjs
+
+test-oracle-verbose:
+	@echo "Running ORACLE integration tests (verbose)..."
+	@echo "Building latest JS artifacts for ORACLE runner..."
+	@npm run build > /dev/null
+	node scripts/oracle-runner.mjs --verbose

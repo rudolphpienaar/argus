@@ -1,0 +1,44 @@
+{
+  "name": "FedML Smoke",
+  "username": "oracle",
+  "steps": [
+    {
+      "send": "search histology",
+      "success": true,
+      "output_contains": "FOUND"
+    },
+    {
+      "send": "add ds-006",
+      "success": true,
+      "output_contains": "DATASET GATHERED",
+      "capture_project": true
+    },
+    {
+      "send": "harmonize",
+      "success": true
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/input/.harmonized"
+    },
+    {
+      "send": "proceed fedml",
+      "success": true
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/src/train.py"
+    },
+    {
+      "send": "cd /home/${user}/projects/${project}/src",
+      "success": true
+    },
+    {
+      "send": "python train.py",
+      "success": true,
+      "output_contains": "LOCAL TRAINING COMPLETE"
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/.local_pass"
+    }
+  ]
+}
+
