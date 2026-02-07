@@ -299,9 +299,8 @@ async function script_run(
 ): Promise<boolean> {
     const resolvedPath: string | null = scriptPath_resolve(scriptRef);
     if (!resolvedPath) {
-        console.log(`${COLORS.red}>> ERROR: Script not found: ${scriptRef}${COLORS.reset}`);
-        console.log(`${COLORS.dim}   Tried direct path and scripts/calypso/*.clpso${COLORS.reset}`);
-        return false;
+        console.log(`${COLORS.dim}○ Local script not found, trying built-in catalog on server...${COLORS.reset}`);
+        return commandExecute(`/run ${scriptRef}`);
     }
 
     const content: string = fs.readFileSync(resolvedPath, 'utf-8');
@@ -659,7 +658,7 @@ function message_style(message: string): string {
 function banner_print(): void {
     console.log(cliAdapter.banner_render());
     console.log(`${COLORS.dim}Connected to ${HOST}:${PORT}${COLORS.reset}`);
-    console.log(`${COLORS.dim}Type "/help" for commands, "/run <script>" for automation, "quit" to exit.${COLORS.reset}\n`);
+    console.log(`${COLORS.dim}Type "/help", "/scripts" to list automation flows, "/run <script>" to execute, "quit" to exit.${COLORS.reset}\n`);
 }
 
 // ─── Tab Completion ─────────────────────────────────────────────────────────
@@ -717,7 +716,7 @@ async function completer(line: string): Promise<[string[], string]> {
 
     // Complete commands if first word
     if (words.length === 1 && !line.endsWith(' ')) {
-        const allCommands = [...pathCommands, 'search', 'add', 'gather', 'mount', 'federate', 'pwd', 'env', 'whoami', 'help', '/run', 'quit'];
+        const allCommands = [...pathCommands, 'search', 'add', 'gather', 'mount', 'federate', 'pwd', 'env', 'whoami', 'help', '/scripts', '/run', 'quit'];
         const matches: string[] = allCommands.filter((c: string): boolean => c.startsWith(lastWord));
         return [matches, lastWord];
     }
@@ -920,7 +919,7 @@ async function repl_start(): Promise<void> {
             const scriptRef: string = input.replace(/^\/run\s*/, '').trim();
             if (!scriptRef) {
                 console.log(`${COLORS.yellow}Usage: /run <script.clpso>${COLORS.reset}`);
-                console.log(`${COLORS.dim}Example: /run harmonize${COLORS.reset}`);
+                console.log(`${COLORS.dim}Examples: /scripts, /run hist-harmonize${COLORS.reset}`);
             } else {
                 await script_run(scriptRef, command_executeAndRender);
             }

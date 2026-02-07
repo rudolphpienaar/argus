@@ -1,0 +1,14 @@
+# name: hist-harmonize
+# description: Histology fast path to harmonized cohort state.
+# requires:
+# target: harmonize
+#
+# Notes:
+# - No hard pre-requirements; this script bootstraps everything.
+# - Creates/updates project name to "histo-exp1".
+
+search histology
+add ds-006
+rename histo-exp1
+harmonize
+

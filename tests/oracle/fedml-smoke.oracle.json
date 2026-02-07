@@ -3,6 +3,16 @@
   "username": "oracle",
   "steps": [
     {
+      "send": "what scripts do you have?",
+      "success": true,
+      "output_contains": "hist-harmonize"
+    },
+    {
+      "send": "/scripts hist-harmonize",
+      "success": true,
+      "output_contains": "rename histo-exp1"
+    },
+    {
       "send": "search histology",
       "success": true,
       "output_contains": "FOUND"
@@ -41,4 +51,3 @@
     }
   ]
 }
-

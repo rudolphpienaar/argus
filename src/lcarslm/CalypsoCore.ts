@@ -32,6 +32,7 @@ import { project_gather, project_rename, project_harmonize } from '../core/logic
 import { projectDir_populate, chrisProject_populate } from '../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../generated/version.js';
 import { WorkflowEngine } from '../core/workflows/WorkflowEngine.js';
+import { script_find, scripts_list, type CalypsoScript } from './scripts/Catalog.js';
 import type {
     WorkflowDefinition,
     WorkflowState,
@@ -144,7 +145,7 @@ export class CalypsoCore {
 
         // Check for special commands (prefixed with /)
         if (trimmed.startsWith('/')) {
-            const specialResult: CalypsoResponse = this.special_dispatch(trimmed);
+            const specialResult: CalypsoResponse = await this.special_dispatch(trimmed);
             // Handle async commands (like /greet)
             if (specialResult.message === '__GREET_ASYNC__') {
                 const parts: string[] = trimmed.slice(1).split(/\s+/);
@@ -152,6 +153,15 @@ export class CalypsoCore {
                 return this.greeting_generate(username);
             }
             return specialResult;
+        }
+
+        // Deterministic script UX (shared across CLI and embedded ARGUS)
+        if (primaryCommand === 'scripts') {
+            return this.scripts_response(parts.slice(1));
+        }
+
+        if (primaryCommand === 'run') {
+            return this.script_execute(parts.slice(1));
         }
 
         // Prioritize first-class harmonize intent so CLI can render
@@ -207,6 +217,18 @@ export class CalypsoCore {
             /before\s+(i\s+)?(can\s+)?(code|train|proceed)/i,
             /can\s+i\s+skip\s+harmoniz/i
         ];
+
+        const scriptQueryPatterns: RegExp[] = [
+            /what\s+scripts/i,
+            /which\s+scripts/i,
+            /list\s+(the\s+)?scripts/i,
+            /show\s+(me\s+)?(the\s+)?scripts/i,
+            /available\s+scripts/i
+        ];
+
+        if (scriptQueryPatterns.some((pattern: RegExp): boolean => pattern.test(lowerInput))) {
+            return this.scripts_response([]);
+        }
 
         if (workflowPatterns.some((pattern: RegExp): boolean => pattern.test(lowerInput))) {
             const guidance: string = this.workflow_nextStep();
@@ -352,7 +374,7 @@ export class CalypsoCore {
     /**
      * Dispatch special commands prefixed with /.
      */
-    private special_dispatch(input: string): CalypsoResponse {
+    private async special_dispatch(input: string): Promise<CalypsoResponse> {
         const parts: string[] = input.slice(1).split(/\s+/);
         const cmd: string = parts[0].toLowerCase();
         const args: string[] = parts.slice(1);
@@ -473,9 +495,20 @@ export class CalypsoCore {
                 return this.response_create(guidance, [], true);
             }
 
+            case 'scripts': {
+                return this.scripts_response(args);
+            }
+
+            case 'run': {
+                return this.script_execute(args);
+            }
+
             case 'help': {
                 const help: string = `CALYPSO SPECIAL COMMANDS:
   /status           - Show system status (AI, VFS, project)
+  /scripts [name]   - List available automation scripts (or inspect one)
+  /run <script>     - Execute a built-in script
+  /run --dry <script> - Preview script steps without executing
   /batch <stage> [dataset] - Fast-forward workflow to target stage
   /jump <stage> [dataset]  - Alias for /batch
   /next             - Show suggested next step with commands
@@ -662,6 +695,155 @@ TIP: Type /next anytime to see what to do next!`;
         lines.push(`● BATCH COMPLETE. TARGET STAGE: ${targetStage.toUpperCase()}`);
 
         return this.response_create(lines.join('\n'), actions, true);
+    }
+
+    /**
+     * Build script catalog response or script detail response.
+     *
+     * @param args - Optional script name argument.
+     * @returns Formatted response text.
+     */
+    private scripts_response(args: string[]): CalypsoResponse {
+        const targetRaw: string = args.join(' ').trim();
+        if (!targetRaw) {
+            const lines: string[] = [
+                '● POWER SCRIPTS AVAILABLE:',
+                ''
+            ];
+
+            const scripts: ReadonlyArray<CalypsoScript> = scripts_list();
+            scripts.forEach((script: CalypsoScript, idx: number): void => {
+                lines.push(`  ${idx + 1}. ${script.id} - ${script.description}`);
+            });
+
+            lines.push('');
+            lines.push('Use: /scripts <name> or /run <name>');
+            return this.response_create(lines.join('\n'), [], true);
+        }
+
+        const script: CalypsoScript | null = script_find(targetRaw);
+        if (!script) {
+            return this.response_create(`>> ERROR: SCRIPT NOT FOUND: ${targetRaw}\nUse /scripts to list available scripts.`, [], false);
+        }
+
+        const lines: string[] = [
+            `● SCRIPT: ${script.id}`,
+            `○ DESCRIPTION: ${script.description}`,
+            `○ TARGET: ${script.target}`,
+            `○ REQUIRES: ${script.requires.length > 0 ? script.requires.join(', ') : 'none'}`,
+            ''
+        ];
+
+        script.steps.forEach((step: string, idx: number): void => {
+            lines.push(`  ${idx + 1}. ${step}`);
+        });
+
+        lines.push('');
+        lines.push(`Run: /run ${script.id}`);
+        return this.response_create(lines.join('\n'), [], true);
+    }
+
+    /**
+     * Execute a built-in script deterministically.
+     *
+     * Supports:
+     * - `/run <name>`
+     * - `/run --dry <name>`
+     * - `run <name>`
+     *
+     * @param args - Script command arguments.
+     * @returns Execution summary and aggregated actions.
+     */
+    private async script_execute(args: string[]): Promise<CalypsoResponse> {
+        let dryRun: boolean = false;
+        let scriptRef: string = '';
+
+        if (args[0] === '--dry' || args[0] === '-n') {
+            dryRun = true;
+            scriptRef = args.slice(1).join(' ').trim();
+        } else {
+            scriptRef = args.join(' ').trim();
+        }
+
+        if (!scriptRef) {
+            return this.response_create('Usage: /run <script> OR /run --dry <script>', [], false);
+        }
+
+        const script: CalypsoScript | null = script_find(scriptRef);
+        if (!script) {
+            return this.response_create(`>> ERROR: SCRIPT NOT FOUND: ${scriptRef}\nUse /scripts to list available scripts.`, [], false);
+        }
+
+        const unmetRequirement: string | null = this.scriptRequirement_unmet(script.requires);
+        if (unmetRequirement) {
+            return this.response_create(`>> ERROR: SCRIPT REQUIREMENT FAILED (${unmetRequirement})`, [], false);
+        }
+
+        if (dryRun) {
+            const lines: string[] = [
+                `● DRY RUN: ${script.id}`,
+                `○ TARGET: ${script.target}`,
+                `○ REQUIRES: ${script.requires.length > 0 ? script.requires.join(', ') : 'none'}`,
+                ''
+            ];
+            script.steps.forEach((step: string, idx: number): void => {
+                lines.push(`  ${idx + 1}. ${step}`);
+            });
+            return this.response_create(lines.join('\n'), [], true);
+        }
+
+        const lines: string[] = [
+            `● RUNNING SCRIPT: ${script.id}`,
+            `○ ${script.description}`
+        ];
+        const actions: CalypsoAction[] = [];
+
+        for (let i: number = 0; i < script.steps.length; i++) {
+            const step: string = script.steps[i];
+            const trimmedStep: string = step.trim();
+            if (/^\/?(run|scripts)\b/i.test(trimmedStep)) {
+                return this.response_create(
+                    `>> ERROR: SCRIPT "${script.id}" CONTAINS NESTED SCRIPT COMMAND AT STEP ${i + 1}.`,
+                    actions,
+                    false
+                );
+            }
+
+            const result: CalypsoResponse = await this.command_execute(trimmedStep);
+            actions.push(...result.actions);
+
+            lines.push(`○ [${i + 1}/${script.steps.length}] ${trimmedStep}`);
+
+            if (!result.success) {
+                lines.push(`>> SCRIPT ABORTED AT STEP ${i + 1}.`);
+                if (result.message && result.message !== '__HARMONIZE_ANIMATE__') {
+                    lines.push(result.message);
+                }
+                return this.response_create(lines.join('\n'), actions, false);
+            }
+        }
+
+        lines.push('');
+        lines.push(`● SCRIPT COMPLETE. TARGET ${script.target.toUpperCase()} READY.`);
+        return this.response_create(lines.join('\n'), actions, true);
+    }
+
+    /**
+     * Evaluate script requirement keys.
+     *
+     * @param requirements - Requirement keys.
+     * @returns First unmet requirement key, or null if all pass.
+     */
+    private scriptRequirement_unmet(requirements: string[]): string | null {
+        for (const requirement of requirements) {
+            if (requirement === 'active_project' && !this.storeActions.project_getActive()) {
+                return 'active_project';
+            }
+            if (requirement === 'datasets_selected' && this.storeActions.datasets_getSelected().length === 0) {
+                return 'datasets_selected';
+            }
+        }
+        return null;
     }
 
     /**

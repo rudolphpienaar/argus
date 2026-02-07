@@ -44,6 +44,7 @@ The `calypso-cli` connects to the headless Calypso server (`make calypso`) and s
 
 - shell + workflow commands in one stream
 - transcript paste replay
+- built-in script discovery via `/scripts`
 - external `.clpso` flow scripts via `/run <script>`
 
 See `backstory/powertoys.md` and `scripts/calypso/README.md` for usage patterns.

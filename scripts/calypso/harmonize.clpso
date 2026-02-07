@@ -1,8 +1,12 @@
-# Fast path to harmonized project state.
+# Legacy alias for hist-harmonize.
 # Usage in calypso-cli: /run harmonize
+
+# name: harmonize
+# description: Backward-compatible alias for hist-harmonize
+# requires:
+# target: harmonize
 
 search histology
 add ds-006
-gather
-rename exp1
+rename histo-exp1
 harmonize

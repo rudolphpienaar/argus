@@ -9,14 +9,16 @@ Use reusable command scripts to replay SeaGaP steps quickly.
 Run a script:
 
 ```text
+/scripts
 /run <script>
 ```
 
 Examples:
 
 ```text
-/run harmonize
-/run scripts/calypso/harmonize.clpso
+/scripts
+/run hist-harmonize
+/run scripts/calypso/hist-harmonize.clpso
 ```
 
 Script format:
@@ -28,7 +30,7 @@ Script format:
 
 Starter script:
 
-- `scripts/calypso/harmonize.clpso`
+- `scripts/calypso/hist-harmonize.clpso`
 
 ## Transcript Paste Replay
 

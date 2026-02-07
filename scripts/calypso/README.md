@@ -3,6 +3,7 @@
 `calypso-cli` supports external script execution with:
 
 ```bash
+/scripts
 /run <script>
 ```
 
@@ -23,6 +24,7 @@ Script format:
 Examples:
 
 ```bash
-/run harmonize
-/run scripts/calypso/harmonize.clpso
+/scripts
+/run hist-harmonize
+/run scripts/calypso/hist-harmonize.clpso
 ```
