@@ -1,0 +1,8 @@
+# Fast path to harmonized project state.
+# Usage in calypso-cli: /run harmonize
+
+search histology
+add ds-006
+gather
+rename exp1
+harmonize

@@ -17,6 +17,8 @@
 
 import * as readline from 'readline';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import type { CalypsoResponse, CalypsoAction } from '../lcarslm/types.js';
 import { cliAdapter } from '../lcarslm/adapters/CLIAdapter.js';
 
@@ -80,7 +82,29 @@ function spinner_start(label: string = 'CALYPSO thinking'): () => void {
  */
 async function harmonization_animate(): Promise<void> {
     const WIDTH: number = 64;
-    const BAR_WIDTH: number = 40;
+    const BAR_WIDTH: number = 24;
+    const METRIC_WIDTH: number = 28;
+
+    const boxRow_render = (content: string): string => {
+        const visibleLength: number = Array.from(stripAnsi(content)).length;
+        const paddingLength: number = Math.max(0, WIDTH - visibleLength);
+        return `${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`;
+    };
+
+    const boxRow_print = (content: string = ''): void => {
+        console.log(boxRow_render(content));
+    };
+
+    const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
+        console.log(`${COLORS.cyan}${left}${'═'.repeat(WIDTH)}${right}${COLORS.reset}`);
+    };
+
+    const text_fit = (text: string, width: number): string => {
+        const chars: string[] = Array.from(text);
+        if (chars.length <= width) return text.padEnd(width);
+        if (width <= 1) return chars.slice(0, width).join('');
+        return `${chars.slice(0, width - 1).join('')}…`;
+    };
 
     // Analysis phases with fake metrics
     const phases: Array<{ name: string; metrics: string[] }> = [
@@ -110,18 +134,18 @@ async function harmonization_animate(): Promise<void> {
 
     // Draw header box
     console.log();
-    console.log(`${COLORS.cyan}╔${'═'.repeat(WIDTH)}╗${COLORS.reset}`);
-    console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.bright}${COLORS.yellow}CALYPSO HARMONIZATION ENGINE${COLORS.reset}${' '.repeat(WIDTH - 31)}${COLORS.cyan}║${COLORS.reset}`);
-    console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.dim}Standardizing cohort for federated learning${COLORS.reset}${' '.repeat(WIDTH - 45)}${COLORS.cyan}║${COLORS.reset}`);
-    console.log(`${COLORS.cyan}╠${'═'.repeat(WIDTH)}╣${COLORS.reset}`);
+    boxRule_print('╔', '╗');
+    boxRow_print(`  ${COLORS.bright}${COLORS.yellow}CALYPSO HARMONIZATION ENGINE${COLORS.reset}`);
+    boxRow_print(`  ${COLORS.dim}Standardizing cohort for federated learning${COLORS.reset}`);
+    boxRule_print('╠', '╣');
 
     // Process each phase
     for (let phaseIdx = 0; phaseIdx < phases.length; phaseIdx++) {
         const phase = phases[phaseIdx];
 
         // Phase header
-        console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
-        console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${phase.name}${COLORS.reset}${' '.repeat(WIDTH - phase.name.length - 5)}${COLORS.cyan}║${COLORS.reset}`);
+        boxRow_print();
+        boxRow_print(`  ${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${phase.name}${COLORS.reset}`);
 
         // Animate progress bar
         for (let progress = 0; progress <= 100; progress += 5) {
@@ -132,9 +156,10 @@ async function harmonization_animate(): Promise<void> {
             // Pick a metric to display based on progress
             const metricIdx: number = Math.min(Math.floor((progress / 100) * phase.metrics.length), phase.metrics.length - 1);
             const metric: string = phase.metrics[metricIdx];
-            const metricPadded: string = metric.padEnd(30);
+            const metricPadded: string = text_fit(metric, METRIC_WIDTH);
 
-            process.stdout.write(`\r${COLORS.cyan}║${COLORS.reset}    [${bar}] ${COLORS.yellow}${progress.toString().padStart(3)}%${COLORS.reset} ${COLORS.dim}${metricPadded}${COLORS.reset}${COLORS.cyan}║${COLORS.reset}`);
+            const progressLine: string = `  [${bar}] ${COLORS.yellow}${progress.toString().padStart(3)}%${COLORS.reset} ${COLORS.dim}${metricPadded}${COLORS.reset}`;
+            process.stdout.write(`\r${boxRow_render(progressLine)}`);
 
             await sleep_ms(30 + Math.random() * 40);
         }
@@ -142,10 +167,10 @@ async function harmonization_animate(): Promise<void> {
     }
 
     // Summary stats
-    console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
-    console.log(`${COLORS.cyan}╠${'═'.repeat(WIDTH)}╣${COLORS.reset}`);
-    console.log(`${COLORS.cyan}║${COLORS.reset}  ${COLORS.bright}HARMONIZATION SUMMARY${COLORS.reset}                                          ${COLORS.cyan}║${COLORS.reset}`);
-    console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
+    boxRow_print();
+    boxRule_print('╠', '╣');
+    boxRow_print(`  ${COLORS.bright}HARMONIZATION SUMMARY${COLORS.reset}`);
+    boxRow_print();
 
     // Fake stats with typewriter effect
     const stats: string[] = [
@@ -157,13 +182,12 @@ async function harmonization_animate(): Promise<void> {
     ];
 
     for (const stat of stats) {
-        const padding: string = ' '.repeat(WIDTH - stripAnsi(stat).length - 2);
-        console.log(`${COLORS.cyan}║${COLORS.reset}${stat}${padding}${COLORS.cyan}║${COLORS.reset}`);
+        boxRow_print(stat);
         await sleep_ms(100);
     }
 
-    console.log(`${COLORS.cyan}║${COLORS.reset}                                                                ${COLORS.cyan}║${COLORS.reset}`);
-    console.log(`${COLORS.cyan}╚${'═'.repeat(WIDTH)}╝${COLORS.reset}`);
+    boxRow_print();
+    boxRule_print('╚', '╝');
     console.log();
 
     process.stdout.write(COLORS.showCursor);
@@ -181,6 +205,127 @@ function sleep_ms(ms: number): Promise<void> {
  */
 function stripAnsi(str: string): string {
     return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * Extract an executable command from a possibly pasted transcript line.
+ *
+ * Supported:
+ * - Raw commands: `search histology`
+ * - Prompt-prefixed commands: `user@CALYPSO:[~/x]> search histology`
+ *
+ * Returns `null` for known non-command transcript output lines so users can
+ * paste whole conversations without replaying response text as commands.
+ */
+function transcriptCommand_extract(line: string): string | null {
+    const trimmed: string = line.trim();
+    if (!trimmed) return '';
+
+    const promptMatch: RegExpMatchArray | null =
+        trimmed.match(/^[^@\n]+@CALYPSO:\[[^\]]*\]>\s*(.+)$/i) ||
+        trimmed.match(/^CALYPSO>\s*(.+)$/i);
+
+    if (promptMatch) {
+        return promptMatch[1].trim();
+    }
+
+    const isTranscriptOutput: boolean = /^(●|○|>>|╔|╠|╚|║|├|└|═|─|\[LOCAL EXECUTION:|--- TRAINING LOG ---|Epoch \d+\/\d+|Model weights saved to:|Validation metrics saved to:)/.test(trimmed);
+    if (isTranscriptOutput) {
+        return null;
+    }
+
+    return trimmed;
+}
+
+/**
+ * Resolve a .clpso script path from user input.
+ *
+ * Lookup order:
+ * 1) Direct path as provided (relative to cwd or absolute)
+ * 2) Same with `.clpso` extension appended
+ * 3) `scripts/calypso/<name>` in repo cwd
+ * 4) `scripts/calypso/<name>.clpso` in repo cwd
+ *
+ * @param scriptRef - User-provided script reference.
+ * @returns Absolute file path if found, else null.
+ */
+function scriptPath_resolve(scriptRef: string): string | null {
+    const trimmedRef: string = scriptRef.trim();
+    if (!trimmedRef) return null;
+
+    const withExtension: string = trimmedRef.endsWith('.clpso') ? trimmedRef : `${trimmedRef}.clpso`;
+    const candidates: string[] = [
+        path.resolve(process.cwd(), trimmedRef),
+        path.resolve(process.cwd(), withExtension),
+        path.resolve(process.cwd(), 'scripts', 'calypso', trimmedRef),
+        path.resolve(process.cwd(), 'scripts', 'calypso', withExtension)
+    ];
+
+    for (const candidate of candidates) {
+        if (!fs.existsSync(candidate)) continue;
+        const stat: fs.Stats = fs.statSync(candidate);
+        if (stat.isFile()) {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Parse script file content into executable commands.
+ * Ignores empty lines and `#` comments.
+ *
+ * @param content - Raw script content.
+ * @returns Ordered list of commands to execute.
+ */
+function scriptCommands_parse(content: string): string[] {
+    return content
+        .split(/\r?\n/)
+        .map((line: string): string => line.trim())
+        .filter((line: string): boolean => line.length > 0 && !line.startsWith('#'));
+}
+
+/**
+ * Execute a `.clpso` script line-by-line (fail-fast).
+ *
+ * @param scriptRef - Script path or short name.
+ * @param commandExecute - Command executor callback.
+ * @returns True if script fully succeeded; false on first failure.
+ */
+async function script_run(
+    scriptRef: string,
+    commandExecute: (command: string) => Promise<boolean>
+): Promise<boolean> {
+    const resolvedPath: string | null = scriptPath_resolve(scriptRef);
+    if (!resolvedPath) {
+        console.log(`${COLORS.red}>> ERROR: Script not found: ${scriptRef}${COLORS.reset}`);
+        console.log(`${COLORS.dim}   Tried direct path and scripts/calypso/*.clpso${COLORS.reset}`);
+        return false;
+    }
+
+    const content: string = fs.readFileSync(resolvedPath, 'utf-8');
+    const commands: string[] = scriptCommands_parse(content);
+
+    if (commands.length === 0) {
+        console.log(`${COLORS.yellow}○ Script has no executable commands: ${resolvedPath}${COLORS.reset}`);
+        return true;
+    }
+
+    console.log(`${COLORS.cyan}● Running script:${COLORS.reset} ${COLORS.magenta}${resolvedPath}${COLORS.reset}`);
+
+    for (let i = 0; i < commands.length; i++) {
+        const command: string = commands[i];
+        console.log(`${COLORS.dim}[RUN ${i + 1}/${commands.length}] ${command}${COLORS.reset}`);
+        const success: boolean = await commandExecute(command);
+        if (!success) {
+            console.log(`${COLORS.red}>> Script aborted at step ${i + 1}.${COLORS.reset}`);
+            return false;
+        }
+    }
+
+    console.log(`${COLORS.green}● Script complete.${COLORS.reset}`);
+    return true;
 }
 
 // ─── HTTP Client ───────────────────────────────────────────────────────────
@@ -514,7 +659,7 @@ function message_style(message: string): string {
 function banner_print(): void {
     console.log(cliAdapter.banner_render());
     console.log(`${COLORS.dim}Connected to ${HOST}:${PORT}${COLORS.reset}`);
-    console.log(`${COLORS.dim}Type "/help" for commands, "quit" to exit.${COLORS.reset}\n`);
+    console.log(`${COLORS.dim}Type "/help" for commands, "/run <script>" for automation, "quit" to exit.${COLORS.reset}\n`);
 }
 
 // ─── Tab Completion ─────────────────────────────────────────────────────────
@@ -572,7 +717,7 @@ async function completer(line: string): Promise<[string[], string]> {
 
     // Complete commands if first word
     if (words.length === 1 && !line.endsWith(' ')) {
-        const allCommands = [...pathCommands, 'search', 'add', 'gather', 'mount', 'federate', 'pwd', 'env', 'whoami', 'help', 'quit'];
+        const allCommands = [...pathCommands, 'search', 'add', 'gather', 'mount', 'federate', 'pwd', 'env', 'whoami', 'help', '/run', 'quit'];
         const matches: string[] = allCommands.filter((c: string): boolean => c.startsWith(lastWord));
         return [matches, lastWord];
     }
@@ -715,22 +860,7 @@ async function repl_start(): Promise<void> {
 
     rl.prompt();
 
-    rl.on('line', async (line: string) => {
-        const input = line.trim();
-
-        // Handle exit commands
-        if (input === 'quit' || input === 'exit' || input === 'q') {
-            console.log(`${COLORS.dim}Goodbye.${COLORS.reset}`);
-            rl.close();
-            process.exit(0);
-        }
-
-        // Skip empty input
-        if (!input) {
-            rl.prompt();
-            return;
-        }
-
+    const command_executeAndRender = async (input: string): Promise<boolean> => {
         try {
             const stopSpinner: () => void = spinner_start();
             const response = await command_send(input);
@@ -738,7 +868,6 @@ async function repl_start(): Promise<void> {
 
             // Check for special animation markers
             if (response.message === '__HARMONIZE_ANIMATE__') {
-                // Run the harmonization animation
                 await harmonization_animate();
                 console.log(message_style(`● **COHORT HARMONIZATION COMPLETE.** Data is now standardized for federated training.`));
             } else {
@@ -755,11 +884,51 @@ async function repl_start(): Promise<void> {
             // Update prompt (pwd may have changed)
             currentPrompt = await prompt_fetch();
             rl.setPrompt(currentPrompt);
+            return response.success;
         } catch (e: unknown) {
             const error = e instanceof Error ? e.message : 'Unknown error';
             console.log(`${COLORS.red}>> ERROR: ${error}${COLORS.reset}`);
+            return false;
+        }
+    };
+
+    rl.on('line', async (line: string) => {
+        const extracted: string | null = transcriptCommand_extract(line);
+
+        // Ignore known transcript output lines to support conversation paste replay.
+        if (extracted === null) {
+            rl.prompt();
+            return;
         }
 
+        const input: string = extracted.trim();
+
+        // Handle exit commands
+        if (input === 'quit' || input === 'exit' || input === 'q') {
+            console.log(`${COLORS.dim}Goodbye.${COLORS.reset}`);
+            rl.close();
+            process.exit(0);
+        }
+
+        // Skip empty input
+        if (!input) {
+            rl.prompt();
+            return;
+        }
+
+        if (input === '/run' || input.startsWith('/run ')) {
+            const scriptRef: string = input.replace(/^\/run\s*/, '').trim();
+            if (!scriptRef) {
+                console.log(`${COLORS.yellow}Usage: /run <script.clpso>${COLORS.reset}`);
+                console.log(`${COLORS.dim}Example: /run harmonize${COLORS.reset}`);
+            } else {
+                await script_run(scriptRef, command_executeAndRender);
+            }
+            rl.prompt();
+            return;
+        }
+
+        await command_executeAndRender(input);
         rl.prompt();
     });
 
