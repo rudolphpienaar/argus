@@ -202,6 +202,14 @@ export class CalypsoCore {
             return this.response_create(guidance, [], true);
         }
 
+        // Intercept imperative NL workflow actions (e.g., "ok, do the harmonization")
+        // Sits after workflowPatterns (interrogative) and before LLM (would describe, not execute)
+        const resolvedCommand: string | null = this.actionIntent_resolve(trimmed);
+        if (resolvedCommand) {
+            const actionResult: CalypsoResponse | null = await this.workflow_dispatch(resolvedCommand);
+            if (actionResult) return actionResult;
+        }
+
         // Fall through to LLM
         return this.llm_query(trimmed);
     }
@@ -885,6 +893,36 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         return lines.join('\n');
     }
 
+    // ─── NL Action Intent Resolution ────────────────────────────────────
+
+    /**
+     * Resolve natural language imperative requests to workflow command keywords.
+     *
+     * Strips conversational prefixes ("ok", "let's", "please", "run the", etc.)
+     * and checks if what remains starts with a known workflow action keyword.
+     * This correctly distinguishes imperatives ("do the harmonization") from
+     * inquiries ("what is harmonization?") because inquiries don't reduce to
+     * a bare action keyword after prefix stripping.
+     *
+     * @param input - Raw user input
+     * @returns Resolved command keyword (e.g., 'harmonize') or null
+     */
+    private actionIntent_resolve(input: string): string | null {
+        const stripped: string = input.toLowerCase()
+            .replace(/^(ok|okay|yes|yeah|sure|alright|right|fine|great|good)[,.]?\s*/i, '')
+            .replace(/^(let'?s|please|now|then|go\s+ahead(\s+and)?)\s*/i, '')
+            .replace(/^(can\s+you|could\s+you|would\s+you)\s*/i, '')
+            .replace(/^(do|run|start|execute|perform|begin|launch|initiate)\s+(the\s+)?/i, '')
+            .trim();
+
+        if (/^harmoniz/i.test(stripped)) return 'harmonize';
+        if (/^federat/i.test(stripped)) return 'federate';
+        if (/^gather/i.test(stripped)) return 'gather';
+        if (/^scaffold/i.test(stripped)) return 'proceed';
+
+        return null;
+    }
+
     // ─── Workflow Commands ─────────────────────────────────────────────────
 
     /**
@@ -1380,13 +1418,14 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             }
         }
 
-        // Extract [ACTION: HARMONIZE] intent
+        // Extract [ACTION: HARMONIZE] intent — execute + return animation marker
         if (response.answer.includes('[ACTION: HARMONIZE]')) {
             const activeMeta = this.storeActions.project_getActive();
             if (activeMeta) {
                 const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
                 if (project) {
                     project_harmonize(project);
+                    return this.response_create('__HARMONIZE_ANIMATE__', [], true);
                 }
             }
         }

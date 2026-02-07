@@ -151,6 +151,18 @@ export function project_gather(
         }
     }
 
+    // 5. Write cohort marker — materializes gather completion as VFS artifact
+    try {
+        const markerPath = `${paths.input}/.cohort`;
+        globals.vcs.file_create(markerPath, JSON.stringify({
+            timestamp: new Date().toISOString(),
+            datasets: project.datasets.map((ds: Dataset) => ds.id),
+            count: project.datasets.length
+        }, null, 2));
+    } catch (e: unknown) {
+        console.error('Failed to write .cohort marker:', e);
+    }
+
     return project;
 }
 

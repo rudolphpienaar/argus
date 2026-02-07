@@ -2,6 +2,7 @@
 
 ## Recent Refactoring Activity
 
+- **2026-02-06 (v6.1.0)**: **"The Data-State Grounding"** - Documented the alignment between ARGUS's workflow engine and ChRIS's data-state DAG model. Workflow progress is determined by materialized VFS artifacts (`.harmonized`, `train.py`, `.local_pass`), not in-memory counters — mirroring ChRIS's principle that progress is proven by the existence of data, not asserted by a controller. Documented the three layers of LLM grounding (deterministic routing, context injection, stage directives) and the failure mode analysis that motivated the architecture. Updated `docs/persona-workflows.adoc`, `docs/architecture.adoc`, and `docs/philosophy.adoc`.
 - **2026-02-04 (v6.0.0)**: **"The Local Loop Update"** - Implemented a strict, multi-tier execution model for Federated ML.
     - **Tier 1: Local Loop**: Enhanced `python` command with realistic PyTorch logs and a `.local_pass` certification.
     - **Tier 2: Simulation**: Gated `simulate federation` to require successful local training and statistical cohort viability.
@@ -71,6 +72,7 @@ All user interactions follow the **SeaGaP-MP** workflow:
 
 ### Key Technical Decisions
 
+- **Data-State Workflow Semantics**: Workflow progress is determined by querying the VFS for materialized artifacts, not by maintaining in-memory counters. This aligns ARGUS with ChRIS's data-state DAG model, where progress is proven by the existence of data. See `docs/persona-workflows.adoc` for the full specification.
 - **Pure Vanilla TS**: No frontend frameworks (React/Vue). Reactivity is achieved via a custom Pub/Sub `Store`.
 - **RPN Naming**: Functions use `<subject>_<verb>` pattern (e.g., `store.marketplace_toggle()`, `catalog_search()`, `dataset_select()`).
 - **LCARS Theme**: Star Trek-inspired high-fidelity interface with modern CSS variables.

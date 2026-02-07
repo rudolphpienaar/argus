@@ -29,7 +29,7 @@ Simpler than FedML — no harmonization or federation steps.`,
             intents: ['SEARCH', 'ADD', 'GATHER'],
             requires: [],
             validation: {
-                condition: 'store.selectedDatasets.length > 0',
+                condition: "vfs.exists('${project}/input/.cohort')",
                 error_message: 'No test datasets selected.'
             },
             skip_warning: null
@@ -84,10 +84,7 @@ Testing catches:
             name: 'Plugin Publication',
             intents: ['PUBLISH', 'DEPLOY'],
             requires: ['test'],
-            validation: {
-                condition: 'true',
-                error_message: ''
-            },
+            validation: null,  // Action stage — no auto-completion until publish materializes artifact
             skip_warning: null
         }
     ]

@@ -108,6 +108,28 @@ For machine learning workflows specifically, the aggregator process running on t
 
 This filesystem-centric approach aligns with the MERIDIAN architecture's core principle: by standardizing on filesystem interfaces rather than custom APIs, the platform achieves integration scalability while maintaining the auditability and reproducibility that regulated medical applications require.
 
+== Data-State Computation: Alignment with ChRIS
+
+ARGUS is the interface to a platform whose compute model is fundamentally **data-state-centric**. ChRIS represents computation as a DAG where each node is a mortal container that consumes `/input`, produces `/output`, and exits. Progress through the graph is determined by the existence of materialized data artifacts, not by controller-internal state. There is no hidden scheduler logic deciding what runs next -- the filesystem is the single source of truth.
+
+This architectural principle, described fully in _ChRIS DAGs and Workflow Semantics: Data-State vs Control-Flow_, has a direct implication for the UI layer: **ARGUS should reason about workflow progress the same way ChRIS reasons about compute progress** -- by inspecting data state, not maintaining control-flow counters.
+
+=== Why This Matters at the UI Layer
+
+The temptation in a UI application is to track workflow progress using in-memory state: arrays of completed stage IDs, boolean flags, counters. This is the control-flow approach. It fails when:
+
+* The tracking state drifts from the actual state of the system (missed increments, resets, race conditions)
+* An AI layer consumes the tracking state and reasons confidently from incorrect premises
+* Fixing one counter's logic creates regressions in another, producing a whack-a-mole cycle
+
+ARGUS experienced all three failure modes. The resolution was to align the UI layer with the compute layer: the Virtual Computer System's filesystem serves as the medium for materialized workflow artifacts, and the `WorkflowEngine` queries these artifacts in real time rather than maintaining a separate record of what has been done.
+
+=== The Provenance Connection
+
+This data-state approach connects directly to the provenance principles described earlier. ChRIS captures complete provenance through its filesystem-based workflow model -- each processing step materializes its inputs and outputs as directories. ARGUS mirrors this at the workflow level: each completed stage is evidenced by a concrete artifact in the VFS (a `.harmonized` marker, a `train.py` file, a `.local_pass` certification). The workflow history is readable from the filesystem, not from controller logs or ephemeral memory.
+
+For AI-mediated interfaces specifically, this grounding is essential. An LLM consuming workflow context derived from filesystem queries is reading ground truth. An LLM consuming counter-derived context is reading assertions that may be stale or wrong. The difference between these two modes of context injection is the difference between a system that drifts and one that stays aligned.
+
 == Conclusion
 
 ARGUS provides the window through which users see and interact with the ATLAS platform. The SeaGaP-MP framework ensures consistent workflow structure across diverse personas, while persona-specific adaptations address the varying needs of Developers, Annotators, Users, Data Providers, App Developers, and Administrators. Cost transparency, abort guarantees, and comprehensive provenance build the trust necessary for users to commit valuable resources to federated processing. These philosophical foundations guide implementation decisions as ARGUS development proceeds.

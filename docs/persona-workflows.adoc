@@ -60,6 +60,104 @@ Each workflow is a **Directed Acyclic Graph (DAG)** of steps. Each step:
     └──────────┘
 ----
 
+=== Data-State Grounding: The ChRIS Alignment
+
+ARGUS's workflow engine follows the same architectural principle as the ChRIS compute platform it serves.
+
+ChRIS is a **data-state DAG system**. In a data-state DAG, computation progress is determined by the existence of materialized data artifacts, not by controller-internal state. Each ChRIS node is a mortal container that consumes `/input`, produces `/output`, and exits. Downstream nodes become eligible only when upstream data has physically appeared on disk. There is no hidden scheduler logic that advances the graph -- what ran, in what order, and why is directly readable from the filesystem. (See _ChRIS DAGs and Workflow Semantics: Data-State vs Control-Flow_ for the full treatment.)
+
+This stands in contrast to **control-flow DAG systems** (Argo, Tekton, Kubernetes-native schedulers), where edges encode execution rules ("run B after A succeeds," "retry N times," "branch if condition") and a controller maintains internal state about what has been done. In control-flow systems, progress is _asserted_ by a controller. In data-state systems, progress is _proven_ by the existence of data.
+
+ARGUS applies this same principle to workflow tracking within its Virtual Computer System. Rather than maintaining in-memory counters that track which stages are "complete" (a control-flow approach), the `WorkflowEngine` queries the VFS for **materialized data artifacts** at each stage. A stage is complete if and only if its validation condition -- which checks for the existence of a concrete filesystem artifact -- evaluates to true against the live VFS.
+
+[cols="1,1"]
+|===
+| ChRIS Compute Layer | ARGUS Workflow Layer
+
+| Feed node output directory exists on disk
+| VFS marker file exists in the virtual filesystem
+
+| Downstream plugin becomes eligible when upstream output materializes
+| Downstream workflow stage becomes available when upstream VFS artifact appears
+
+| No hidden controller state governs progress
+| No in-memory completion counters -- `WorkflowState` holds only `skipCounts` for UX
+
+| Provenance is readable from the filesystem tree
+| Workflow progress is readable from VFS state at any time
+|===
+
+==== The Failure Mode That Motivated This Design
+
+An earlier ARGUS architecture tracked workflow progress using in-memory counters (`completedStages: string[]`). This is the control-flow approach: a controller maintains internal state about what has been done, and consumers trust that state. This architecture failed for three compounding reasons:
+
+1. **Counter drift**: In-memory counters could become inconsistent with actual VFS state through missed increments, double-counts, or state resets.
+2. **LLM confabulation**: The LLM consumed counter-derived context via `workflowContext_forLLM()`. When counters were wrong, the LLM confidently reasoned from incorrect premises, suggesting users skip required steps or repeat completed ones.
+3. **Whack-a-mole regression**: Every fix to one counter's logic risked breaking another counter, creating a cycle of patches that slowed development velocity to a halt.
+
+The root cause was architectural: **in-memory counters are a second source of truth that must be kept in sync with reality**. That synchronization is where bugs live. The data-state approach eliminates this entire class of bug by removing the second source of truth.
+
+==== Why Data-State Is Especially Important for LLM Integration
+
+An LLM is the worst possible consumer of controller-internal state and the best possible consumer of data state:
+
+* **Controller state requires trust**: The LLM must accept "the counter says 3 stages are done" at face value. It has no way to verify this claim, and no persistent memory to detect when the claim changes inconsistently between turns.
+* **Data state is self-describing**: When `workflowContext_forLLM()` queries the VFS and reports "`.harmonized` exists, `train.py` exists, `.local_pass` does not exist," the LLM is reading ground truth -- the same ground truth a human would see by inspecting the filesystem.
+
+This is the same reason a researcher can inspect a ChRIS feed tree and understand what happened without reading controller logs. The data tells the story.
+
+==== Three Layers of Grounding
+
+The data-state principle is reinforced by three independent defense layers that prevent the LLM from drifting:
+
+[cols="1,2,2"]
+|===
+| Layer | Mechanism | Purpose
+
+| **Deterministic routing**
+| `workflowPatterns[]` regex intercepts status, progress, and next-step queries before they reach the LLM
+| The LLM never gets a chance to reason about workflow state -- answers come directly from VFS queries
+
+| **Context injection**
+| `workflowContext_forLLM()` builds a real-time stage summary from live VFS queries
+| When the LLM does run, it sees data-state ground truth, not cached or stale counters
+
+| **Stage directives**
+| Hard-coded rules injected when specific stages are pending (e.g., "Do NOT suggest skipping harmonization")
+| Prevents the specific failure mode of LLM advising users to bypass required data transformations
+|===
+
+==== Materialized Artifacts by Stage
+
+[cols="1,2,2"]
+|===
+| Stage | Artifact | Created By
+
+| `gather`
+| `${project}/input/.cohort`
+| `project_gather()` in ProjectManager
+
+| `harmonize`
+| `${project}/input/.harmonized`
+| `project_harmonize()` in ProjectManager
+
+| `code`
+| `${project}/src/train.py`
+| `projectDir_populate()` during scaffolding
+
+| `train`
+| `${project}/.local_pass`
+| `python train.py` in Shell
+
+| `federate`
+| _(action stage -- no artifact)_
+| `validation: null` -- never auto-completes
+|===
+
+Every validatable stage now uses a VFS artifact as its completion condition. There are no remaining control-flow seams -- `store.*` is not referenced by any validation condition.
+
+NOTE: The `federate` stage has `validation: null` because federation dispatch is a terminal action with no durable artifact within the simulated VFS. This is analogous to a ChRIS DAG's final node whose output is consumed by an external system. The ChRIS `publish` stage follows the same pattern.
+
 === Soft Enforcement via Auto-Suggest
 
 Workflows use **soft enforcement** rather than hard blocks:
@@ -129,15 +227,15 @@ Each stage has the following fields:
 [source,yaml]
 ----
 validation:
-  condition: "store.selectedDatasets.length > 0"
+  condition: "vfs.exists('${project}/input/.cohort')"
   error_message: "No datasets selected. Use 'add <dataset>' first."
 ----
 
 The `condition` is a JavaScript expression evaluated against the runtime context:
 
-- `store.*` — Access to Store state
-- `vfs.exists(path)` — Check VFS path existence
-- `${project}` — Interpolated to active project path
+- `vfs.exists(path)` — Check VFS path existence (primary mechanism)
+- `${project}` — Interpolated to active project path at runtime
+- `store.*` — Access to Store state (reserved for future use; all current validations use VFS)
 
 === Skip Warning Object
 
@@ -195,7 +293,7 @@ stages:
     intents: [SEARCH, ADD, GATHER]
     requires: []
     validation:
-      condition: "store.selectedDatasets.length > 0"
+      condition: "vfs.exists('${project}/input/.cohort')"
       error_message: "No datasets in cohort."
 
   - id: harmonize
@@ -290,7 +388,7 @@ stages:
     intents: [SEARCH, ADD, GATHER]
     requires: []
     validation:
-      condition: "store.selectedDatasets.length > 0"
+      condition: "vfs.exists('${project}/input/.cohort')"
 
   - id: code
     name: "Plugin Development"

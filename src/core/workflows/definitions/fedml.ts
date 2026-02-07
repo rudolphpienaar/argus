@@ -29,7 +29,7 @@ Guides the user from dataset discovery through federation dispatch.`,
             intents: ['SEARCH', 'ADD', 'GATHER'],
             requires: [],
             validation: {
-                condition: 'store.selectedDatasets.length > 0',
+                condition: "vfs.exists('${project}/input/.cohort')",
                 error_message: 'No datasets in cohort.'
             },
             skip_warning: null

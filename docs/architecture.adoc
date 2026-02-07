@@ -147,3 +147,36 @@ The VCS (`src/vfs/`) is ARGUS's stateful runtime environment. It provides a POSI
 *   The IDE reads file content from the VCS via `node_read()`.
 
 See `docs/vcs.adoc` for the full specification.
+
+== Data-State Workflow Semantics
+
+ARGUS's workflow tracking follows the same data-state DAG model used by ChRIS at the compute layer. Where ChRIS determines compute progress by the existence of materialized output directories on disk, ARGUS determines workflow progress by the existence of materialized VFS artifacts. There are no in-memory completion counters.
+
+=== The Principle
+
+`WorkflowEngine.stages_completed()` iterates all stages and evaluates each stage's `validation.condition` against the live VFS. The result is computed fresh on every call -- there is no cached completion list. This is the direct application of ChRIS's core insight: **in a data-state system, progress is proven by the existence of data, not asserted by a controller**.
+
+The `WorkflowState` type holds only `workflowId` and `skipCounts` (for soft-blocking UX). It does not track which stages are complete. The VFS is the single source of truth for both the workflow engine and the LLM context injection layer.
+
+=== Grounding the LLM
+
+The data-state model is reinforced by three independent layers that prevent the LLM from drifting on workflow state:
+
+[cols="1,2,2"]
+|===
+| Layer | Mechanism | Purpose
+
+| **Deterministic routing**
+| `workflowPatterns[]` regex intercepts status, progress, and next-step queries
+| Answers come from VFS queries, not LLM reasoning
+
+| **Context injection**
+| `workflowContext_forLLM()` builds stage summary from live VFS
+| When the LLM runs, it sees ground truth derived from data state
+
+| **Stage directives**
+| Hard-coded rules injected when specific stages are pending
+| Prevents LLM from advising users to skip required data transformations
+|===
+
+See `docs/persona-workflows.adoc` for the full specification, including the failure mode analysis that motivated this design and the materialized artifact table.
