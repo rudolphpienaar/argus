@@ -1699,63 +1699,86 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
      * Proceed to coding/process stage.
      */
     private workflow_proceed(workflowTypeRaw?: string): CalypsoResponse {
-        let workflowType: 'fedml' | 'chris' | undefined;
+        const workflowType: 'fedml' | 'chris' | null = this.proceedWorkflow_resolve(workflowTypeRaw);
+        if (!workflowType) {
+            return this.response_create(
+                `Unsupported workflow: ${workflowTypeRaw}\nSupported: fedml, chris`,
+                [],
+                false
+            );
+        }
+
+        const activeMeta = this.storeActions.project_getActive();
+        if (!activeMeta) {
+            return this.response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
+        }
+
+        const project: Project | undefined = MOCK_PROJECTS.find(
+            (p: Project): boolean => p.id === activeMeta.id
+        );
+        if (!project) {
+            return this.response_create('>> ERROR: PROJECT MODEL NOT FOUND.', [], false);
+        }
+
+        const username: string = this.shell.env_get('USER') || 'user';
+        const projectBase: string = `/home/${username}/projects/${project.name}`;
+
+        if (workflowType === 'chris') {
+            chrisProject_populate(this.vfs, username, project.name);
+            this.shell.env_set('PERSONA', 'appdev');
+        } else {
+            projectDir_populate(this.vfs, username, project.name);
+            this.shell.env_set('PERSONA', 'fedml');
+        }
+
+        try {
+            this.vfs.dir_create(`${projectBase}/output`);
+        } catch {
+            // output already exists
+        }
+
+        const actions: CalypsoAction[] = [
+            { type: 'stage_advance', stage: 'process', workflow: workflowType }
+        ];
+
+        return this.response_create(
+            `● AFFIRMATIVE. INITIATING CODE PROTOCOLS (${workflowType.toUpperCase()}).`,
+            actions,
+            true
+        );
+    }
+
+    /**
+     * Resolve workflow target for `proceed`/`code`.
+     *
+     * Resolution order:
+     * 1. Explicit command argument (`proceed fedml|chris`)
+     * 2. Active workflow selection (`workflow_set`)
+     * 3. Persona environment hint (`PERSONA`)
+     * 4. Default fallback (`fedml`)
+     *
+     * @param workflowTypeRaw - Optional explicit workflow argument.
+     * @returns Resolved workflow or null if explicit argument is invalid.
+     */
+    private proceedWorkflow_resolve(workflowTypeRaw?: string): 'fedml' | 'chris' | null {
         if (workflowTypeRaw) {
             const normalized: string = workflowTypeRaw.toLowerCase();
             if (normalized === 'fedml' || normalized === 'chris') {
-                workflowType = normalized;
-            } else {
-                return this.response_create(
-                    `Unsupported workflow: ${workflowTypeRaw}\nSupported: fedml, chris`,
-                    [],
-                    false
-                );
+                return normalized;
             }
+            return null;
         }
 
-        if (workflowType) {
-            const activeMeta = this.storeActions.project_getActive();
-            if (!activeMeta) {
-                return this.response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
-            }
-
-            const project: Project | undefined = MOCK_PROJECTS.find(
-                (p: Project): boolean => p.id === activeMeta.id
-            );
-            if (!project) {
-                return this.response_create('>> ERROR: PROJECT MODEL NOT FOUND.', [], false);
-            }
-
-            const username: string = this.shell.env_get('USER') || 'user';
-            const projectBase: string = `/home/${username}/projects/${project.name}`;
-
-            if (workflowType === 'chris') {
-                chrisProject_populate(this.vfs, username, project.name);
-                this.shell.env_set('PERSONA', 'appdev');
-            } else {
-                projectDir_populate(this.vfs, username, project.name);
-                this.shell.env_set('PERSONA', 'fedml');
-            }
-
-            try {
-                this.vfs.dir_create(`${projectBase}/output`);
-            } catch {
-                // output already exists
-            }
-
-            const actions: CalypsoAction[] = [
-                { type: 'stage_advance', stage: 'process', workflow: workflowType }
-            ];
-
-            return this.response_create(
-                `● AFFIRMATIVE. INITIATING CODE PROTOCOLS (${workflowType.toUpperCase()}).`,
-                actions,
-                true
-            );
+        const selectedWorkflow: string = this.workflow_get();
+        if (selectedWorkflow === 'fedml' || selectedWorkflow === 'chris') {
+            return selectedWorkflow;
         }
 
-        const actions: CalypsoAction[] = [{ type: 'stage_advance', stage: 'process' }];
-        return this.response_create('● AFFIRMATIVE. INITIATING CODE PROTOCOLS.', actions, true);
+        const persona: string = (this.shell.env_get('PERSONA') || '').toLowerCase();
+        if (persona === 'appdev' || persona === 'chris') return 'chris';
+        if (persona === 'fedml') return 'fedml';
+
+        return 'fedml';
     }
 
     // ─── LLM Integration ───────────────────────────────────────────────────

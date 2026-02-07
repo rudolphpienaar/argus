@@ -39,7 +39,7 @@
       "vfs_exists": "/home/${user}/projects/${project}/input/.harmonized"
     },
     {
-      "send": "proceed fedml",
+      "send": "proceed",
       "success": true
     },
     {
