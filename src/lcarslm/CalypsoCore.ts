@@ -230,6 +230,9 @@ export class CalypsoCore {
             /^what\s+stage/i,
             /^which\s+stage/i,
             /^current\s+stage/i,
+            /remaining\s+steps/i,
+            /steps\s+remaining/i,
+            /^what\s+are\s+the\s+remaining\s+steps/i,
             // Harmonization queries (ensure user gets proper guidance)
             /do\s+i\s+need\s+to\s+harmonize/i,
             /should\s+i\s+harmonize/i,
@@ -1822,7 +1825,12 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             this.federationState = { projectId: activeMeta.id, phase: 'dispatch' };
             return this.response_create(
                 [
-                    '● CONTAINERIZATION COMPLETE.',
+                    '● PHASE 1/2 COMPLETE: BUILD & PUBLISH.',
+                    '',
+                    '○ [1/5] SOURCE CODE TRANSCOMPILE COMPLETE.',
+                    '○ [2/5] CONTAINER COMPILATION COMPLETE.',
+                    '○ [3/5] MARKETPLACE PUBLISHING COMPLETE.',
+                    '',
                     '○ IMAGE PUBLISHED TO INTERNAL REGISTRY.',
                     '○ NEXT PHASE: DISPATCH TO FEDERATED PARTICIPANTS.',
                     '',
@@ -1840,7 +1848,9 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         this.federationState = null;
 
         const lines: string[] = [
-            '● INITIATING ATLAS FACTORY SEQUENCE...',
+            '● PHASE 2/2: FEDERATION DISPATCH & COMPUTE.',
+            '',
+            '○ [4/5] DISPATCH TO REMOTE SITES INITIALIZED.',
             `○ INGESTING SOURCE: ${projectBase}/src/train.py`,
             '',
             '○ INJECTING Flower PROTOCOLS (Client/Server hooks)...',
@@ -1853,6 +1863,13 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             '  [BCH] -> DISPATCHED',
             '  [MGH] -> DISPATCHED',
             '  [BIDMC] -> DISPATCHED',
+            '',
+            '○ [5/5] FEDERATED COMPUTE ROUNDS:',
+            '  ROUND 1/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.62',
+            '  ROUND 2/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.71',
+            '  ROUND 3/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.79',
+            '  ROUND 4/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.84',
+            '  ROUND 5/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.89',
             '',
             '<span class="success">● DISPATCH COMPLETE. HANDSHAKE IN PROGRESS...</span>'
         ];

@@ -73,7 +73,7 @@
     {
       "send": "federate --yes",
       "success": true,
-      "output_contains": "CONTAINERIZATION COMPLETE"
+      "output_contains": "PHASE 1/2 COMPLETE: BUILD & PUBLISH"
     },
     {
       "send": "federate --yes",

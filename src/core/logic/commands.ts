@@ -28,7 +28,10 @@ async function message_renderAnimated(message: string): Promise<void> {
     if (!t) return;
 
     const trainingMode: boolean = message.includes('--- TRAINING LOG ---');
-    const federationMode: boolean = message.includes('INITIATING ATLAS FACTORY SEQUENCE');
+    const federationMode: boolean =
+        message.includes('PHASE 1/2 COMPLETE: BUILD & PUBLISH') ||
+        message.includes('PHASE 2/2: FEDERATION DISPATCH & COMPUTE') ||
+        message.includes('FEDERATED COMPUTE ROUNDS');
     const lines: string[] = message.split('\n');
 
     if (!trainingMode && !federationMode) {
@@ -40,24 +43,26 @@ async function message_renderAnimated(message: string): Promise<void> {
         t.println(line);
 
         if (!line.trim()) {
-            await sleep_ms(40);
+            await sleep_ms(60 + Math.floor(Math.random() * 50));
             continue;
         }
 
         if (trainingMode) {
             if (/^Epoch \d+\/\d+/i.test(line)) {
-                await sleep_ms(160);
+                await sleep_ms(260 + Math.floor(Math.random() * 220));
             } else {
-                await sleep_ms(80);
+                await sleep_ms(120 + Math.floor(Math.random() * 120));
             }
             continue;
         }
 
         // federation mode
-        if (line.includes('DISPATCHED')) {
-            await sleep_ms(200);
+        if (/ROUND\s+\d+\/\d+/i.test(line)) {
+            await sleep_ms(280 + Math.floor(Math.random() * 220));
+        } else if (line.includes('DISPATCHED')) {
+            await sleep_ms(240 + Math.floor(Math.random() * 180));
         } else {
-            await sleep_ms(90);
+            await sleep_ms(140 + Math.floor(Math.random() * 140));
         }
     }
 }

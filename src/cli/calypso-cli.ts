@@ -103,6 +103,28 @@ function spinnerLabel_resolve(input: string): string {
     }
 }
 
+/**
+ * Resolve minimum spinner duration per command to avoid instant flashes.
+ */
+function spinnerMinDuration_resolve(input: string): number {
+    const cmd: string = input.trim().split(/\s+/)[0]?.toLowerCase() || '';
+    switch (cmd) {
+        case 'search':
+        case 'add':
+        case 'gather':
+            return 360;
+        case 'proceed':
+        case 'code':
+            return 520;
+        case 'python':
+            return 700;
+        case 'federate':
+            return 820;
+        default:
+            return 280;
+    }
+}
+
 // ─── Harmonization Animation ───────────────────────────────────────────────
 
 /**
@@ -244,7 +266,12 @@ function outputMode_detect(message: string, input: string): 'plain' | 'training'
     if (message.includes('--- TRAINING LOG ---') || (lowerInput.startsWith('python ') && message.includes('LOCAL TRAINING COMPLETE'))) {
         return 'training';
     }
-    if (message.includes('INITIATING ATLAS FACTORY SEQUENCE') || message.includes('DISTRIBUTING CONTAINER TO TRUSTED DOMAINS')) {
+    if (
+        message.includes('PHASE 1/2 COMPLETE: BUILD & PUBLISH') ||
+        message.includes('PHASE 2/2: FEDERATION DISPATCH & COMPUTE') ||
+        message.includes('DISTRIBUTING CONTAINER TO TRUSTED DOMAINS') ||
+        message.includes('FEDERATED COMPUTE ROUNDS')
+    ) {
         return 'federation';
     }
     return 'plain';
@@ -265,28 +292,30 @@ async function response_renderAnimated(message: string, input: string): Promise<
         console.log(message_style(line));
 
         if (!line.trim()) {
-            await sleep_ms(60);
+            await sleep_ms(70 + Math.floor(Math.random() * 70));
             continue;
         }
 
         if (mode === 'training') {
             if (/^Epoch \d+\/\d+/i.test(line)) {
-                await sleep_ms(220);
+                await sleep_ms(320 + Math.floor(Math.random() * 340));
             } else if (line.includes('LOCAL TRAINING COMPLETE')) {
-                await sleep_ms(120);
+                await sleep_ms(180 + Math.floor(Math.random() * 140));
             } else {
-                await sleep_ms(90);
+                await sleep_ms(130 + Math.floor(Math.random() * 170));
             }
             continue;
         }
 
         // federation mode
-        if (line.includes('DISPATCHED')) {
-            await sleep_ms(240);
-        } else if (line.includes('INITIATING ATLAS FACTORY SEQUENCE')) {
-            await sleep_ms(180);
+        if (/ROUND\s+\d+\/\d+/i.test(line)) {
+            await sleep_ms(360 + Math.floor(Math.random() * 340));
+        } else if (line.includes('DISPATCHED')) {
+            await sleep_ms(330 + Math.floor(Math.random() * 280));
+        } else if (line.includes('PHASE 2/2') || line.includes('PHASE 1/2')) {
+            await sleep_ms(300 + Math.floor(Math.random() * 220));
         } else {
-            await sleep_ms(110);
+            await sleep_ms(170 + Math.floor(Math.random() * 230));
         }
     }
 }
@@ -946,12 +975,13 @@ async function repl_start(): Promise<void> {
     const command_executeAndRender = async (input: string): Promise<boolean> => {
         try {
             const spinnerLabel: string = spinnerLabel_resolve(input);
+            const minSpinnerMs: number = spinnerMinDuration_resolve(input);
             const startedAt: number = Date.now();
             const stopSpinner: () => void = spinner_start(spinnerLabel);
             const response = await command_send(input);
             const elapsed: number = Date.now() - startedAt;
-            if (elapsed < 280) {
-                await sleep_ms(280 - elapsed);
+            if (elapsed < minSpinnerMs) {
+                await sleep_ms(minSpinnerMs - elapsed);
             }
             stopSpinner();
 
