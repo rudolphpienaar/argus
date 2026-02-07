@@ -25,6 +25,15 @@ Examples:
 
 ```bash
 /scripts
+/scripts hist-harmonize
+/run --dry hist-harmonize
 /run hist-harmonize
 /run scripts/calypso/hist-harmonize.clpso
+```
+
+Natural language also works through CalypsoCore:
+
+```text
+what scripts are available?
+can you run the hist-harmonize for me?
 ```

@@ -164,6 +164,15 @@ export class CalypsoCore {
             return this.script_execute(parts.slice(1));
         }
 
+        // Natural-language script intents (list/run) routed deterministically.
+        const scriptIntent: ScriptIntent | null = this.scriptIntent_resolve(trimmed);
+        if (scriptIntent) {
+            if (scriptIntent.type === 'list') {
+                return this.scripts_response([]);
+            }
+            return this.script_execute([scriptIntent.scriptRef]);
+        }
+
         // Prioritize first-class harmonize intent so CLI can render
         // the dedicated harmonization experience instead of shell usage text.
         if (primaryCommand === 'harmonize') {
@@ -217,18 +226,6 @@ export class CalypsoCore {
             /before\s+(i\s+)?(can\s+)?(code|train|proceed)/i,
             /can\s+i\s+skip\s+harmoniz/i
         ];
-
-        const scriptQueryPatterns: RegExp[] = [
-            /what\s+scripts/i,
-            /which\s+scripts/i,
-            /list\s+(the\s+)?scripts/i,
-            /show\s+(me\s+)?(the\s+)?scripts/i,
-            /available\s+scripts/i
-        ];
-
-        if (scriptQueryPatterns.some((pattern: RegExp): boolean => pattern.test(lowerInput))) {
-            return this.scripts_response([]);
-        }
 
         if (workflowPatterns.some((pattern: RegExp): boolean => pattern.test(lowerInput))) {
             const guidance: string = this.workflow_nextStep();
@@ -812,15 +809,20 @@ TIP: Type /next anytime to see what to do next!`;
             const result: CalypsoResponse = await this.command_execute(trimmedStep);
             actions.push(...result.actions);
 
-            lines.push(`○ [${i + 1}/${script.steps.length}] ${trimmedStep}`);
+            const summary: string | null = this.scriptStep_summary(result.message);
 
             if (!result.success) {
+                lines.push(`[FAIL] [${i + 1}/${script.steps.length}] ${trimmedStep}`);
+                if (summary) lines.push(`  -> ${summary}`);
                 lines.push(`>> SCRIPT ABORTED AT STEP ${i + 1}.`);
-                if (result.message && result.message !== '__HARMONIZE_ANIMATE__') {
+                if (result.message && result.message !== '__HARMONIZE_ANIMATE__' && !summary) {
                     lines.push(result.message);
                 }
                 return this.response_create(lines.join('\n'), actions, false);
             }
+
+            lines.push(`[OK] [${i + 1}/${script.steps.length}] ${trimmedStep}`);
+            if (summary) lines.push(`  -> ${summary}`);
         }
 
         lines.push('');
@@ -844,6 +846,68 @@ TIP: Type /next anytime to see what to do next!`;
             }
         }
         return null;
+    }
+
+    /**
+     * Resolve natural-language script intents.
+     *
+     * @param input - Raw user input.
+     * @returns Script intent or null if no match.
+     */
+    private scriptIntent_resolve(input: string): ScriptIntent | null {
+        const lower: string = input.trim().toLowerCase();
+
+        const listPatterns: RegExp[] = [
+            /what\s+scripts/i,
+            /which\s+scripts/i,
+            /list\s+(the\s+)?scripts/i,
+            /show\s+(me\s+)?(the\s+)?scripts/i,
+            /available\s+scripts/i
+        ];
+
+        if (listPatterns.some((pattern: RegExp): boolean => pattern.test(lower))) {
+            return { type: 'list' };
+        }
+
+        const runPatterns: RegExp[] = [
+            /^(?:can|could|would)\s+you\s+(?:please\s+)?(?:run|execute|start|launch)\s+(?:the\s+)?([a-z0-9_-]+)(?:\s+script)?(?:\s+for\s+me)?[.!?]*$/i,
+            /^(?:please\s+)?(?:run|execute|start|launch)\s+(?:the\s+)?([a-z0-9_-]+)(?:\s+script)?(?:\s+for\s+me)?[.!?]*$/i
+        ];
+
+        for (const pattern of runPatterns) {
+            const match: RegExpMatchArray | null = lower.match(pattern);
+            if (!match || !match[1]) continue;
+
+            const candidate: string = match[1].trim().replace(/[^\w-]/g, '');
+            if (!candidate) continue;
+            if (!script_find(candidate)) continue;
+
+            return { type: 'run', scriptRef: candidate };
+        }
+
+        return null;
+    }
+
+    /**
+     * Summarize a command response for per-step script output.
+     *
+     * @param message - Raw response message.
+     * @returns Short summary or null.
+     */
+    private scriptStep_summary(message: string): string | null {
+        if (!message) return null;
+
+        if (message === '__HARMONIZE_ANIMATE__') {
+            return 'COHORT HARMONIZATION COMPLETE';
+        }
+
+        const cleanedLines: string[] = message
+            .split('\n')
+            .map((line: string): string => line.replace(/<[^>]+>/g, '').trim())
+            .filter((line: string): boolean => line.length > 0);
+
+        if (cleanedLines.length === 0) return null;
+        return cleanedLines[0];
     }
 
     /**
@@ -1914,3 +1978,14 @@ export interface CalypsoStoreActions {
     /** Set current stage */
     stage_set(stage: AppState['currentStage']): void;
 }
+
+interface ScriptIntentList {
+    type: 'list';
+}
+
+interface ScriptIntentRun {
+    type: 'run';
+    scriptRef: string;
+}
+
+type ScriptIntent = ScriptIntentList | ScriptIntentRun;

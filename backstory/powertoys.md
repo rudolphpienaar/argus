@@ -21,6 +21,13 @@ Examples:
 /run scripts/calypso/hist-harmonize.clpso
 ```
 
+Natural language trigger examples:
+
+```text
+what scripts are available?
+can you run the hist-harmonize for me?
+```
+
 Script format:
 
 - One command per line

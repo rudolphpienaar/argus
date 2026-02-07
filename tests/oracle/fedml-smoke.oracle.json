@@ -13,19 +13,14 @@
       "output_contains": "rename histo-exp1"
     },
     {
-      "send": "search histology",
+      "send": "Can you run the hist-harmonize for me?",
       "success": true,
-      "output_contains": "FOUND"
-    },
-    {
-      "send": "add ds-006",
-      "success": true,
-      "output_contains": "DATASET GATHERED",
+      "output_contains": [
+        "RUNNING SCRIPT: hist-harmonize",
+        "SCRIPT COMPLETE",
+        "[OK] [4/4] harmonize"
+      ],
       "capture_project": true
-    },
-    {
-      "send": "harmonize",
-      "success": true
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/input/.harmonized"
