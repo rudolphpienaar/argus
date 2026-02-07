@@ -713,7 +713,10 @@ TIP: Type /next anytime to see what to do next!`;
         const targetRaw: string = args.join(' ').trim();
         if (!targetRaw) {
             const lines: string[] = [
-                '● POWER SCRIPTS AVAILABLE:',
+                '● Yes. I can show you the available power scripts now.',
+                '○ Tip: You can type `/scripts` anytime to see this list.',
+                '',
+                'POWER SCRIPTS AVAILABLE:',
                 ''
             ];
 

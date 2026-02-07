@@ -5,7 +5,10 @@
     {
       "send": "OK, do you have power scripts?",
       "success": true,
-      "output_contains": "hist-harmonize"
+      "output_contains": [
+        "hist-harmonize",
+        "type `/scripts` anytime"
+      ]
     },
     {
       "send": "what scripts do you have?",
