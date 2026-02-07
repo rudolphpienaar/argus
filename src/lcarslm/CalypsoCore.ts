@@ -59,6 +59,20 @@ interface FederationState {
     publish: FederationPublishConfig;
 }
 
+interface FederationDagPaths {
+    crosscompileBase: string;
+    crosscompileData: string;
+    containerizeBase: string;
+    containerizeData: string;
+    publishBase: string;
+    publishData: string;
+    dispatchBase: string;
+    dispatchData: string;
+    dispatchReceipts: string;
+    roundsBase: string;
+    roundsData: string;
+}
+
 interface FederationArgs {
     confirm: boolean;
     abort: boolean;
@@ -206,6 +220,12 @@ export class CalypsoCore {
         const controlResult: CalypsoResponse | null = await this.controlIntent_dispatch(controlIntent);
         if (controlResult) {
             return controlResult;
+        }
+
+        // Deterministic yes/no confirmations for staged federate handshakes.
+        const confirmationResult: CalypsoResponse | null = this.confirmation_dispatch(trimmed);
+        if (confirmationResult) {
+            return confirmationResult;
         }
 
         // Prioritize first-class harmonize intent so CLI can render
@@ -1421,6 +1441,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                     lines.push('Federation Phase 1/3 is pending: source transcompile + container compile.');
                     lines.push('');
                     lines.push('  `federate --yes` — Execute phase 1/3');
+                    lines.push('  ARGUS UI: FEDERATE -> CONFIRM PHASE 1');
                     lines.push('  `federate --abort` — Cancel federation handshake');
                 } else if (this.federationState?.phase === 'publish') {
                     lines.push('Federation Phase 2/3 is pending: marketplace publish configuration.');
@@ -1429,11 +1450,13 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                     lines.push('  `federate --org <org>` — Set org/namespace (optional)');
                     lines.push('  `federate --private` — Publish privately');
                     lines.push('  `federate --yes` — Publish and proceed to dispatch');
+                    lines.push('  ARGUS UI: Set publish metadata, then CONFIRM PHASE 2');
                     lines.push('  `federate --abort` — Cancel federation handshake');
                 } else if (this.federationState?.phase === 'dispatch') {
                     lines.push('Federation Phase 3/3 is pending: dispatch + federated rounds.');
                     lines.push('');
                     lines.push('  `federate --yes` — Dispatch to participants and run rounds');
+                    lines.push('  ARGUS UI: FEDERATE -> CONFIRM PHASE 3');
                     lines.push('  `federate --abort` — Cancel federation handshake');
                 } else {
                     lines.push('Local training complete. Ready to distribute across nodes.');
@@ -1482,6 +1505,47 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         if (/^scaffold/i.test(stripped)) return 'proceed';
 
         return null;
+    }
+
+    /**
+     * Route short yes/no confirmations to active deterministic handshakes.
+     */
+    private confirmation_dispatch(input: string): CalypsoResponse | null {
+        const normalized: string = input.trim().toLowerCase();
+        const isAffirm: boolean = /^(yes|y|yeah|yep|sure|ok|okay|go ahead|proceed|continue|do it|affirmative)$/.test(normalized);
+        const isReject: boolean = /^(no|n|nope|cancel|abort|stop|negative|not now)$/.test(normalized);
+
+        if (!isAffirm && !isReject) {
+            return null;
+        }
+
+        if (this.federationState) {
+            return this.workflow_federate([isAffirm ? '--yes' : '--abort']);
+        }
+
+        if (!this.federationReady_is()) {
+            return null;
+        }
+
+        if (isAffirm) {
+            // Treat "yes" as immediate phase-1 confirmation when federate is next.
+            return this.workflow_federate(['--yes']);
+        }
+
+        return this.response_create(
+            '○ Understood. Federation sequence not started. Run `federate` when you are ready.',
+            [],
+            true
+        );
+    }
+
+    /**
+     * Returns true when federate is the next required workflow stage.
+     */
+    private federationReady_is(): boolean {
+        const context: WorkflowContext = this.workflowContext_build();
+        const nextStage = WorkflowEngine.stage_next(this.workflowDefinition, context);
+        return nextStage?.id === 'federate';
     }
 
     // ─── Workflow Commands ─────────────────────────────────────────────────
@@ -1829,30 +1893,38 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
 
         if (this.federationState.phase === 'build') {
             if (!args.confirm) {
+                const dag: FederationDagPaths = this.federationDag_paths(projectBase);
                 const lines: string[] = [
                     '● FEDERATION PRECHECK COMPLETE.',
                     `○ SOURCE VERIFIED: ${projectBase}/src/train.py`,
-                    '○ PHASE 1/3: BUILD ARTIFACTS (TRANSCOMPILE + CONTAINER COMPILATION).'
+                    '○ PHASE 1/3: BUILD ARTIFACTS (TRANSCOMPILE + CONTAINER COMPILATION).',
+                    `○ DAG ROOT: ${dag.crosscompileBase}`
                 ];
                 if (metadataUpdated) {
                     lines.push('○ NOTE: PUBLISH SETTINGS CAPTURED FOR PHASE 2/3.');
                 }
                 lines.push('');
-                lines.push('>> READY TO RUN PHASE 1/3? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.');
+                lines.push('>> NEXT (CLI): `federate --yes`');
+                lines.push('>> NEXT (ARGUS UI): FEDERATE -> CONFIRM PHASE 1');
+                lines.push('>> ABORT: `federate --abort`');
                 return this.response_create(lines.join('\n'), [], true);
             }
 
+            this.federationDag_phase1Materialize(projectBase);
             try {
                 this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
             } catch { /* ignore */ }
 
             this.federationState.phase = 'publish';
+            const dag: FederationDagPaths = this.federationDag_paths(projectBase);
             return this.response_create(
                 [
                     '● PHASE 1/3 COMPLETE: BUILD ARTIFACTS.',
                     '',
                     '○ [1/5] SOURCE CODE TRANSCOMPILE COMPLETE.',
                     '○ [2/5] CONTAINER COMPILATION COMPLETE.',
+                    `○ ARTIFACTS MATERIALIZED: ${dag.crosscompileData}`,
+                    `○ NEXT DAG NODE READY: ${dag.containerizeBase}`,
                     '',
                     '● PHASE 2/3: MARKETPLACE PUBLISH PREPARATION.',
                     ...this.federationPublish_promptLines(this.federationState.publish)
@@ -1884,21 +1956,27 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                 );
             }
 
+            this.federationDag_phase2Materialize(projectBase, this.federationState.publish);
             try {
                 this.vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
             } catch { /* ignore */ }
 
             this.federationState.phase = 'dispatch';
+            const dag: FederationDagPaths = this.federationDag_paths(projectBase);
             return this.response_create(
                 [
                     '● PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING.',
                     '',
                     '○ [3/5] MARKETPLACE PUBLISHING COMPLETE.',
                     ...this.federationPublishSummary_lines(this.federationState.publish),
+                    `○ ARTIFACTS MATERIALIZED: ${dag.publishData}`,
+                    `○ NEXT DAG NODE READY: ${dag.dispatchBase}`,
                     '',
                     '○ NEXT PHASE: DISPATCH TO FEDERATED PARTICIPANTS + COMPUTE ROUNDS.',
                     '',
-                    '>> READY FOR PHASE 3/3? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.'
+                    '>> NEXT (CLI): `federate --yes`',
+                    '>> NEXT (ARGUS UI): FEDERATE -> CONFIRM PHASE 3',
+                    '>> ABORT: `federate --abort`'
                 ].join('\n'),
                 [],
                 true
@@ -1924,11 +2002,13 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             );
         }
 
+        this.federationDag_phase3Materialize(projectBase);
         try {
             this.vfs.file_create(`${projectBase}/.federated`, new Date().toISOString());
         } catch { /* ignore */ }
         this.federationState = null;
 
+        const dag: FederationDagPaths = this.federationDag_paths(projectBase);
         const lines: string[] = [
             '● PHASE 3/3: FEDERATION DISPATCH & COMPUTE.',
             '',
@@ -1953,6 +2033,10 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             '  ROUND 4/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.84',
             '  ROUND 5/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.89',
             '',
+            `○ ARTIFACTS MATERIALIZED: ${dag.dispatchData}`,
+            `○ ROUND METRICS MATERIALIZED: ${dag.roundsData}`,
+            '',
+            '>> NEXT: Ask `next?` for deployment/monitor guidance.',
             '<span class="success">● DISPATCH COMPLETE. HANDSHAKE IN PROGRESS...</span>'
         ];
 
@@ -2084,6 +2168,240 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             '  `federate --yes`',
             '  `federate --abort`'
         ];
+    }
+
+    /**
+     * Resolve canonical DAG paths for federate stage materialization.
+     */
+    private federationDag_paths(projectBase: string): FederationDagPaths {
+        const crosscompileBase: string = `${projectBase}/src/source-crosscompile`;
+        const crosscompileData: string = `${crosscompileBase}/data`;
+        const containerizeBase: string = `${crosscompileBase}/containerize`;
+        const containerizeData: string = `${containerizeBase}/data`;
+        const publishBase: string = `${containerizeBase}/marketplace-publish`;
+        const publishData: string = `${publishBase}/data`;
+        const dispatchBase: string = `${publishBase}/dispatch`;
+        const dispatchData: string = `${dispatchBase}/data`;
+        const dispatchReceipts: string = `${dispatchData}/receipts`;
+        const roundsBase: string = `${dispatchBase}/federated-rounds`;
+        const roundsData: string = `${roundsBase}/data`;
+
+        return {
+            crosscompileBase,
+            crosscompileData,
+            containerizeBase,
+            containerizeData,
+            publishBase,
+            publishData,
+            dispatchBase,
+            dispatchData,
+            dispatchReceipts,
+            roundsBase,
+            roundsData
+        };
+    }
+
+    /**
+     * Write a DAG artifact, creating parent directories if required.
+     */
+    private federationDag_write(path: string, content: string): void {
+        const parent: string = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
+        this.vfs.dir_create(parent);
+        this.vfs.node_write(path, content);
+    }
+
+    /**
+     * Materialize phase-1 (source-crosscompile) DAG artifacts.
+     */
+    private federationDag_phase1Materialize(projectBase: string): void {
+        const dag: FederationDagPaths = this.federationDag_paths(projectBase);
+        const now: string = new Date().toISOString();
+        this.vfs.dir_create(dag.crosscompileData);
+        this.vfs.dir_create(dag.containerizeBase); // next DAG node as sibling to data
+
+        this.federationDag_write(
+            `${dag.crosscompileData}/node.py`,
+            [
+                '# Auto-generated federated node entrypoint',
+                'import flwr as fl',
+                '',
+                'def client_fn(context):',
+                '    return None',
+                '',
+                'if __name__ == "__main__":',
+                '    fl.client.start_client(server_address="127.0.0.1:8080", client=client_fn({}))'
+            ].join('\n')
+        );
+        this.federationDag_write(
+            `${dag.crosscompileData}/flower_hooks.py`,
+            [
+                '# Auto-generated Flower hooks',
+                'def train_hook(batch):',
+                '    return {"loss": 0.0, "acc": 0.0}',
+                '',
+                'def eval_hook(batch):',
+                '    return {"val_loss": 0.0, "val_acc": 0.0}'
+            ].join('\n')
+        );
+        this.federationDag_write(
+            `${dag.crosscompileData}/transcompile.log`,
+            `TRANSPILE START: ${now}\nSOURCE: ${projectBase}/src/train.py\nSTATUS: COMPLETE\n`
+        );
+        this.federationDag_write(
+            `${dag.crosscompileData}/artifact.json`,
+            JSON.stringify(
+                {
+                    stage: 'source-crosscompile',
+                    status: 'complete',
+                    generatedAt: now,
+                    inputs: [`${projectBase}/src/train.py`],
+                    outputs: ['node.py', 'flower_hooks.py', 'transcompile.log']
+                },
+                null,
+                2
+            )
+        );
+    }
+
+    /**
+     * Materialize phase-2 (containerize + marketplace-publish) DAG artifacts.
+     */
+    private federationDag_phase2Materialize(projectBase: string, publish: FederationPublishConfig): void {
+        const dag: FederationDagPaths = this.federationDag_paths(projectBase);
+        const now: string = new Date().toISOString();
+        this.vfs.dir_create(dag.containerizeData);
+        this.vfs.dir_create(dag.publishData);
+        this.vfs.dir_create(dag.dispatchBase); // next DAG node as sibling to data
+
+        this.federationDag_write(
+            `${dag.containerizeData}/Dockerfile`,
+            [
+                'FROM python:3.11-slim',
+                'WORKDIR /app',
+                'COPY ../source-crosscompile/data/node.py /app/node.py',
+                'COPY ../source-crosscompile/data/flower_hooks.py /app/flower_hooks.py',
+                'CMD ["python", "/app/node.py"]'
+            ].join('\n')
+        );
+        this.federationDag_write(`${dag.containerizeData}/image.tar`, 'SIMULATED OCI IMAGE TAR\n');
+        this.federationDag_write(`${dag.containerizeData}/image.digest`, 'sha256:simulatedfedmlimage0001\n');
+        this.federationDag_write(
+            `${dag.containerizeData}/sbom.json`,
+            JSON.stringify({ format: 'spdx-json', generatedAt: now, packages: ['python', 'flwr'] }, null, 2)
+        );
+        this.federationDag_write(
+            `${dag.containerizeData}/build.log`,
+            `BUILD START: ${now}\nLAYER CACHE: HIT\nIMAGE: COMPLETE\n`
+        );
+
+        const appName: string = publish.appName || 'unnamed-fedml-app';
+        this.federationDag_write(
+            `${dag.publishData}/app.json`,
+            JSON.stringify(
+                {
+                    appName,
+                    org: publish.org,
+                    visibility: publish.visibility,
+                    imageDigest: 'sha256:simulatedfedmlimage0001',
+                    publishedAt: now
+                },
+                null,
+                2
+            )
+        );
+        this.federationDag_write(
+            `${dag.publishData}/publish-receipt.json`,
+            JSON.stringify(
+                {
+                    status: 'published',
+                    appName,
+                    registry: 'internal://argus-marketplace',
+                    publishedAt: now
+                },
+                null,
+                2
+            )
+        );
+        this.federationDag_write(`${dag.publishData}/registry-ref.txt`, `internal://argus-marketplace/${appName}:latest\n`);
+        this.federationDag_write(
+            `${dag.publishData}/publish.log`,
+            `PUBLISH START: ${now}\nAPP: ${appName}\nSTATUS: COMPLETE\n`
+        );
+    }
+
+    /**
+     * Materialize phase-3 (dispatch + federated rounds) DAG artifacts.
+     */
+    private federationDag_phase3Materialize(projectBase: string): void {
+        const dag: FederationDagPaths = this.federationDag_paths(projectBase);
+        const now: string = new Date().toISOString();
+        const participants: string[] = ['BCH', 'MGH', 'BIDMC'];
+
+        this.vfs.dir_create(dag.dispatchData);
+        this.vfs.dir_create(dag.dispatchReceipts);
+        this.vfs.dir_create(dag.roundsData);
+
+        this.federationDag_write(
+            `${dag.dispatchData}/participants.json`,
+            JSON.stringify(
+                participants.map((site: string) => ({ site, endpoint: `federation://${site.toLowerCase()}/node`, status: 'ready' })),
+                null,
+                2
+            )
+        );
+        this.federationDag_write(
+            `${dag.dispatchData}/dispatch.log`,
+            `DISPATCH START: ${now}\nTARGETS: ${participants.join(', ')}\nSTATUS: COMPLETE\n`
+        );
+        this.federationDag_write(
+            `${dag.dispatchReceipts}/bch.json`,
+            JSON.stringify({ site: 'BCH', status: 'accepted', timestamp: now }, null, 2)
+        );
+        this.federationDag_write(
+            `${dag.dispatchReceipts}/mgh.json`,
+            JSON.stringify({ site: 'MGH', status: 'accepted', timestamp: now }, null, 2)
+        );
+        this.federationDag_write(
+            `${dag.dispatchReceipts}/bidmc.json`,
+            JSON.stringify({ site: 'BIDMC', status: 'accepted', timestamp: now }, null, 2)
+        );
+
+        const rounds: number[] = [1, 2, 3, 4, 5];
+        const aggregate: number[] = [0.62, 0.71, 0.79, 0.84, 0.89];
+        rounds.forEach((round: number, idx: number): void => {
+            this.federationDag_write(
+                `${dag.roundsData}/round-0${round}.json`,
+                JSON.stringify(
+                    {
+                        round,
+                        participants: participants.map((site: string) => ({ site, status: 'ok' })),
+                        aggregate: aggregate[idx],
+                        timestamp: now
+                    },
+                    null,
+                    2
+                )
+            );
+        });
+        this.federationDag_write(
+            `${dag.roundsData}/aggregate-metrics.json`,
+            JSON.stringify({ finalAggregate: 0.89, rounds: aggregate, completedAt: now }, null, 2)
+        );
+        this.federationDag_write(`${dag.roundsData}/final-checkpoint.bin`, 'SIMULATED_CHECKPOINT_PAYLOAD\n');
+
+        // Keep a compact project-level marker for workflow validation compatibility.
+        this.federationDag_write(
+            `${projectBase}/.federation-dag.json`,
+            JSON.stringify(
+                {
+                    root: `${projectBase}/src/source-crosscompile`,
+                    lastMaterializedAt: now,
+                    phases: ['source-crosscompile', 'containerize', 'marketplace-publish', 'dispatch', 'federated-rounds']
+                },
+                null,
+                2
+            )
+        );
     }
 
     /**
