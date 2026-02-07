@@ -21,6 +21,15 @@ describe('ControlPlaneRouter', () => {
         expect(intent).toEqual({ plane: 'control', action: 'scripts_list' });
     });
 
+    it('routes generic run-scripts requests to scripts_list', () => {
+        const intent: ControlPlaneIntent = controlPlaneIntent_resolve(
+            'I want to run some power scripts',
+            SCRIPTS
+        );
+
+        expect(intent).toEqual({ plane: 'control', action: 'scripts_list' });
+    });
+
     it('routes NL run request with script id to script_run', () => {
         const intent: ControlPlaneIntent = controlPlaneIntent_resolve(
             'Can you run the hist-harmonize for me?',
@@ -85,4 +94,3 @@ describe('ControlPlaneRouter', () => {
         expect(intent).toEqual({ plane: 'conversation' });
     });
 });
-

@@ -11,6 +11,11 @@
       ]
     },
     {
+      "send": "I want to run some power scripts",
+      "success": true,
+      "output_contains": "hist-harmonize"
+    },
+    {
       "send": "what scripts do you have?",
       "success": true,
       "output_contains": "hist-harmonize"

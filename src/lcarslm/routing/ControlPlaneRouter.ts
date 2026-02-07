@@ -87,6 +87,12 @@ export function controlPlaneIntent_resolve(
         }
     }
 
+    // Generic "run scripts/power scripts" intent with no specific script name:
+    // route to list so CALYPSO can help user choose a script.
+    if (hasRunCue && hasScriptNoun && matchedScripts.length === 0) {
+        return { plane: 'control', action: 'scripts_list' };
+    }
+
     if (hasScriptNoun && (hasListCue || !hasRunCue)) {
         return { plane: 'control', action: 'scripts_list' };
     }
@@ -198,4 +204,3 @@ function tokenSequence_contains(haystack: string[], needle: string[]): boolean {
 
     return false;
 }
-
