@@ -504,8 +504,8 @@ export class CalypsoCore {
                 const help: string = `CALYPSO SPECIAL COMMANDS:
   /status           - Show system status (AI, VFS, project)
   /scripts [name]   - List available automation scripts (or inspect one)
-  /run <script>     - Execute a built-in script
-  /run --dry <script> - Preview script steps without executing
+  /run [script]     - Execute a built-in script
+  /run --dry [script] - Preview script steps without executing
   /batch <stage> [dataset] - Fast-forward workflow to target stage
   /jump <stage> [dataset]  - Alias for /batch
   /next             - Show suggested next step with commands
@@ -714,7 +714,7 @@ TIP: Type /next anytime to see what to do next!`;
             });
 
             lines.push('');
-            lines.push('Use: /scripts <name> or /run <name>');
+            lines.push('Use: /scripts [name] or /run [name]');
             return this.response_create(lines.join('\n'), [], true);
         }
 
@@ -736,7 +736,7 @@ TIP: Type /next anytime to see what to do next!`;
         });
 
         lines.push('');
-        lines.push(`Run: /run ${script.id}`);
+        lines.push(`Run: /run [${script.id}]`);
         return this.response_create(lines.join('\n'), [], true);
     }
 
@@ -744,9 +744,9 @@ TIP: Type /next anytime to see what to do next!`;
      * Execute a built-in script deterministically.
      *
      * Supports:
-     * - `/run <name>`
-     * - `/run --dry <name>`
-     * - `run <name>`
+     * - `/run [name]`
+     * - `/run --dry [name]`
+     * - `run [name]`
      *
      * @param args - Script command arguments.
      * @returns Execution summary and aggregated actions.
@@ -763,7 +763,7 @@ TIP: Type /next anytime to see what to do next!`;
         }
 
         if (!scriptRef) {
-            return this.response_create('Usage: /run <script> OR /run --dry <script>', [], false);
+            return this.response_create('Usage: /run [script] OR /run --dry [script]', [], false);
         }
 
         const script: CalypsoScript | null = script_find(scriptRef);
@@ -857,12 +857,18 @@ TIP: Type /next anytime to see what to do next!`;
     private scriptIntent_resolve(input: string): ScriptIntent | null {
         const lower: string = input.trim().toLowerCase();
 
+        if (lower.includes('/scripts') || lower.includes('power script')) {
+            return { type: 'list' };
+        }
+
         const listPatterns: RegExp[] = [
             /what\s+scripts/i,
             /which\s+scripts/i,
             /list\s+(the\s+)?scripts/i,
             /show\s+(me\s+)?(the\s+)?scripts/i,
-            /available\s+scripts/i
+            /available\s+scripts/i,
+            /do\s+you\s+have\s+(any\s+)?scripts/i,
+            /do\s+you\s+have\s+(any\s+)?power\s+scripts/i
         ];
 
         if (listPatterns.some((pattern: RegExp): boolean => pattern.test(lower))) {

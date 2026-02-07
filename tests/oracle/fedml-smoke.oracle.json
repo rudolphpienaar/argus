@@ -3,6 +3,11 @@
   "username": "oracle",
   "steps": [
     {
+      "send": "OK, do you have power scripts?",
+      "success": true,
+      "output_contains": "hist-harmonize"
+    },
+    {
       "send": "what scripts do you have?",
       "success": true,
       "output_contains": "hist-harmonize"
