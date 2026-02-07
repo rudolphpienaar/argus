@@ -68,12 +68,22 @@
     {
       "send": "federate",
       "success": true,
-      "output_contains": "READY TO CONTAINERIZE"
+      "output_contains": "READY TO RUN PHASE 1/3"
     },
     {
       "send": "federate --yes",
       "success": true,
-      "output_contains": "PHASE 1/2 COMPLETE: BUILD & PUBLISH"
+      "output_contains": "PHASE 1/3 COMPLETE: BUILD ARTIFACTS"
+    },
+    {
+      "send": "federate --name histo-exp1-federated",
+      "success": true,
+      "output_contains": "PUBLISH METADATA UPDATED"
+    },
+    {
+      "send": "federate --yes",
+      "success": true,
+      "output_contains": "PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING"
     },
     {
       "send": "federate --yes",

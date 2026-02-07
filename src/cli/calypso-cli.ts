@@ -267,10 +267,15 @@ function outputMode_detect(message: string, input: string): 'plain' | 'training'
         return 'training';
     }
     if (
-        message.includes('PHASE 1/2 COMPLETE: BUILD & PUBLISH') ||
-        message.includes('PHASE 2/2: FEDERATION DISPATCH & COMPUTE') ||
+        message.includes('PHASE 1/3 COMPLETE: BUILD ARTIFACTS') ||
+        message.includes('PHASE 2/3: MARKETPLACE PUBLISH PREPARATION') ||
+        message.includes('PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING') ||
+        message.includes('PHASE 3/3: FEDERATION DISPATCH & COMPUTE') ||
         message.includes('DISTRIBUTING CONTAINER TO TRUSTED DOMAINS') ||
-        message.includes('FEDERATED COMPUTE ROUNDS')
+        message.includes('FEDERATED COMPUTE ROUNDS') ||
+        message.includes('[1/5] SOURCE CODE TRANSCOMPILE') ||
+        message.includes('[2/5] CONTAINER COMPILATION') ||
+        message.includes('[3/5] MARKETPLACE PUBLISHING COMPLETE')
     ) {
         return 'federation';
     }
@@ -309,13 +314,15 @@ async function response_renderAnimated(message: string, input: string): Promise<
 
         // federation mode
         if (/ROUND\s+\d+\/\d+/i.test(line)) {
-            await sleep_ms(360 + Math.floor(Math.random() * 340));
+            await sleep_ms(700 + Math.floor(Math.random() * 700));
         } else if (line.includes('DISPATCHED')) {
-            await sleep_ms(330 + Math.floor(Math.random() * 280));
-        } else if (line.includes('PHASE 2/2') || line.includes('PHASE 1/2')) {
-            await sleep_ms(300 + Math.floor(Math.random() * 220));
+            await sleep_ms(520 + Math.floor(Math.random() * 520));
+        } else if (/^\s*○\s+\[\d\/5\]/.test(line)) {
+            await sleep_ms(620 + Math.floor(Math.random() * 520));
+        } else if (line.includes('PHASE 3/3') || line.includes('PHASE 2/3') || line.includes('PHASE 1/3')) {
+            await sleep_ms(540 + Math.floor(Math.random() * 420));
         } else {
-            await sleep_ms(170 + Math.floor(Math.random() * 230));
+            await sleep_ms(260 + Math.floor(Math.random() * 340));
         }
     }
 }

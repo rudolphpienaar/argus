@@ -44,6 +44,29 @@ import type {
     TransitionResult
 } from '../core/workflows/types.js';
 
+type FederationPhase = 'build' | 'publish' | 'dispatch';
+type FederationVisibility = 'public' | 'private';
+
+interface FederationPublishConfig {
+    appName: string | null;
+    org: string | null;
+    visibility: FederationVisibility;
+}
+
+interface FederationState {
+    projectId: string;
+    phase: FederationPhase;
+    publish: FederationPublishConfig;
+}
+
+interface FederationArgs {
+    confirm: boolean;
+    abort: boolean;
+    name: string | null;
+    org: string | null;
+    visibility: FederationVisibility | null;
+}
+
 /**
  * DOM-free AI orchestrator for the ARGUS system.
  *
@@ -107,7 +130,7 @@ export class CalypsoCore {
     private workflowState: WorkflowState;
 
     /** Multi-phase federation handshake state. */
-    private federationState: { projectId: string; phase: 'containerize' | 'dispatch' } | null = null;
+    private federationState: FederationState | null = null;
 
     constructor(
         private vfs: VirtualFileSystem,
@@ -544,7 +567,10 @@ WORKFLOW COMMANDS:
   harmonize         - Standardize cohort for federation
   proceed / code    - Scaffold training environment
   python train.py   - Run local training
-  federate          - Start federation sequence (multi-phase confirm)
+  federate          - Start federation sequence (3-phase handshake)
+  federate --name <app> - Set marketplace app name (phase 2)
+  federate --org <name> - Set marketplace org/namespace (phase 2)
+  federate --private | --public - Set publish visibility (phase 2)
   federate --yes    - Confirm pending federation phase
   federate --abort  - Abort federation handshake
 
@@ -1391,15 +1417,23 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             case 'federate':
                 lines.push('**Next step: Federated Training**');
                 lines.push('');
-                if (this.federationState?.phase === 'containerize') {
-                    lines.push('Federation handshake is awaiting containerization confirmation.');
+                if (this.federationState?.phase === 'build') {
+                    lines.push('Federation Phase 1/3 is pending: source transcompile + container compile.');
                     lines.push('');
-                    lines.push('  `federate --yes` — Containerize and publish image');
+                    lines.push('  `federate --yes` — Execute phase 1/3');
+                    lines.push('  `federate --abort` — Cancel federation handshake');
+                } else if (this.federationState?.phase === 'publish') {
+                    lines.push('Federation Phase 2/3 is pending: marketplace publish configuration.');
+                    lines.push('');
+                    lines.push('  `federate --name <app-name>` — Set app name');
+                    lines.push('  `federate --org <org>` — Set org/namespace (optional)');
+                    lines.push('  `federate --private` — Publish privately');
+                    lines.push('  `federate --yes` — Publish and proceed to dispatch');
                     lines.push('  `federate --abort` — Cancel federation handshake');
                 } else if (this.federationState?.phase === 'dispatch') {
-                    lines.push('Containerization complete. Dispatch confirmation is pending.');
+                    lines.push('Federation Phase 3/3 is pending: dispatch + federated rounds.');
                     lines.push('');
-                    lines.push('  `federate --yes` — Dispatch to participants');
+                    lines.push('  `federate --yes` — Dispatch to participants and run rounds');
                     lines.push('  `federate --abort` — Cancel federation handshake');
                 } else {
                     lines.push('Local training complete. Ready to distribute across nodes.');
@@ -1501,7 +1535,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                 break;
 
             case 'federate':
-                response = this.workflow_federate(args[0]);
+                response = this.workflow_federate(args);
                 break;
 
             case 'proceed':
@@ -1771,7 +1805,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
     /**
      * Start federation sequence.
      */
-    private workflow_federate(modeRaw?: string): CalypsoResponse {
+    private workflow_federate(rawArgs: string[] = []): CalypsoResponse {
         const username = this.shell.env_get('USER') || 'user';
         const activeMeta = this.storeActions.project_getActive();
         if (!activeMeta) {
@@ -1780,34 +1814,107 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
 
         const projectName: string = activeMeta.name;
         const projectBase: string = `/home/${username}/projects/${projectName}`;
-        const mode: string = (modeRaw || '').toLowerCase();
+        const args: FederationArgs = this.federationArgs_parse(rawArgs);
 
-        if (mode === '--abort' || mode === 'abort' || mode === 'cancel') {
+        if (args.abort) {
             this.federationState = null;
             return this.response_create('○ FEDERATION HANDSHAKE ABORTED. NO DISPATCH PERFORMED.', [], true);
         }
 
         if (!this.federationState || this.federationState.projectId !== activeMeta.id) {
-            this.federationState = { projectId: activeMeta.id, phase: 'containerize' };
-            return this.response_create(
-                [
+            this.federationState = this.federationState_create(activeMeta.id, projectName);
+        }
+
+        const metadataUpdated: boolean = this.federationPublish_mutate(args);
+
+        if (this.federationState.phase === 'build') {
+            if (!args.confirm) {
+                const lines: string[] = [
                     '● FEDERATION PRECHECK COMPLETE.',
                     `○ SOURCE VERIFIED: ${projectBase}/src/train.py`,
-                    '○ NEXT PHASE: CONTAINERIZE AND PUBLISH FEDERATION IMAGE.',
+                    '○ PHASE 1/3: BUILD ARTIFACTS (TRANSCOMPILE + CONTAINER COMPILATION).'
+                ];
+                if (metadataUpdated) {
+                    lines.push('○ NOTE: PUBLISH SETTINGS CAPTURED FOR PHASE 2/3.');
+                }
+                lines.push('');
+                lines.push('>> READY TO RUN PHASE 1/3? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.');
+                return this.response_create(lines.join('\n'), [], true);
+            }
+
+            try {
+                this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
+            } catch { /* ignore */ }
+
+            this.federationState.phase = 'publish';
+            return this.response_create(
+                [
+                    '● PHASE 1/3 COMPLETE: BUILD ARTIFACTS.',
                     '',
-                    '>> READY TO CONTAINERIZE? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.'
+                    '○ [1/5] SOURCE CODE TRANSCOMPILE COMPLETE.',
+                    '○ [2/5] CONTAINER COMPILATION COMPLETE.',
+                    '',
+                    '● PHASE 2/3: MARKETPLACE PUBLISH PREPARATION.',
+                    ...this.federationPublish_promptLines(this.federationState.publish)
                 ].join('\n'),
                 [],
                 true
             );
         }
 
-        if (mode !== '--yes' && mode !== 'yes' && mode !== 'confirm') {
-            if (this.federationState.phase === 'containerize') {
+        if (this.federationState.phase === 'publish') {
+            if (!args.confirm) {
                 return this.response_create(
-                    '>> CONTAINERIZATION PENDING. RUN `federate --yes` OR `federate --abort`.',
+                    [
+                        '● PHASE 2/3: MARKETPLACE PUBLISH PREPARATION.',
+                        '',
+                        ...(metadataUpdated ? ['○ PUBLISH METADATA UPDATED.', ''] : []),
+                        ...this.federationPublish_promptLines(this.federationState.publish)
+                    ].join('\n'),
+                    [],
+                    true
+                );
+            }
+
+            if (!this.federationState.publish.appName) {
+                return this.response_create(
+                    '>> APP NAME REQUIRED. RUN `federate --name <app-name>` BEFORE `federate --yes`.',
                     [],
                     false
+                );
+            }
+
+            try {
+                this.vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
+            } catch { /* ignore */ }
+
+            this.federationState.phase = 'dispatch';
+            return this.response_create(
+                [
+                    '● PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING.',
+                    '',
+                    '○ [3/5] MARKETPLACE PUBLISHING COMPLETE.',
+                    ...this.federationPublishSummary_lines(this.federationState.publish),
+                    '',
+                    '○ NEXT PHASE: DISPATCH TO FEDERATED PARTICIPANTS + COMPUTE ROUNDS.',
+                    '',
+                    '>> READY FOR PHASE 3/3? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.'
+                ].join('\n'),
+                [],
+                true
+            );
+        }
+
+        // Dispatch phase
+        if (!args.confirm) {
+            if (metadataUpdated) {
+                return this.response_create(
+                    [
+                        '○ DISPATCH PHASE ALREADY ACTIVE. PUBLISH SETTINGS ARE LOCKED AFTER PHASE 2/3.',
+                        '>> DISPATCH PENDING. RUN `federate --yes` OR `federate --abort`.'
+                    ].join('\n'),
+                    [],
+                    true
                 );
             }
             return this.response_create(
@@ -1817,38 +1924,13 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             );
         }
 
-        if (this.federationState.phase === 'containerize') {
-            try {
-                this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
-            } catch { /* ignore */ }
-
-            this.federationState = { projectId: activeMeta.id, phase: 'dispatch' };
-            return this.response_create(
-                [
-                    '● PHASE 1/2 COMPLETE: BUILD & PUBLISH.',
-                    '',
-                    '○ [1/5] SOURCE CODE TRANSCOMPILE COMPLETE.',
-                    '○ [2/5] CONTAINER COMPILATION COMPLETE.',
-                    '○ [3/5] MARKETPLACE PUBLISHING COMPLETE.',
-                    '',
-                    '○ IMAGE PUBLISHED TO INTERNAL REGISTRY.',
-                    '○ NEXT PHASE: DISPATCH TO FEDERATED PARTICIPANTS.',
-                    '',
-                    '>> READY TO DISPATCH? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.'
-                ].join('\n'),
-                [],
-                true
-            );
-        }
-
-        // Final dispatch phase
         try {
             this.vfs.file_create(`${projectBase}/.federated`, new Date().toISOString());
         } catch { /* ignore */ }
         this.federationState = null;
 
         const lines: string[] = [
-            '● PHASE 2/2: FEDERATION DISPATCH & COMPUTE.',
+            '● PHASE 3/3: FEDERATION DISPATCH & COMPUTE.',
             '',
             '○ [4/5] DISPATCH TO REMOTE SITES INITIALIZED.',
             `○ INGESTING SOURCE: ${projectBase}/src/train.py`,
@@ -1875,6 +1957,133 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         ];
 
         return this.response_create(lines.join('\n'), [{ type: 'federation_start' }], true);
+    }
+
+    /**
+     * Parse federate arguments into structured flags.
+     */
+    private federationArgs_parse(rawArgs: string[]): FederationArgs {
+        const parsed: FederationArgs = {
+            confirm: false,
+            abort: false,
+            name: null,
+            org: null,
+            visibility: null
+        };
+
+        for (let i: number = 0; i < rawArgs.length; i++) {
+            const token: string = rawArgs[i].toLowerCase();
+            const rawToken: string = rawArgs[i];
+
+            if (token === '--yes' || token === 'yes' || token === 'confirm') {
+                parsed.confirm = true;
+                continue;
+            }
+            if (token === '--abort' || token === 'abort' || token === 'cancel') {
+                parsed.abort = true;
+                continue;
+            }
+            if (token === '--private') {
+                parsed.visibility = 'private';
+                continue;
+            }
+            if (token === '--public') {
+                parsed.visibility = 'public';
+                continue;
+            }
+            if (token.startsWith('--name=')) {
+                parsed.name = rawToken.slice(rawToken.indexOf('=') + 1).trim() || null;
+                continue;
+            }
+            if (token.startsWith('--org=')) {
+                parsed.org = rawToken.slice(rawToken.indexOf('=') + 1).trim() || null;
+                continue;
+            }
+            if (token === '--name' && rawArgs[i + 1]) {
+                parsed.name = rawArgs[i + 1].trim() || null;
+                i++;
+                continue;
+            }
+            if (token === '--org' && rawArgs[i + 1]) {
+                parsed.org = rawArgs[i + 1].trim() || null;
+                i++;
+                continue;
+            }
+        }
+
+        return parsed;
+    }
+
+    /**
+     * Create initial federation state for a project.
+     */
+    private federationState_create(projectId: string, projectName: string): FederationState {
+        return {
+            projectId,
+            phase: 'build',
+            publish: {
+                appName: `${projectName}-fedapp`,
+                org: null,
+                visibility: 'public'
+            }
+        };
+    }
+
+    /**
+     * Apply publish config mutations from command arguments.
+     *
+     * @returns True if any publish setting changed
+     */
+    private federationPublish_mutate(args: FederationArgs): boolean {
+        if (!this.federationState) return false;
+
+        let changed: boolean = false;
+        if (args.name !== null && args.name !== this.federationState.publish.appName) {
+            this.federationState.publish.appName = args.name;
+            changed = true;
+        }
+        if (args.org !== null && args.org !== this.federationState.publish.org) {
+            this.federationState.publish.org = args.org;
+            changed = true;
+        }
+        if (args.visibility && args.visibility !== this.federationState.publish.visibility) {
+            this.federationState.publish.visibility = args.visibility;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /**
+     * Render publish settings summary lines.
+     */
+    private federationPublishSummary_lines(publish: FederationPublishConfig): string[] {
+        return [
+            `○ APP: ${publish.appName ?? '(unset)'}`,
+            `○ ORG: ${publish.org ?? '(none)'}`,
+            `○ VISIBILITY: ${publish.visibility.toUpperCase()}`,
+            '○ IMAGE PUBLISHED TO INTERNAL REGISTRY.'
+        ];
+    }
+
+    /**
+     * Render publish prompt and current config.
+     */
+    private federationPublish_promptLines(publish: FederationPublishConfig): string[] {
+        return [
+            `○ CURRENT APP: ${publish.appName ?? '(unset)'}`,
+            `○ CURRENT ORG: ${publish.org ?? '(none)'}`,
+            `○ CURRENT VISIBILITY: ${publish.visibility.toUpperCase()}`,
+            '',
+            'Set metadata (optional updates):',
+            '  `federate --name <app-name>`',
+            '  `federate --org <namespace>`',
+            '  `federate --private` or `federate --public`',
+            '',
+            'Then confirm publish:',
+            '  `federate --yes`',
+            '  `federate --abort`'
+        ];
     }
 
     /**

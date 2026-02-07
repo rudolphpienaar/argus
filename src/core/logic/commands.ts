@@ -29,9 +29,14 @@ async function message_renderAnimated(message: string): Promise<void> {
 
     const trainingMode: boolean = message.includes('--- TRAINING LOG ---');
     const federationMode: boolean =
-        message.includes('PHASE 1/2 COMPLETE: BUILD & PUBLISH') ||
-        message.includes('PHASE 2/2: FEDERATION DISPATCH & COMPUTE') ||
-        message.includes('FEDERATED COMPUTE ROUNDS');
+        message.includes('PHASE 1/3 COMPLETE: BUILD ARTIFACTS') ||
+        message.includes('PHASE 2/3: MARKETPLACE PUBLISH PREPARATION') ||
+        message.includes('PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING') ||
+        message.includes('PHASE 3/3: FEDERATION DISPATCH & COMPUTE') ||
+        message.includes('FEDERATED COMPUTE ROUNDS') ||
+        message.includes('[1/5] SOURCE CODE TRANSCOMPILE') ||
+        message.includes('[2/5] CONTAINER COMPILATION') ||
+        message.includes('[3/5] MARKETPLACE PUBLISHING COMPLETE');
     const lines: string[] = message.split('\n');
 
     if (!trainingMode && !federationMode) {
@@ -58,11 +63,13 @@ async function message_renderAnimated(message: string): Promise<void> {
 
         // federation mode
         if (/ROUND\s+\d+\/\d+/i.test(line)) {
-            await sleep_ms(280 + Math.floor(Math.random() * 220));
+            await sleep_ms(580 + Math.floor(Math.random() * 520));
         } else if (line.includes('DISPATCHED')) {
-            await sleep_ms(240 + Math.floor(Math.random() * 180));
+            await sleep_ms(440 + Math.floor(Math.random() * 420));
+        } else if (/^\s*○\s+\[\d\/5\]/.test(line)) {
+            await sleep_ms(520 + Math.floor(Math.random() * 420));
         } else {
-            await sleep_ms(140 + Math.floor(Math.random() * 140));
+            await sleep_ms(220 + Math.floor(Math.random() * 260));
         }
     }
 }
