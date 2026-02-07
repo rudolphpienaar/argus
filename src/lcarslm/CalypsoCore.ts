@@ -738,7 +738,7 @@ TIP: Type /next anytime to see what to do next!`;
 
         const script: CalypsoScript | null = script_find(targetRaw);
         if (!script) {
-            return this.response_create(`>> ERROR: SCRIPT NOT FOUND: ${targetRaw}\nUse /scripts to list available scripts.`, [], false);
+            return this.response_create(this.scriptNotFound_message(targetRaw), [], false);
         }
 
         const lines: string[] = [
@@ -786,7 +786,7 @@ TIP: Type /next anytime to see what to do next!`;
 
         const script: CalypsoScript | null = script_find(scriptRef);
         if (!script) {
-            return this.response_create(`>> ERROR: SCRIPT NOT FOUND: ${scriptRef}\nUse /scripts to list available scripts.`, [], false);
+            return this.response_create(this.scriptNotFound_message(scriptRef), [], false);
         }
 
         const unmetRequirement: string | null = this.scriptRequirement_unmet(script.requires);
@@ -864,6 +864,95 @@ TIP: Type /next anytime to see what to do next!`;
             }
         }
         return null;
+    }
+
+    /**
+     * Build an actionable script-not-found message with typo suggestions.
+     *
+     * @param ref - User-entered script reference.
+     * @returns Formatted error/help text.
+     */
+    private scriptNotFound_message(ref: string): string {
+        const lines: string[] = [`>> ERROR: SCRIPT NOT FOUND: ${ref}`];
+        const suggestions: string[] = this.scriptSuggestions_resolve(ref);
+
+        if (suggestions.length > 0) {
+            lines.push(`○ DID YOU MEAN: ${suggestions.map((name: string): string => `[${name}]`).join(', ')} ?`);
+            lines.push(`Use: /run [${suggestions[0]}]`);
+            return lines.join('\n');
+        }
+
+        lines.push('Use /scripts to list available scripts.');
+        return lines.join('\n');
+    }
+
+    /**
+     * Resolve nearest script candidates by normalized edit distance.
+     *
+     * @param ref - User-entered script reference.
+     * @returns Ranked script IDs (top 3).
+     */
+    private scriptSuggestions_resolve(ref: string): string[] {
+        const query: string = ref.trim().toLowerCase().replace(/\.clpso$/i, '');
+        if (!query) return [];
+
+        const ranked: Array<{ id: string; score: number }> = [];
+
+        for (const script of scripts_list()) {
+            let bestScore: number = Number.POSITIVE_INFINITY;
+            const refs: string[] = [script.id, ...script.aliases];
+
+            for (const candidateRaw of refs) {
+                const candidate: string = candidateRaw.toLowerCase();
+                const distance: number = this.distance_levenshtein(query, candidate);
+                const containsBoosted: number =
+                    candidate.includes(query) || query.includes(candidate) ? Math.max(0, distance - 1) : distance;
+                if (containsBoosted < bestScore) bestScore = containsBoosted;
+            }
+
+            ranked.push({ id: script.id, score: bestScore });
+        }
+
+        ranked.sort((a, b): number => (a.score - b.score) || a.id.localeCompare(b.id));
+        const threshold: number = Math.max(2, Math.floor(query.length * 0.35));
+
+        return ranked
+            .filter((entry): boolean => entry.score <= threshold)
+            .slice(0, 3)
+            .map((entry): string => entry.id);
+    }
+
+    /**
+     * Levenshtein edit distance.
+     *
+     * @param a - Source string.
+     * @param b - Target string.
+     * @returns Edit distance.
+     */
+    private distance_levenshtein(a: string, b: string): number {
+        if (a === b) return 0;
+        if (!a.length) return b.length;
+        if (!b.length) return a.length;
+
+        const prev: number[] = Array.from({ length: b.length + 1 }, (_, i: number): number => i);
+        const curr: number[] = new Array<number>(b.length + 1);
+
+        for (let i: number = 1; i <= a.length; i++) {
+            curr[0] = i;
+            for (let j: number = 1; j <= b.length; j++) {
+                const cost: number = a[i - 1] === b[j - 1] ? 0 : 1;
+                curr[j] = Math.min(
+                    curr[j - 1] + 1,
+                    prev[j] + 1,
+                    prev[j - 1] + cost
+                );
+            }
+            for (let j: number = 0; j <= b.length; j++) {
+                prev[j] = curr[j];
+            }
+        }
+
+        return prev[b.length];
     }
 
     /**

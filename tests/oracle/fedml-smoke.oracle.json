@@ -26,6 +26,14 @@
       "output_contains": "rename histo-exp1"
     },
     {
+      "send": "/run hist-harmoniize",
+      "success": false,
+      "output_contains": [
+        "DID YOU MEAN",
+        "hist-harmonize"
+      ]
+    },
+    {
       "send": "Can you run the hist-harmonize for me?",
       "success": true,
       "output_contains": [
