@@ -240,7 +240,7 @@ make serve
 # Watch mode (auto-rebuild on changes)
 make watch
 
-# Run all tests (134 tests)
+# Run all tests
 npm run test
 ----
 
@@ -371,7 +371,7 @@ npx vitest run src/vfs/Shell.test.ts
 
 | 3.4.1
 | 2026-01-29
-| "The VCS Update" — Complete Virtual Computer System: VirtualFileSystem, Shell (15 builtins), ContentRegistry (14 generators), 3 Providers, 134 tests
+| "The VCS Update" — Complete Virtual Computer System: VirtualFileSystem, Shell (15 builtins), ContentRegistry (14 generators), 3 Providers, and a broad automated test suite
 
 | 3.5.0
 | 2026-01-29

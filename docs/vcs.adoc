@@ -819,7 +819,7 @@ This section is a living checklist. Update it with each implementation iteration
 
 | Unit tests for Shell
 | [x] Done
-| 51 tests covering env vars, prompt generation, command parsing, all 15 builtins, stage transitions, external handler delegation. 124 total tests passing.
+| Shell coverage includes env vars, prompt generation, command parsing, all builtins, stage transitions, and external handler delegation. Refer to CI for current totals.
 
 | Stage-change listener updated
 | [x] Done
@@ -846,7 +846,7 @@ This section is a living checklist. Update it with each implementation iteration
 
 | Unit tests
 | [x] Done
-| 16 tests covering registration, resolution, VFS integration (lazy gen + caching), and all 8 template generators. 140 total tests passing.
+| ContentRegistry coverage includes registration, resolution, VFS integration (lazy gen + caching), and template generation. Refer to CI for current totals.
 
 | Wiring
 | [x] Done
@@ -923,21 +923,21 @@ This section is a living checklist. Update it with each implementation iteration
 
 | 2026-01-28
 | 0.3.0
-| Phase 2 complete: `Shell.ts` with 15 builtins, env vars, $PS1 prompt generation, stage transitions, external handler delegation. Terminal rewritten as dumb I/O surface with Shell → fallback handler chain. 51 Shell tests (124 total). Shell wired into `argus.ts` via `globals.shell`. Stage listener updated to use `shell.stage_enter()`.
+| Phase 2 complete: `Shell.ts` with builtins, env vars, $PS1 prompt generation, stage transitions, and external handler delegation. Terminal rewritten as dumb I/O surface with Shell → fallback handler chain. Shell wired into `argus.ts` via `globals.shell`. Stage listener updated to use `shell.stage_enter()`.
 
 | 2026-01-28
 | 0.4.0
-| Phase 3 complete: `ContentRegistry.ts` with lazy evaluation and VFS integration. 8 template generators (train, readme, config, requirements, manifest, catalog-datasets, catalog-models, node-registry). IDE reads from VFS with `syntax_highlight()` for .py/.yaml/.json/.md/.txt. Hardcoded HTML templates removed from process.ts. 16 content tests (140 total).
+| Phase 3 complete: `ContentRegistry.ts` with lazy evaluation and VFS integration. 8 template generators (train, readme, config, requirements, manifest, catalog-datasets, catalog-models, node-registry). IDE reads from VFS with `syntax_highlight()` for .py/.yaml/.json/.md/.txt. Hardcoded HTML templates removed from process.ts.
 
 | 2026-01-29
 | 0.5.0
-| Phase 4 complete: Three providers created — `DatasetProvider.ts` (`cohortTree_build()`), `ProjectProvider.ts` (`homeDir_scaffold()`, `projectDir_populate()`), `MarketplaceProvider.ts` (`asset_install()` with 6 type-specific installers). 6 new asset manifest generators + `argusConfig` generator (14 total). Store, gather, search, argus.ts migrated to providers. Legacy `filesystem.ts` and `filesystem.test.ts` deleted. `legacyNode_normalize()` removed from VirtualFileSystem.ts. 134 tests.
+| Phase 4 complete: Three providers created — `DatasetProvider.ts` (`cohortTree_build()`), `ProjectProvider.ts` (`homeDir_scaffold()`, `projectDir_populate()`), `MarketplaceProvider.ts` (`asset_install()` with 6 type-specific installers). 6 new asset manifest generators + `argusConfig` generator (14 total). Store, gather, search, argus.ts migrated to providers. Legacy `filesystem.ts` and `filesystem.test.ts` deleted. `legacyNode_normalize()` removed from VirtualFileSystem.ts.
 
 | 2026-01-29
 | 0.6.0
-| Phase 5 complete: `globals.vfs` renamed to `globals.vcs` across store and all 7 consumers. Hardcoded `setPrompt()` calls removed from search/gather stages — Shell `$PS1` via `prompt_sync()` is sole prompt authority. Dead `updatePrompt()` call removed from navigation.ts. Marketplace integration verified clean (no inline VFS calls). All 5 phases complete. 134 tests.
+| Phase 5 complete: `globals.vfs` renamed to `globals.vcs` across store and all 7 consumers. Hardcoded `setPrompt()` calls removed from search/gather stages — Shell `$PS1` via `prompt_sync()` is sole prompt authority. Dead `updatePrompt()` call removed from navigation.ts. Marketplace integration verified clean (no inline VFS calls). All 5 phases complete.
 
 | 2026-01-29
 | 0.7.0
-| Style guide compliance sweep. All VCS/Provider/Store code now uses RPN naming (e.g., `store.asset_install()`, `detailHeader_populate()`), explicit type annotations on all consts/lambdas, JSDoc on all public/private functions, `catch (e: unknown)` with `instanceof Error` narrowing, and typed `declare global { interface Window }` extensions replacing `(window as any)` casts. Typed filter lambda parameters throughout VirtualFileSystem.ts and Shell.ts. 134 tests passing.
+| Style guide compliance sweep. All VCS/Provider/Store code now uses RPN naming (e.g., `store.asset_install()`, `detailHeader_populate()`), explicit type annotations on all consts/lambdas, JSDoc on all public/private functions, `catch (e: unknown)` with `instanceof Error` narrowing, and typed `declare global { interface Window }` extensions replacing `(window as any)` casts. Typed filter lambda parameters throughout VirtualFileSystem.ts and Shell.ts.
 |===

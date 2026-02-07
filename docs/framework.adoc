@@ -125,8 +125,12 @@ terminal.fallback_set(command_dispatch);
 
 // commands.ts (Router)
 export async function command_dispatch(cmd: string, args: string[]): Promise<void> {
-    if (workflow_dispatch(cmd, args)) return;
-    await ai_query([cmd, ...args].join(' '));
+    const core = core_get();
+    if (!core) return;
+
+    const input = [cmd, ...args].join(' ').trim();
+    const response = await core.command_execute(input);
+    browserAdapter.response_apply(response);
 }
 ----
 

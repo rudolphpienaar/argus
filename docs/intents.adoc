@@ -105,6 +105,6 @@ These intents are primarily for environment control and ORACLE verification.
 
 To add a new capability to ARGUS:
 1. Implement the deterministic logic in `ProjectManager.ts`.
-2. Expose it as a **First-Class Intent** in `CalypsoCore.ts` (`workflow_dispatch`).
+2. Expose it as a **First-Class Intent** in `CalypsoCore.ts` (`command_execute` + `workflow_*` handler).
 3. Define an **Agentic Intent** (LLM marker) and update the system prompt in `LCARSEngine` to recognize it.
 4. Codify the mapping in this document.

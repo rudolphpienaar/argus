@@ -98,17 +98,22 @@ HTML `onclick="myFunc()"` requires `myFunc` to be on `window`.
 Want to add a new command called `hello` to the terminal?
 
 1.  **Edit `src/core/logic/commands.ts`**:
-    Add your logic to the `workflow_dispatch` function.
+    Route commands through `CalypsoCore.command_execute(...)` (already wired by default).
+    New deterministic workflow behavior should be added in `src/lcarslm/CalypsoCore.ts`.
 
 [source,typescript]
 ----
-if (cmd === 'hello') {
-    globals.terminal.println('Hello, World!');
-    return true; // Command handled
+// CalypsoCore.ts
+if (primaryCommand === 'hello') {
+    return {
+        success: true,
+        message: 'Hello, World!',
+        actions: []
+    };
 }
 ----
 
-That's it. The `CommandRouter` automatically intercepts it before checking the AI engine.
+The terminal router delegates to CalypsoCore first, then falls back to the LLM when no first-class intent matches.
 
 == "Hello World": Adding a Stage
 

@@ -1,7 +1,7 @@
 = ORACLE: Reflexive Verification Through Agentic Self-Testing
 :author: ATLAS Project Team
-:revdate: 2026-02-04
-:revnumber: 1.1.0
+:revdate: 2026-02-07
+:revnumber: 1.2.0
 :toc: macro
 :toclevels: 3
 :sectnums:
@@ -137,7 +137,7 @@ For ORACLE to apply, a system must exhibit:
                     ┌─────────────────────────────────────────────┐
                     │              TEST HARNESS                   │
                     │  ┌─────────────────────────────────────┐    │
-                    │  │  Test Script (.oracle file)         │    │
+                    │  │  Test Script (.oracle.json)         │    │
                     │  │  - Natural language commands        │    │
                     │  │  - State assertions                 │    │
                     │  └──────────────┬──────────────────────┘    │
@@ -146,12 +146,12 @@ For ORACLE to apply, a system must exhibit:
                     │  ┌─────────────────────────────────────┐    │
                     │  │  Oracle Test Runner                 │    │
                     │  │  - Parses script                    │    │
-                    │  │  - Sends commands via API           │    │
+                    │  │  - Executes command_execute()       │    │
                     │  │  - Retrieves state snapshots        │    │
                     │  │  - Evaluates assertions             │    │
                     │  └──────────────┬──────────────────────┘    │
                     └─────────────────┼───────────────────────────┘
-                                      │ HTTP/WebSocket
+                                      │ In-process CalypsoCore
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           SYSTEM UNDER TEST                                 │
@@ -238,7 +238,7 @@ ARGUS satisfies all ORACLE requirements:
 | VFS exposes `tree_snapshot()`, Store exposes `state_snapshot()`
 
 | Programmatic Access
-| Calypso Server exposes HTTP API; CLI client for interactive use
+| In-process `CalypsoCore` execution for ORACLE, plus Calypso HTTP API for external clients
 |===
 
 === The CalypsoCore Abstraction
@@ -254,7 +254,7 @@ The key architectural decision enabling ORACLE is the **CalypsoCore** — a DOM-
 │   │  CalypsoCore.command_execute(input: string): CalypsoResponse        │   │
 │   │                                                                     │   │
 │   │  1. Shell builtins    → shell.command_execute()                     │   │
-│   │  2. Workflow commands → workflow_dispatch()                         │   │
+│   │  2. First-class workflow intents (workflow_* handlers)             │   │
 │   │  3. LLM fallback      → engine.query() → intent_dispatch()          │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
@@ -298,15 +298,12 @@ src/
 │   ├── calypso-server.ts        # Headless server entry point
 │   └── calypso-cli.ts           # Interactive REPL client
 │
-├── test/
+├── scripts/
+│   └── oracle-runner.mjs        # In-process ORACLE runner
+│
+├── tests/
 │   └── oracle/
-│       ├── OracleTestRunner.ts  # Parses .oracle files, drives tests
-│       ├── OracleClient.ts      # HTTP client for Calypso Server
-│       ├── assertions/
-│       │   ├── VfsAssertions.ts
-│       │   ├── StoreAssertions.ts
-│       │   └── OutputAssertions.ts
-│       └── snapshots/           # Saved state snapshots
+│       └── *.oracle.json        # Scenario files
 │
 ├── vfs/
 │   └── VirtualFileSystem.ts     # tree_snapshot() method
@@ -387,17 +384,11 @@ $ make calypso-cli
 | `<natural language>`
 | Sent to CalypsoCore for processing
 
-| `/snapshot [path]`
-| Display VFS snapshot as JSON
-
-| `/state`
-| Display Store state as JSON
-
-| `/reset`
-| Reset to clean state
+| `/run <script>`
+| Run an external `.clpso` script (fail-fast, one command per line)
 
 | `/help`
-| Show available commands
+| Show available commands and quick usage
 
 | `quit` / `exit`
 | Disconnect and exit
@@ -426,19 +417,8 @@ user@CALYPSO:[~]> tree ~/data/cohort/
     │   └── slide_0003.svs
     └── manifest.json
 
-user@CALYPSO:[~]> /snapshot ~/data/cohort/
-{
-  "name": "cohort",
-  "type": "folder",
-  "path": "/home/user/data/cohort",
-  "children": [
-    {
-      "name": "BCH-HISTO-2024",
-      "type": "folder",
-      "children": [...]
-    }
-  ]
-}
+user@CALYPSO:[~]> /run harmonize
+● COHORT HARMONIZATION COMPLETE. DATA STANDARDIZED FOR FEDERATION.
 
 user@CALYPSO:[~]> quit
 Goodbye.
@@ -527,220 +507,42 @@ public state_snapshot(): ExtendedState {
 
 === File Format
 
-Oracle test scripts use YAML with the `.oracle` extension. The format is designed for readability and version control friendliness.
+ORACLE scenarios use JSON files with the `.oracle.json` extension in `tests/oracle/`.
 
 === Schema
 
-[source,yaml]
+[source,json]
 ----
-# Test metadata
-name: string                    # Human-readable test name
-description: string             # What this test verifies
-tags: string[]                  # Categorization (smoke, regression, workflow)
-
-# Initial conditions
-setup:
-  persona: string               # Persona to activate (fedml, annotator, etc.)
-  stage: string                 # Starting stage (search, process, etc.)
-  reset: boolean                # Whether to reset state before test (default: true)
-
-# Test steps (executed sequentially)
-steps:
-  - send: string                # Natural language command to Calypso
-    wait: number                # Optional delay in ms after command
-    assert:                     # Assertions to verify after this step
-      - vfs_exists: string                    # Path must exist
-      - vfs_not_exists: string                # Path must not exist
-      - vfs_contains:                         # File must contain text
-          path: string
-          content: string                     # Substring match
-          pattern: string                     # Regex match (alternative)
-      - vfs_snapshot_matches: string          # Path to snapshot file
-      - store.<property>: any                 # Store property must equal value
-      - output_contains: string               # Response contains text (weak)
-      - output_not_contains: string           # Response must not contain
-
-# Final state verification (after all steps)
-final_assertions:
-  - vfs_snapshot_matches: string
-  - store.currentStage: string
-
-# Optional: save snapshot for future comparison
-save_snapshot:
-  path: string                  # VFS path to snapshot
-  file: string                  # Output file in snapshots/
+{
+  "name": "FedML Smoke",
+  "username": "oracle",
+  "steps": [
+    {
+      "send": "search histology",
+      "success": true,
+      "output_contains": "FOUND"
+    },
+    {
+      "send": "add ds-006",
+      "success": true,
+      "capture_project": true
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/src/train.py"
+    }
+  ]
+}
 ----
 
-=== Example Test Scripts
+Supported step keys in the current runner:
 
-==== Smoke Test: Basic Navigation
+1. `send` - execute one Calypso command string.
+2. `success` - expected boolean for the previous `send`.
+3. `output_contains` - string or string[] that must appear in the response message.
+4. `capture_project` - when `true`, stores active project name into `${project}`.
+5. `vfs_exists` - asserts path existence after interpolation (`${user}`, `${project}`).
 
-[source,yaml]
-----
-name: "Smoke: Stage Navigation"
-description: "Verify basic stage transitions work"
-tags: [smoke, navigation]
-
-setup:
-  persona: fedml
-  stage: search
-
-steps:
-  - send: "proceed to process"
-    assert:
-      - store.currentStage: "process"
-      - vfs_exists: "~/src/project/"
-
-  - send: "go back to search"
-    assert:
-      - store.currentStage: "search"
-----
-
-==== Integration Test: Gather Workflow
-
-[source,yaml]
-----
-name: "Integration: Dataset Gathering"
-description: "Verify dataset search, selection, and VFS mounting"
-tags: [integration, gather, vfs]
-
-setup:
-  persona: fedml
-  stage: search
-  reset: true
-
-steps:
-  - send: "search for histology datasets"
-    wait: 500
-    assert:
-      - output_contains: "BCH-HISTO"
-
-  - send: "add BCH-HISTO-2024 to my project"
-    assert:
-      - store.gatheredDatasets:
-          includes: "BCH-HISTO-2024"
-
-  - send: "create new project called TEST-HISTO"
-    assert:
-      - vfs_exists: "~/projects/TEST-HISTO/"
-      - store.activeProject.name: "TEST-HISTO"
-
-  - send: "open project TEST-HISTO"
-    assert:
-      - store.currentStage: "process"
-      - vfs_exists: "~/projects/TEST-HISTO/data/BCH-HISTO-2024/"
-      - vfs_exists: "~/projects/TEST-HISTO/src/train.py"
-
-final_assertions:
-  - vfs_snapshot_matches: "snapshots/gather-workflow-complete.json"
-
-save_snapshot:
-  path: "~/projects/TEST-HISTO/"
-  file: "gather-workflow-complete.json"
-----
-
-==== Regression Test: Overlay Lifecycle
-
-[source,yaml]
-----
-name: "Regression: Overlay Slot Cleanup"
-description: "Verify overlay slots are properly cleared on close (prevents DOM corruption)"
-tags: [regression, overlay, slots]
-
-setup:
-  persona: fedml
-  stage: search
-  reset: true
-
-steps:
-  # Open dataset detail
-  - send: "show details for BCH-HISTO-2024"
-    assert:
-      - store.overlayMode: "dataset"
-
-  # Close it
-  - send: "close"
-    assert:
-      - store.overlayMode: "none"
-
-  # Open marketplace
-  - send: "open marketplace"
-    assert:
-      - store.marketplaceOpen: true
-
-  # Open an asset detail
-  - send: "show details for pl-dcm2niix"
-    assert:
-      - store.overlayMode: "marketplace"
-
-  # Close and verify no DOM corruption (overlay returns to correct state)
-  - send: "close"
-    assert:
-      - store.overlayMode: "none"
-      - store.marketplaceOpen: true
-----
-
-==== End-to-End Test: Full Workflow
-
-[source,yaml]
-----
-name: "E2E: Federated ML Developer Workflow"
-description: "Complete workflow from search through federation"
-tags: [e2e, workflow, fedml]
-
-setup:
-  persona: fedml
-  stage: search
-  reset: true
-
-steps:
-  # Discovery
-  - send: "find brain MRI datasets with segmentation masks"
-    wait: 1000
-
-  - send: "add MGH-BRAIN-SEG to project"
-
-  - send: "also add BCH-BRAIN-2024"
-
-  # Project setup
-  - send: "create project BRAIN-SEG-STUDY"
-    assert:
-      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/"
-
-  - send: "open project"
-    assert:
-      - store.currentStage: "process"
-      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/src/train.py"
-      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/data/MGH-BRAIN-SEG/"
-      - vfs_exists: "~/projects/BRAIN-SEG-STUDY/data/BCH-BRAIN-2024/"
-
-  # Development
-  - send: "cat train.py"
-    assert:
-      - output_contains: "torch"
-      - output_contains: "FederatedTrainer"
-
-  - send: "analyze cohort"
-    assert:
-      - output_contains: "MODALITY CHECK"
-
-  # Simulation
-  - send: "simulate federation"
-    wait: 2000
-    assert:
-      - output_contains: "SIMULATION COMPLETE"
-      - store.simulationPassed: true
-
-  # Federalization
-  - send: "federate and launch"
-    wait: 3000
-    assert:
-      - store.currentStage: "monitor"
-
-final_assertions:
-  - store.activeJob.status: "running"
-  - vfs_exists: "~/projects/BRAIN-SEG-STUDY/output/"
-----
+Reference scenario: `tests/oracle/fedml-smoke.oracle.json`.
 
 == Test Execution
 
@@ -750,19 +552,21 @@ final_assertions:
 ----
 # Start headless Calypso server (port 8081)
 calypso:
-	npx ts-node src/cli/calypso-server.ts
+	npx tsx src/cli/calypso-server.ts
 
 # Start interactive CLI client
 calypso-cli:
-	npx ts-node src/cli/calypso-cli.ts
+	npx tsx src/cli/calypso-cli.ts
 
-# Run ORACLE tests (starts server, runs tests, stops server)
+# Run ORACLE scenarios (in-process runner)
 test-oracle:
-	npm run test:oracle
+	@npm run build > /dev/null
+	node scripts/oracle-runner.mjs
 
 # Run ORACLE tests with verbose output
 test-oracle-verbose:
-	npm run test:oracle -- --verbose
+	@npm run build > /dev/null
+	node scripts/oracle-runner.mjs --verbose
 ----
 
 === Running Tests
@@ -772,18 +576,11 @@ test-oracle-verbose:
 # Run all ORACLE tests
 make test-oracle
 
-# Run specific test file
-npm run test:oracle -- tests/oracle/gather-workflow.oracle
-
-# Run tests by tag
-npm run test:oracle -- --tag=smoke
-npm run test:oracle -- --tag=regression
-
 # Run with verbose output
 make test-oracle-verbose
 
-# Generate new snapshots (for baseline)
-npm run test:oracle -- --update-snapshots
+# Direct runner invocation
+node scripts/oracle-runner.mjs
 ----
 
 === Manual Testing with CLI
@@ -799,10 +596,10 @@ $ make calypso
 $ make calypso-cli
 user@CALYPSO:[~]> search histology
 user@CALYPSO:[~]> add ds-012
-user@CALYPSO:[~]> /snapshot ~/data/cohort/
+user@CALYPSO:[~]> harmonize
 
-# Terminal 3: Run specific test against same server
-$ npm run test:oracle -- tests/oracle/gather-workflow.oracle
+# Terminal 3: Run ORACLE scenarios (uses in-process runtime)
+$ make test-oracle
 ----
 
 === CI Integration
@@ -824,21 +621,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Start server
-        run: npm run serve &
-
-      - name: Wait for server
-        run: npx wait-on http://localhost:8080
-
       - name: Run Oracle tests
-        run: npm run test:oracle
-
-      - name: Upload failure artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: oracle-failures
-          path: tests/oracle/failures/
+        run: make test-oracle
 ----
 
 == Limitations and Considerations
@@ -867,11 +651,12 @@ ORACLE assumes the AI layer has sufficient reliability to consistently classify 
 
 === Snapshot Maintenance
 
-State snapshots require maintenance as the system evolves:
+The current runner focuses on deterministic command/output/path assertions.
+If snapshot-style assertions are reintroduced later, maintain them as follows:
 
-- Run `--update-snapshots` when intentional changes occur
-- Review snapshot diffs in code review
-- Consider snapshot granularity (full tree vs. subtree)
+- regenerate snapshots only for intentional behavior changes
+- review snapshot diffs in code review
+- keep snapshot scope narrow (subtree over full tree where possible)
 
 == Future Work
 
