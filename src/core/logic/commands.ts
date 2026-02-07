@@ -14,6 +14,55 @@ import { core_get } from '../../lcarslm/browser.js';
 import { browserAdapter } from '../../lcarslm/adapters/BrowserAdapter.js';
 
 /**
+ * Sleep helper for terminal animation pacing.
+ */
+function sleep_ms(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Render a response message with optional line-stream pacing.
+ */
+async function message_renderAnimated(message: string): Promise<void> {
+    const t = globals.terminal;
+    if (!t) return;
+
+    const trainingMode: boolean = message.includes('--- TRAINING LOG ---');
+    const federationMode: boolean = message.includes('INITIATING ATLAS FACTORY SEQUENCE');
+    const lines: string[] = message.split('\n');
+
+    if (!trainingMode && !federationMode) {
+        lines.forEach((line: string): void => t.println(line));
+        return;
+    }
+
+    for (const line of lines) {
+        t.println(line);
+
+        if (!line.trim()) {
+            await sleep_ms(40);
+            continue;
+        }
+
+        if (trainingMode) {
+            if (/^Epoch \d+\/\d+/i.test(line)) {
+                await sleep_ms(160);
+            } else {
+                await sleep_ms(80);
+            }
+            continue;
+        }
+
+        // federation mode
+        if (line.includes('DISPATCHED')) {
+            await sleep_ms(200);
+        } else {
+            await sleep_ms(90);
+        }
+    }
+}
+
+/**
  * Handles fallback commands typed into the browser terminal.
  * Non-shell input is executed through CalypsoCore and mapped to
  * browser-side actions by BrowserAdapter.
@@ -42,6 +91,6 @@ export async function command_dispatch(cmd: string, args: string[]): Promise<voi
     }
 
     if (response.message) {
-        response.message.split('\n').forEach((line: string): void => t.println(line));
+        await message_renderAnimated(response.message);
     }
 }

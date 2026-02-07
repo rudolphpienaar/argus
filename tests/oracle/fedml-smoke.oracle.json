@@ -56,6 +56,24 @@
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/.local_pass"
+    },
+    {
+      "send": "federate",
+      "success": true,
+      "output_contains": "READY TO CONTAINERIZE"
+    },
+    {
+      "send": "federate --yes",
+      "success": true,
+      "output_contains": "CONTAINERIZATION COMPLETE"
+    },
+    {
+      "send": "federate --yes",
+      "success": true,
+      "output_contains": "DISPATCH COMPLETE"
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/.federated"
     }
   ]
 }

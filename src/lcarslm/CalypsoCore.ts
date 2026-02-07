@@ -106,6 +106,9 @@ export class CalypsoCore {
     /** Current workflow state (completed stages, skip counts) */
     private workflowState: WorkflowState;
 
+    /** Multi-phase federation handshake state. */
+    private federationState: { projectId: string; phase: 'containerize' | 'dispatch' } | null = null;
+
     constructor(
         private vfs: VirtualFileSystem,
         private shell: Shell,
@@ -309,6 +312,7 @@ export class CalypsoCore {
         this.storeActions.reset();
         this.workflowState = WorkflowEngine.state_create(this.workflowDefinition.id);
         this.lastMentionedDatasets = [];
+        this.federationState = null;
     }
 
     /**
@@ -537,7 +541,9 @@ WORKFLOW COMMANDS:
   harmonize         - Standardize cohort for federation
   proceed / code    - Scaffold training environment
   python train.py   - Run local training
-  federate          - Start federation sequence
+  federate          - Start federation sequence (multi-phase confirm)
+  federate --yes    - Confirm pending federation phase
+  federate --abort  - Abort federation handshake
 
 TIP: Type /next anytime to see what to do next!`;
                 return this.response_create(help, [], true);
@@ -1293,9 +1299,21 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             case 'federate':
                 lines.push('**Next step: Federated Training**');
                 lines.push('');
-                lines.push('Local training complete. Ready to distribute across nodes.');
-                lines.push('');
-                lines.push('  `federate` — Initialize the federation sequence');
+                if (this.federationState?.phase === 'containerize') {
+                    lines.push('Federation handshake is awaiting containerization confirmation.');
+                    lines.push('');
+                    lines.push('  `federate --yes` — Containerize and publish image');
+                    lines.push('  `federate --abort` — Cancel federation handshake');
+                } else if (this.federationState?.phase === 'dispatch') {
+                    lines.push('Containerization complete. Dispatch confirmation is pending.');
+                    lines.push('');
+                    lines.push('  `federate --yes` — Dispatch to participants');
+                    lines.push('  `federate --abort` — Cancel federation handshake');
+                } else {
+                    lines.push('Local training complete. Ready to distribute across nodes.');
+                    lines.push('');
+                    lines.push('  `federate` — Initialize the federation sequence');
+                }
                 break;
 
             default:
@@ -1391,7 +1409,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                 break;
 
             case 'federate':
-                response = this.workflow_federate();
+                response = this.workflow_federate(args[0]);
                 break;
 
             case 'proceed':
@@ -1661,20 +1679,86 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
     /**
      * Start federation sequence.
      */
-    private workflow_federate(): CalypsoResponse {
+    private workflow_federate(modeRaw?: string): CalypsoResponse {
         const username = this.shell.env_get('USER') || 'user';
-        const projectName = this.shell.env_get('PROJECT') || 'DRAFT';
+        const activeMeta = this.storeActions.project_getActive();
+        if (!activeMeta) {
+            return this.response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
+        }
 
-        // Build federation sequence message for headless operation
+        const projectName: string = activeMeta.name;
+        const projectBase: string = `/home/${username}/projects/${projectName}`;
+        const mode: string = (modeRaw || '').toLowerCase();
+
+        if (mode === '--abort' || mode === 'abort' || mode === 'cancel') {
+            this.federationState = null;
+            return this.response_create('○ FEDERATION HANDSHAKE ABORTED. NO DISPATCH PERFORMED.', [], true);
+        }
+
+        if (!this.federationState || this.federationState.projectId !== activeMeta.id) {
+            this.federationState = { projectId: activeMeta.id, phase: 'containerize' };
+            return this.response_create(
+                [
+                    '● FEDERATION PRECHECK COMPLETE.',
+                    `○ SOURCE VERIFIED: ${projectBase}/src/train.py`,
+                    '○ NEXT PHASE: CONTAINERIZE AND PUBLISH FEDERATION IMAGE.',
+                    '',
+                    '>> READY TO CONTAINERIZE? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.'
+                ].join('\n'),
+                [],
+                true
+            );
+        }
+
+        if (mode !== '--yes' && mode !== 'yes' && mode !== 'confirm') {
+            if (this.federationState.phase === 'containerize') {
+                return this.response_create(
+                    '>> CONTAINERIZATION PENDING. RUN `federate --yes` OR `federate --abort`.',
+                    [],
+                    false
+                );
+            }
+            return this.response_create(
+                '>> DISPATCH PENDING. RUN `federate --yes` OR `federate --abort`.',
+                [],
+                false
+            );
+        }
+
+        if (this.federationState.phase === 'containerize') {
+            try {
+                this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
+            } catch { /* ignore */ }
+
+            this.federationState = { projectId: activeMeta.id, phase: 'dispatch' };
+            return this.response_create(
+                [
+                    '● CONTAINERIZATION COMPLETE.',
+                    '○ IMAGE PUBLISHED TO INTERNAL REGISTRY.',
+                    '○ NEXT PHASE: DISPATCH TO FEDERATED PARTICIPANTS.',
+                    '',
+                    '>> READY TO DISPATCH? RUN `federate --yes` TO CONTINUE OR `federate --abort` TO CANCEL.'
+                ].join('\n'),
+                [],
+                true
+            );
+        }
+
+        // Final dispatch phase
+        try {
+            this.vfs.file_create(`${projectBase}/.federated`, new Date().toISOString());
+        } catch { /* ignore */ }
+        this.federationState = null;
+
         const lines: string[] = [
             '● INITIATING ATLAS FACTORY SEQUENCE...',
-            `○ INGESTING SOURCE: /home/${username}/projects/${projectName}/src/train.py`,
+            `○ INGESTING SOURCE: ${projectBase}/src/train.py`,
             '',
             '○ INJECTING Flower PROTOCOLS (Client/Server hooks)...',
             '○ WRAPPING TRAIN LOOP INTO Flower.Client OBJECT...',
             '',
-            '○ GENERATING MERIDIAN CONTAINER (ChRIS-ification)...',
-            '○ BUILDING Dockerfile AND manifest.json...',
+            '○ USING PREPUBLISHED FEDERATION CONTAINER...',
+            '○ RESOLVING PARTICIPANT ENDPOINTS...',
             '',
             '○ DISTRIBUTING CONTAINER TO TRUSTED DOMAINS...',
             '  [BCH] -> DISPATCHED',
@@ -1684,15 +1768,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             '<span class="success">● DISPATCH COMPLETE. HANDSHAKE IN PROGRESS...</span>'
         ];
 
-        const actions: CalypsoAction[] = [
-            { type: 'federation_start' }
-        ];
-
-        return this.response_create(
-            lines.join('\n'),
-            actions,
-            true
-        );
+        return this.response_create(lines.join('\n'), [{ type: 'federation_start' }], true);
     }
 
     /**

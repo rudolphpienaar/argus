@@ -74,6 +74,35 @@ function spinner_start(label: string = 'CALYPSO thinking'): () => void {
     };
 }
 
+/**
+ * Resolve spinner label by command intent.
+ */
+function spinnerLabel_resolve(input: string): string {
+    const cmd: string = input.trim().split(/\s+/)[0]?.toLowerCase() || '';
+    switch (cmd) {
+        case 'search':
+            return 'CALYPSO scanning catalog';
+        case 'add':
+        case 'gather':
+            return 'CALYPSO assembling cohort';
+        case 'rename':
+            return 'CALYPSO updating project context';
+        case 'harmonize':
+            return 'CALYPSO harmonizing cohort';
+        case 'proceed':
+        case 'code':
+            return 'CALYPSO preparing code workspace';
+        case 'python':
+            return 'CALYPSO executing local validation';
+        case 'federate':
+            return 'CALYPSO preparing federation sequence';
+        case '/run':
+            return 'CALYPSO running script';
+        default:
+            return 'CALYPSO thinking';
+    }
+}
+
 // ─── Harmonization Animation ───────────────────────────────────────────────
 
 /**
@@ -205,6 +234,61 @@ function sleep_ms(ms: number): Promise<void> {
  */
 function stripAnsi(str: string): string {
     return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * Detect whether response output should be streamed with timing.
+ */
+function outputMode_detect(message: string, input: string): 'plain' | 'training' | 'federation' {
+    const lowerInput: string = input.toLowerCase();
+    if (message.includes('--- TRAINING LOG ---') || (lowerInput.startsWith('python ') && message.includes('LOCAL TRAINING COMPLETE'))) {
+        return 'training';
+    }
+    if (message.includes('INITIATING ATLAS FACTORY SEQUENCE') || message.includes('DISTRIBUTING CONTAINER TO TRUSTED DOMAINS')) {
+        return 'federation';
+    }
+    return 'plain';
+}
+
+/**
+ * Stream response output line-by-line for realistic execution feel.
+ */
+async function response_renderAnimated(message: string, input: string): Promise<void> {
+    const mode: 'plain' | 'training' | 'federation' = outputMode_detect(message, input);
+    if (mode === 'plain') {
+        console.log(message_style(message));
+        return;
+    }
+
+    const lines: string[] = message.split('\n');
+    for (const line of lines) {
+        console.log(message_style(line));
+
+        if (!line.trim()) {
+            await sleep_ms(60);
+            continue;
+        }
+
+        if (mode === 'training') {
+            if (/^Epoch \d+\/\d+/i.test(line)) {
+                await sleep_ms(220);
+            } else if (line.includes('LOCAL TRAINING COMPLETE')) {
+                await sleep_ms(120);
+            } else {
+                await sleep_ms(90);
+            }
+            continue;
+        }
+
+        // federation mode
+        if (line.includes('DISPATCHED')) {
+            await sleep_ms(240);
+        } else if (line.includes('INITIATING ATLAS FACTORY SEQUENCE')) {
+            await sleep_ms(180);
+        } else {
+            await sleep_ms(110);
+        }
+    }
 }
 
 /**
@@ -861,8 +945,14 @@ async function repl_start(): Promise<void> {
 
     const command_executeAndRender = async (input: string): Promise<boolean> => {
         try {
-            const stopSpinner: () => void = spinner_start();
+            const spinnerLabel: string = spinnerLabel_resolve(input);
+            const startedAt: number = Date.now();
+            const stopSpinner: () => void = spinner_start(spinnerLabel);
             const response = await command_send(input);
+            const elapsed: number = Date.now() - startedAt;
+            if (elapsed < 280) {
+                await sleep_ms(280 - elapsed);
+            }
             stopSpinner();
 
             // Check for special animation markers
@@ -870,8 +960,7 @@ async function repl_start(): Promise<void> {
                 await harmonization_animate();
                 console.log(message_style(`● **COHORT HARMONIZATION COMPLETE.** Data is now standardized for federated training.`));
             } else {
-                const styled = message_style(response.message);
-                console.log(styled);
+                await response_renderAnimated(response.message, input);
             }
 
             // Show actions in verbose mode (can be toggled with env var)

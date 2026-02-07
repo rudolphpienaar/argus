@@ -24,6 +24,7 @@ describe('WorkflowEngine', () => {
         hasTrainPy?: boolean;
         hasLocalPass?: boolean;
         hasTestPass?: boolean;
+        hasFederated?: boolean;
     } = {}): WorkflowContext {
         const projectPath = '/home/user/projects/DRAFT-1234';
         return {
@@ -38,6 +39,7 @@ describe('WorkflowEngine', () => {
                     if (options.hasTrainPy && path.includes('train.py')) return true;
                     if (options.hasLocalPass && path.includes('.local_pass')) return true;
                     if (options.hasTestPass && path.includes('.test_pass')) return true;
+                    if (options.hasFederated && path.includes('.federated')) return true;
                     return false;
                 }
             },
@@ -268,11 +270,10 @@ describe('WorkflowEngine', () => {
         it('should return null when workflow complete', () => {
             const context = context_create({
                 hasCohort: true, hasProject: true, hasHarmonized: true,
-                hasTrainPy: true, hasLocalPass: true
+                hasTrainPy: true, hasLocalPass: true, hasFederated: true
             });
             const next = WorkflowEngine.stage_next(fedmlDefinition, context);
-            // federate has no validation, so it won't auto-complete
-            expect(next?.id).toBe('federate');
+            expect(next).toBeNull();
         });
     });
 

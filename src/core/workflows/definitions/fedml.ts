@@ -108,7 +108,10 @@ A successful local run creates a .local_pass marker.`,
             name: 'Federation Dispatch',
             intents: ['FEDERATE'],
             requires: ['train'],
-            validation: null,  // Action stage, no auto-completion
+            validation: {
+                condition: "vfs.exists('${project}/.federated')",
+                error_message: 'Federation dispatch not completed.'
+            },
             skip_warning: null
         }
     ]
