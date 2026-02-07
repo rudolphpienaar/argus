@@ -11,12 +11,13 @@ import { DATASETS } from '../data/datasets.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import { cohortTree_build } from '../../vfs/providers/DatasetProvider.js';
-import { projectDir_populate } from '../../vfs/providers/ProjectProvider.js';
+import { projectDir_populate, chrisProject_populate } from '../../vfs/providers/ProjectProvider.js';
 import { populate_ide, training_launch } from './process.js';
 import type { Dataset, Project } from '../models/types.js';
 import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
 import { ai_greeting } from '../../lcarslm/AIService.js';
+import { core_reinitialize } from '../../lcarslm/browser.js';
 import { render_assetCard, type AssetCardOptions } from '../../ui/components/AssetCard.js';
 import { FileBrowser } from '../../ui/components/FileBrowser.js';
 import { overlaySlots_clear } from '../logic/OverlayUtils.js';
@@ -54,6 +55,9 @@ export function lcarslm_initialize(): void {
     } else {
         searchUIState_set('auth-required');
     }
+
+    // Keep browser Calypso runtime in sync with auth/simulation state.
+    core_reinitialize();
 }
 
 /**
@@ -88,6 +92,7 @@ export function lcarslm_reset(): void {
     localStorage.removeItem('ARGUS_OPENAI_KEY');
     globals.lcarsEngine = null;
     searchUIState_set('auth-required');
+    core_reinitialize();
 }
 
 /**
@@ -96,6 +101,7 @@ export function lcarslm_reset(): void {
 export function lcarslm_simulate(): void {
     globals.lcarsEngine = new LCARSEngine(null, SYSTEM_KNOWLEDGE);
     searchUIState_set('ready');
+    core_reinitialize();
     if (globals.terminal) {
         globals.terminal.setStatus('MODE: [SIMULATION] // EMULATION ACTIVE');
         // Trigger Calypso startup sequence
@@ -757,7 +763,11 @@ export function template_select(projectId: string, type: 'fedml' | 'chris'): voi
 
     // Populate project structure
     const username = globals.shell?.env_get('USER') || 'user';
-    projectDir_populate(globals.vcs, username, project.name);
+    if (type === 'chris') {
+        chrisProject_populate(globals.vcs, username, project.name);
+    } else {
+        projectDir_populate(globals.vcs, username, project.name);
+    }
     
     // Expand workspace
     workspace_expand(projectId, project);
@@ -1611,4 +1621,3 @@ export function stage_enter(): void {
 export function stage_exit(): void {
     // Teardown logic if needed
 }
-

@@ -29,7 +29,7 @@ import type { Dataset, AppState, Project } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../core/data/projects.js';
 import { project_gather, project_rename, project_harmonize } from '../core/logic/ProjectManager.js';
-import { projectDir_populate } from '../vfs/providers/ProjectProvider.js';
+import { projectDir_populate, chrisProject_populate } from '../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../generated/version.js';
 import { WorkflowEngine } from '../core/workflows/WorkflowEngine.js';
 import type {
@@ -135,6 +135,8 @@ export class CalypsoCore {
      */
     public async command_execute(input: string): Promise<CalypsoResponse> {
         const trimmed: string = input.trim();
+        const parts: string[] = trimmed.split(/\s+/);
+        const primaryCommand: string = parts[0]?.toLowerCase() || '';
 
         if (!trimmed) {
             return this.response_create('', [], true);
@@ -150,6 +152,15 @@ export class CalypsoCore {
                 return this.greeting_generate(username);
             }
             return specialResult;
+        }
+
+        // Prioritize first-class harmonize intent so CLI can render
+        // the dedicated harmonization experience instead of shell usage text.
+        if (primaryCommand === 'harmonize') {
+            const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(trimmed);
+            if (workflowResult) {
+                return workflowResult;
+            }
         }
 
         // Try shell builtins first
@@ -450,6 +461,13 @@ export class CalypsoCore {
                 return this.response_create(progress, [], true);
             }
 
+            case 'batch':
+            case 'jump': {
+                const targetStage: string | undefined = args[0];
+                const datasetHint: string | undefined = args[1];
+                return this.workflow_batchToStage(targetStage, datasetHint);
+            }
+
             case 'next': {
                 const guidance: string = this.workflow_nextStep();
                 return this.response_create(guidance, [], true);
@@ -458,6 +476,8 @@ export class CalypsoCore {
             case 'help': {
                 const help: string = `CALYPSO SPECIAL COMMANDS:
   /status           - Show system status (AI, VFS, project)
+  /batch <stage> [dataset] - Fast-forward workflow to target stage
+  /jump <stage> [dataset]  - Alias for /batch
   /next             - Show suggested next step with commands
   /workflow         - Show workflow progress summary
   /key <provider> <key> - Set API key (openai|gemini)
@@ -492,6 +512,156 @@ TIP: Type /next anytime to see what to do next!`;
             default:
                 return this.response_create(`Unknown special command: /${cmd}`, [], false);
         }
+    }
+
+    /**
+     * Fast-forward workflow state to a target stage for power users.
+     *
+     * This command is intentionally deterministic and bypasses LLM routing.
+     * It materializes required artifacts in VFS so the workflow engine sees
+     * consistent ground truth after batching.
+     *
+     * @param targetRaw - Target stage keyword (gather|harmonize|code|train)
+     * @param datasetHint - Optional dataset ID/name used when bootstrapping gather
+     * @returns Batch execution summary
+     */
+    private workflow_batchToStage(targetRaw?: string, datasetHint?: string): CalypsoResponse {
+        if (!targetRaw) {
+            return this.response_create(
+                'Usage: /batch <gather|harmonize|code|train> [dataset-id]',
+                [],
+                false
+            );
+        }
+
+        const target: string = targetRaw.toLowerCase();
+        const targetAliases: Record<string, 'gather' | 'harmonize' | 'code' | 'train'> = {
+            gather: 'gather',
+            assembly: 'gather',
+            harmonize: 'harmonize',
+            harmonic: 'harmonize',
+            code: 'code',
+            process: 'code',
+            proceed: 'code',
+            mount: 'code',
+            train: 'train',
+            python: 'train'
+        };
+
+        const targetStage: 'gather' | 'harmonize' | 'code' | 'train' | undefined = targetAliases[target];
+        if (!targetStage) {
+            return this.response_create(
+                `Unsupported batch target: ${targetRaw}\nSupported: gather, harmonize, code, train`,
+                [],
+                false
+            );
+        }
+
+        const stageOrder: Array<'gather' | 'harmonize' | 'code' | 'train'> = ['gather', 'harmonize', 'code', 'train'];
+        const targetIndex: number = stageOrder.indexOf(targetStage);
+        const username: string = this.shell.env_get('USER') || 'user';
+        const lines: string[] = [
+            `● BATCH MODE: FAST-FORWARD TO ${targetStage.toUpperCase()}`
+        ];
+        const actions: CalypsoAction[] = [];
+
+        // 1) Gather bootstrap
+        if (targetIndex >= 0) {
+            const selected: Dataset[] = this.storeActions.datasets_getSelected();
+
+            if (selected.length === 0) {
+                const hintedDataset: Dataset | undefined = datasetHint
+                    ? DATASETS.find((ds: Dataset): boolean =>
+                        ds.id.toLowerCase() === datasetHint.toLowerCase() ||
+                        ds.name.toLowerCase().includes(datasetHint.toLowerCase())
+                    )
+                    : undefined;
+
+                if (datasetHint && !hintedDataset) {
+                    return this.response_create(`>> ERROR: DATASET "${datasetHint}" NOT FOUND FOR BATCH BOOTSTRAP.`, [], false);
+                }
+
+                const bootstrapDataset: Dataset | undefined = hintedDataset || DATASETS[0];
+                if (!bootstrapDataset) {
+                    return this.response_create('>> ERROR: NO DATASETS AVAILABLE FOR BATCH BOOTSTRAP.', [], false);
+                }
+
+                const addResult: CalypsoResponse = this.workflow_add(bootstrapDataset.id);
+                if (!addResult.success) {
+                    return addResult;
+                }
+                actions.push(...addResult.actions);
+                lines.push(`○ BOOTSTRAPPED COHORT WITH [${bootstrapDataset.id}] ${bootstrapDataset.name}`);
+            } else {
+                lines.push(`○ REUSING EXISTING SELECTION (${selected.length} DATASET(S))`);
+            }
+
+            this.storeActions.stage_set('gather');
+            this.shell.stage_enter('gather');
+            lines.push(`○ GATHER CONTEXT READY AT ${this.vfs.cwd_get()}`);
+        }
+
+        const activeMeta = this.storeActions.project_getActive();
+        if (!activeMeta) {
+            return this.response_create('>> ERROR: BATCH FAILED. NO ACTIVE PROJECT.', actions, false);
+        }
+
+        const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
+        if (!project) {
+            return this.response_create('>> ERROR: BATCH FAILED. PROJECT MODEL NOT FOUND.', actions, false);
+        }
+
+        const projectBase: string = `/home/${username}/projects/${project.name}`;
+
+        // 2) Harmonize
+        if (targetIndex >= 1) {
+            const harmonizedMarker: string = `${projectBase}/input/.harmonized`;
+            if (this.vfs.node_stat(harmonizedMarker)) {
+                lines.push('○ HARMONIZATION ALREADY COMPLETE');
+            } else {
+                project_harmonize(project);
+                lines.push('○ HARMONIZATION COMPLETE');
+            }
+        }
+
+        // 3) Code scaffold
+        if (targetIndex >= 2) {
+            const trainScriptPath: string = `${projectBase}/src/train.py`;
+            if (this.vfs.node_stat(trainScriptPath)) {
+                lines.push('○ CODE SCAFFOLD ALREADY PRESENT');
+            } else {
+                projectDir_populate(this.vfs, username, project.name);
+                lines.push('○ CODE SCAFFOLD GENERATED (train.py, config.yaml, requirements.txt)');
+            }
+
+            try {
+                this.vfs.dir_create(`${projectBase}/output`);
+            } catch {
+                // output already exists
+            }
+
+            this.shell.env_set('PROJECT', project.name);
+            this.shell.env_set('STAGE', 'process');
+            this.storeActions.stage_set('process');
+            this.shell.stage_enter('process');
+            lines.push(`○ PROCESS CONTEXT READY AT ${this.vfs.cwd_get()}`);
+        }
+
+        // 4) Train-ready
+        if (targetIndex >= 3) {
+            const localPassMarker: string = `${projectBase}/.local_pass`;
+            if (this.vfs.node_stat(localPassMarker)) {
+                lines.push('○ LOCAL VALIDATION ALREADY COMPLETE (.local_pass PRESENT)');
+            } else {
+                lines.push('○ READY FOR LOCAL VALIDATION');
+                lines.push('  NEXT: `python train.py`');
+            }
+        }
+
+        lines.push('');
+        lines.push(`● BATCH COMPLETE. TARGET STAGE: ${targetStage.toUpperCase()}`);
+
+        return this.response_create(lines.join('\n'), actions, true);
     }
 
     /**
@@ -979,7 +1149,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
 
             case 'proceed':
             case 'code':
-                response = this.workflow_proceed();
+                response = this.workflow_proceed(args[0]);
                 break;
 
             case 'rename':
@@ -1281,16 +1451,64 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
     /**
      * Proceed to coding/process stage.
      */
-    private workflow_proceed(): CalypsoResponse {
-        const actions: CalypsoAction[] = [
-            { type: 'stage_advance', stage: 'process' }
-        ];
+    private workflow_proceed(workflowTypeRaw?: string): CalypsoResponse {
+        let workflowType: 'fedml' | 'chris' | undefined;
+        if (workflowTypeRaw) {
+            const normalized: string = workflowTypeRaw.toLowerCase();
+            if (normalized === 'fedml' || normalized === 'chris') {
+                workflowType = normalized;
+            } else {
+                return this.response_create(
+                    `Unsupported workflow: ${workflowTypeRaw}\nSupported: fedml, chris`,
+                    [],
+                    false
+                );
+            }
+        }
 
-        return this.response_create(
-            '● AFFIRMATIVE. INITIATING CODE PROTOCOLS.',
-            actions,
-            true
-        );
+        if (workflowType) {
+            const activeMeta = this.storeActions.project_getActive();
+            if (!activeMeta) {
+                return this.response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
+            }
+
+            const project: Project | undefined = MOCK_PROJECTS.find(
+                (p: Project): boolean => p.id === activeMeta.id
+            );
+            if (!project) {
+                return this.response_create('>> ERROR: PROJECT MODEL NOT FOUND.', [], false);
+            }
+
+            const username: string = this.shell.env_get('USER') || 'user';
+            const projectBase: string = `/home/${username}/projects/${project.name}`;
+
+            if (workflowType === 'chris') {
+                chrisProject_populate(this.vfs, username, project.name);
+                this.shell.env_set('PERSONA', 'appdev');
+            } else {
+                projectDir_populate(this.vfs, username, project.name);
+                this.shell.env_set('PERSONA', 'fedml');
+            }
+
+            try {
+                this.vfs.dir_create(`${projectBase}/output`);
+            } catch {
+                // output already exists
+            }
+
+            const actions: CalypsoAction[] = [
+                { type: 'stage_advance', stage: 'process', workflow: workflowType }
+            ];
+
+            return this.response_create(
+                `● AFFIRMATIVE. INITIATING CODE PROTOCOLS (${workflowType.toUpperCase()}).`,
+                actions,
+                true
+            );
+        }
+
+        const actions: CalypsoAction[] = [{ type: 'stage_advance', stage: 'process' }];
+        return this.response_create('● AFFIRMATIVE. INITIATING CODE PROTOCOLS.', actions, true);
     }
 
     // ─── LLM Integration ───────────────────────────────────────────────────
@@ -1370,7 +1588,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                         if (workflowType === 'fedml') {
                             projectDir_populate(this.vfs, username, project.name);
                         } else if (workflowType === 'chris') {
-                            this.chrisProject_scaffold(projectBase);
+                            chrisProject_populate(this.vfs, username, project.name);
                         }
 
                         // Create output/ directory
@@ -1441,40 +1659,6 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             .trim();
 
         return this.response_create(cleanAnswer, actions, true);
-    }
-
-    // ─── Project Scaffolding ──────────────────────────────────────────────
-
-    /**
-     * Scaffold a ChRIS plugin project structure.
-     * Creates src/ with Dockerfile, argument parser, and plugin entry point.
-     */
-    private chrisProject_scaffold(projectBase: string): void {
-        const srcPath: string = `${projectBase}/src`;
-
-        // Create directories
-        this.vfs.dir_create(srcPath);
-        this.vfs.dir_create(`${srcPath}/app`);
-
-        // Create ChRIS plugin files
-        const files: Array<[string, string]> = [
-            ['Dockerfile', 'chris-dockerfile'],
-            ['requirements.txt', 'chris-requirements'],
-            ['README.md', 'chris-readme'],
-            ['app/__init__.py', 'chris-init'],
-            ['app/main.py', 'chris-main'],
-            ['app/parser.py', 'chris-parser']
-        ];
-
-        for (const [fileName, generatorKey] of files) {
-            const filePath: string = `${srcPath}/${fileName}`;
-            this.vfs.file_create(filePath);
-            const node: FileNode | null = this.vfs.node_stat(filePath);
-            if (node) {
-                node.contentGenerator = generatorKey;
-                node.content = null;
-            }
-        }
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────

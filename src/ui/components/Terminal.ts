@@ -8,8 +8,7 @@
  * Command resolution order:
  *   1. Base terminal commands (clear)
  *   2. Shell builtins (cd, ls, cat, etc.)
- *   3. Shell external handler (federate)
- *   4. Fallback handler (AI/workflow commands: search, add, review, etc.)
+ *   3. Fallback handler (CalypsoCore workflow + AI commands)
  *
  * @module
  */
@@ -72,8 +71,8 @@ export class LCARSTerminal extends BaseTerminal {
      * Connects the Shell to this terminal. Must be called after both
      * the terminal and shell are initialized.
      *
-     * Registers domain-specific external commands (federate) via the
-     * Shell's external handler, re-registers `help` to delegate to
+     * Clears shell external command handling in browser mode, re-registers
+     * `help` to delegate to
      * the Shell (overriding the base terminal's help), and syncs the
      * prompt from $PS1.
      *
@@ -82,10 +81,9 @@ export class LCARSTerminal extends BaseTerminal {
     public shell_connect(shell: Shell): void {
         this.shell = shell;
 
-        // Register domain-specific commands as external handler
-        shell.externalHandler_set((cmd: string, args: string[]): ShellResult | null => {
-            return this.externalCommand_handle(cmd, args);
-        });
+        // Browser mode keeps Shell focused on builtins; workflow/domain
+        // commands are routed through terminal fallback -> CalypsoCore.
+        shell.externalHandler_set((): ShellResult | null => null);
 
         // Override base terminal's `help` to delegate to Shell's richer help
         this.registerCommand({
@@ -199,6 +197,29 @@ export class LCARSTerminal extends BaseTerminal {
                 return;
             }
 
+            const routedCommand: string = cmd.toLowerCase();
+            const workflowCommands: Set<string> = new Set<string>([
+                'search',
+                'add',
+                'remove',
+                'review',
+                'gather',
+                'mount',
+                'proceed',
+                'code',
+                'rename',
+                'harmonize',
+                'federate'
+            ]);
+
+            // Force workflow/domain commands through CalypsoCore fallback so
+            // browser and CLI command semantics stay aligned.
+            if (this.fallbackHandler && workflowCommands.has(routedCommand)) {
+                await this.fallbackHandler(cmd, args);
+                this.prompt_sync();
+                return;
+            }
+
             // Reconstruct the full command line for the Shell
             const line: string = [cmd, ...args].join(' ');
             const result: ShellResult = await this.shell.command_execute(line);
@@ -266,51 +287,4 @@ export class LCARSTerminal extends BaseTerminal {
         };
     }
 
-    // ─── External Command Handling ──────────────────────────────
-
-    /**
-     * Handles domain-specific commands that the Shell doesn't own.
-     * Returns null for truly unknown commands (Shell will report "not found",
-     * then fallback handler is invoked).
-     *
-     * @param cmd - Command name.
-     * @param args - Parsed arguments.
-     * @returns ShellResult for handled commands, null otherwise.
-     */
-    private externalCommand_handle(cmd: string, args: string[]): ShellResult | null {
-        switch (cmd) {
-            case 'federate':
-                return this.cmd_federate(args);
-            default:
-                return null;
-        }
-    }
-
-    /**
-     * Handles the `federate` command — transforms a script into a
-     * MERIDIAN app and launches the training pipeline.
-     *
-     * @param args - Command arguments (expects script filename).
-     * @returns ShellResult with status messages.
-     */
-    private cmd_federate(args: string[]): ShellResult {
-        if (args.length === 0) {
-            return { stdout: '', stderr: 'federate: missing script operand', exitCode: 1 };
-        }
-        if (args[0] === 'train.py') {
-            // Print the sequencing messages directly (they appear before the async launch)
-            this.println('<span class="warn">>> INITIATING FEDERALIZATION PROTOCOL...</span>');
-            this.println('>> UPLOADING ASSETS TO ATLAS FACTORY...');
-            this.println('>> RESOLVING MERIDIAN DEPENDENCIES...');
-            setTimeout((): void => {
-                if (typeof window.training_launch === 'function') {
-                    window.training_launch();
-                } else {
-                    this.println('<span class="error">>> ERROR: FEDERALIZATION ENGINE OFFLINE.</span>');
-                }
-            }, 1500);
-            return { stdout: '', stderr: '', exitCode: 0 };
-        }
-        return { stdout: '', stderr: `federate: '${args[0]}' is not a valid MERIDIAN training script.`, exitCode: 1 };
-    }
 }

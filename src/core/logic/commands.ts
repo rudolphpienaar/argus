@@ -1,26 +1,22 @@
 /**
  * @file Command Logic
  *
- * Handles terminal command routing and execution.
- * Dispatches known workflow commands (search, mount, etc.) and falls back
- * to the AI service for natural language queries.
+ * Browser terminal fallback router.
+ * Delegates all non-shell commands to CalypsoCore so browser and CLI
+ * share a single deterministic workflow authority.
  *
  * @module
  */
 
 import { globals } from '../state/store.js';
-import { DATASETS } from '../data/datasets.js';
-import type { Dataset } from '../models/types.js';
-import { stage_advanceTo } from './navigation.js';
-import { catalog_search, lcarslm_simulate } from '../stages/search.js';
-import { filesystem_build, costs_calculate } from '../stages/gather.js';
-import { ai_query } from '../../lcarslm/AIService.js';
-import { project_gather } from './ProjectManager.js';
+import type { CalypsoResponse } from '../../lcarslm/types.js';
+import { core_get } from '../../lcarslm/browser.js';
+import { browserAdapter } from '../../lcarslm/adapters/BrowserAdapter.js';
 
 /**
- * Handles workflow commands typed into the terminal.
- * Routes search, add, review, mount, and simulate commands
- * before falling through to the AI engine for natural language queries.
+ * Handles fallback commands typed into the browser terminal.
+ * Non-shell input is executed through CalypsoCore and mapped to
+ * browser-side actions by BrowserAdapter.
  *
  * @param cmd - The base command string.
  * @param args - The command arguments.
@@ -29,77 +25,23 @@ export async function command_dispatch(cmd: string, args: string[]): Promise<voi
     const t = globals.terminal;
     if (!t) return;
 
-    if (workflow_dispatch(cmd, args)) return;
-
-    await ai_query([cmd, ...args].join(' '));
-}
-
-/**
- * Handles known workflow commands (search, add, review, mount, simulate).
- *
- * @param cmd - The command string.
- * @param args - The command arguments.
- * @returns True if the command was handled, false to fall through.
- */
-function workflow_dispatch(cmd: string, args: string[]): boolean {
-    const t = globals.terminal;
-    if (!t) return false;
-
-    if (cmd === 'search') {
-        const query: string = args.join(' ');
-        t.println(`○ SEARCHING CATALOG FOR: "${query}"...`);
-        stage_advanceTo('search');
-        const searchInput: HTMLInputElement | null = document.getElementById('search-query') as HTMLInputElement;
-        if (searchInput) {
-            searchInput.value = query;
-            catalog_search(query).then((results: Dataset[]): void => {
-                if (results && results.length > 0) {
-                    t.println(`● FOUND ${results.length} MATCHING DATASETS:`);
-                    results.forEach((ds: Dataset): void => {
-                        t.println(`  [<span class="highlight">${ds.id}</span>] ${ds.name} (${ds.modality}/${ds.annotationType})`);
-                    });
-                } else {
-                    t.println(`○ NO MATCHING DATASETS FOUND.`);
-                }
-            });
-        }
-        return true;
+    const core = core_get();
+    if (!core) {
+        t.println('<span class="error">>> ERROR: CALYPSO CORE NOT INITIALIZED.</span>');
+        return;
     }
 
-    if (cmd === 'add') {
-        const targetId: string = args[0];
-        const dataset: Dataset | undefined = DATASETS.find((ds: Dataset): boolean => ds.id === targetId || ds.name.toLowerCase().includes(targetId.toLowerCase()));
-        if (dataset) {
-            // Use Intent Layer to ensure VFS mount and Draft creation
-            const project = project_gather(dataset);
-            t.println(`● ADDED DATASET: [${dataset.id}]`);
-            t.println(`○ MOUNTED TO PROJECT: [${project.name}]`);
-        } else {
-            t.println(`<span class="error">>> ERROR: DATASET "${targetId}" NOT FOUND.</span>`);
-        }
-        return true;
+    const input: string = [cmd, ...args].join(' ').trim();
+    const response: CalypsoResponse = await core.command_execute(input);
+
+    browserAdapter.response_apply(response);
+
+    if (response.message === '__HARMONIZE_ANIMATE__') {
+        t.println('● COHORT HARMONIZATION COMPLETE. DATA STANDARDIZED FOR FEDERATION.');
+        return;
     }
 
-    if (cmd === 'review' || cmd === 'gather') {
-        t.println(`● INITIATING COHORT REVIEW...`);
-        stage_advanceTo('gather');
-        return true;
+    if (response.message) {
+        response.message.split('\n').forEach((line: string): void => t.println(line));
     }
-
-    if (cmd === 'mount') {
-        t.println(`● MOUNTING VIRTUAL FILESYSTEM...`);
-        filesystem_build();
-        costs_calculate();
-        stage_advanceTo('process');
-        t.println(`<span class="success">>> MOUNT COMPLETE. FILESYSTEM READY.</span>`);
-        return true;
-    }
-
-    if (cmd === 'simulate') {
-        t.println(`● ACTIVATING SIMULATION PROTOCOLS...`);
-        lcarslm_simulate();
-        return true;
-    }
-
-    return false;
 }

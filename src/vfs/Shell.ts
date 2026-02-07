@@ -388,10 +388,40 @@ export class Shell {
                 // Ensure readable (triggers lazy content if needed)
                 this.vfs.node_read(resolved);
 
+                const runRootPath: string = this.projectRoot_resolve(resolved) ?? this.vfs.path_resolve('.');
+                const outputDirPath: string = `${runRootPath}/output`;
+                const modelPath: string = `${outputDirPath}/model.pth`;
+                const statsPath: string = `${outputDirPath}/stats.json`;
+                const inputDirPath: string = `${runRootPath}/input`;
+                const inputDisplayPath: string = `${this.path_relativeToCwd(inputDirPath)}/`;
+                const resolvedLower: string = resolved.toLowerCase();
+                const isChrisValidation: boolean =
+                    resolvedLower.endsWith('/src/main.py') ||
+                    resolvedLower.endsWith('/src/app/main.py');
+
+                if (isChrisValidation) {
+                    let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
+                    output += `○ Validating ChRIS plugin entrypoint...\n`;
+                    output += `○ Parsing argument contract and runtime hooks...\n`;
+                    output += `○ Checking input/output filesystem compliance...\n\n`;
+                    output += `--- TEST LOG ---\n`;
+                    output += `[PASS] plugin metadata loaded\n`;
+                    output += `[PASS] argument parser initialized\n`;
+                    output += `[PASS] input/output bindings valid\n\n`;
+
+                    try {
+                        this.vfs.file_create(`${runRootPath}/.test_pass`, new Date().toISOString());
+                    } catch { /* ignore */ }
+
+                    output += `<span class="success">>> LOCAL PLUGIN TEST COMPLETE.</span>\n`;
+                    output += `<span class="dim">   Plugin validation marker saved to: ${runRootPath}/.test_pass</span>`;
+                    return result_ok(output);
+                }
+
                 // Mock Local Training Execution
                 let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
                 output += `○ Loading torch and meridian.data...\n`;
-                output += `○ Found 1,240 images in ./input/\n`;
+                output += `○ Found 1,240 images in ${inputDisplayPath}\n`;
                 output += `○ Model: ResNet50 (Pretrained=True)\n`;
                 output += `○ Device: NVIDIA A100-SXM4 (Simulated)\n\n`;
                 
@@ -402,16 +432,23 @@ export class Shell {
                 output += `Epoch 3/5 [###############-----] 75% | Loss: 0.3245 | Acc: 0.88\n`;
                 output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;
                 output += `Epoch 5/5 [####################] 100% | Loss: 0.1542 | Acc: 0.95\n\n`;
-                
-                output += `<span class="success">>> LOCAL TRAINING COMPLETE.</span>\n`;
-                output += `<span class="dim">   Model weights saved to: ./output/model.pth</span>\n`;
-                output += `<span class="dim">   Validation metrics saved to: ./output/stats.json</span>`;
 
-                // Mark project as locally validated
-                const projectDir = this.vfs.path_resolve('.');
+                // Materialize artifacts in VFS so CLI output matches filesystem state.
                 try {
-                    this.vfs.file_create(`${projectDir}/.local_pass`, new Date().toISOString());
+                    this.vfs.dir_create(outputDirPath);
+                    this.vfs.file_create(modelPath, 'SIMULATED_PYTORCH_WEIGHTS_BLOB');
+                    this.vfs.file_create(statsPath, JSON.stringify({
+                        epoch: 5,
+                        loss: 0.1542,
+                        accuracy: 0.95,
+                        status: 'PASS'
+                    }, null, 2));
+                    this.vfs.file_create(`${runRootPath}/.local_pass`, new Date().toISOString());
                 } catch { /* ignore */ }
+
+                output += `<span class="success">>> LOCAL TRAINING COMPLETE.</span>\n`;
+                output += `<span class="dim">   Model weights saved to: ${modelPath}</span>\n`;
+                output += `<span class="dim">   Validation metrics saved to: ${statsPath}</span>`;
 
                 return result_ok(output);
             } catch (e: unknown) {
@@ -704,6 +741,75 @@ export class Shell {
             case 'post':     return `${home}/results`;
             default:         return home;
         }
+    }
+
+    /**
+     * Resolves the project root from shell context or a known path.
+     *
+     * Prefers `$PROJECT` when available, then falls back to parsing paths
+     * that contain `/projects/<name>/...`.
+     *
+     * @param pathHint - Optional absolute path hint (e.g., resolved script path).
+     * @returns Absolute project root path, or null if not inferable.
+     */
+    private projectRoot_resolve(pathHint?: string): string | null {
+        const home: string = this.env.get('HOME') || `/home/${this.username}`;
+        const projectFromEnv: string | undefined = this.env.get('PROJECT');
+        if (projectFromEnv) {
+            return `${home}/projects/${projectFromEnv}`;
+        }
+
+        const candidates: string[] = [this.vfs.cwd_get()];
+        if (pathHint) candidates.push(pathHint);
+        const marker: string = '/projects/';
+
+        for (const candidate of candidates) {
+            const markerIndex: number = candidate.indexOf(marker);
+            if (markerIndex === -1) continue;
+
+            const afterMarker: string = candidate.substring(markerIndex + marker.length);
+            const projectName: string = afterMarker.split('/')[0];
+            if (!projectName) continue;
+
+            const prefix: string = candidate.substring(0, markerIndex + marker.length);
+            return `${prefix}${projectName}`;
+        }
+
+        return null;
+    }
+
+    /**
+     * Convert an absolute path to a cwd-relative display path.
+     *
+     * @param absolutePath - Absolute filesystem path.
+     * @returns Relative path display (e.g., ./input, ../input).
+     */
+    private path_relativeToCwd(absolutePath: string): string {
+        const cwdParts: string[] = this.vfs.cwd_get().split('/').filter(Boolean);
+        const targetParts: string[] = absolutePath.split('/').filter(Boolean);
+
+        let commonIndex: number = 0;
+        while (
+            commonIndex < cwdParts.length &&
+            commonIndex < targetParts.length &&
+            cwdParts[commonIndex] === targetParts[commonIndex]
+        ) {
+            commonIndex++;
+        }
+
+        const upMoves: string[] = Array(cwdParts.length - commonIndex).fill('..');
+        const downMoves: string[] = targetParts.slice(commonIndex);
+        const relativeParts: string[] = [...upMoves, ...downMoves];
+
+        if (relativeParts.length === 0) {
+            return '.';
+        }
+
+        const relativePath: string = relativeParts.join('/');
+        if (relativePath.startsWith('.')) {
+            return relativePath;
+        }
+        return `./${relativePath}`;
     }
 }
 

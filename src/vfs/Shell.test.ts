@@ -464,6 +464,48 @@ describe('Shell', () => {
             expect(result.stdout).toContain('[LOCAL EXECUTION: script.py]');
         });
 
+        it('should materialize training artifacts at project root when run from src', async () => {
+            vfs.dir_create('/home/fedml/projects/exp1/src');
+            vfs.cwd_set('/home/fedml/projects/exp1/src');
+            shell.env_set('PROJECT', 'exp1');
+            vfs.file_create('/home/fedml/projects/exp1/src/train.py', 'print("train")');
+
+            const result: ShellResult = await shell.command_execute('python train.py');
+
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('Found 1,240 images in ../input/');
+            expect(vfs.node_stat('/home/fedml/projects/exp1/output/model.pth')).not.toBeNull();
+            expect(vfs.node_stat('/home/fedml/projects/exp1/output/stats.json')).not.toBeNull();
+            expect(vfs.node_stat('/home/fedml/projects/exp1/.local_pass')).not.toBeNull();
+            expect(vfs.node_stat('/home/fedml/projects/exp1/src/.local_pass')).toBeNull();
+        });
+
+        it('should report input path as ./input when run from project root', async () => {
+            vfs.dir_create('/home/fedml/projects/exp1');
+            vfs.cwd_set('/home/fedml/projects/exp1');
+            shell.env_set('PROJECT', 'exp1');
+            vfs.file_create('/home/fedml/projects/exp1/train.py', 'print("train")');
+
+            const result: ShellResult = await shell.command_execute('python train.py');
+
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('Found 1,240 images in ./input/');
+        });
+
+        it('should create .test_pass when running a ChRIS main.py validation', async () => {
+            vfs.dir_create('/home/fedml/projects/chris-app/src');
+            vfs.cwd_set('/home/fedml/projects/chris-app/src');
+            shell.env_set('PROJECT', 'chris-app');
+            vfs.file_create('/home/fedml/projects/chris-app/src/main.py', 'print("plugin")');
+
+            const result: ShellResult = await shell.command_execute('python main.py --help');
+
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('LOCAL PLUGIN TEST COMPLETE');
+            expect(vfs.node_stat('/home/fedml/projects/chris-app/.test_pass')).not.toBeNull();
+            expect(vfs.node_stat('/home/fedml/projects/chris-app/.local_pass')).toBeNull();
+        });
+
         it('should fail if script missing', async () => {
             const result: ShellResult = await shell.command_execute('python missing.py');
             expect(result.exitCode).toBe(2);
