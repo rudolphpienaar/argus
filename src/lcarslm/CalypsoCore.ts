@@ -33,6 +33,10 @@ import { projectDir_populate, chrisProject_populate } from '../vfs/providers/Pro
 import { VERSION } from '../generated/version.js';
 import { WorkflowEngine } from '../core/workflows/WorkflowEngine.js';
 import { script_find, scripts_list, type CalypsoScript } from './scripts/Catalog.js';
+import {
+    controlPlaneIntent_resolve,
+    type ControlPlaneIntent
+} from './routing/ControlPlaneRouter.js';
 import type {
     WorkflowDefinition,
     WorkflowState,
@@ -164,13 +168,18 @@ export class CalypsoCore {
             return this.script_execute(parts.slice(1));
         }
 
-        // Natural-language script intents (list/run) routed deterministically.
-        const scriptIntent: ScriptIntent | null = this.scriptIntent_resolve(trimmed);
-        if (scriptIntent) {
-            if (scriptIntent.type === 'list') {
-                return this.scripts_response([]);
-            }
-            return this.script_execute([scriptIntent.scriptRef]);
+        // Deterministic control-plane router (scripts automation surface).
+        const controlIntent: ControlPlaneIntent = controlPlaneIntent_resolve(
+            trimmed,
+            scripts_list().map((script: CalypsoScript) => ({
+                id: script.id,
+                aliases: script.aliases
+            }))
+        );
+
+        const controlResult: CalypsoResponse | null = await this.controlIntent_dispatch(controlIntent);
+        if (controlResult) {
+            return controlResult;
         }
 
         // Prioritize first-class harmonize intent so CLI can render
@@ -849,49 +858,32 @@ TIP: Type /next anytime to see what to do next!`;
     }
 
     /**
-     * Resolve natural-language script intents.
+     * Execute control-plane intent routed by ControlPlaneRouter.
      *
-     * @param input - Raw user input.
-     * @returns Script intent or null if no match.
+     * @param intent - Control-plane intent result.
+     * @returns Response if handled by control plane, else null.
      */
-    private scriptIntent_resolve(input: string): ScriptIntent | null {
-        const lower: string = input.trim().toLowerCase();
-
-        if (lower.includes('/scripts') || lower.includes('power script')) {
-            return { type: 'list' };
+    private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {
+        if (intent.plane !== 'control') {
+            return null;
         }
 
-        const listPatterns: RegExp[] = [
-            /what\s+scripts/i,
-            /which\s+scripts/i,
-            /list\s+(the\s+)?scripts/i,
-            /show\s+(me\s+)?(the\s+)?scripts/i,
-            /available\s+scripts/i,
-            /do\s+you\s+have\s+(any\s+)?scripts/i,
-            /do\s+you\s+have\s+(any\s+)?power\s+scripts/i
-        ];
-
-        if (listPatterns.some((pattern: RegExp): boolean => pattern.test(lower))) {
-            return { type: 'list' };
+        switch (intent.action) {
+            case 'scripts_list':
+                return this.scripts_response([]);
+            case 'script_show':
+                return this.scripts_response([intent.scriptRef]);
+            case 'script_run':
+                return this.script_execute(intent.dryRun ? ['--dry', intent.scriptRef] : [intent.scriptRef]);
+            case 'script_run_ambiguous':
+                return this.response_create(
+                    `○ MULTIPLE SCRIPT MATCHES: ${intent.candidates.join(', ')}\nUse /run [script-name] to select one.`,
+                    [],
+                    false
+                );
+            default:
+                return null;
         }
-
-        const runPatterns: RegExp[] = [
-            /^(?:can|could|would)\s+you\s+(?:please\s+)?(?:run|execute|start|launch)\s+(?:the\s+)?([a-z0-9_-]+)(?:\s+script)?(?:\s+for\s+me)?[.!?]*$/i,
-            /^(?:please\s+)?(?:run|execute|start|launch)\s+(?:the\s+)?([a-z0-9_-]+)(?:\s+script)?(?:\s+for\s+me)?[.!?]*$/i
-        ];
-
-        for (const pattern of runPatterns) {
-            const match: RegExpMatchArray | null = lower.match(pattern);
-            if (!match || !match[1]) continue;
-
-            const candidate: string = match[1].trim().replace(/[^\w-]/g, '');
-            if (!candidate) continue;
-            if (!script_find(candidate)) continue;
-
-            return { type: 'run', scriptRef: candidate };
-        }
-
-        return null;
     }
 
     /**
@@ -1984,14 +1976,3 @@ export interface CalypsoStoreActions {
     /** Set current stage */
     stage_set(stage: AppState['currentStage']): void;
 }
-
-interface ScriptIntentList {
-    type: 'list';
-}
-
-interface ScriptIntentRun {
-    type: 'run';
-    scriptRef: string;
-}
-
-type ScriptIntent = ScriptIntentList | ScriptIntentRun;
