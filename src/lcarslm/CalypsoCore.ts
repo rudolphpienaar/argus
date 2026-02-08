@@ -32,7 +32,13 @@ import { project_gather, project_rename, project_harmonize } from '../core/logic
 import { projectDir_populate, chrisProject_populate } from '../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../generated/version.js';
 import { WorkflowEngine } from '../core/workflows/WorkflowEngine.js';
-import { script_find, scripts_list, type CalypsoScript } from './scripts/Catalog.js';
+import {
+    script_find,
+    scripts_list,
+    type CalypsoScript,
+    type CalypsoStructuredScript,
+    type CalypsoStructuredStep
+} from './scripts/Catalog.js';
 import {
     controlPlaneIntent_resolve,
     type ControlPlaneIntent
@@ -41,11 +47,12 @@ import type {
     WorkflowDefinition,
     WorkflowState,
     WorkflowContext,
-    TransitionResult
+    TransitionResult,
+    WorkflowSummary
 } from '../core/workflows/types.js';
 
-type FederationPhase = 'build' | 'publish' | 'dispatch';
 type FederationVisibility = 'public' | 'private';
+type FederationStep = 'transcompile' | 'containerize' | 'publish_prepare' | 'publish_configure' | 'dispatch_compute';
 
 interface FederationPublishConfig {
     appName: string | null;
@@ -55,7 +62,7 @@ interface FederationPublishConfig {
 
 interface FederationState {
     projectId: string;
-    phase: FederationPhase;
+    step: FederationStep;
     publish: FederationPublishConfig;
 }
 
@@ -76,9 +83,85 @@ interface FederationDagPaths {
 interface FederationArgs {
     confirm: boolean;
     abort: boolean;
+    restart: boolean;
     name: string | null;
     org: string | null;
     visibility: FederationVisibility | null;
+}
+
+interface ScriptRuntimeContext {
+    defaults: Record<string, string>;
+    answers: Record<string, string>;
+    outputs: Record<string, unknown>;
+}
+
+interface ScriptPendingInput {
+    kind: 'param' | 'selection';
+    key: string;
+    prompt: string;
+    options?: string[];
+}
+
+interface ScriptRuntimeSession {
+    script: CalypsoScript;
+    spec: CalypsoStructuredScript;
+    stepIndex: number;
+    context: ScriptRuntimeContext;
+    actions: CalypsoAction[];
+    pending: ScriptPendingInput | null;
+}
+
+interface ScriptStepParamsResolved {
+    ok: true;
+    params: Record<string, unknown>;
+}
+
+interface ScriptStepParamsPending {
+    ok: false;
+    pending: ScriptPendingInput;
+}
+
+type ScriptStepParamResolution = ScriptStepParamsResolved | ScriptStepParamsPending;
+
+interface ScriptValueResolved {
+    ok: true;
+    value: unknown;
+}
+
+interface ScriptValuePending {
+    ok: false;
+    pending: ScriptPendingInput;
+}
+
+type ScriptValueResolution = ScriptValueResolved | ScriptValuePending;
+
+interface ScriptStepExecutionSuccess {
+    success: true;
+    output?: unknown;
+    actions: CalypsoAction[];
+    summary?: string;
+}
+
+interface ScriptStepExecutionFailure {
+    success: false;
+    actions: CalypsoAction[];
+    message?: string;
+}
+
+interface ScriptStepExecutionPending {
+    success: 'pending';
+    pending: ScriptPendingInput;
+    actions: CalypsoAction[];
+}
+
+type ScriptStepExecutionResult =
+    ScriptStepExecutionSuccess
+    | ScriptStepExecutionFailure
+    | ScriptStepExecutionPending;
+
+interface ScriptSuggestionScore {
+    id: string;
+    score: number;
 }
 
 /**
@@ -146,6 +229,9 @@ export class CalypsoCore {
     /** Multi-phase federation handshake state. */
     private federationState: FederationState | null = null;
 
+    /** Active structured script runtime session awaiting completion/input. */
+    private scriptRuntime: ScriptRuntimeSession | null = null;
+
     constructor(
         private vfs: VirtualFileSystem,
         private shell: Shell,
@@ -187,6 +273,12 @@ export class CalypsoCore {
             return this.response_create('', [], true);
         }
 
+        // If a structured script is awaiting user input, consume that first.
+        const scriptPromptResult: CalypsoResponse | null = await this.scriptRuntime_maybeConsumeInput(trimmed);
+        if (scriptPromptResult) {
+            return scriptPromptResult;
+        }
+
         // Check for special commands (prefixed with /)
         if (trimmed.startsWith('/')) {
             const specialResult: CalypsoResponse = await this.special_dispatch(trimmed);
@@ -195,6 +287,11 @@ export class CalypsoCore {
                 const parts: string[] = trimmed.slice(1).split(/\s+/);
                 const username: string = parts[1] || this.shell.env_get('USER') || 'user';
                 return this.greeting_generate(username);
+            }
+            if (specialResult.message === '__STANDBY_ASYNC__') {
+                const parts: string[] = trimmed.slice(1).split(/\s+/);
+                const username: string = parts[1] || this.shell.env_get('USER') || 'user';
+                return this.standby_generate(username);
             }
             return specialResult;
         }
@@ -359,6 +456,7 @@ export class CalypsoCore {
         this.workflowState = WorkflowEngine.state_create(this.workflowDefinition.id);
         this.lastMentionedDatasets = [];
         this.federationState = null;
+        this.scriptRuntime = null;
     }
 
     /**
@@ -415,13 +513,7 @@ export class CalypsoCore {
      *
      * @returns Array of workflow summaries
      */
-    public workflows_available(): Array<{
-        id: string;
-        name: string;
-        persona: string;
-        description: string;
-        stageCount: number;
-    }> {
+    public workflows_available(): WorkflowSummary[] {
         return WorkflowEngine.workflows_summarize();
     }
 
@@ -591,7 +683,8 @@ WORKFLOW COMMANDS:
   federate --name <app> - Set marketplace app name (phase 2)
   federate --org <name> - Set marketplace org/namespace (phase 2)
   federate --private | --public - Set publish visibility (phase 2)
-  federate --yes    - Confirm pending federation phase
+  federate --yes    - Confirm pending federation step
+  federate --rerun  - Re-initialize federation from step 1/5 (explicit restart)
   federate --abort  - Abort federation handshake
 
 TIP: Type /next anytime to see what to do next!`;
@@ -601,6 +694,11 @@ TIP: Type /next anytime to see what to do next!`;
             case 'greet': {
                 // Return null to signal async handling needed
                 return this.response_create('__GREET_ASYNC__', [], true);
+            }
+
+            case 'standby': {
+                // Return marker so command_execute can invoke async generator.
+                return this.response_create('__STANDBY_ASYNC__', [], true);
             }
 
             default:
@@ -844,16 +942,11 @@ TIP: Type /next anytime to see what to do next!`;
         }
 
         if (dryRun) {
-            const lines: string[] = [
-                `● DRY RUN: ${script.id}`,
-                `○ TARGET: ${script.target}`,
-                `○ REQUIRES: ${script.requires.length > 0 ? script.requires.join(', ') : 'none'}`,
-                ''
-            ];
-            script.steps.forEach((step: string, idx: number): void => {
-                lines.push(`  ${idx + 1}. ${step}`);
-            });
-            return this.response_create(lines.join('\n'), [], true);
+            return this.scriptDryRun_response(script);
+        }
+
+        if (script.structured) {
+            return this.scriptStructured_begin(script);
         }
 
         const lines: string[] = [
@@ -895,6 +988,532 @@ TIP: Type /next anytime to see what to do next!`;
         lines.push('');
         lines.push(`● SCRIPT COMPLETE. TARGET ${script.target.toUpperCase()} READY.`);
         return this.response_create(lines.join('\n'), actions, true);
+    }
+
+    /**
+     * Render dry-run output for legacy or structured scripts.
+     */
+    private scriptDryRun_response(script: CalypsoScript): CalypsoResponse {
+        const lines: string[] = [
+            `● DRY RUN: ${script.id}`,
+            `○ TARGET: ${script.target}`,
+            `○ REQUIRES: ${script.requires.length > 0 ? script.requires.join(', ') : 'none'}`,
+            ''
+        ];
+
+        if (script.structured) {
+            const spec: CalypsoStructuredScript = script.structured;
+            lines.push(`○ MODE: structured v${spec.version}`);
+            if (spec.description) {
+                lines.push(`○ ${spec.description}`);
+            }
+            lines.push('');
+            spec.steps.forEach((step: CalypsoStructuredStep, idx: number): void => {
+                lines.push(`  ${idx + 1}. ${step.id} :: ${step.action}`);
+            });
+            return this.response_create(lines.join('\n'), [], true);
+        }
+
+        script.steps.forEach((step: string, idx: number): void => {
+            lines.push(`  ${idx + 1}. ${step}`);
+        });
+        return this.response_create(lines.join('\n'), [], true);
+    }
+
+    /**
+     * Initialize structured script execution state and run until next prompt/completion.
+     */
+    private async scriptStructured_begin(script: CalypsoScript): Promise<CalypsoResponse> {
+        const spec: CalypsoStructuredScript | undefined = script.structured;
+        if (!spec) {
+            return this.response_create(`>> ERROR: SCRIPT ${script.id} HAS NO STRUCTURED SPEC.`, [], false);
+        }
+
+        this.scriptRuntime = {
+            script,
+            spec,
+            stepIndex: 0,
+            context: {
+                defaults: { ...(spec.defaults || {}) },
+                answers: {},
+                outputs: {}
+            },
+            actions: [],
+            pending: null
+        };
+
+        const lines: string[] = [
+            `● RUNNING SCRIPT: ${script.id}`,
+            `○ ${script.description}`,
+            `○ MODE: structured v${spec.version}`
+        ];
+        return this.scriptStructured_continue(lines);
+    }
+
+    /**
+     * Consume user input for an active structured script prompt if present.
+     */
+    private async scriptRuntime_maybeConsumeInput(input: string): Promise<CalypsoResponse | null> {
+        const session: ScriptRuntimeSession | null = this.scriptRuntime;
+        if (!session || !session.pending) {
+            return null;
+        }
+
+        if (input.trim().startsWith('/')) {
+            return null;
+        }
+
+        if (/^\/?(abort|cancel)$/i.test(input.trim())) {
+            const scriptId: string = session.script.id;
+            this.scriptRuntime = null;
+            return this.response_create(`○ SCRIPT ABORTED: ${scriptId}`, [], false);
+        }
+
+        const normalized: string = input.trim() === '-' ? '' : input.trim();
+        session.context.answers[session.pending.key] = normalized;
+        session.pending = null;
+        return this.scriptStructured_continue();
+    }
+
+    /**
+     * Continue structured script execution from current step.
+     */
+    private async scriptStructured_continue(prefixLines: string[] = []): Promise<CalypsoResponse> {
+        const session: ScriptRuntimeSession | null = this.scriptRuntime;
+        if (!session) {
+            return this.response_create('>> ERROR: NO ACTIVE SCRIPT RUNTIME.', [], false);
+        }
+
+        const lines: string[] = [...prefixLines];
+        const totalSteps: number = session.spec.steps.length;
+
+        while (session.stepIndex < totalSteps) {
+            const step: CalypsoStructuredStep = session.spec.steps[session.stepIndex];
+            const progress: string = `${session.stepIndex + 1}/${totalSteps}`;
+
+            const resolved: ScriptStepParamResolution = this.scriptStructured_stepParamsResolve(step, session.context);
+            if (!resolved.ok) {
+                session.pending = resolved.pending;
+                lines.push(`[WAIT] [${progress}] ${step.id} :: ${step.action}`);
+                lines.push('● SCRIPT INPUT REQUIRED.');
+                lines.push(`○ ${resolved.pending.prompt}`);
+                if (resolved.pending.options && resolved.pending.options.length > 0) {
+                    lines.push(...resolved.pending.options);
+                }
+                lines.push('○ Reply with a value, or type abort.');
+                return this.response_create(lines.join('\n'), [...session.actions], true);
+            }
+
+            const execution: ScriptStepExecutionResult = await this.scriptStructured_stepExecute(step, resolved.params, session);
+            session.actions.push(...execution.actions);
+
+            if (execution.success === 'pending') {
+                session.pending = execution.pending;
+                lines.push(`[WAIT] [${progress}] ${step.id} :: ${step.action}`);
+                lines.push('● SCRIPT INPUT REQUIRED.');
+                lines.push(`○ ${execution.pending.prompt}`);
+                if (execution.pending.options && execution.pending.options.length > 0) {
+                    lines.push(...execution.pending.options);
+                }
+                lines.push('○ Reply with a value, or type abort.');
+                return this.response_create(lines.join('\n'), [...session.actions], true);
+            }
+
+            if (!execution.success) {
+                lines.push(`[FAIL] [${progress}] ${step.id} :: ${step.action}`);
+                if (execution.message) {
+                    lines.push(`>> ${execution.message}`);
+                }
+                lines.push(`>> SCRIPT ABORTED AT STEP ${session.stepIndex + 1}.`);
+                const actions: CalypsoAction[] = [...session.actions];
+                this.scriptRuntime = null;
+                return this.response_create(lines.join('\n'), actions, false);
+            }
+
+            lines.push(`[OK] [${progress}] ${step.id} :: ${step.action}`);
+            if (execution.summary) {
+                lines.push(`  -> ${execution.summary}`);
+            }
+
+            const alias: string | undefined = step.outputs?.alias;
+            if (alias) {
+                session.context.outputs[alias] = execution.output !== undefined ? execution.output : resolved.params;
+            }
+
+            session.stepIndex += 1;
+        }
+
+        lines.push('');
+        lines.push(`● SCRIPT COMPLETE. TARGET ${session.script.target.toUpperCase()} READY.`);
+        const actions: CalypsoAction[] = [...session.actions];
+        this.scriptRuntime = null;
+        return this.response_create(lines.join('\n'), actions, true);
+    }
+
+    /**
+     * Resolve structured step params using defaults/answers/aliases.
+     */
+    private scriptStructured_stepParamsResolve(step: CalypsoStructuredStep, runtime: ScriptRuntimeContext): ScriptStepParamResolution {
+        const resolved: Record<string, unknown> = {};
+        const entries: Array<[string, unknown]> = Object.entries(step.params || {});
+
+        for (const [key, value] of entries) {
+            const valueResult: ScriptValueResolution = this.scriptStructured_valueResolve(value, runtime, step.id, key);
+            if (!valueResult.ok) {
+                return { ok: false, pending: valueResult.pending };
+            }
+            resolved[key] = valueResult.value;
+        }
+
+        return { ok: true, params: resolved };
+    }
+
+    /**
+     * Resolve one structured value.
+     */
+    private scriptStructured_valueResolve(
+        value: unknown,
+        runtime: ScriptRuntimeContext,
+        stepId: string,
+        paramKey: string
+    ): ScriptValueResolution {
+        if (Array.isArray(value)) {
+            const out: unknown[] = [];
+            for (let i: number = 0; i < value.length; i++) {
+                const itemResult: ScriptValueResolution = this.scriptStructured_valueResolve(
+                    value[i],
+                    runtime,
+                    stepId,
+                    `${paramKey}[${i}]`
+                );
+                if (!itemResult.ok) return itemResult;
+                out.push(itemResult.value);
+            }
+            return { ok: true, value: out };
+        }
+
+        if (typeof value === 'object' && value !== null) {
+            const out: Record<string, unknown> = {};
+            for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+                const nestedResult: ScriptValueResolution = this.scriptStructured_valueResolve(
+                    nested,
+                    runtime,
+                    stepId,
+                    key
+                );
+                if (!nestedResult.ok) return nestedResult;
+                out[key] = nestedResult.value;
+            }
+            return { ok: true, value: out };
+        }
+
+        if (typeof value !== 'string') {
+            return { ok: true, value };
+        }
+
+        const trimmed: string = value.trim();
+        if (trimmed === '?') {
+            if (runtime.answers[paramKey] !== undefined) {
+                return { ok: true, value: runtime.answers[paramKey] };
+            }
+
+            const promptMap: Record<string, string> = {
+                query: 'Search term?',
+                project: 'Project name?',
+                project_name: 'Project name?',
+                app_name: 'Application name for marketplace publish?',
+                org: 'Organization/namespace? (type - for none)'
+            };
+            return {
+                ok: false,
+                pending: {
+                    kind: 'param',
+                    key: paramKey,
+                    prompt: promptMap[paramKey] || `Value for ${stepId}.${paramKey}?`
+                }
+            };
+        }
+
+        const fullRef: RegExpMatchArray | null = value.match(/^\$\{([^}]+)\}$/);
+        if (fullRef) {
+            const resolved: unknown = this.scriptStructured_expressionResolve(fullRef[1], runtime);
+            return { ok: true, value: resolved };
+        }
+
+        const interpolated: string = value.replace(/\$\{([^}]+)\}/g, (_m: string, expr: string): string => {
+            const resolved: unknown = this.scriptStructured_expressionResolve(expr, runtime);
+            return resolved === undefined || resolved === null ? '' : String(resolved);
+        });
+        return { ok: true, value: interpolated };
+    }
+
+    /**
+     * Evaluate `${expr}` references with `??` fallback.
+     */
+    private scriptStructured_expressionResolve(expr: string, runtime: ScriptRuntimeContext): unknown {
+        const scope: Record<string, unknown> = {
+            answers: runtime.answers,
+            defaults: runtime.defaults,
+            ...runtime.outputs
+        };
+        const parts: string[] = expr.split('??').map((part: string): string => part.trim());
+        for (const part of parts) {
+            if (!part) continue;
+            const resolved: unknown = this.scriptStructured_referenceResolve(part, scope);
+            if (resolved !== undefined && resolved !== null && resolved !== '') {
+                return resolved;
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Resolve dotted and indexed references like `foo.bar[0].id`.
+     */
+    private scriptStructured_referenceResolve(pathExpr: string, scope: Record<string, unknown>): unknown {
+        const tokens: Array<string | number> = [];
+        const tokenPattern: RegExp = /([A-Za-z_][A-Za-z0-9_]*)|\[(\d+)\]/g;
+        let match: RegExpExecArray | null;
+        while ((match = tokenPattern.exec(pathExpr)) !== null) {
+            if (match[1]) tokens.push(match[1]);
+            else if (match[2]) tokens.push(parseInt(match[2], 10));
+        }
+        if (tokens.length === 0) return undefined;
+
+        let current: unknown = scope;
+        for (const token of tokens) {
+            if (typeof token === 'number') {
+                if (!Array.isArray(current) || token < 0 || token >= current.length) return undefined;
+                current = current[token];
+                continue;
+            }
+            if (typeof current !== 'object' || current === null || !(token in (current as Record<string, unknown>))) {
+                return undefined;
+            }
+            current = (current as Record<string, unknown>)[token];
+        }
+        return current;
+    }
+
+    /**
+     * Execute one structured script step action.
+     */
+    private async scriptStructured_stepExecute(
+        step: CalypsoStructuredStep,
+        params: Record<string, unknown>,
+        session: ScriptRuntimeSession
+    ): Promise<ScriptStepExecutionResult> {
+        const runCommand = async (command: string): Promise<ScriptStepExecutionResult> => {
+            const response: CalypsoResponse = await this.command_execute(command);
+            if (!response.success) {
+                return {
+                    success: false,
+                    actions: response.actions,
+                    message: this.scriptStep_summary(response.message) || response.message || `command failed: ${command}`
+                };
+            }
+            return {
+                success: true,
+                actions: response.actions,
+                summary: this.scriptStep_summary(response.message) || undefined
+            };
+        };
+
+        switch (step.action) {
+            case 'search': {
+                const query: string = String(params.query || '').trim();
+                if (!query) {
+                    return { success: false, actions: [], message: 'missing query for search step' };
+                }
+                const run: ScriptStepExecutionResult = await runCommand(`search ${query}`);
+                if (run.success !== true) return run;
+                return {
+                    success: true,
+                    actions: run.actions,
+                    summary: run.summary,
+                    output: [...this.lastMentionedDatasets]
+                };
+            }
+
+            case 'select_dataset': {
+                const rawCandidates: unknown = params.from;
+                const candidates: Dataset[] = Array.isArray(rawCandidates)
+                    ? rawCandidates as Dataset[]
+                    : [];
+                if (candidates.length === 0) {
+                    return { success: false, actions: [], message: 'no dataset candidates available for selection' };
+                }
+
+                const strategy: string = String(params.strategy || 'ask').toLowerCase();
+                let selected: Dataset | null = null;
+
+                if (strategy === 'first' || strategy === 'best_match') {
+                    selected = candidates[0];
+                } else if (strategy === 'by_id') {
+                    const desired: string = String(params.id || params.dataset || '').trim().toLowerCase();
+                    selected = candidates.find((ds: Dataset): boolean => ds.id.toLowerCase() === desired) || null;
+                } else {
+                    if (candidates.length === 1) {
+                        selected = candidates[0];
+                    } else {
+                        const answerKey: string = `${step.id}.selection`;
+                        const rawChoice: string = (session.context.answers[answerKey] || '').trim();
+                        if (!rawChoice) {
+                            return {
+                                success: 'pending',
+                                actions: [],
+                                pending: {
+                                    kind: 'selection',
+                                    key: answerKey,
+                                    prompt: `Select dataset for ${step.id} by number or id.`,
+                                    options: candidates.map((ds: Dataset, idx: number): string =>
+                                        `  ${idx + 1}. [${ds.id}] ${ds.name} (${ds.modality}/${ds.annotationType})`
+                                    )
+                                }
+                            };
+                        }
+
+                        const parsedIndex: number = parseInt(rawChoice, 10);
+                        if (!isNaN(parsedIndex) && parsedIndex >= 1 && parsedIndex <= candidates.length) {
+                            selected = candidates[parsedIndex - 1];
+                        } else {
+                            selected = candidates.find((ds: Dataset): boolean =>
+                                ds.id.toLowerCase() === rawChoice.toLowerCase()
+                            ) || null;
+                        }
+                    }
+                }
+
+                if (!selected) {
+                    return {
+                        success: 'pending',
+                        actions: [],
+                        pending: {
+                            kind: 'selection',
+                            key: `${step.id}.selection`,
+                            prompt: `Invalid selection. Choose dataset for ${step.id} by number or id.`,
+                            options: candidates.map((ds: Dataset, idx: number): string =>
+                                `  ${idx + 1}. [${ds.id}] ${ds.name} (${ds.modality}/${ds.annotationType})`
+                            )
+                        }
+                    };
+                }
+
+                session.context.answers.selected_dataset_id = selected.id;
+                return {
+                    success: true,
+                    actions: [],
+                    summary: `SELECTED DATASET: [${selected.id}] ${selected.name}`,
+                    output: selected
+                };
+            }
+
+            case 'add': {
+                const datasetId: string = String(params.dataset || '').trim();
+                if (!datasetId) {
+                    return { success: false, actions: [], message: 'missing dataset id for add step' };
+                }
+                return runCommand(`add ${datasetId}`);
+            }
+
+            case 'rename': {
+                const projectName: string = String(params.project || '').trim();
+                if (!projectName) {
+                    return { success: false, actions: [], message: 'missing project name for rename step' };
+                }
+                return runCommand(`rename ${projectName}`);
+            }
+
+            case 'harmonize':
+                return runCommand('harmonize');
+            case 'proceed':
+            case 'code':
+                return runCommand(step.action);
+
+            case 'run_python': {
+                const scriptName: string = String(params.script || 'train.py').trim() || 'train.py';
+                const args: string[] = Array.isArray(params.args)
+                    ? (params.args as unknown[]).map((item: unknown): string => String(item))
+                    : [];
+                const cmd: string = ['python', scriptName, ...args].join(' ').trim();
+                return runCommand(cmd);
+            }
+
+            case 'federate.transcompile': {
+                const start: ScriptStepExecutionResult = await runCommand('federate');
+                if (start.success !== true) return start;
+                const confirm: ScriptStepExecutionResult = await runCommand('federate --yes');
+                if (confirm.success !== true) return confirm;
+                return {
+                    success: true,
+                    actions: [...start.actions, ...confirm.actions],
+                    summary: confirm.summary || start.summary
+                };
+            }
+
+            case 'federate.containerize':
+                return runCommand('federate --yes');
+
+            case 'federate.publish_metadata': {
+                const enter: ScriptStepExecutionResult = await runCommand('federate --yes');
+                if (enter.success !== true) return enter;
+
+                const actions: CalypsoAction[] = [...enter.actions];
+                let summary: string | undefined = enter.summary;
+
+                if (params.app_name !== undefined) {
+                    const appName: string = String(params.app_name || '').trim();
+                    if (!appName) {
+                        return { success: false, actions, message: 'missing app_name for publish metadata step' };
+                    }
+                    const appSet: ScriptStepExecutionResult = await runCommand(`federate --name ${appName}`);
+                    actions.push(...appSet.actions);
+                    if (appSet.success !== true) return appSet;
+                    summary = appSet.summary || summary;
+                }
+
+                if (params.org !== undefined) {
+                    const orgName: string = String(params.org || '').trim();
+                    if (orgName) {
+                        const orgSet: ScriptStepExecutionResult = await runCommand(`federate --org ${orgName}`);
+                        actions.push(...orgSet.actions);
+                        if (orgSet.success !== true) return orgSet;
+                        summary = orgSet.summary || summary;
+                    }
+                }
+
+                if (params.visibility !== undefined) {
+                    const visibility: string = String(params.visibility || '').trim().toLowerCase();
+                    if (visibility === 'private' || visibility === 'public') {
+                        const visSet: ScriptStepExecutionResult = await runCommand(
+                            visibility === 'private' ? 'federate --private' : 'federate --public'
+                        );
+                        actions.push(...visSet.actions);
+                        if (visSet.success !== true) return visSet;
+                        summary = visSet.summary || summary;
+                    }
+                }
+
+                return {
+                    success: true,
+                    actions,
+                    summary,
+                    output: {
+                        app_name: params.app_name,
+                        org: params.org,
+                        visibility: params.visibility
+                    }
+                };
+            }
+
+            case 'federate.publish':
+                return runCommand('federate --yes');
+            case 'federate.dispatch_compute':
+                return runCommand('federate --yes');
+
+            default:
+                return { success: false, actions: [], message: `unsupported script action: ${step.action}` };
+        }
     }
 
     /**
@@ -945,7 +1564,7 @@ TIP: Type /next anytime to see what to do next!`;
         const query: string = ref.trim().toLowerCase().replace(/\.clpso$/i, '');
         if (!query) return [];
 
-        const ranked: Array<{ id: string; score: number }> = [];
+        const ranked: ScriptSuggestionScore[] = [];
 
         for (const script of scripts_list()) {
             let bestScore: number = Number.POSITIVE_INFINITY;
@@ -1109,6 +1728,46 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
                 `○ The ATLAS catalog contains ${DATASETS.length} datasets spanning ${modalities.join(', ')} modalities.`,
                 [], true
             );
+        }
+    }
+
+    /**
+     * Generate a free-exploration standby response via the LLM.
+     */
+    private async standby_generate(username: string): Promise<CalypsoResponse> {
+        const fallback: string =
+            `● Acknowledged, ${username}. Workflow guidance is in standby.\n` +
+            `○ Free exploration mode is active.\n` +
+            `○ Use \`/next\` for immediate command guidance or \`/workflow\` for stage status.`;
+
+        if (!this.engine) {
+            return this.response_create(fallback, [], true);
+        }
+
+        const prompt: string = `User "${username}" selected free exploration mode (no guided workflow).
+Respond as CALYPSO in-character, concise and mission-focused.
+
+Requirements:
+1. Acknowledge standby guidance mode.
+2. State that free exploration is active.
+3. Give concrete next commands: /next and /workflow (optionally /scripts).
+4. Keep under 70 words.
+5. Use LCARS markers: ● and ○.
+6. Do NOT include [ACTION:], [SELECT:], or [FILTER:] tags.`;
+
+        try {
+            const response: QueryResponse = await this.engine.query(prompt, [], true);
+            const cleanMessage: string = response.answer
+                .replace(/\[ACTION:.*?\]/g, '')
+                .replace(/\[SELECT:.*?\]/g, '')
+                .replace(/\[FILTER:.*?\]/g, '')
+                .trim();
+            if (!cleanMessage) {
+                return this.response_create(fallback, [], true);
+            }
+            return this.response_create(cleanMessage, [], true);
+        } catch {
+            return this.response_create(fallback, [], true);
         }
     }
 
@@ -1388,8 +2047,17 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             // All stages complete
             lines.push('● **Workflow complete!** All stages have been completed.');
             lines.push('');
+            const username: string = this.shell.env_get('USER') || 'user';
+            const projectBase: string = `/home/${username}/projects/${projectName}`;
+            const federationComplete: boolean = this.vfs.node_stat(`${projectBase}/.federated`) !== null;
+
             lines.push('You can now:');
-            lines.push('  `federate` — Start the federated training run');
+            if (federationComplete) {
+                lines.push('  `tree source-crosscompile` — Inspect materialized DAG artifacts');
+                lines.push('  `federate --rerun` — Explicitly restart federation from step 1/5');
+            } else {
+                lines.push('  `federate` — Start the federated training run');
+            }
             return lines.join('\n');
         }
 
@@ -1437,26 +2105,28 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             case 'federate':
                 lines.push('**Next step: Federated Training**');
                 lines.push('');
-                if (this.federationState?.phase === 'build') {
-                    lines.push('Federation Phase 1/3 is pending: source transcompile + container compile.');
+                if (this.federationState?.step === 'transcompile') {
+                    lines.push('Federation Step 1/5 is pending: source transcompile.');
                     lines.push('');
-                    lines.push('  `federate --yes` — Execute phase 1/3');
-                    lines.push('  ARGUS UI: FEDERATE -> CONFIRM PHASE 1');
+                    lines.push('  `federate --yes` — Execute step 1/5');
                     lines.push('  `federate --abort` — Cancel federation handshake');
-                } else if (this.federationState?.phase === 'publish') {
-                    lines.push('Federation Phase 2/3 is pending: marketplace publish configuration.');
+                } else if (this.federationState?.step === 'containerize') {
+                    lines.push('Federation Step 2/5 is pending: container compilation.');
+                    lines.push('');
+                    lines.push('  `federate --yes` — Execute step 2/5');
+                    lines.push('  `federate --abort` — Cancel federation handshake');
+                } else if (this.federationState?.step === 'publish_prepare' || this.federationState?.step === 'publish_configure') {
+                    lines.push('Federation Step 3/5 is active: marketplace publish metadata.');
                     lines.push('');
                     lines.push('  `federate --name <app-name>` — Set app name');
                     lines.push('  `federate --org <org>` — Set org/namespace (optional)');
                     lines.push('  `federate --private` — Publish privately');
-                    lines.push('  `federate --yes` — Publish and proceed to dispatch');
-                    lines.push('  ARGUS UI: Set publish metadata, then CONFIRM PHASE 2');
+                    lines.push('  `federate --yes` — Confirm next publish action');
                     lines.push('  `federate --abort` — Cancel federation handshake');
-                } else if (this.federationState?.phase === 'dispatch') {
-                    lines.push('Federation Phase 3/3 is pending: dispatch + federated rounds.');
+                } else if (this.federationState?.step === 'dispatch_compute') {
+                    lines.push('Federation Step 5/5 is pending: dispatch + federated rounds.');
                     lines.push('');
                     lines.push('  `federate --yes` — Dispatch to participants and run rounds');
-                    lines.push('  ARGUS UI: FEDERATE -> CONFIRM PHASE 3');
                     lines.push('  `federate --abort` — Cancel federation handshake');
                 } else {
                     lines.push('Local training complete. Ready to distribute across nodes.');
@@ -1528,8 +2198,9 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         }
 
         if (isAffirm) {
-            // Treat "yes" as immediate phase-1 confirmation when federate is next.
-            return this.workflow_federate(['--yes']);
+            // Start federate briefing first; step confirmations should happen
+            // only after an explicit federate step prompt is active.
+            return this.workflow_federate([]);
         }
 
         return this.response_create(
@@ -1710,14 +2381,19 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
 
         // Update conversation context so "add that" etc. can resolve
         this.lastMentionedDatasets = results;
+        const searchSnapshotPath: string | null = this.searchSnapshot_materialize(query, results);
+        const searchSnapshotDisplay: string | null = this.searchSnapshot_displayPath(searchSnapshotPath);
 
         const actions: CalypsoAction[] = [
             { type: 'workspace_render', datasets: results }
         ];
 
         if (results.length === 0) {
+            const snapshotLine: string = searchSnapshotDisplay
+                ? `\n○ SEARCH SNAPSHOT: ${searchSnapshotDisplay}`
+                : '';
             return this.response_create(
-                `○ NO MATCHING DATASETS FOUND FOR "${query}".`,
+                `○ NO MATCHING DATASETS FOUND FOR "${query}".${snapshotLine}`,
                 actions,
                 true
             );
@@ -1726,12 +2402,118 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         const listing: string = results
             .map((ds: Dataset): string => `  [${ds.id}] ${ds.name} (${ds.modality}/${ds.annotationType})`)
             .join('\n');
+        const detailsTable: string = this.searchResultsTable_format(results);
+        const snapshotLine: string = searchSnapshotDisplay
+            ? `\n○ SEARCH SNAPSHOT: ${searchSnapshotDisplay}`
+            : '';
 
         return this.response_create(
-            `● FOUND ${results.length} MATCHING DATASET(S):\n${listing}`,
+            `● FOUND ${results.length} MATCHING DATASET(S):\n${listing}\n\n${detailsTable}${snapshotLine}`,
             actions,
             true
         );
+    }
+
+    /**
+     * Materialize a search snapshot artifact under ~/searches.
+     *
+     * @param query - Raw search query.
+     * @param results - Matched datasets.
+     * @returns Absolute snapshot path on success, null on failure.
+     */
+    private searchSnapshot_materialize(query: string, results: Dataset[]): string | null {
+        const username: string = this.shell.env_get('USER') || 'user';
+        const searchRoot: string = `/home/${username}/searches`;
+        const now: Date = new Date();
+        const timestamp: string = now.toISOString().replace(/[:.]/g, '-');
+        const nonce: string = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        const snapshotPath: string = `${searchRoot}/search-${timestamp}-${nonce}.json`;
+
+        try {
+            this.vfs.dir_create(searchRoot);
+            this.vfs.file_create(
+                snapshotPath,
+                JSON.stringify(
+                    {
+                        query,
+                        generatedAt: now.toISOString(),
+                        count: results.length,
+                        results: results.map((ds: Dataset) => ({
+                            id: ds.id,
+                            name: ds.name,
+                            modality: ds.modality,
+                            annotationType: ds.annotationType,
+                            provider: ds.provider,
+                            imageCount: ds.imageCount
+                        }))
+                    },
+                    null,
+                    2
+                )
+            );
+            this.vfs.node_write(`${searchRoot}/latest.txt`, `${snapshotPath}\n`);
+            return snapshotPath;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Convert an absolute search snapshot path to user-facing ~/ form.
+     *
+     * @param absolutePath - Absolute path in VFS.
+     * @returns Display path or null if input missing.
+     */
+    private searchSnapshot_displayPath(absolutePath: string | null): string | null {
+        if (!absolutePath) return null;
+        const username: string = this.shell.env_get('USER') || 'user';
+        const homePrefix: string = `/home/${username}`;
+        if (absolutePath.startsWith(homePrefix)) {
+            return absolutePath.replace(homePrefix, '~');
+        }
+        return absolutePath;
+    }
+
+    /**
+     * Format full dataset details as a markdown table for terminal/web rendering.
+     *
+     * @param results - Search result datasets.
+     * @returns Markdown table string.
+     */
+    private searchResultsTable_format(results: Dataset[]): string {
+        return results.map((ds: Dataset, index: number): string => {
+            const safeName: string = this.searchResultsTable_cell(ds.name);
+            const safeProvider: string = this.searchResultsTable_cell(ds.provider);
+            const safeDescription: string = this.searchResultsTable_cell(ds.description);
+            const lines: string[] = [
+                `### DATASET ${index + 1}/${results.length}`,
+                '| Field | Value |',
+                '|---|---|',
+                `| ID | ${ds.id} |`,
+                `| Name | ${safeName} |`,
+                `| Modality | ${ds.modality} |`,
+                `| Annotation | ${ds.annotationType} |`,
+                `| Images | ${ds.imageCount.toLocaleString()} |`,
+                `| Size | ${ds.size} |`,
+                `| Cost | $${ds.cost.toFixed(2)} |`,
+                `| Provider | ${safeProvider} |`,
+                `| Description | ${safeDescription} |`
+            ];
+            return lines.join('\n');
+        }).join('\n\n');
+    }
+
+    /**
+     * Normalize text for markdown table cell rendering.
+     *
+     * @param value - Raw table cell text.
+     * @returns Sanitized cell text.
+     */
+    private searchResultsTable_cell(value: string): string {
+        return value
+            .replace(/\|/g, '/')
+            .replace(/\r?\n/g, ' ')
+            .trim();
     }
 
     /**
@@ -1879,126 +2661,273 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         const projectName: string = activeMeta.name;
         const projectBase: string = `/home/${username}/projects/${projectName}`;
         const args: FederationArgs = this.federationArgs_parse(rawArgs);
+        const metadataCommandIssued: boolean = args.name !== null || args.org !== null || args.visibility !== null;
 
         if (args.abort) {
             this.federationState = null;
             return this.response_create('○ FEDERATION HANDSHAKE ABORTED. NO DISPATCH PERFORMED.', [], true);
         }
 
-        if (!this.federationState || this.federationState.projectId !== activeMeta.id) {
-            this.federationState = this.federationState_create(activeMeta.id, projectName);
-        }
+        const federationComplete: boolean = this.vfs.node_stat(`${projectBase}/.federated`) !== null;
+        const stateMatchesProject: boolean = !!this.federationState && this.federationState.projectId === activeMeta.id;
 
-        const metadataUpdated: boolean = this.federationPublish_mutate(args);
-
-        if (this.federationState.phase === 'build') {
-            if (!args.confirm) {
-                const dag: FederationDagPaths = this.federationDag_paths(projectBase);
-                const lines: string[] = [
-                    '● FEDERATION PRECHECK COMPLETE.',
-                    `○ SOURCE VERIFIED: ${projectBase}/src/train.py`,
-                    '○ PHASE 1/3: BUILD ARTIFACTS (TRANSCOMPILE + CONTAINER COMPILATION).',
-                    `○ DAG ROOT: ${dag.crosscompileBase}`
-                ];
-                if (metadataUpdated) {
-                    lines.push('○ NOTE: PUBLISH SETTINGS CAPTURED FOR PHASE 2/3.');
-                }
-                lines.push('');
-                lines.push('>> NEXT (CLI): `federate --yes`');
-                lines.push('>> NEXT (ARGUS UI): FEDERATE -> CONFIRM PHASE 1');
-                lines.push('>> ABORT: `federate --abort`');
-                return this.response_create(lines.join('\n'), [], true);
-            }
-
-            this.federationDag_phase1Materialize(projectBase);
-            try {
-                this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
-            } catch { /* ignore */ }
-
-            this.federationState.phase = 'publish';
-            const dag: FederationDagPaths = this.federationDag_paths(projectBase);
+        if (!stateMatchesProject && federationComplete && !args.restart) {
             return this.response_create(
                 [
-                    '● PHASE 1/3 COMPLETE: BUILD ARTIFACTS.',
+                    `○ FEDERATION ALREADY COMPLETED FOR PROJECT [${projectName}].`,
+                    `○ MARKER: ${projectBase}/.federated`,
                     '',
-                    '○ [1/5] SOURCE CODE TRANSCOMPILE COMPLETE.',
-                    '○ [2/5] CONTAINER COMPILATION COMPLETE.',
-                    `○ ARTIFACTS MATERIALIZED: ${dag.crosscompileData}`,
-                    `○ NEXT DAG NODE READY: ${dag.containerizeBase}`,
-                    '',
-                    '● PHASE 2/3: MARKETPLACE PUBLISH PREPARATION.',
-                    ...this.federationPublish_promptLines(this.federationState.publish)
+                    'No pending federation step to confirm.',
+                    '  `next?` — Show post-federation guidance',
+                    '  `federate --rerun` — Explicitly start a new federation run'
                 ].join('\n'),
                 [],
                 true
             );
         }
 
-        if (this.federationState.phase === 'publish') {
+        let stateInitialized: boolean = false;
+        if (args.restart || !stateMatchesProject) {
+            this.federationState = this.federationState_create(activeMeta.id, projectName);
+            stateInitialized = true;
+        }
+
+        if (stateInitialized && args.confirm) {
+            return this.response_create(
+                [
+                    args.restart
+                        ? '○ FEDERATION RERUN CONTEXT INITIALIZED.'
+                        : '○ FEDERATION CONTEXT INITIALIZED.',
+                    '',
+                    '○ No step was executed yet.',
+                    '○ Review step briefing first, then confirm execution.',
+                    '',
+                    'Next:',
+                    '  `federate`',
+                    'Then confirm STEP 1/5:',
+                    '  `federate --yes`'
+                ].join('\n'),
+                [],
+                true
+            );
+        }
+
+        const metadataUpdated: boolean = this.federationPublish_mutate(args);
+        const dag: FederationDagPaths = this.federationDag_paths(projectBase);
+        const federationState: FederationState | null = this.federationState;
+        if (!federationState) {
+            return this.response_create('>> ERROR: FEDERATION STATE INITIALIZATION FAILED.', [], false);
+        }
+
+        if (federationState.step === 'transcompile') {
             if (!args.confirm) {
+                const lines: string[] = [
+                    '● FEDERATION PRECHECK COMPLETE.',
+                    `○ SOURCE VERIFIED: ${projectBase}/src/train.py`,
+                    `○ DAG ROOT: ${dag.crosscompileBase}`,
+                    '',
+                    '● PHASE 1/3 · STEP 1/5 PENDING: SOURCE CODE TRANSCOMPILE.',
+                    '○ This step generates federated node code from local training source.',
+                    '',
+                    'Ready for STEP 1/5 (Source Code Transcompile)?',
+                    '  `federate --yes`',
+                    '  `federate --abort`'
+                ];
+                if (metadataUpdated) {
+                    lines.push('', '○ NOTE: PUBLISH SETTINGS CAPTURED EARLY FOR PHASE 2/3.');
+                }
+                return this.response_create(lines.join('\n'), [], true);
+            }
+
+            this.federationDag_step1TranscompileMaterialize(projectBase);
+            federationState.step = 'containerize';
+
+            return this.response_create(
+                [
+                    '● PHASE 1/3 · STEP 1/5 COMPLETE: SOURCE CODE TRANSCOMPILE.',
+                    '',
+                    '○ [1/5] SOURCE CODE TRANSCOMPILE COMPLETE.',
+                    `○ READING SOURCE: ${projectBase}/src/train.py`,
+                    '○ PARSING TRAIN LOOP AND DATA LOADER CONTRACTS...',
+                    '○ INJECTING FLOWER CLIENT/SERVER HOOKS...',
+                    '○ EMITTING FEDERATED ENTRYPOINT: node.py',
+                    '○ WRITING EXECUTION ADAPTERS: flower_hooks.py',
+                    '○ WRITING TRANSCOMPILE RECEIPTS + ARTIFACT MANIFEST...',
+                    '',
+                    `○ ARTIFACTS MATERIALIZED: ${dag.crosscompileData}`,
+                    `○ NEXT DAG NODE READY: ${dag.containerizeBase}`,
+                    '',
+                    'Ready for STEP 2/5 (Container Compilation)?',
+                    '  `federate --yes`',
+                    '  `federate --abort`'
+                ].join('\n'),
+                [],
+                true
+            );
+        }
+
+        if (federationState.step === 'containerize') {
+            if (!args.confirm) {
+                const lines: string[] = [
+                    '● PHASE 1/3 · STEP 2/5 PENDING: CONTAINER COMPILATION.',
+                    '○ This step packages the transcompiled node into a runnable federation image.',
+                    '',
+                    'Ready for STEP 2/5 (Container Compilation)?',
+                    '  `federate --yes`',
+                    '  `federate --abort`'
+                ];
+                if (metadataUpdated) {
+                    lines.push('', '○ NOTE: PUBLISH SETTINGS CAPTURED EARLY FOR PHASE 2/3.');
+                }
+                return this.response_create(lines.join('\n'), [], true);
+            }
+
+            this.federationDag_step2ContainerizeMaterialize(projectBase);
+            try {
+                this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
+            } catch { /* ignore */ }
+            federationState.step = 'publish_prepare';
+
+            return this.response_create(
+                [
+                    '● PHASE 1/3 · STEP 2/5 COMPLETE: CONTAINER COMPILATION.',
+                    '',
+                    '○ [2/5] CONTAINER COMPILATION COMPLETE.',
+                    '○ RESOLVING BASE IMAGE + RUNTIME DEPENDENCIES...',
+                    '○ STAGING FEDERATED ENTRYPOINT + FLOWER HOOKS...',
+                    '○ BUILDING SIMULATED OCI IMAGE LAYERS...',
+                    '○ WRITING SBOM + IMAGE DIGEST + BUILD LOG...',
+                    '',
+                    `○ ARTIFACTS MATERIALIZED: ${dag.containerizeData}`,
+                    `○ NEXT DAG NODE READY: ${dag.publishBase}`,
+                    '',
+                    '● PHASE 1/3 COMPLETE: BUILD ARTIFACTS.',
+                    '',
+                    'Ready for STEP 3/5 (Marketplace Publish Preparation)?',
+                    '  `federate --yes`',
+                    '  `federate --abort`'
+                ].join('\n'),
+                [],
+                true
+            );
+        }
+
+        if (federationState.step === 'publish_prepare') {
+            if (metadataCommandIssued) {
+                federationState.step = 'publish_configure';
                 return this.response_create(
                     [
-                        '● PHASE 2/3: MARKETPLACE PUBLISH PREPARATION.',
+                        '● PHASE 2/3 · STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION.',
+                        ...(metadataUpdated ? ['', '○ PUBLISH METADATA UPDATED.'] : []),
                         '',
-                        ...(metadataUpdated ? ['○ PUBLISH METADATA UPDATED.', ''] : []),
-                        ...this.federationPublish_promptLines(this.federationState.publish)
+                        '○ Reviewing publish metadata prior to marketplace push.',
+                        ...this.federationPublish_promptLines(federationState.publish)
                     ].join('\n'),
                     [],
                     true
                 );
             }
 
-            if (!this.federationState.publish.appName) {
+            if (!args.confirm) {
                 return this.response_create(
-                    '>> APP NAME REQUIRED. RUN `federate --name <app-name>` BEFORE `federate --yes`.',
+                    [
+                        '● PHASE 2/3 · STEP 3/5 PENDING: MARKETPLACE PUBLISH PREPARATION.',
+                        '○ This step captures app identity, org namespace, and visibility.',
+                        '',
+                        'Ready for STEP 3/5 (Publish Preparation)?',
+                        '  `federate --yes`',
+                        '  `federate --abort`'
+                    ].join('\n'),
+                    [],
+                    true
+                );
+            }
+
+            federationState.step = 'publish_configure';
+            return this.response_create(
+                [
+                    '● PHASE 2/3 · STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION.',
+                    '○ Please confirm publish metadata for the container artifact.',
+                    '',
+                    ...this.federationPublish_promptLines(federationState.publish)
+                ].join('\n'),
+                [],
+                true
+            );
+        }
+
+        if (federationState.step === 'publish_configure') {
+            if (!args.confirm) {
+                const lines: string[] = [
+                    '● PHASE 2/3 · STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION.',
+                    ...(metadataUpdated ? ['', '○ PUBLISH METADATA UPDATED.'] : []),
+                    '',
+                    ...this.federationPublish_promptLines(federationState.publish)
+                ];
+                return this.response_create(lines.join('\n'), [], true);
+            }
+
+            if (!federationState.publish.appName) {
+                return this.response_create(
+                    [
+                        '>> APP NAME REQUIRED BEFORE PUBLISH EXECUTION.',
+                        '○ SET: `federate --name <app-name>`',
+                        '○ THEN CONTINUE WITH: `federate --yes`'
+                    ].join('\n'),
                     [],
                     false
                 );
             }
 
-            this.federationDag_phase2Materialize(projectBase, this.federationState.publish);
+            this.federationDag_step4PublishMaterialize(projectBase, federationState.publish);
             try {
                 this.vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
             } catch { /* ignore */ }
+            federationState.step = 'dispatch_compute';
 
-            this.federationState.phase = 'dispatch';
-            const dag: FederationDagPaths = this.federationDag_paths(projectBase);
             return this.response_create(
                 [
-                    '● PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING.',
+                    '● PHASE 2/3 · STEP 4/5 COMPLETE: MARKETPLACE PUBLISH.',
                     '',
                     '○ [3/5] MARKETPLACE PUBLISHING COMPLETE.',
-                    ...this.federationPublishSummary_lines(this.federationState.publish),
+                    '○ SIGNING IMAGE REFERENCE + REGISTRY MANIFEST...',
+                    '○ WRITING APP METADATA + PUBLISH RECEIPTS...',
+                    ...this.federationPublishSummary_lines(federationState.publish),
                     `○ ARTIFACTS MATERIALIZED: ${dag.publishData}`,
                     `○ NEXT DAG NODE READY: ${dag.dispatchBase}`,
                     '',
-                    '○ NEXT PHASE: DISPATCH TO FEDERATED PARTICIPANTS + COMPUTE ROUNDS.',
-                    '',
-                    '>> NEXT (CLI): `federate --yes`',
-                    '>> NEXT (ARGUS UI): FEDERATE -> CONFIRM PHASE 3',
-                    '>> ABORT: `federate --abort`'
+                    'Ready for STEP 5/5 (Dispatch + Federated Compute Rounds)?',
+                    '  `federate --yes`',
+                    '  `federate --abort`'
                 ].join('\n'),
                 [],
                 true
             );
         }
 
-        // Dispatch phase
+        // Dispatch + federated compute phase (step 5/5)
         if (!args.confirm) {
             if (metadataUpdated) {
                 return this.response_create(
                     [
-                        '○ DISPATCH PHASE ALREADY ACTIVE. PUBLISH SETTINGS ARE LOCKED AFTER PHASE 2/3.',
-                        '>> DISPATCH PENDING. RUN `federate --yes` OR `federate --abort`.'
+                        '○ STEP 5/5 IS ACTIVE. PUBLISH SETTINGS ARE LOCKED AFTER STEP 4/5.',
+                        '',
+                        'Ready for STEP 5/5 (Dispatch + Federated Compute Rounds)?',
+                        '  `federate --yes`',
+                        '  `federate --abort`'
                     ].join('\n'),
                     [],
                     true
                 );
             }
             return this.response_create(
-                '>> DISPATCH PENDING. RUN `federate --yes` OR `federate --abort`.',
+                [
+                    'Ready for STEP 5/5 (Dispatch + Federated Compute Rounds)?',
+                    '  `federate --yes`',
+                    '  `federate --abort`'
+                ].join('\n'),
                 [],
-                false
+                true
             );
         }
 
@@ -2008,9 +2937,8 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         } catch { /* ignore */ }
         this.federationState = null;
 
-        const dag: FederationDagPaths = this.federationDag_paths(projectBase);
         const lines: string[] = [
-            '● PHASE 3/3: FEDERATION DISPATCH & COMPUTE.',
+            '● PHASE 3/3 · STEP 5/5 COMPLETE: DISPATCH & FEDERATED COMPUTE.',
             '',
             '○ [4/5] DISPATCH TO REMOTE SITES INITIALIZED.',
             `○ INGESTING SOURCE: ${projectBase}/src/train.py`,
@@ -2050,6 +2978,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
         const parsed: FederationArgs = {
             confirm: false,
             abort: false,
+            restart: false,
             name: null,
             org: null,
             visibility: null
@@ -2065,6 +2994,10 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             }
             if (token === '--abort' || token === 'abort' || token === 'cancel') {
                 parsed.abort = true;
+                continue;
+            }
+            if (token === '--rerun' || token === '--restart' || token === 'rerun' || token === 'restart') {
+                parsed.restart = true;
                 continue;
             }
             if (token === '--private') {
@@ -2104,7 +3037,7 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
     private federationState_create(projectId: string, projectName: string): FederationState {
         return {
             projectId,
-            phase: 'build',
+            step: 'transcompile',
             publish: {
                 appName: `${projectName}-fedapp`,
                 org: null,
@@ -2159,14 +3092,15 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             `○ CURRENT ORG: ${publish.org ?? '(none)'}`,
             `○ CURRENT VISIBILITY: ${publish.visibility.toUpperCase()}`,
             '',
-            'Set metadata (optional updates):',
+            'Provide or adjust metadata:',
             '  `federate --name <app-name>`',
             '  `federate --org <namespace>`',
             '  `federate --private` or `federate --public`',
             '',
-            'Then confirm publish:',
-            '  `federate --yes`',
-            '  `federate --abort`'
+            'When metadata is ready:',
+            '  Ready for STEP 4/5 (Marketplace Publish)?',
+            '    `federate --yes`',
+            '    `federate --abort`'
         ];
     }
 
@@ -2211,9 +3145,9 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
     }
 
     /**
-     * Materialize phase-1 (source-crosscompile) DAG artifacts.
+     * Materialize step-1 (source-crosscompile) DAG artifacts.
      */
-    private federationDag_phase1Materialize(projectBase: string): void {
+    private federationDag_step1TranscompileMaterialize(projectBase: string): void {
         const dag: FederationDagPaths = this.federationDag_paths(projectBase);
         const now: string = new Date().toISOString();
         this.vfs.dir_create(dag.crosscompileData);
@@ -2264,14 +3198,13 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
     }
 
     /**
-     * Materialize phase-2 (containerize + marketplace-publish) DAG artifacts.
+     * Materialize step-2 (container compilation) DAG artifacts.
      */
-    private federationDag_phase2Materialize(projectBase: string, publish: FederationPublishConfig): void {
+    private federationDag_step2ContainerizeMaterialize(projectBase: string): void {
         const dag: FederationDagPaths = this.federationDag_paths(projectBase);
         const now: string = new Date().toISOString();
         this.vfs.dir_create(dag.containerizeData);
-        this.vfs.dir_create(dag.publishData);
-        this.vfs.dir_create(dag.dispatchBase); // next DAG node as sibling to data
+        this.vfs.dir_create(dag.publishBase); // next DAG node as sibling to data
 
         this.federationDag_write(
             `${dag.containerizeData}/Dockerfile`,
@@ -2293,6 +3226,16 @@ Keep total response under 120 words. Use LCARS markers: ● for affirmations/gre
             `${dag.containerizeData}/build.log`,
             `BUILD START: ${now}\nLAYER CACHE: HIT\nIMAGE: COMPLETE\n`
         );
+    }
+
+    /**
+     * Materialize step-4 (marketplace publish execution) DAG artifacts.
+     */
+    private federationDag_step4PublishMaterialize(projectBase: string, publish: FederationPublishConfig): void {
+        const dag: FederationDagPaths = this.federationDag_paths(projectBase);
+        const now: string = new Date().toISOString();
+        this.vfs.dir_create(dag.publishData);
+        this.vfs.dir_create(dag.dispatchBase); // next DAG node as sibling to data
 
         const appName: string = publish.appName || 'unnamed-fedml-app';
         this.federationDag_write(

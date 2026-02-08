@@ -123,3 +123,20 @@ export interface WorkflowContext {
     };
     project: string;
 }
+
+/**
+ * Summary metadata for workflow selection UI and APIs.
+ *
+ * @property id - Stable workflow identifier
+ * @property name - Human-readable workflow name
+ * @property persona - Persona associated with this workflow
+ * @property description - One-line workflow description
+ * @property stageCount - Number of stages in the workflow
+ */
+export interface WorkflowSummary {
+    id: string;
+    name: string;
+    persona: string;
+    description: string;
+    stageCount: number;
+}

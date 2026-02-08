@@ -39,9 +39,21 @@
       "output_contains": [
         "RUNNING SCRIPT: hist-harmonize",
         "SCRIPT COMPLETE",
-        "[OK] [4/4] harmonize"
+        "[OK] [5/5] s5_harmonize :: harmonize"
       ],
       "capture_project": true
+    },
+    {
+      "vfs_exists": "/home/${user}/searches/latest.txt"
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/input/gather/data/latest.json"
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/ops/rename/data/receipt.json"
+    },
+    {
+      "vfs_exists": "/home/${user}/projects/${project}/input/harmonize/data/report.json"
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/input/.harmonized"
@@ -68,25 +80,30 @@
     {
       "send": "federate",
       "success": true,
-      "output_contains": "NEXT (CLI): `federate --yes`"
+      "output_contains": "Ready for STEP 1/5"
     },
     {
       "send": "federate --yes",
       "success": true,
-      "output_contains": "PHASE 1/3 COMPLETE: BUILD ARTIFACTS"
+      "output_contains": "STEP 1/5 COMPLETE: SOURCE CODE TRANSCOMPILE"
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/data/node.py"
     },
     {
+      "send": "federate --yes",
+      "success": true,
+      "output_contains": "STEP 2/5 COMPLETE: CONTAINER COMPILATION"
+    },
+    {
       "send": "federate --name histo-exp1-federated",
       "success": true,
-      "output_contains": "PUBLISH METADATA UPDATED"
+      "output_contains": "STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION"
     },
     {
       "send": "federate --yes",
       "success": true,
-      "output_contains": "PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING"
+      "output_contains": "STEP 4/5 COMPLETE: MARKETPLACE PUBLISH"
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/containerize/marketplace-publish/data/publish-receipt.json"
@@ -101,6 +118,16 @@
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/.federated"
+    },
+    {
+      "send": "next?",
+      "success": true,
+      "output_contains": "federate --rerun"
+    },
+    {
+      "send": "federate --yes",
+      "success": true,
+      "output_contains": "FEDERATION ALREADY COMPLETED"
     }
   ]
 }

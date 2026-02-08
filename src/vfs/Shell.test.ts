@@ -193,6 +193,14 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('ls /nonexistent');
             expect(result.exitCode).toBe(1);
         });
+
+        it('should list a file path without treating it as a directory', async () => {
+            vfs.file_create('/home/fedml/node.py', 'print("ok")');
+            const result: ShellResult = await shell.command_execute('ls ~/node.py');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('node.py');
+            expect(result.stderr).toBe('');
+        });
     });
 
     // ─── Builtin: cat ───────────────────────────────────────────

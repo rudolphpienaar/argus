@@ -1,12 +1,37 @@
-# Legacy alias for hist-harmonize.
-# Usage in calypso-cli: /run harmonize
+# Generic harmonization script.
+# Prompts for search query and dataset selection at runtime.
 
-# name: harmonize
-# description: Backward-compatible alias for hist-harmonize
-# requires:
-# target: harmonize
+script: harmonize
+version: 1
+description: Search -> select -> add -> rename -> harmonize.
+defaults:
+  project_name: histo-exp1
+steps:
+  - id: s1_search
+    action: search
+    params:
+      query: "?"
+    outputs:
+      alias: search_results
 
-search histology
-add ds-006
-rename histo-exp1
-harmonize
+  - id: s2_select_dataset
+    action: select_dataset
+    params:
+      from: "${search_results}"
+      strategy: ask
+    outputs:
+      alias: selected_dataset
+
+  - id: s3_add
+    action: add
+    params:
+      dataset: "${selected_dataset.id}"
+
+  - id: s4_rename
+    action: rename
+    params:
+      project: "${answers.project_name ?? defaults.project_name}"
+
+  - id: s5_harmonize
+    action: harmonize
+    params: {}

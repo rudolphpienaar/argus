@@ -281,22 +281,41 @@ export class Shell {
         this.builtin_add('ls', 'List directory contents', (args: string[]): ShellResult => {
             const target: string = args[0] || '.';
             try {
-                const resolvedDir: string = this.vfs.path_resolve(target);
-                const children: FileNode[] = this.vfs.dir_list(resolvedDir);
-                const lines: string[] = children.map((child: FileNode): string => {
-                    let colorClass: string = 'file';
-                    if (child.type === 'folder') colorClass = 'dir';
-                    else if (child.name.endsWith('.py') || child.name.endsWith('.sh')) colorClass = 'exec';
+                const resolvedPath: string = this.vfs.path_resolve(target);
+                const targetNode: FileNode | null = this.vfs.node_stat(resolvedPath);
+                if (!targetNode) {
+                    return result_err(`ls: cannot access '${target}': No such file or directory`, 1);
+                }
 
-                    // Trigger lazy generation if needed to get correct size
-                    if (child.type === 'file' && child.content === null && child.contentGenerator) {
-                        this.vfs.node_read(`${resolvedDir}/${child.name}`);
+                const entry_render = (entry: FileNode): string => {
+                    let resolvedEntry: FileNode = entry;
+                    let colorClass: string = 'file';
+                    if (resolvedEntry.type === 'folder') {
+                        colorClass = 'dir';
+                    } else if (resolvedEntry.name.endsWith('.py') || resolvedEntry.name.endsWith('.sh')) {
+                        colorClass = 'exec';
                     }
 
-                    const size: string = child.size || '0 B';
-                    const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
+                    // Trigger lazy generation for accurate size before rendering.
+                    if (resolvedEntry.type === 'file' && resolvedEntry.content === null && resolvedEntry.contentGenerator) {
+                        this.vfs.node_read(resolvedEntry.path);
+                        const refreshed: FileNode | null = this.vfs.node_stat(resolvedEntry.path);
+                        if (refreshed) {
+                            resolvedEntry = refreshed;
+                        }
+                    }
+
+                    const size: string = resolvedEntry.size || '0 B';
+                    const name: string = resolvedEntry.type === 'folder' ? `${resolvedEntry.name}/` : resolvedEntry.name;
                     return `<span class="${colorClass}">${name.padEnd(24)}</span> <span class="size-highlight">${size}</span>`;
-                });
+                };
+
+                if (targetNode.type === 'file') {
+                    return result_ok(entry_render(targetNode));
+                }
+
+                const children: FileNode[] = this.vfs.dir_list(resolvedPath);
+                const lines: string[] = children.map((child: FileNode): string => entry_render(child));
                 return result_ok(lines.join('\n'));
             } catch (e: unknown) {
                 return result_err(e instanceof Error ? e.message : String(e), 1);

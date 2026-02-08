@@ -19,7 +19,8 @@ import type {
     WorkflowContext,
     TransitionResult,
     StageValidation,
-    SkipWarning
+    SkipWarning,
+    WorkflowSummary
 } from './types.js';
 
 import { FEDML_WORKFLOW } from './definitions/fedml.js';
@@ -79,15 +80,9 @@ export class WorkflowEngine {
      *
      * @returns Array of workflow summaries with id, name, persona, description
      */
-    static workflows_summarize(): Array<{
-        id: string;
-        name: string;
-        persona: string;
-        description: string;
-        stageCount: number;
-    }> {
+    static workflows_summarize(): WorkflowSummary[] {
         return Object.values(WORKFLOW_REGISTRY).map(
-            (def: WorkflowDefinition) => ({
+            (def: WorkflowDefinition): WorkflowSummary => ({
                 id: def.id,
                 name: def.name,
                 persona: def.persona,

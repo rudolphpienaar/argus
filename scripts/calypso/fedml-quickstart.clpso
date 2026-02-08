@@ -1,15 +1,15 @@
-# Histology fast-path harmonization script.
+# Quickstart to local training using interactive search and selection.
 
-script: hist-harmonize
+script: fedml-quickstart
 version: 1
-description: Histology fast path to harmonized cohort state.
+description: Harmonize plus scaffold and local train.
 defaults:
   project_name: histo-exp1
 steps:
   - id: s1_search
     action: search
     params:
-      query: histology
+      query: "?"
     outputs:
       alias: search_results
 
@@ -17,8 +17,7 @@ steps:
     action: select_dataset
     params:
       from: "${search_results}"
-      strategy: by_id
-      id: ds-006
+      strategy: ask
     outputs:
       alias: selected_dataset
 
@@ -30,8 +29,17 @@ steps:
   - id: s4_rename
     action: rename
     params:
-      project: "${defaults.project_name}"
+      project: "${answers.project_name ?? defaults.project_name}"
 
   - id: s5_harmonize
     action: harmonize
     params: {}
+
+  - id: s6_proceed
+    action: proceed
+    params: {}
+
+  - id: s7_local_train
+    action: run_python
+    params:
+      script: train.py

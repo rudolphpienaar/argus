@@ -2223,6 +2223,13 @@ body.state-locked .next-pill {
 .error { color: var(--tomato); }
 .highlight { color: var(--butter); text-shadow: 0 0 5px var(--daybreak); }
 
+/* Syntax token colors for in-terminal source rendering (cat / fenced code) */
+.lcars-terminal-output .comment { color: #8b949e; }
+.lcars-terminal-output .keyword { color: #ff7b72; }
+.lcars-terminal-output .string { color: #a5d6ff; }
+.lcars-terminal-output .function { color: #d2a8ff; }
+.lcars-terminal-output .number { color: #79c0ff; }
+
 
 /* ==========================================================================
    Project MU/TH/UR - AI Core Styling

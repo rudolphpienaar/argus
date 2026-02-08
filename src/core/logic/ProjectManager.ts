@@ -15,6 +15,20 @@ import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { cohortTree_build } from '../../vfs/providers/DatasetProvider.js';
 
 /**
+ * Write an operation artifact file in VCS, creating parent directories if needed.
+ *
+ * @param path - Absolute VFS file path.
+ * @param content - File content payload.
+ */
+function artifact_write(path: string, content: string): void {
+    const slashIdx: number = path.lastIndexOf('/');
+    const parent: string = slashIdx > 0 ? path.substring(0, slashIdx) : '/';
+    try { globals.vcs.dir_create(parent); } catch { /* exists */ }
+    try { globals.vcs.file_create(path, content); } catch { /* ignore */ }
+    try { globals.vcs.node_write(path, content); } catch { /* ignore */ }
+}
+
+/**
  * Creates a new Draft Project and adds it to the mock repository.
  *
  * @returns The newly created project.
@@ -159,6 +173,30 @@ export function project_gather(
             datasets: project.datasets.map((ds: Dataset) => ds.id),
             count: project.datasets.length
         }, null, 2));
+
+        const now: string = new Date().toISOString();
+        const gatherBase: string = `${paths.input}/gather`;
+        const gatherData: string = `${gatherBase}/data`;
+        const gatherNext: string = `${gatherBase}/rename`;
+        const payload: string = JSON.stringify({
+            step: 'add',
+            timestamp: now,
+            dataset: {
+                id: dataset.id,
+                name: dataset.name,
+                modality: dataset.modality,
+                annotationType: dataset.annotationType,
+                provider: dataset.provider,
+                imageCount: dataset.imageCount
+            },
+            project: project.name,
+            selectedDatasetIds: project.datasets.map((ds: Dataset): string => ds.id)
+        }, null, 2);
+
+        try { globals.vcs.dir_create(gatherData); } catch { /* exists */ }
+        try { globals.vcs.dir_create(gatherNext); } catch { /* exists */ }
+        artifact_write(`${gatherData}/add-${dataset.id}.json`, payload);
+        artifact_write(`${gatherData}/latest.json`, payload);
     } catch (e: unknown) {
         console.error('Failed to write .cohort marker:', e);
     }
@@ -192,6 +230,23 @@ export function project_rename(project: Project, newName: string): void {
 
         // 2. Update Project Model
         project.name = newName;
+
+        const renameNow: string = new Date().toISOString();
+        const renameBase: string = `${newPath}/ops/rename`;
+        const renameData: string = `${renameBase}/data`;
+        const renameNext: string = `${renameBase}/harmonize`;
+        const renamePayload: string = JSON.stringify({
+            step: 'rename',
+            timestamp: renameNow,
+            from: oldName,
+            to: newName,
+            oldPath,
+            newPath
+        }, null, 2);
+        try { globals.vcs.dir_create(renameData); } catch { /* exists */ }
+        try { globals.vcs.dir_create(renameNext); } catch { /* exists */ }
+        artifact_write(`${renameData}/receipt.json`, renamePayload);
+        artifact_write(`${renameData}/latest.json`, renamePayload);
 
         // 3. Update Shell Context if active
         const shellProject = globals.shell?.env_get('PROJECT');
@@ -255,6 +310,23 @@ export function project_harmonize(project: Project): void {
             status: 'COMPLETED',
             appliedFilters: ['normalization', 'resampling', 'label_alignment']
         }, null, 2));
+
+        const harmonizeNow: string = new Date().toISOString();
+        const harmonizeBase: string = `${inputPath}/harmonize`;
+        const harmonizeData: string = `${harmonizeBase}/data`;
+        const harmonizeNext: string = `${harmonizeBase}/code`;
+        const harmonizePayload: string = JSON.stringify({
+            step: 'harmonize',
+            timestamp: harmonizeNow,
+            project: project.name,
+            status: 'COMPLETED',
+            appliedFilters: ['normalization', 'resampling', 'label_alignment'],
+            markerPath
+        }, null, 2);
+        try { globals.vcs.dir_create(harmonizeData); } catch { /* exists */ }
+        try { globals.vcs.dir_create(harmonizeNext); } catch { /* exists */ }
+        artifact_write(`${harmonizeData}/report.json`, harmonizePayload);
+        artifact_write(`${harmonizeData}/latest.json`, harmonizePayload);
 
         if (globals.terminal) {
             globals.terminal.println('<span class="success">>> SUCCESS: COHORT HARMONIZED.</span>');
