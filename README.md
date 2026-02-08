@@ -2,17 +2,13 @@
 
 **ATLAS Resource Graphical User System**
 
-ARGUS (**A**TLAS **R**esource **G**raphical **U**ser **S**ystem) is the conceptual UI layer for **ATLAS** (Advanced Training and Learning At Scale), a platform designed to enable federated machine learning on medical imaging data across distributed, secure institutional nodes.
+ARGUS is the user-facing intelligence console for ATLAS (Advanced Training and Learning At Scale), a federated medical imaging platform designed for distributed machine learning across secure institutional boundaries. The project functions as both high-fidelity prototype and executable reference architecture: it is meant to be used, not only described.
 
-ARGUS is a high-fidelity prototype and reference architecture for:
-
-- SeaGaP-MP workflow orchestration (`Search`, `Gather`, `Process`, `Monitor`, `Post`)
-- a browser-based Virtual Computer System (VFS + Shell)
-- a headless AI intent layer (**Calypso**) shared between web and CLI
+At its core, ARGUS combines SeaGaP-MP workflow orchestration, a browser-native Virtual Computer System, and a headless AI intent layer called CALYPSO that is shared between web and CLI surfaces. The design objective is simple: natural interaction on top, deterministic materialized state underneath.
 
 ## Getting Started
 
-ARGUS is a standard TypeScript project.
+Use the standard TypeScript workflow.
 
 ```bash
 # Install dependencies
@@ -31,43 +27,18 @@ make calypso
 make calypso-cli
 ```
 
-## Architecture Snapshot
+## Architecture in Practice
 
-- **VCS (`src/vfs/`)**: in-memory POSIX-like filesystem, shell, providers, lazy content generation
-- **State (`src/core/state/`)**: Vanilla TS Store + EventBus Pub/Sub
-- **Intent Layer (`src/core/logic/ProjectManager.ts`)**: deterministic orchestration for gather/rename/harmonize
-- **Calypso (`src/lcarslm/`)**: DOM-free AI core with browser, CLI, and test adapters
+The `src/vfs/` layer provides an in-memory POSIX-like filesystem with shell semantics and provider-backed content generation. The `src/core/state/` layer provides centralized state and events. Deterministic intent orchestration lives in `src/core/logic/ProjectManager.ts`, and the DOM-free CALYPSO core lives in `src/lcarslm/` so that browser, CLI, and test harnesses all execute the same operational logic.
 
 ## Calypso CLI
 
-The `calypso-cli` connects to the headless Calypso server (`make calypso`) and supports:
-
-- shell + workflow commands in one stream
-- transcript paste replay
-- built-in script discovery via `/scripts`
-- external `.clpso` flow scripts via `/run <script>`
-
-See `backstory/powertoys.md` and `scripts/calypso/README.md` for usage patterns.
+`calypso-cli` connects to the headless CALYPSO server and supports shell commands, workflow commands, transcript replay, script discovery through `/scripts`, and script execution through `/run <script>`. Detailed usage patterns are documented in `backstory/powertoys.md` and `scripts/calypso/README.md`.
 
 ## Documentation
 
-*   **[Developer Onboarding](docs/onboarding.adoc)**: Start here to understand the mental model and codebase structure.
-*   **[Framework Patterns](docs/framework.adoc)**: A guide to the architectural conventions (RPN naming, Store/Events) used in the project.
-*   **[VCS Specification](docs/vcs.adoc)**: Details on the in-memory filesystem and provider architecture.
-*   **[Calypso AI Core](docs/calypso.adoc)**: The headless AI layer — architecture, CLI usage, and adapters.
-*   **[ORACLE Testing](docs/oracle.adoc)**: Reflexive verification methodology using Calypso as the test driver.
+Developer onboarding begins with `docs/onboarding.adoc`. Architectural conventions are documented in `docs/framework.adoc`. Virtual filesystem behavior is defined in `docs/vcs.adoc`. The CALYPSO architecture is specified in `docs/calypso.adoc`, and ORACLE integration testing is described in `docs/oracle.adoc`.
 
 ## Backstory and Power Tools
 
-The narrative and historical context moved out of this root README:
-
-*   **[Backstory Index](backstory/README.md)**
-*   **[Mythology](backstory/mythology.md)**
-*   **[Star Trek Connection](backstory/trek.md)**
-*   **[Power User Workflows](backstory/powertoys.md)**
-
-## Acknowledgments
-
-Detailed project credits are documented in:
-
-*   **[backstory/credits.md](backstory/credits.md)**
+Narrative and historical context now live in `backstory/README.md`, with focused pages for mythology, Trek lineage, operator workflows, and credits.

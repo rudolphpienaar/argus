@@ -1,18 +1,7 @@
 # ARGUS Backstory
 
-This directory contains narrative context and power-user usage notes that were moved out of the root `README.md` to keep onboarding focused.
+The `backstory` directory exists to hold the narrative material that gives ARGUS its voice, lineage, and operating culture. The root `README.md` stays focused on build and architecture, while this folder keeps the longer story close at hand for people who want to understand why the system looks and behaves the way it does.
 
-## Contents
+`mythology.md` explains the naming triad of ATLAS, ARGUS, and CALYPSO and how those names map to concrete software roles. `trek.md` traces the Star Trek lineage that shaped both visual language and interaction model. `powertoys.md` captures the advanced command patterns and script workflows used by heavy CLI users. `credits.md` records the people and reference works that materially influenced the project.
 
-- [mythology.md](mythology.md): Naming metaphor for ATLAS, ARGUS, and CALYPSO.
-- [trek.md](trek.md): LCARS lineage and the Calypso/Zora Star Trek thread.
-- [powertoys.md](powertoys.md): Practical shortcuts for expert CLI workflows.
-- [credits.md](credits.md): Project credits and acknowledgments.
-
-## Related Technical Docs
-
-- [Developer Onboarding](../docs/onboarding.adoc)
-- [Framework Patterns](../docs/framework.adoc)
-- [VCS Specification](../docs/vcs.adoc)
-- [Calypso AI Core](../docs/calypso.adoc)
-- [ORACLE Testing](../docs/oracle.adoc)
+For technical implementation detail, jump from here to `docs/onboarding.adoc`, `docs/framework.adoc`, `docs/vcs.adoc`, `docs/calypso.adoc`, and `docs/oracle.adoc`.

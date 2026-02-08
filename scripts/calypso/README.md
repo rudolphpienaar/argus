@@ -1,33 +1,15 @@
 # Calypso Scripts (`.clpso`)
 
-`calypso-cli` supports external script execution with:
+`calypso-cli` supports script-driven execution so repeatable workflows can be invoked as named operational units instead of retyped command sequences. In practice, the script system gives advanced users a fast path while preserving deterministic behavior and observable state transitions.
+
+A script is invoked through `/run <script>`, and discovery is available through `/scripts`. When CALYPSO resolves a script reference, it first checks direct paths, then tries the same reference with `.clpso` appended, and finally searches under `scripts/calypso/` using both bare and extension-qualified forms.
 
 ```bash
 /scripts
 /run <script>
 ```
 
-Lookup order for `<script>`:
-
-1. Direct path (absolute or relative to current working directory)
-2. Same path with `.clpso` extension appended
-3. `scripts/calypso/<script>`
-4. `scripts/calypso/<script>.clpso`
-
-Script formats:
-
-1. Legacy command mode (one command per line):
-   - Blank lines are ignored
-   - Lines starting with `#` are comments
-   - Execution is fail-fast
-
-2. Structured workflow mode (YAML-like):
-   - Declarative `steps` with `action` + `params`
-   - Param value `?` prompts the user at runtime
-   - `${...}` references prior step outputs/defaults/answers
-   - `select_dataset` supports explicit strategies (`ask`, `first`, `by_id`, `best_match`)
-
-Structured example:
+The runtime accepts two authoring styles. Legacy command mode treats each non-comment line as a command and executes fail-fast. Structured mode defines explicit steps with actions and parameters. Structured scripts support runtime prompts via `?`, reference interpolation via `${...}`, and step output aliasing so later actions can consume earlier results.
 
 ```yaml
 script: harmonize
@@ -62,7 +44,7 @@ steps:
     params: {}
 ```
 
-Examples:
+Typical usage flows include script listing, inspection, dry-run, and execution.
 
 ```bash
 /scripts
@@ -72,16 +54,6 @@ Examples:
 /run scripts/calypso/hist-harmonize.clpso
 ```
 
-Suggested starter scripts:
+Starter scripts in this directory include `harmonize.clpso` for interactive cohort setup, `hist-harmonize.clpso` for deterministic histology setup, `fedml-quickstart.clpso` for local training acceleration, and `fedml-fullrun.clpso` for end-to-end federated simulation.
 
-- `harmonize.clpso` — generic interactive harmonization (asks search term)
-- `hist-harmonize.clpso` — deterministic histology harmonization path
-- `fedml-quickstart.clpso` — harmonize + scaffold + local train
-- `fedml-fullrun.clpso` — end-to-end through federated dispatch/compute
-
-Natural language also works through CalypsoCore:
-
-```text
-what scripts are available?
-can you run the hist-harmonize for me?
-```
+The same capability is reachable via natural language through CalypsoCore, so conversational requests for available scripts or script execution map to the same control plane.

@@ -1,25 +1,7 @@
 # Star Trek Connection
 
-ARGUS intentionally references Star Trek in two ways:
+ARGUS references Star Trek in a deliberate, functional way rather than as a superficial visual theme. The first thread is LCARS itself. Michael Okuda's interface language was built to communicate system state quickly under pressure, and that same priority drives ARGUS: dense status surfaces, explicit stage cues, and a command space where telemetry and action live side by side.
 
-## 1) LCARS Visual Language
+The second thread is the CALYPSO and Zora lineage from Star Trek storytelling. That connection matters because it captures a specific interaction posture: a system that is competent, calm, and context-aware while still exposing meaningful control to the operator. CALYPSO in ARGUS is designed around that same posture, acting as a guide through complex infrastructure without pretending the infrastructure is simple.
 
-The interface is based on **LCARS** (Library Computer Access/Retrieval System), originally designed by Michael Okuda for *Star Trek: The Next Generation*.
-
-In ARGUS, LCARS is treated as an operational UI grammar, not just aesthetics:
-
-- dense, status-forward information surfaces
-- command-and-telemetry coexistence
-- stage-driven workflow cues
-
-## 2) Calypso/Zora Throughline
-
-The name **CALYPSO** references the *Short Treks* episode "Calypso" and Zora from *Star Trek: Discovery*.
-
-The mapping in ARGUS is deliberate:
-
-- Zora as patient guide through uncertainty
-- CALYPSO as deterministic intent mediator over complex infrastructure
-- LCARS as shared visual/interaction lineage
-
-This Trek throughline reinforces the product intent: a high-context intelligence console that helps experts navigate complex distributed systems.
+The LCARS visual grammar and the CALYPSO narrative identity reinforce each other. One shapes the mechanics of presentation, the other shapes the mechanics of conversation. Together they define the feeling of ARGUS as an intelligence console for distributed clinical AI work.
