@@ -58,18 +58,18 @@ Project context docs:
 - [Session State](SESSION-STATE.md)
 - [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md)
 
-## Backstory and Power Tools
+## Backstory and Narrative
 
-Narrative and historical context now live in `backstory/README.md`, with focused pages for mythology, Trek lineage, operator workflows, and credits.
+If you want the full narrative, start with [The ARGUS Story](backstory/story.md). It is the coherent long-form chapter that ties together product intent, architecture philosophy, and interaction posture.
 
-Backstory index:
+Companion chapters:
 
 - [Backstory Index](backstory/README.md)
-- [Mythology](backstory/mythology.md)
+- [Mythological Metaphor](backstory/mythology.md)
 - [Star Trek Connection](backstory/trek.md)
 - [Power User Workflows](backstory/powertoys.md)
 - [Credits and Acknowledgments](backstory/credits.md)
 
-Script docs:
+## Script Documentation
 
-- [Calypso Scripts (`.clpso`)](scripts/calypso/README.md)
+Structured and legacy `.clpso` behavior is documented in [Calypso Scripts (`.clpso`)](scripts/calypso/README.md).

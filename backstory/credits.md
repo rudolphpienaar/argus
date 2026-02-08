@@ -1,9 +1,11 @@
 # Credits and Acknowledgments
 
-ARGUS is led and architected by Rudolph Pienaar. The work is also grounded in design and engineering traditions that predate this repository and deserve explicit credit.
+ARGUS is architected and directed by Rudolph Pienaar, but the project is intentionally transparent about the influences and collaborators that shaped its language and execution style.
 
-The visual language is deeply indebted to Michael Okuda's LCARS design for Star Trek: The Next Generation. His system established the idea that futuristic interfaces can still feel operationally precise, and that influence remains central to ARGUS.
+The visual and interaction DNA owes a significant debt to Michael Okuda's LCARS work for Star Trek: The Next Generation. That contribution is foundational not only for look-and-feel but for a deeper lesson: interfaces can be expressive without sacrificing operational clarity.
 
-Practical LCARS implementation patterns in this codebase were further informed by Jim Robertus and TheLCARS.com, whose reference material helped translate iconic visual grammar into web-native structure.
+Practical web adaptation of LCARS idioms in this repository was also informed by Jim Robertus and TheLCARS.com. Their reference work helped bridge the gap between iconic television design and maintainable browser implementation patterns.
 
-Development velocity and iteration breadth were amplified through AI-assisted collaboration using Claude Code, Codex, and Gemini. Those tools contributed to throughput, but the project's direction and architectural intent remain human-defined and review-driven.
+The modern development loop for ARGUS has been accelerated through AI-assisted collaboration, including Claude Code, Codex, and Gemini. These tools improved iteration speed, comparison of alternatives, and breadth of exploration. At the same time, architectural accountability, design direction, and acceptance standards remain human-owned.
+
+Acknowledgment in ARGUS is treated as engineering hygiene. Systems grow better when provenance is explicit, and design choices are easier to evaluate when their lineage is documented instead of implied.

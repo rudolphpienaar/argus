@@ -1,7 +1,11 @@
 # ARGUS Backstory
 
-The `backstory` directory exists to hold the narrative material that gives ARGUS its voice, lineage, and operating culture. The root `README.md` stays focused on build and architecture, while this folder keeps the longer story close at hand for people who want to understand why the system looks and behaves the way it does.
+This directory is the narrative wing of ARGUS. The root `README.md` is intentionally operational and concise, but this folder preserves the longer context that explains why the system is shaped the way it is and why certain architectural choices are non-negotiable.
 
-`mythology.md` explains the naming triad of ATLAS, ARGUS, and CALYPSO and how those names map to concrete software roles. `trek.md` traces the Star Trek lineage that shaped both visual language and interaction model. `powertoys.md` captures the advanced command patterns and script workflows used by heavy CLI users. `credits.md` records the people and reference works that materially influenced the project.
+The best entry point is `story.md`, which tells the full arc from problem framing through interface philosophy and data-state architecture. From there, each companion chapter deepens one dimension of the same worldview.
 
-For technical implementation detail, jump from here to `docs/onboarding.adoc`, `docs/framework.adoc`, `docs/vcs.adoc`, `docs/calypso.adoc`, and `docs/oracle.adoc`.
+`mythology.md` describes how ATLAS, ARGUS, and CALYPSO are more than names: they are role contracts that keep language, architecture, and user expectations aligned. `trek.md` traces the LCARS and CALYPSO/Zora lineage and shows how those references translate into concrete design decisions rather than surface aesthetics. `powertoys.md` follows the operator path, documenting how advanced users script, replay, and test flows without forfeiting determinism. `credits.md` records the people and prior work that materially informed the project.
+
+Taken together, these files are not marketing copy. They are maintenance documents for meaning. As the codebase evolves, the backstory keeps the product voice and interaction ethic coherent across UI, CLI, and embedded CALYPSO contexts.
+
+For technical depth after the narrative pass, continue into `docs/onboarding.adoc`, `docs/framework.adoc`, `docs/vcs.adoc`, `docs/calypso.adoc`, and `docs/oracle.adoc`.

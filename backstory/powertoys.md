@@ -1,34 +1,17 @@
 # Power User Workflows
 
-This document describes how experienced operators compress repetitive CALYPSO interactions into reusable flows. The goal is speed without loss of traceability: each shortcut still materializes state, emits visible progress, and remains compatible with the same deterministic command model used in normal operation.
+Power workflows in ARGUS exist for a specific reason: repeated setup loops consume attention that should be spent on decisions. Advanced users do not need fewer stages; they need faster traversal through known stages with the same deterministic guarantees as manual operation.
 
-## External Script Flows (`.clpso`)
+The primary acceleration mechanism is script-driven execution through `.clpso` files. A script captures an operational path once and replays it consistently. The key design constraint is that replay does not bypass truth. Every step still resolves to concrete commands, and every stage still materializes artifacts in the expected workspace paths.
 
-Power users can package repeatable command sequences into `.clpso` files and execute them with `/run <script>`. CALYPSO resolves script references from direct paths and from `scripts/calypso/`, so a script can be run either by explicit path or by short name. The `/scripts` command exposes discoverable script metadata, and `/run --dry <script>` previews execution without mutation.
+In practical terms, `/scripts` is discovery, `/run` is execution, and `/run --dry` is intent preview. Together they form a safe loop: inspect what will happen, execute it, and verify outputs. This is especially valuable for harmonize-first flows where users repeatedly need to reach the same cohort-ready checkpoint before coding or federation work.
 
-```text
-/scripts
-/run hist-harmonize
-/run scripts/calypso/hist-harmonize.clpso
-```
+Transcript replay is the second acceleration pattern. `calypso-cli` can ingest mixed command-and-output text, extract executable lines, and ignore terminal chatter. This makes prior sessions reusable as operational macros. A conversation that once took ten minutes to compose can become a deterministic starting point in seconds.
 
-Natural language reaches the same control plane. Requests like "what scripts are available?" and "run the hist-harmonize script" are routed into the same script catalog and execution path.
+Batch and jump commands are the third pattern. They serve users who want explicit fast-forwarding without maintaining separate script files. The important property is that target stage remains visible and auditable. A command like `/batch train ds-006` is clear about destination and leaves an inspectable trail.
 
-## Transcript Paste Replay
+These capabilities matter beyond convenience. They directly improve testing discipline. The same scripted flow used for daily operator efficiency can be promoted into ORACLE scenarios, reducing divergence between how humans use the system and how the system is validated. Fewer bespoke test paths means fewer blind spots.
 
-`calypso-cli` can ingest mixed transcript text so users can replay prior sessions quickly. The parser executes command lines directly, accepts prompt-prefixed lines such as `user@CALYPSO:[...]> command`, and ignores narrative/output lines that should not be executed. This keeps pasted logs useful as operational macros instead of turning them into command noise.
+Power features also impose responsibility on UX design. Fast paths must remain understandable to occasional users, and CALYPSO should be able to explain, not merely execute. If a user forgets script names or stage semantics, the assistant should recover context quickly and point to actionable next steps.
 
-## Batch and Jump Shortcuts
-
-When a full script is unnecessary, `/batch` and `/jump` can fast-forward a workspace to a requested stage using deterministic stage actions.
-
-```text
-/batch train ds-006
-/jump harmonize ds-006
-```
-
-These commands are intentionally explicit about target stage so the transition is auditable and predictable.
-
-## Testing Value
-
-Power scripts are also a practical test authoring substrate. Teams can design a manual flow once, iterate on it in CLI sessions, and then promote that same flow into ORACLE scenarios with minimal translation. In other words, the fastest way to reproduce behavior during development is often the same way to formalize it for regression testing.
+The long-term goal is to make speed and rigor coexist. ARGUS should let experts move quickly without creating a second, hidden system of behavior that only power users understand. A good power workflow is one that remains legible to everyone else.
