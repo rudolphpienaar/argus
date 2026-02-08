@@ -39,6 +39,37 @@ The `src/vfs/` layer provides an in-memory POSIX-like filesystem with shell sema
 
 Developer onboarding begins with `docs/onboarding.adoc`. Architectural conventions are documented in `docs/framework.adoc`. Virtual filesystem behavior is defined in `docs/vcs.adoc`. The CALYPSO architecture is specified in `docs/calypso.adoc`, and ORACLE integration testing is described in `docs/oracle.adoc`.
 
+Core technical docs:
+
+- [Developer Onboarding](docs/onboarding.adoc)
+- [Architecture](docs/architecture.adoc)
+- [Framework Patterns](docs/framework.adoc)
+- [VCS Specification](docs/vcs.adoc)
+- [Calypso AI Core](docs/calypso.adoc)
+- [SeaGaP Workflow](docs/seagap-workflow.adoc)
+- [Persona Workflows](docs/persona-workflows.adoc)
+- [ORACLE Testing](docs/oracle.adoc)
+- [Visual Language](docs/visual_language.adoc)
+- [Intents and Routing](docs/intents.adoc)
+
+Project context docs:
+
+- [Development Context Timeline](docs/CONTEXT.md)
+- [Session State](SESSION-STATE.md)
+- [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md)
+
 ## Backstory and Power Tools
 
 Narrative and historical context now live in `backstory/README.md`, with focused pages for mythology, Trek lineage, operator workflows, and credits.
+
+Backstory index:
+
+- [Backstory Index](backstory/README.md)
+- [Mythology](backstory/mythology.md)
+- [Star Trek Connection](backstory/trek.md)
+- [Power User Workflows](backstory/powertoys.md)
+- [Credits and Acknowledgments](backstory/credits.md)
+
+Script docs:
+
+- [Calypso Scripts (`.clpso`)](scripts/calypso/README.md)
