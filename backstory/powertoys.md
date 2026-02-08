@@ -1,17 +1,19 @@
 # Power User Workflows
 
-Power workflows in ARGUS exist for a specific reason: repeated setup loops consume attention that should be spent on decisions. Advanced users do not need fewer stages; they need faster traversal through known stages with the same deterministic guarantees as manual operation.
+Power workflows in ARGUS were born from friction, not ambition. Experienced users kept repeating the same setup choreography before they could start meaningful work. Search, gather, rename, harmonize, scaffold, train. The sequence was correct, but the repetition was costly.
 
-The primary acceleration mechanism is script-driven execution through `.clpso` files. A script captures an operational path once and replays it consistently. The key design constraint is that replay does not bypass truth. Every step still resolves to concrete commands, and every stage still materializes artifacts in the expected workspace paths.
+The project's answer was not to delete stages. It was to make stage traversal programmable while preserving state truth. That is the central rule for every power feature in this system: speed is allowed, opacity is not.
 
-In practical terms, `/scripts` is discovery, `/run` is execution, and `/run --dry` is intent preview. Together they form a safe loop: inspect what will happen, execute it, and verify outputs. This is especially valuable for harmonize-first flows where users repeatedly need to reach the same cohort-ready checkpoint before coding or federation work.
+`.clpso` scripts are the clearest expression of that rule. A script captures a known-good sequence and replays it deterministically. The operator gains time, but nothing becomes hidden. Commands still execute in order, state still materializes in the same locations, and failures still stop the run where they happen.
 
-Transcript replay is the second acceleration pattern. `calypso-cli` can ingest mixed command-and-output text, extract executable lines, and ignore terminal chatter. This makes prior sessions reusable as operational macros. A conversation that once took ten minutes to compose can become a deterministic starting point in seconds.
+`/scripts` and `/run --dry` are as important as `/run`. Discovery and preview are what keep automation from turning into mystery. A user should always be able to see what a script is, what it will do, and where in the workflow it will land.
 
-Batch and jump commands are the third pattern. They serve users who want explicit fast-forwarding without maintaining separate script files. The important property is that target stage remains visible and auditable. A command like `/batch train ds-006` is clear about destination and leaves an inspectable trail.
+Transcript replay serves a related purpose. Teams often prototype flows conversationally, then need to reproduce that behavior during debugging or demos. `calypso-cli` can ingest mixed transcript text, execute the command-bearing lines, and ignore chatter. What was once ad hoc interaction becomes reusable operational input.
 
-These capabilities matter beyond convenience. They directly improve testing discipline. The same scripted flow used for daily operator efficiency can be promoted into ORACLE scenarios, reducing divergence between how humans use the system and how the system is validated. Fewer bespoke test paths means fewer blind spots.
+Batch and jump shortcuts are the lightweight alternative for users who do not want to maintain script files. They provide explicit fast-forwarding to a stage target while retaining deterministic stage actions and clear auditability.
 
-Power features also impose responsibility on UX design. Fast paths must remain understandable to occasional users, and CALYPSO should be able to explain, not merely execute. If a user forgets script names or stage semantics, the assistant should recover context quickly and point to actionable next steps.
+These features matter beyond convenience because they collapse the distance between operation and testing. A flow that helps a user move faster can be promoted into ORACLE validation with minimal translation. The practical effect is fewer one-off test paths and better alignment between real usage and regression coverage.
 
-The long-term goal is to make speed and rigor coexist. ARGUS should let experts move quickly without creating a second, hidden system of behavior that only power users understand. A good power workflow is one that remains legible to everyone else.
+Power tools only work when CALYPSO remains a good guide. Users forget command forms, script names, and stage semantics. The assistant should recover context and provide concrete next steps without making the user feel they dropped into a private expert mode.
+
+The long-term standard is simple: ARGUS should let experts move quickly without creating a second system that only experts understand.

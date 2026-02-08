@@ -1,11 +1,13 @@
 # ARGUS Backstory
 
-This directory is the narrative wing of ARGUS. The root `README.md` is intentionally operational and concise, but this folder preserves the longer context that explains why the system is shaped the way it is and why certain architectural choices are non-negotiable.
+This directory is where ARGUS keeps its long memory.
 
-The best entry point is `story.md`, which tells the full arc from problem framing through interface philosophy and data-state architecture. From there, each companion chapter deepens one dimension of the same worldview.
+The root `README.md` is deliberately concise and operational. It tells you how to build, run, and navigate the codebase. This folder answers a different question: why the system was designed this way, and what principles should remain stable as implementation details change.
 
-`mythology.md` describes how ATLAS, ARGUS, and CALYPSO are more than names: they are role contracts that keep language, architecture, and user expectations aligned. `trek.md` traces the LCARS and CALYPSO/Zora lineage and shows how those references translate into concrete design decisions rather than surface aesthetics. `powertoys.md` follows the operator path, documenting how advanced users script, replay, and test flows without forfeiting determinism. `credits.md` records the people and prior work that materially informed the project.
+Start with `story.md`. It is the canonical narrative arc from problem statement to architecture posture. Read it first if you want the context that ties product language, state semantics, and assistant behavior together.
 
-Taken together, these files are not marketing copy. They are maintenance documents for meaning. As the codebase evolves, the backstory keeps the product voice and interaction ethic coherent across UI, CLI, and embedded CALYPSO contexts.
+Then use the focused chapters. `mythology.md` defines the ATLAS/ARGUS/CALYPSO role model that keeps terminology precise. `trek.md` explains the LCARS and CALYPSO/Zora lineage as design grammar rather than fandom reference. `powertoys.md` documents how expert users accelerate repetitive flows without sacrificing determinism or traceability. `credits.md` records the real people and reference work that influenced the project.
 
-For technical depth after the narrative pass, continue into `docs/onboarding.adoc`, `docs/framework.adoc`, `docs/vcs.adoc`, `docs/calypso.adoc`, and `docs/oracle.adoc`.
+These files are maintained as engineering documents, not decorative lore. When they are accurate, architecture conversations stay sharper, UI language stays consistent, and new contributors can reason about intent before they touch code.
+
+After this narrative pass, continue into `docs/onboarding.adoc`, `docs/framework.adoc`, `docs/vcs.adoc`, `docs/calypso.adoc`, and `docs/oracle.adoc` for implementation detail.

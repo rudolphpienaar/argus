@@ -1,11 +1,11 @@
 # Credits and Acknowledgments
 
-ARGUS is architected and directed by Rudolph Pienaar, but the project is intentionally transparent about the influences and collaborators that shaped its language and execution style.
+ARGUS is architected and led by Rudolph Pienaar.
 
-The visual and interaction DNA owes a significant debt to Michael Okuda's LCARS work for Star Trek: The Next Generation. That contribution is foundational not only for look-and-feel but for a deeper lesson: interfaces can be expressive without sacrificing operational clarity.
+The project also stands on prior work that deserves explicit credit. Its visual and interaction language is deeply influenced by Michael Okuda's LCARS design for *Star Trek: The Next Generation*, not only as an aesthetic reference but as a model for information-dense operational interfaces.
 
-Practical web adaptation of LCARS idioms in this repository was also informed by Jim Robertus and TheLCARS.com. Their reference work helped bridge the gap between iconic television design and maintainable browser implementation patterns.
+Web-facing LCARS implementation in this repository was further informed by Jim Robertus and TheLCARS.com, whose reference work helped translate iconic design motifs into practical browser patterns.
 
-The modern development loop for ARGUS has been accelerated through AI-assisted collaboration, including Claude Code, Codex, and Gemini. These tools improved iteration speed, comparison of alternatives, and breadth of exploration. At the same time, architectural accountability, design direction, and acceptance standards remain human-owned.
+Development velocity was significantly improved through AI-assisted collaboration with Claude Code, Codex, and Gemini. Those tools expanded iteration bandwidth, but architecture, acceptance standards, and product direction remained human-owned.
 
-Acknowledgment in ARGUS is treated as engineering hygiene. Systems grow better when provenance is explicit, and design choices are easier to evaluate when their lineage is documented instead of implied.
+This section exists because provenance matters. Explicit lineage makes design choices easier to evaluate and easier to maintain.

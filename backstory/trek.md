@@ -1,15 +1,15 @@
 # Star Trek Connection
 
-ARGUS draws from Star Trek on two layers that reinforce each other. The first is visual and structural through LCARS. The second is conversational through the CALYPSO and Zora narrative thread. Both were chosen because they encode operational intelligence, not because they are familiar fan references.
+ARGUS has a Star Trek lineage, but the value is structural, not nostalgic. The project borrows from Trek because those interfaces were designed to communicate mission state under pressure, and that is exactly the challenge in federated clinical AI.
 
-LCARS matters because it was designed to make system state legible under pressure. Its language favors hierarchy, status signaling, and deliberate framing over decorative minimalism. ARGUS inherits that logic in practical ways: stage-aware surfaces, command and telemetry in the same field of attention, and interface regions that behave like instrumentation rather than static web panels.
+The first thread is LCARS. Michael Okuda's design language never pretended to be minimal. It treated the interface as instrumentation: dense, layered, and purposeful. ARGUS follows that spirit. The screen is not a blank canvas with occasional popups; it is a working console where command, telemetry, and state transitions share the same field of attention.
 
-The CALYPSO/Zora connection matters for interaction posture. In that lineage, intelligence is not presented as omniscient dominance but as steady companionship through uncertainty. That stance maps directly to what users need in ARGUS: a guide that can help route intent and suggest next actions without obscuring what is actually happening in the system.
+The second thread is CALYPSO and Zora. The reference is not "AI as mascot." It is "AI as competent companion." In that tradition, intelligence is present, context-aware, and helpful, but not authoritarian. CALYPSO in ARGUS is built with that same posture. It helps the user move through complex sequences, but it does not erase the system's mechanics or pretend uncertainty does not exist.
 
-When these two threads are combined, they create a coherent design ethic. The console should feel like a place where serious work is done and verified. Motion should communicate mechanism, not novelty. Dialogue should support intent formation while preserving deterministic execution boundaries.
+This dual influence resolves a tension that many AI products handle poorly. If an interface is purely conversational, users lose the grounding of explicit state. If it is purely mechanical, users drown in command syntax and edge cases. ARGUS uses LCARS-like structure to keep state visible and CALYPSO-like guidance to keep intent fluid.
 
-This influence shows up in the details. CALYPSO responses emphasize stage context and concrete next actions. Terminal experiences surface progress as a sequence of meaningful operations rather than opaque instant jumps. Artifact materialization is visible because users should never have to guess whether a transformation actually occurred.
+The influence shows up in small decisions. Progress is staged and narrated as operations, not dumped as a single terminal block. Artifacts are materialized and discoverable so the operator never has to guess what happened. Prompts emphasize next concrete actions rather than generic reassurance. Even visual pacing is intentional: movement indicates mechanism, not decoration.
 
-The Trek lineage also provides a useful restraint. It discourages flattening everything into a generic chat interface. ARGUS is not trying to be a universal assistant shell; it is a mission console for federated workflows. That mission specificity is exactly what makes the reference valuable.
+There is also a restraint built into this lineage. Trek references are useful only if they sharpen behavior. If they become costume, they weaken the product. ARGUS therefore treats them as a design grammar: how to frame information, how to sequence interaction, and how to keep human trust when systems are distributed and partially opaque.
 
-In short, Star Trek provides ARGUS with a disciplined grammar for how to look, how to speak, and how to reveal system truth. The result should feel neither nostalgic nor gimmicky. It should feel operational.
+The result should feel like a console for serious work, not a themed chat app. That is the point of the reference and the reason it has stayed in the project.
