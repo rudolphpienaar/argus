@@ -1,6 +1,6 @@
 {
     "name": "argus",
-    "version": "7.0.5",
+    "version": "7.1.0",
     "description": "ATLAS Resource Graphical User System - LCARS Prototype",
     "type": "module",
     "scripts": {

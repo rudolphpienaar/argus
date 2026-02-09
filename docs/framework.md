@@ -1,5 +1,9 @@
 # ARGUS Framework Formalization Plan
 
+> **Status:** Historical record of the v4.5.1 formalization effort (2026-01-30).  
+> For current conventions, use `docs/framework.adoc`.  
+> For architecture trajectory, use `docs/CONTEXT.md`.
+
 This file records the framework formalization effort that moved ARGUS from a concentrated entry-point architecture toward a composable system with explicit boundaries.
 
 ## Overview
