@@ -60,7 +60,19 @@ ARGUS adopts LCARS and the CALYPSO/Zora lineage from *Star Trek* as design gramm
 
 ## Getting Started
 
-ARGUS uses `make` (GNU Make) to orchestrate its TypeScript build pipeline. Make is a standard build automation tool available on most Unix-like systems; on macOS it ships with Xcode Command Line Tools (`xcode-select --install`), and on Linux it is typically pre-installed or available via your package manager (`apt install make`, `dnf install make`). You also need Node.js (v18+) and npm.
+ARGUS uses `make` (GNU Make) to orchestrate its TypeScript build pipeline. You need Make, Node.js (v18+), and npm.
+
+**Prerequisites by platform:**
+
+| Platform | Make | Node.js |
+|----------|------|---------|
+| macOS | `xcode-select --install` | `brew install node` or nvm |
+| Debian/Ubuntu | `apt install make` | `apt install nodejs npm` or nvm |
+| Fedora/RHEL | `dnf install make` | `dnf install nodejs npm` or nvm |
+| Arch Linux | `pacman -S make` | `pacman -S nodejs npm` or nvm |
+| Android (Termux) | `pkg install make` | `pkg install nodejs` |
+
+[nvm](https://github.com/nvm-sh/nvm) (Node Version Manager) is recommended for managing Node.js versions, especially if your system packages ship an older release. Install nvm, then `nvm install 22 && nvm use 22`.
 
 ### Full graphical console (browser)
 
@@ -92,6 +104,8 @@ make watch            # Rebuild on file changes
 make clean            # Remove build artifacts
 make help             # List all available targets
 ```
+
+Fun fact: the entire ecosystem — build, headless server, CLI client, and tests — runs perfectly on Android with Termux.
 
 ## Architecture in Practice
 
