@@ -20,7 +20,7 @@ The triad maps cleanly to software responsibility. If a feature belongs in orche
 
 Most AI-assisted applications treat the conversational layer as peripheral — a chatbot sidebar that hovers at the edge of the real UI, able to answer questions but not owning the interaction flow. Development-focused tools (Cursor, Aider, Claude Code) integrate AI more deeply, but are specific to software engineering. Autonomous agent systems (SWE-agent, OpenHands) go the other direction: the AI is the only controller, and humans step back entirely.
 
-ARGUS occupies a distinct position. The conversational and terminal layer is the **primary interaction surface** for a domain-specific operational system. CALYPSO interprets user intent and routes to deterministic execution, the same core drives both graphical and CLI surfaces, and workflow state is proven by materialized artifacts rather than asserted by the AI. The AI is not a sidebar, not autonomous, and not general-purpose — it is the command interpreter for an operational console where every claim maps to evidence.
+ARGUS occupies a distinct position. The conversational and terminal layer is the **primary interaction surface** for a domain-specific operational system. CALYPSO interprets user intent and routes to deterministic execution, the same core drives both graphical and CLI surfaces, and workflow state is proven by materialized artifacts rather than asserted by the AI. The AI is not a sidebar, not autonomous, and not general-purpose — it is the command interpreter for an operational console where every claim maps to evidence. This intent-action separation has a direct architectural ancestor in the [ChRIS Intent-Action Service](https://github.com/FNNDSC/intent-server) proposal, which formalized the principle that clients should speak in intent while a distinct orchestration layer resolves those intents into executable action sequences.
 
 ## Who ARGUS Is For
 
@@ -139,7 +139,14 @@ Structured and legacy `.clpso` behavior is documented in [Calypso Scripts (`.clp
 
 ARGUS builds on established ideas in tool-using and agentic AI, but combines them in a workflow system where assistant interaction is first-class while execution truth stays artifact-grounded. See [Agentic Design Patterns](docs/agentic.adoc) for a detailed comparison with these approaches.
 
-- **ReAct (Yao et al., 2022):** interleaves reasoning and actions in environment loops.  
+### Direct Lineage
+
+- **ChRIS Intent-Action Service (IAS):** architectural proposal for bridging declarative hypermedia APIs and procedural client workflows through an external intent-action layer. CALYPSO's routing chain is a concrete instantiation of this principle at the UI layer.
+  https://github.com/FNNDSC/intent-server
+
+### Landscape
+
+- **ReAct (Yao et al., 2022):** interleaves reasoning and actions in environment loops.
   https://arxiv.org/abs/2210.03629
 - **Toolformer (Schick et al., 2023):** model-directed tool/API usage during generation.  
   https://arxiv.org/abs/2302.04761
