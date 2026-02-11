@@ -117,6 +117,20 @@ The `src/vfs/` layer provides an in-memory POSIX-like filesystem with shell sema
 
 ## Documentation Map
 
+### Developer Grounding (read in order)
+
+New to the project? Read these in sequence. They build on each other — starting with why the project exists, moving through how it works, and ending with how to contribute.
+
+1. [The ARGUS Story](backstory/story.md): why the project exists, the problem it addresses, and the design principles that followed.
+2. [Design Philosophy](docs/philosophy.adoc): SeaGaP-MP workflow model, user personas, and the conceptual framework behind every stage.
+3. [Agentic Design Patterns](docs/agentic.adoc): how ARGUS compares to existing agentic AI patterns and where it diverges.
+4. [Architecture](docs/architecture.adoc): system topology, event/state flow, and the layer model.
+5. [VCS Specification](docs/vcs.adoc): the filesystem and shell substrate that grounds all workflow state.
+6. [Calypso AI Core](docs/calypso.adoc): the shared browser/CLI intent layer — identity, architecture, and routing chain.
+7. [Persona Workflows](docs/persona-workflows.adoc): declarative workflow contracts, validation conditions, and artifact semantics.
+8. [Developer Onboarding](docs/onboarding.adoc): practical setup, coding patterns, and contribution guidelines.
+9. [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): naming conventions, typing rules, and code standards.
+
 ### Current (Active Specs)
 
 - [Developer Onboarding](docs/onboarding.adoc): practical entry point for contributors.
