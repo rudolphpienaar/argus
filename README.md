@@ -47,23 +47,37 @@ ARGUS adopts LCARS and the CALYPSO/Zora lineage from *Star Trek* as design gramm
 
 ## Getting Started
 
-Use the standard TypeScript workflow.
+ARGUS uses `make` (GNU Make) to orchestrate its TypeScript build pipeline. Make is a standard build automation tool available on most Unix-like systems; on macOS it ships with Xcode Command Line Tools (`xcode-select --install`), and on Linux it is typically pre-installed or available via your package manager (`apt install make`, `dnf install make`). You also need Node.js (v18+) and npm.
+
+### Full graphical console (browser)
+
+This is the primary mode. It launches the LCARS interface with CALYPSO already embedded — no separate server needed.
 
 ```bash
-# Install dependencies
-make install
+make install          # Install npm dependencies (first time only)
+make argus            # Clean, install, and build from scratch
+make serve            # Start the dev server at http://localhost:8080
+```
 
-# Build and compile
-make build
+After the initial `make argus`, day-to-day iteration is just `make build && make serve` (or `make dev` which does both). Open `http://localhost:8080` in a browser to reach the full ARGUS console with integrated CALYPSO.
 
-# Start the local development server (http://localhost:8080)
-make serve
+### Headless CALYPSO (terminal only)
 
-# Start headless Calypso server (no browser required)
-make calypso
+For terminal-only interaction without a browser, CALYPSO can run as a standalone headless server with a dedicated CLI client. This is useful for scripted workflows, ORACLE testing, and environments without a display.
 
-# Connect to Calypso via CLI
-make calypso-cli
+```bash
+make calypso          # Start the headless Calypso server (port 8081)
+make calypso-cli      # Connect an interactive CLI client to the server
+```
+
+### Other targets
+
+```bash
+make test             # Run unit tests (vitest)
+make test-oracle      # Run ORACLE integration tests
+make watch            # Rebuild on file changes
+make clean            # Remove build artifacts
+make help             # List all available targets
 ```
 
 ## Architecture in Practice
