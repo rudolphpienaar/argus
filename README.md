@@ -2,13 +2,15 @@
 
 **ATLAS Resource Guided User System**
 
-ARGUS is the operator console for ATLAS (Advanced Training and Learning At Scale), a federated medical imaging platform designed for distributed machine learning across secure institutional boundaries. The project functions as both high-fidelity prototype and executable reference architecture: it is meant to be used, not only described.
+ARGUS is the operator console for ATLAS (Advanced Training and Learning At Scale), a federated medical imaging platform born from an ARPA-H funding initiative to build national infrastructure for federated learning across the US healthcare system. American healthcare data is fragmented across thousands of siloed providers, each locked behind institutional boundaries and vendor ecosystems. ATLAS addresses that problem directly: an open-source, federated compute platform that lets institutions train models collaboratively without centralizing patient data. If successful, this approach could reshape how healthcare computing works — breaking vendor lock-in, enabling cross-institutional research at national scale, and proving that open infrastructure can outperform proprietary silos.
+
+ARGUS is the user-facing layer of that effort. It functions as both high-fidelity prototype and executable reference architecture: it is meant to be used, not only described.
 
 At its core, ARGUS combines SeaGaP-MP workflow orchestration (Search, Gather, Process, Monitor, Post), a browser-native Virtual Computer System, and a headless AI intent layer called CALYPSO that is shared between web and CLI surfaces. The design objective is simple: natural interaction on top, deterministic materialized state underneath.
 
 ## The Triad: ATLAS, ARGUS, CALYPSO
 
-**ATLAS** (Advanced Training and Learning At Scale) is the federated infrastructure layer. It carries the burden nobody sees in screenshots: cross-site compute orchestration, data custody, policy boundaries, scheduling, failure handling, and the governance machinery that keeps federated work legal and reproducible. ATLAS is the platform; everything above it depends on its reliability.
+**ATLAS** (Advanced Training and Learning At Scale) is the federated infrastructure layer, funded through ARPA-H to build open-source national infrastructure for federated learning in healthcare. It carries the burden nobody sees in screenshots: cross-site compute orchestration, data custody, policy boundaries, scheduling, failure handling, and the governance machinery that keeps federated work legal and reproducible. ATLAS is the platform; everything above it depends on its reliability.
 
 **ARGUS** (ATLAS Resource Guided User System) is the operator console. Named after Argus Panoptes, the hundred-eyed watchman, ARGUS exists to make distributed state legible and actionable. A federated workflow is not one event — it is many asynchronous truths happening at once: cohort composition, artifact generation, model state, transfer status, and execution provenance. ARGUS lets the operator see those truths without drowning in them, and guides them through the SeaGaP-MP stage sequence (Search, Gather, Process, Monitor, Post) that structures all workflow interaction.
 
