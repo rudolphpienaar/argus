@@ -42,6 +42,14 @@ MCP standardizes how models access external tools and context sources through a 
 
 ARGUS does not currently use MCP, but its architecture is compatible with it. The VFS layer and store already provide structured context that `workflowContext_forLLM()` assembles for the model. Exposing these as MCP resources would be a natural extension, making CALYPSO's grounding context available to external models and tools.
 
+=== Intent-Action Services (ChRIS Intent-Server)
+
+The Intent-Action Service (IAS) proposal (https://github.com/FNNDSC/intent-server[FNNDSC/intent-server]) addresses a structural problem in the ChRIS ecosystem: CUBE exposes a declarative, HATEOAS-compliant hypermedia API, but clients need procedural workflows that orchestrate multiple resource operations into coherent sequences. Rather than polluting CUBE with procedural logic, the IAS sits as an external service that accepts high-level intents, resolves them into concrete action sequences, dispatches those actions against CUBE, and manages credentials through authCore.
+
+This is the closest formal ancestor to what CALYPSO does inside ARGUS. The IAS proposal articulates the separation clearly: the declarative API stays pure, the procedural orchestration lives in a distinct layer, and clients speak in intent rather than in raw API calls. ARGUS inherits this separation in spirit — CALYPSO is an intent-action layer that sits between the user and the deterministic execution substrate (VFS, workflow engine, store) — but instantiates it differently. Where the IAS is proposed as a network service mediating between HTTP clients and CUBE's REST API, CALYPSO is embedded in the application itself, mediating between natural language and local deterministic functions. The architectural principle is identical: intents in, actions out, with the orchestration logic isolated from both the user-facing surface and the state substrate.
+
+The IAS proposal also identifies a key insight that ARGUS validates empirically: intent-level APIs are naturally agentic-ready. When the interface contract is "describe what you want" rather than "compose the exact API calls," an LLM can participate in the resolution chain without requiring bespoke integration for every operation. CALYPSO's routing chain — from NL input through deterministic pattern matching to LLM fallback — is a concrete implementation of that principle.
+
 === AI-as-Sidebar (Copilot Chat, Notion AI, Slack AI)
 
 The most common production pattern places the AI in a chat panel alongside the real interface. The AI can answer questions, summarize content, and sometimes trigger actions, but it does not own the interaction flow. The user's primary surface is the traditional UI.
@@ -69,6 +77,8 @@ CALYPSO interprets what the user wants and maps it to a known operation. It does
 5. LLM fallback (open-ended queries, explanations, guidance)
 
 Steps 1–4 are deterministic. The LLM in step 5 provides guidance and explanation but does not execute state-changing operations directly. When the LLM detects an action intent (e.g., `[ACTION: HARMONIZE]`), it signals back to deterministic code that performs the actual execution.
+
+This routing chain is a concrete instantiation of the Intent-Action Service pattern proposed for ChRIS (see <<Intent-Action Services (ChRIS Intent-Server)>>). The IAS formalizes the principle that clients should speak in intent and a distinct orchestration layer should resolve those intents into action sequences. CALYPSO applies that principle at the UI layer: the user speaks in natural language, the routing chain resolves intent deterministically where possible, and the LLM participates only when deterministic resolution is insufficient. The separation between intent acceptance and action execution is the same architectural move, whether the intent arrives as a structured API call or a conversational utterance.
 
 === Data-State Grounded Truth
 
