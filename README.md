@@ -4,7 +4,7 @@
 
 ARGUS is the operator console for ATLAS (Advanced Training and Learning At Scale), a federated medical imaging platform born from an ARPA-H funding initiative to build national infrastructure for federated learning across the US healthcare system. American healthcare data is fragmented across thousands of siloed providers, each locked behind institutional boundaries and vendor ecosystems. ATLAS addresses that problem directly: an open-source, federated compute platform that lets institutions train models collaboratively without centralizing patient data. If successful, this approach could reshape how healthcare computing works — breaking vendor lock-in, enabling cross-institutional research at national scale, and proving that open infrastructure can outperform proprietary silos.
 
-ARGUS is the user-facing layer of that effort. It functions as both high-fidelity prototype and executable reference architecture: it is meant to be used, not only described.
+ARGUS is a conceptual idea for what could be the user-facing layer of that effort. It functions as both high-fidelity prototype and executable reference architecture: it is meant to be used, not only described.
 
 At its core, ARGUS combines SeaGaP-MP workflow orchestration (Search, Gather, Process, Monitor, Post), a browser-native Virtual Computer System, and a headless AI intent layer called CALYPSO that is shared between web and CLI surfaces. The design objective is simple: natural interaction on top, deterministic materialized state underneath.
 
