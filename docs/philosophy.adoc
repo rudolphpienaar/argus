@@ -6,7 +6,7 @@
 
 == Introduction
 
-ARGUS (ATLAS Resource Graphical User System) serves as the primary interface through which users interact with the ATLAS federated medical imaging platform. The name draws from Greek mythology, where Argus Panoptes was the hundred-eyed giant whose vigilance made him the perfect guardian. In the context of ATLAS, ARGUS provides comprehensive visibility into distributed resources across federated Trusted Domains, enabling users to search, curate, process, and monitor medical imaging workflows while maintaining the security and governance guarantees that ATLAS provides.
+ARGUS (ATLAS Resource Guided User System) serves as the primary interface through which users interact with the ATLAS federated medical imaging platform. The name draws from Greek mythology, where Argus Panoptes was the hundred-eyed giant whose vigilance made him the perfect guardian. In the context of ATLAS, ARGUS provides comprehensive visibility into distributed resources across federated Trusted Domains, enabling users to search, curate, process, and monitor medical imaging workflows while maintaining the security and governance guarantees that ATLAS provides.
 
 This document establishes the conceptual foundations that guide ARGUS development, ensuring that implementation decisions remain aligned with user needs and platform capabilities.
 

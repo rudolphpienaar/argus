@@ -34,7 +34,7 @@ The codebase eliminated pervasive `any` usage, adopted strict RPN naming consist
 
 ## What ARGUS Is
 
-ARGUS, the ATLAS Resource Graphical User System, is the operating console for federated medical imaging workflows. It is named after Argus Panoptes to emphasize visibility, not merely aesthetics: the system is meant to make distributed state legible and actionable.
+ARGUS, the ATLAS Resource Guided User System, is the operating console for federated medical imaging workflows. It is named after Argus Panoptes to emphasize visibility, not merely aesthetics: the system is meant to make distributed state legible and actionable.
 
 ## Core Workflow Model
 

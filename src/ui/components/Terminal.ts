@@ -51,7 +51,7 @@ export class LCARSTerminal extends BaseTerminal {
             elementId,
             title: 'CALYPSO INTELLIGENCE CONSOLE // VFS LINK ACTIVE',
             welcomeMessage: [
-                'ATLAS Resource Graphical User System [Version 1.4.0]',
+                'ATLAS Resource Guided User System [Version 1.4.0]',
                 'Copyright (c) 2026 Federated Computer System',
                 ''
             ],

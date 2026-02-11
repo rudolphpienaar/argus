@@ -1,10 +1,26 @@
 # ARGUS
 
-**ATLAS Resource Graphical User System**
+**ATLAS Resource Guided User System**
 
-ARGUS is the user-facing intelligence console for ATLAS (Advanced Training and Learning At Scale), a federated medical imaging platform designed for distributed machine learning across secure institutional boundaries. The project functions as both high-fidelity prototype and executable reference architecture: it is meant to be used, not only described.
+ARGUS is the operator console for ATLAS (Advanced Training and Learning At Scale), a federated medical imaging platform designed for distributed machine learning across secure institutional boundaries. The project functions as both high-fidelity prototype and executable reference architecture: it is meant to be used, not only described.
 
-At its core, ARGUS combines SeaGaP-MP workflow orchestration, a browser-native Virtual Computer System, and a headless AI intent layer called CALYPSO that is shared between web and CLI surfaces. The design objective is simple: natural interaction on top, deterministic materialized state underneath.
+At its core, ARGUS combines SeaGaP-MP workflow orchestration (Search, Gather, Process, Monitor, Post), a browser-native Virtual Computer System, and a headless AI intent layer called CALYPSO that is shared between web and CLI surfaces. The design objective is simple: natural interaction on top, deterministic materialized state underneath.
+
+## The Triad: ATLAS, ARGUS, CALYPSO
+
+**ATLAS** (Advanced Training and Learning At Scale) is the federated infrastructure layer. It carries the burden nobody sees in screenshots: cross-site compute orchestration, data custody, policy boundaries, scheduling, failure handling, and the governance machinery that keeps federated work legal and reproducible. ATLAS is the platform; everything above it depends on its reliability.
+
+**ARGUS** (ATLAS Resource Guided User System) is the operator console. Named after Argus Panoptes, the hundred-eyed watchman, ARGUS exists to make distributed state legible and actionable. A federated workflow is not one event — it is many asynchronous truths happening at once: cohort composition, artifact generation, model state, transfer status, and execution provenance. ARGUS lets the operator see those truths without drowning in them, and guides them through the SeaGaP-MP stage sequence (Search, Gather, Process, Monitor, Post) that structures all workflow interaction.
+
+**CALYPSO** is the AI intent layer — the conversational mediator between human intent and deterministic execution. In myth, Calypso is associated with concealment; the project inverts that purpose. CALYPSO does not conceal outcomes; CALYPSO conceals unnecessary friction. The user speaks in intent, the system executes deterministically, and the evidence is left behind as materialized state. CALYPSO is shared across browser and CLI surfaces: the same operational core drives both, so guidance is consistent regardless of how the user connects.
+
+The triad maps cleanly to software responsibility. If a feature belongs in orchestration, it is ATLAS work. If it belongs in observability and operator control, it is ARGUS work. If it belongs in intent interpretation and command routing, it is CALYPSO work.
+
+## Where ARGUS Sits
+
+Most AI-assisted applications treat the conversational layer as peripheral — a chatbot sidebar that hovers at the edge of the real UI, able to answer questions but not owning the interaction flow. Development-focused tools (Cursor, Aider, Claude Code) integrate AI more deeply, but are specific to software engineering. Autonomous agent systems (SWE-agent, OpenHands) go the other direction: the AI is the only controller, and humans step back entirely.
+
+ARGUS occupies a distinct position. The conversational and terminal layer is the **primary interaction surface** for a domain-specific operational system. CALYPSO interprets user intent and routes to deterministic execution, the same core drives both graphical and CLI surfaces, and workflow state is proven by materialized artifacts rather than asserted by the AI. The AI is not a sidebar, not autonomous, and not general-purpose — it is the command interpreter for an operational console where every claim maps to evidence.
 
 ## Architectural Doctrine
 
@@ -25,15 +41,9 @@ See also:
 - `docs/vcs.adoc` (filesystem and shell as state substrate)
 - `docs/oracle.adoc` (agentic self-testing methodology)
 
-## Mythology and Design Lineage
+## Design Lineage
 
-The ATLAS/ARGUS/CALYPSO naming model is operational, not decorative:
-
-- **ATLAS carries** infrastructure burden (federated compute, policy, governance).
-- **ARGUS sees** distributed state and operator-relevant truth.
-- **CALYPSO guides** users through complexity without hiding evidence.
-
-ARGUS also adopts LCARS and the CALYPSO/Zora lineage from *Star Trek* as design grammar: dense operational visibility, composed guidance, and explicit mechanism over abstraction. The goal is a serious working console, not a themed chat wrapper.
+ARGUS adopts LCARS and the CALYPSO/Zora lineage from *Star Trek* as design grammar. Michael Okuda's LCARS treated the interface as instrumentation — dense, layered, and purposeful — and that model maps directly to the challenge of making federated clinical AI state legible. The CALYPSO/Zora thread, drawn from *Short Treks* "Calypso" (2018), encodes the right conversational posture: helpful and composed, grounded in what the system can actually prove, and never a replacement for execution truth. The goal is a serious working console, not a themed chat wrapper. See [The ARGUS Story](backstory/story.md#star-trek-connection) for the full exposition.
 
 ## Getting Started
 

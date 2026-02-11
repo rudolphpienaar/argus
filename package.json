@@ -1,7 +1,7 @@
 {
     "name": "argus",
-    "version": "7.1.0",
-    "description": "ATLAS Resource Graphical User System - LCARS Prototype",
+    "version": "7.1.1",
+    "description": "ATLAS Resource Guided User System - LCARS Prototype",
     "type": "module",
     "scripts": {
         "version:generate": "bash scripts/generate-version.sh",

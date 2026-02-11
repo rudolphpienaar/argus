@@ -2,7 +2,7 @@
 :toc:
 :icons: font
 
-This document captures the specific interaction and visual metaphors used in the ARGUS (ATLAS Resource Graphical User System) LCARS interface.
+This document captures the specific interaction and visual metaphors used in the ARGUS (ATLAS Resource Guided User System) LCARS interface.
 
 == The Intelligence Console (Terminal)
 

@@ -6,7 +6,7 @@
 
 == Welcome to ARGUS
 
-ARGUS (ATLAS Resource Graphical User System) is the UI layer for the ATLAS federated medical imaging platform. It is a **Vanilla TypeScript** application that implements the SeaGaP-MP workflow (Search, Gather, Process, Monitor, Post).
+ARGUS (ATLAS Resource Guided User System) is the UI layer for the ATLAS federated medical imaging platform. It is a **Vanilla TypeScript** application that implements the SeaGaP-MP workflow (Search, Gather, Process, Monitor, Post).
 
 **The Golden Rule:** There is no framework (React, Vue, Svelte). We use raw DOM manipulation, orchestrated by a custom Pub/Sub Store and strict architectural patterns.
 
