@@ -22,6 +22,17 @@ Most AI-assisted applications treat the conversational layer as peripheral — a
 
 ARGUS occupies a distinct position. The conversational and terminal layer is the **primary interaction surface** for a domain-specific operational system. CALYPSO interprets user intent and routes to deterministic execution, the same core drives both graphical and CLI surfaces, and workflow state is proven by materialized artifacts rather than asserted by the AI. The AI is not a sidebar, not autonomous, and not general-purpose — it is the command interpreter for an operational console where every claim maps to evidence.
 
+## Who ARGUS Is For
+
+ARGUS is, at its current stage, a thought experiment made concrete — a live design that is not simply a demo but a real architectural blueprint. It explores what the UI layer for a new type of agentic interaction could look like, cast specifically against the operational reality of ATLAS and federated medical imaging.
+
+That exploration has several audiences:
+
+- **ML researchers and engineers** running federated training across institutional boundaries. They need cohort assembly, code scaffolding, local validation, and federation dispatch — and they need to see what is happening at every step rather than trusting a black-box agent.
+- **Platform engineers** building and operating ATLAS infrastructure. ARGUS serves as a reference architecture for how an agentic UI layer can sit on top of a distributed compute platform without becoming the source of truth for state it does not own.
+- **Clinical teams** consuming model outputs. Their interaction is simpler, but the same principle applies: every result should trace back to auditable artifacts, not to an AI's assertion that work was done.
+- **Designers and engineers studying agentic UI patterns.** ARGUS is one answer to a question the field is still working out: what happens when the conversational AI layer is not a sidebar but the primary interaction surface? The architecture, its trade-offs, and its open problems are documented for others building in this space. See [Agentic Design Patterns](docs/agentic.adoc) for a detailed comparison with existing approaches.
+
 ## Architectural Doctrine
 
 ARGUS is evolving toward a **CALYPSO-centered operating model**: users interact primarily through CALYPSO, and the UI is pinned to her command/response contract across browser and CLI surfaces.
@@ -101,6 +112,7 @@ The `src/vfs/` layer provides an in-memory POSIX-like filesystem with shell sema
 - [Persona Workflows](docs/persona-workflows.adoc): declarative workflow contracts.
 - [Intents and Routing](docs/intents.adoc): intent-action switchboard.
 - [ORACLE Testing](docs/oracle.adoc): assistant-driven verification model.
+- [Agentic Design Patterns](docs/agentic.adoc): comparison with agentic AI landscape.
 - [Visual Language](docs/visual_language.adoc): LCARS interaction and motion grammar.
 - [Development Context Timeline](docs/CONTEXT.md): versioned architecture trajectory.
 - [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): coding and naming standards.
@@ -125,7 +137,7 @@ Structured and legacy `.clpso` behavior is documented in [Calypso Scripts (`.clp
 
 ## Related Work and Positioning
 
-ARGUS builds on established ideas in tool-using and agentic AI, but combines them in a workflow system where assistant interaction is first-class while execution truth stays artifact-grounded.
+ARGUS builds on established ideas in tool-using and agentic AI, but combines them in a workflow system where assistant interaction is first-class while execution truth stays artifact-grounded. See [Agentic Design Patterns](docs/agentic.adoc) for a detailed comparison with these approaches.
 
 - **ReAct (Yao et al., 2022):** interleaves reasoning and actions in environment loops.  
   https://arxiv.org/abs/2210.03629

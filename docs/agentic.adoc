@@ -1,0 +1,139 @@
+= ARGUS and Agentic Design Patterns
+:author: ATLAS Project Team
+:revdate: 2026-02-11
+:toc:
+:sectnums:
+
+== Introduction
+
+The word "agentic" has become overloaded. In its broadest sense it describes any system where an AI model takes actions in the world rather than merely generating text. In practice, the term covers architectures as different as autonomous coding agents, chatbot sidebars, and tool-calling orchestration frameworks. ARGUS sits in this landscape but does not fit neatly into any existing category.
+
+This document compares and contrasts the ARGUS design with established agentic patterns. The goal is not to claim superiority over other approaches — many solve different problems well — but to make explicit where ARGUS diverges, why it diverges, and what trade-offs result.
+
+== The Agentic Landscape
+
+=== Reasoning-Action Loops (ReAct)
+
+The ReAct pattern (Yao et al., 2022) interleaves reasoning traces with environment actions. The model thinks about what to do, takes an action, observes the result, and reasons again. This produces interpretable chains of thought tied to concrete steps.
+
+ARGUS borrows the structure of this loop — CALYPSO interprets intent, dispatches an action, and reports the result — but differs in a critical way: the reasoning step does not determine what action to take in an open-ended sense. CALYPSO's routing chain uses deterministic pattern matching and intent resolution before the LLM is consulted. The LLM provides natural language interpretation, not action selection.
+
+=== Tool-Using Agents (Toolformer, Function Calling)
+
+Toolformer (Schick et al., 2023) and structured function calling (OpenAI, Anthropic) give models the ability to invoke typed tools during generation. The model decides when and which tool to call, and the tool's output is folded back into the generation context.
+
+ARGUS uses a similar dispatch mechanism — CALYPSO maps user intent to deterministic functions like `project_gather()`, `project_harmonize()`, and `workflow_dispatch()` — but the routing is inverted. In tool-using agents, the model selects the tool. In ARGUS, deterministic code resolves the intent first (`workflowPatterns`, `actionIntent_resolve`, `workflow_dispatch`), and the LLM is the fallback path, not the primary dispatcher. This inversion is deliberate: in a medical imaging workflow, the cost of the model selecting the wrong tool is higher than the cost of slightly less flexible intent handling.
+
+=== Autonomous Agents (Auto-GPT, SWE-agent, OpenHands)
+
+Autonomous agent systems give the AI full control of a task loop. The human provides a goal, and the agent plans, executes, and iterates until the goal is met or the budget is exhausted. SWE-agent (2024) and OpenHands apply this pattern to software engineering with terminal and file access.
+
+ARGUS explicitly rejects this model. The human remains in the interaction loop at every stage. CALYPSO guides, warns, and dispatches, but the user decides when to proceed, when to skip a stage, and when to override a recommendation. The soft enforcement model (warn → warn-with-reason → allow) encodes this philosophy: the system educates rather than blocks, and never takes irreversible action without the user's participation.
+
+=== Orchestration Frameworks (LangGraph, CrewAI)
+
+Orchestration frameworks provide infrastructure for building multi-step, multi-agent workflows. LangGraph models workflows as state machines with conditional edges. CrewAI assigns roles to multiple agents that collaborate on a shared task.
+
+ARGUS shares the state machine structure — the `WorkflowEngine` manages a DAG of stages with dependencies, validation conditions, and transition rules — but does not use multiple collaborating agents. There is one AI layer (CALYPSO) and one user. The complexity is in the workflow, not in agent coordination. This keeps the trust model simple: the user trusts one system, and that system's claims are verifiable against materialized artifacts.
+
+=== Model Context Protocol (MCP)
+
+MCP standardizes how models access external tools and context sources through a uniform protocol. It addresses the integration problem: how to connect models to arbitrary services without bespoke plumbing for each.
+
+ARGUS does not currently use MCP, but its architecture is compatible with it. The VFS layer and store already provide structured context that `workflowContext_forLLM()` assembles for the model. Exposing these as MCP resources would be a natural extension, making CALYPSO's grounding context available to external models and tools.
+
+=== AI-as-Sidebar (Copilot Chat, Notion AI, Slack AI)
+
+The most common production pattern places the AI in a chat panel alongside the real interface. The AI can answer questions, summarize content, and sometimes trigger actions, but it does not own the interaction flow. The user's primary surface is the traditional UI.
+
+This is the pattern ARGUS most directly challenges. In ARGUS, the terminal and conversational layer _is_ the primary surface. The AI does not hover at the edge of a traditional interface; it mediates all workflow interaction. This is possible because the AI layer routes to deterministic execution rather than generating open-ended actions — the risk profile that makes sidebar placement attractive (constraining the AI's blast radius) is addressed through architectural grounding instead.
+
+== Where ARGUS Diverges
+
+The patterns above each solve parts of the agentic interaction problem. ARGUS's contribution is a specific combination that, as far as we can determine, no existing system enforces together:
+
+=== AI as Primary Interaction Surface
+
+The conversational layer is not supplementary. Users interact with ARGUS primarily through CALYPSO, whether in the browser terminal or the headless CLI. The graphical elements (LCARS panels, workflow tracker, file browser) are visualization and state display; the terminal is where work happens.
+
+This is different from both the sidebar model (where AI is secondary) and the autonomous model (where humans are secondary). ARGUS treats the AI-mediated terminal as the primary control surface while keeping the human firmly in the decision loop.
+
+=== Intent Interpretation, Not Action Selection
+
+CALYPSO interprets what the user wants and maps it to a known operation. It does not select from an open-ended action space. The routing chain is:
+
+1. Shell command parsing (exact match)
+2. Workflow dispatch (known workflow commands)
+3. Workflow pattern matching (interrogative forms)
+4. NL action intent resolution (imperative forms stripped to keywords)
+5. LLM fallback (open-ended queries, explanations, guidance)
+
+Steps 1–4 are deterministic. The LLM in step 5 provides guidance and explanation but does not execute state-changing operations directly. When the LLM detects an action intent (e.g., `[ACTION: HARMONIZE]`), it signals back to deterministic code that performs the actual execution.
+
+=== Data-State Grounded Truth
+
+This is the deepest divergence. In most agentic systems, the model asserts what has happened: "I've completed the task," "the file has been created," "training is done." The user trusts (or doesn't trust) these assertions.
+
+In ARGUS, progress is proven by materialized artifacts. A cohort is gathered when `.cohort` exists in VFS. Data is harmonized when `.harmonized` exists. Training is complete when `train.py` is present and `.local_pass` confirms validation. Federation is done when `.federated` appears. The `WorkflowEngine` evaluates these conditions fresh on every query — it never caches or asserts completion from memory.
+
+This model is inherited from ChRIS, where filesystem state _is_ computation state. It eliminates the class of bug where the AI's context drifts from reality in long-running workflows.
+
+=== Shared Core Across Surfaces
+
+The same `CalypsoCore` instance runs in the browser and in the headless CLI server. There is no "web version" and "CLI version" with separate logic. This means:
+
+- Behavior is identical regardless of surface
+- Tests written against one surface validate both
+- ORACLE integration tests exercise the same code path that users interact with
+
+This architectural decision makes the agentic layer testable in a way that surface-specific implementations are not.
+
+=== Soft Enforcement Over Hard Gates
+
+ARGUS uses educational warnings rather than hard blocks when users try to skip workflow stages. The first attempt produces a short warning. The second adds a detailed reason. The third allows the skip. This encodes a specific philosophy: the system should teach the workflow rather than enforce it rigidly, and expert users who understand the consequences should not be blocked.
+
+This contrasts with both permissive systems (where the AI will do whatever the user asks) and restrictive systems (where unauthorized actions are refused outright).
+
+== The Three-Layer Grounding Model
+
+Pure agentic systems suffer from context drift: the model's internal state diverges from reality over long interactions, leading to confabulation, stale recommendations, and whack-a-mole bug regressions. ARGUS addresses this with three layers of grounding:
+
+=== Layer 1: Deterministic Routing
+
+`workflowPatterns[]` and `actionIntent_resolve()` intercept workflow-relevant queries before they reach the LLM. Pattern-matched requests execute deterministically. The LLM never sees them and cannot misinterpret them.
+
+=== Layer 2: Context Injection
+
+`workflowContext_forLLM()` builds the LLM's context from live VFS queries at call time. The model receives ground truth about current workflow state — which stages are complete, what the next stage is, what artifacts exist — rather than relying on its memory of previous turns.
+
+=== Layer 3: Stage Directives
+
+Hard-coded rules in the system prompt prevent the LLM from advising users to skip required steps or from asserting that steps are complete when the corresponding artifacts do not exist. These directives act as guardrails even when the LLM's own reasoning might lead to incorrect guidance.
+
+The three layers are defense-in-depth. Layer 1 prevents most workflow queries from reaching the LLM. Layer 2 ensures the LLM has accurate context when it is consulted. Layer 3 constrains the LLM's output even if its reasoning is flawed.
+
+== What ARGUS Is Not
+
+Explicit anti-patterns help clarify boundaries:
+
+**Not autonomous.** ARGUS does not take actions without user participation. CALYPSO guides and dispatches, but the user decides. There is no background agent loop running unsupervised.
+
+**Not a chatbot wrapper.** The AI is not bolted onto an existing interface as an afterthought. The terminal and conversational layer is the primary interaction surface, architecturally integrated with the workflow engine, VFS, and state management.
+
+**Not framework-agnostic.** ARGUS is purpose-built for federated medical imaging workflows on the ATLAS platform. The SeaGaP-MP stage model, the specific VFS artifacts, and the workflow definitions are domain-specific. The _patterns_ may generalize, but the implementation does not pretend to be a general-purpose agentic framework.
+
+**Not a finished product.** ARGUS is a thought experiment made concrete — a live design and architectural blueprint. It is meant to be used and studied, not deployed as production infrastructure in its current form.
+
+== Open Questions
+
+Honest architecture documentation acknowledges what remains unresolved:
+
+**Multi-user concurrency.** The current model assumes a single user interacting with a single CALYPSO instance. How the data-state grounding model extends to concurrent users modifying shared workflow state is an open design problem.
+
+**Generalization beyond medical imaging.** The data-state approach works well for workflows with clear artifact boundaries (files, markers, trained models). Whether it generalizes to domains with less tangible state transitions — collaborative document editing, interactive data exploration, creative workflows — is untested.
+
+**Deterministic dispatch vs. flexible intent.** The routing chain prioritizes determinism over flexibility. As the set of supported operations grows, maintaining the pattern-matching layers becomes increasingly complex. At some point, the balance between deterministic safety and model-driven flexibility will need to be revisited.
+
+**LLM model dependency.** CALYPSO's guidance quality depends on the underlying model's capabilities. The grounding layers mitigate hallucination risk, but they do not eliminate the dependency on model quality for explanation, context synthesis, and conversational flow.
+
+**Offline and degraded-mode operation.** If the LLM backend is unavailable, CALYPSO's deterministic layers (shell commands, workflow dispatch, intent resolution) continue to work, but guidance and explanation degrade. The current architecture does not have a formal degraded-mode specification.

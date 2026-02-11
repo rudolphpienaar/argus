@@ -33,7 +33,7 @@ CALYPSO carries a layered homage spanning Greek mythology and _Star Trek: Discov
 
 CALYPSO is the "Ghost in the Machine" — the daughter of ATLAS, the artificial intelligence that bridges the gap between the human user and the massive, federated complexity of her father's network.
 
-While ARGUS provides the graphical framework (the body), CALYPSO provides the logic and natural language understanding (the mind). Born from the infrastructure, she is responsible for:
+While ARGUS provides the guided framework (the body), CALYPSO provides the logic and natural language understanding (the mind). Born from the infrastructure, she is responsible for:
 
 *   **Cohort Discovery:** Translating vague human intent ("Show me brain scans") into precise database queries.
 *   **Context Management:** Remembering user session state, selected datasets, and project context.
