@@ -86,13 +86,26 @@ make serve            # Start the dev server at http://localhost:8080
 
 After the initial `make argus`, day-to-day iteration is just `make build && make serve` (or `make dev` which does both). Open `http://localhost:8080` in a browser to reach the full ARGUS console with integrated CALYPSO.
 
+### Connecting CALYPSO to an LLM
+
+CALYPSO works in simulation mode out of the box — no API key required. To connect to a real LLM for natural language interaction, pass an API key via the `KEY` variable:
+
+```bash
+make calypso KEY=your-api-key-here
+```
+
+The server auto-detects the provider from the key prefix (`AIza...` for Gemini, `sk-...` for OpenAI). You can also set `GEMINI_API_KEY` or `OPENAI_API_KEY` in a `.env` file in the project root.
+
+**Cheapest option:** [Google AI Studio](https://aistudio.google.com/apikey) provides free API keys for Gemini 2.5 Flash — no credit card required. Create a Google AI Studio account, generate an API key, and pass it to `make calypso`. Gemini 2.5 Flash is fast, capable, and the free tier (10 req/min, 250 req/day) is more than sufficient for interactive use.
+
 ### Headless CALYPSO (terminal only)
 
 For terminal-only interaction without a browser, CALYPSO can run as a standalone headless server with a dedicated CLI client. This is useful for scripted workflows, ORACLE testing, and environments without a display.
 
 ```bash
-make calypso          # Start the headless Calypso server (port 8081)
-make calypso-cli      # Connect an interactive CLI client to the server
+make calypso KEY=your-key    # Start headless Calypso server with LLM (port 8081)
+make calypso                 # Start in simulation mode (no LLM)
+make calypso-cli             # Connect an interactive CLI client to the server
 ```
 
 ### Other targets
