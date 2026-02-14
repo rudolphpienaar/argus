@@ -1,0 +1,297 @@
+= Why Agents Will Always Lie: Theoretical Foundations for Deterministic Orchestration in ARGUS
+:author: ATLAS Project Team
+:revdate: 2026-02-14
+:toc: macro
+:toclevels: 3
+:sectnums:
+
+toc::[]
+
+== Motivation
+
+This document grounds the ARGUS architecture in a formal theoretical argument about the structural limits of agentic AI in safety-critical domains. The argument is developed fully in the paper _Reasoning, LLMs, and Agentic Programs: Agents Will Always Lie, So Clinical Truth Must Live Outside the Model_ (Pienaar, 2026). This document summarizes the key results and maps them concretely to ARGUS's design decisions.
+
+The central claim is that hallucination in agentic systems is not a bug to be fixed but a mathematical property of probabilistic policies navigating large action spaces. The architectural consequence is that LLMs must be confined to intent interpretation, with workflow execution delegated to deterministic, prevalidated systems. ARGUS and CALYPSO are a concrete implementation of this principle.
+
+== The Mathematical Argument
+
+=== Why Generation Is Inherently Probabilistic
+
+Neural networks with fixed parameters implement deterministic forward maps stem:[f_\theta : \mathbb{R}^d \to \mathbb{R}^k]. Typically stem:[k \ll d], so many distinct inputs collapse to the same or nearby representations. The preimage of any representation stem:[z] is large:
+
+[stem]
+++++
+\mathcal{P}(z) = \{ x \in \mathbb{R}^d \mid f_\theta(x) = z \}
+++++
+
+Generation asks the model to go backward — from representation to output — but this reverse direction cannot be a true inverse because the forward map is many-to-one. The only meaningful way back is probabilistic: the model learns a conditional distribution stem:[p_\theta(x \mid c)] over the equivalence class of outputs compatible with a context stem:[c], and sampling draws one member:
+
+[stem]
+++++
+x \sim p_\theta(x \mid c)
+++++
+
+Probability is therefore not an optional detail on top of otherwise deterministic networks. It is intrinsic to the generative step. Forcing determinism (collapsing stem:[p_\theta] to a single mode) would destroy the coverage and fidelity that make generative models useful.
+
+=== The Action Graph and Orchestration Hallucination
+
+Model the tools available to an agent as a directed graph stem:[G = (V, E)], where vertices are primitive operations and edges are allowed transitions. A workflow is a path stem:[s = (v_1, v_2, \ldots, v_L)] in this graph.
+
+Among all reachable paths stem:[\mathcal{S}(G)], only a subset stem:[\mathcal{S}_{valid}] corresponds to clinically valid workflows. The complement stem:[\mathcal{S}_{invalid} = \mathcal{S}(G) \setminus \mathcal{S}_{valid}] is combinatorially enormous.
+
+An agentic policy defines a probability distribution over workflows:
+
+[stem]
+++++
+\pi_{MCP}(s \mid i), \quad s \in \mathcal{S}(G)
+++++
+
+The orchestration hallucination probability — the chance of selecting an invalid workflow — is:
+
+[stem]
+++++
+H_{MCP}(i) = 1 - \sum_{s \in \mathcal{S}_{valid}} \pi_{MCP}(s \mid i)
+++++
+
+=== The Inevitability Theorem
+
+**Theorem (non-zero orchestration risk):** If there exists any reachable state stem:[x] and action stem:[a] such that the resulting workflow is clinically invalid and stem:[\pi_{MCP}(a \mid x) > 0], then:
+
+[stem]
+++++
+H_{MCP}(i) > 0
+++++
+
+For a workflow of length stem:[L] with per-step error probability stem:[\varepsilon > 0]:
+
+[stem]
+++++
+H_{MCP}(i; L) = 1 - (1 - \varepsilon)^L
+++++
+
+This quantity increases with stem:[L]. More tools and more steps expand the dangerous space rather than shrinking it. Requiring more detailed reasoning (longer chains of thought, explicit tool calls, "showing the work") only increases the number of opportunities for deviation.
+
+Safety interlocks change what happens _after_ an invalid path is attempted, but they do not change the probability that the policy _attempts_ it. The ever-error probability remains strictly positive:
+
+[stem]
+++++
+H^{ever}_{MCP}(i) \geq \mathbb{P}[\text{reach } x] \cdot \pi_{MCP}(a \mid x) \cdot \mathbb{P}[x \to v_{fail} \mid a] > 0
+++++
+
+=== Heterogeneous Graph Structure
+
+Real tool graphs are not uniform. Some regions are narrow and tightly constrained (low local error stem:[\varepsilon_t]), others are wide and loosely constrained (high stem:[\varepsilon_t]). The heterogeneous formulation uses prefix histories:
+
+[stem]
+++++
+P_{valid}(i; L) = \mathbb{E}\Big[\prod_{t=1}^{L-1} (1 - \varepsilon_t(h_t))\Big]
+++++
+
+The conclusion holds regardless of graph shape: as long as any reachable decision point has stem:[\varepsilon_t > 0], the overall hallucination probability cannot be eliminated. If the expected cumulative hazard stem:[\sum_t \varepsilon_t] grows with stem:[L], the probability of at least one error tends toward one.
+
+=== The IAS Remedy: Collapsing the Action Space
+
+The Intent-Action Service (IAS) changes the problem fundamentally. Instead of allowing the agent to select paths in stem:[\mathcal{S}(G)], IAS provides a deterministic compilation from intents to workflows:
+
+[stem]
+++++
+F : I \to \mathcal{S}_{valid}, \quad F(i) = s_i
+++++
+
+The agent's effective policy becomes:
+
+[stem]
+++++
+\pi_{IAS}(s \mid i) = \begin{cases} 1, & s = s_i \\ 0, & s \neq s_i \end{cases}
+++++
+
+And therefore:
+
+[stem]
+++++
+H_{IAS}(i) = 0
+++++
+
+The combinatorially explosive space of invalid workflows is never touched at runtime. Residual hallucination is confined to two interpretable boundaries:
+
+1. **Intent interpretation** — the mapping from natural language stem:[u] to formal intent stem:[i]. This is a semantic error, not an orchestration error.
+2. **IAS specification** — if stem:[F] is incorrectly defined. This is a software verification problem, not a probabilistic one.
+
+== How ARGUS Implements IAS
+
+ARGUS does not merely advocate for deterministic orchestration — it implements it. Every architectural layer in CALYPSO exists to keep the LLM out of the orchestration loop.
+
+=== The Routing Chain as stem:[F]
+
+CALYPSO's five-level routing chain is a concrete realization of the IAS mapping stem:[F : I \to \mathcal{S}_{valid}]:
+
+[cols="1,2,2"]
+|===
+| Level | Mechanism | Role in IAS
+
+| 1. Shell parsing
+| Exact string match against builtins
+| Deterministic: `ls`, `cd`, `tree` → single canonical action
+
+| 2. Workflow dispatch
+| `workflow_dispatch()` matches known commands
+| Deterministic: `search`, `gather`, `harmonize`, `federate` → stem:[F(i) = s_i]
+
+| 3. Pattern matching
+| `workflowPatterns[]` intercepts interrogatives
+| Deterministic: "what stage am I on?" → VFS query, not LLM inference
+
+| 4. NL intent resolution
+| `actionIntent_resolve()` strips prefixes, maps to commands
+| Deterministic: "ok do the harmonization" → `harmonize` → stem:[F(i)]
+
+| 5. LLM fallback
+| `engine.llm_generate()` with injected context
+| Probabilistic, but **confined to explanation and guidance**, not action selection
+|===
+
+Levels 1–4 are the IAS. They collapse the action space to a single canonical workflow per intent. The LLM at level 5 is used for interpretation and interaction — precisely the role the paper assigns to it.
+
+=== Data-State Grounding as stem:[\mathcal{S}_{valid}] Enforcement
+
+The paper defines stem:[\mathcal{S}_{valid}] as the set of clinically valid workflows. In ARGUS, this validity is enforced through materialized artifacts:
+
+- A cohort is gathered when `.cohort` exists
+- Data is harmonized when `.harmonized` exists
+- Training is complete when `.local_pass` exists
+- Federation is complete when `.federated` exists
+
+The `WorkflowEngine` evaluates these conditions fresh on every query using VFS inspection. It never caches or asserts completion from memory. This is the data-state analog of checking stem:[s \in \mathcal{S}_{valid}]: the system reads ground truth rather than trusting the agent's assertion.
+
+An LLM consuming data-state context (VFS queries) reads ground truth. An LLM consuming counter-derived context reads assertions that may be stale. The old in-memory counter approach caused context drift, confabulation, and whack-a-mole regressions — precisely the stem:[H_{MCP}(i) > 0] behavior the paper predicts. The data-state approach eliminated this class of bug.
+
+=== Three Layers as Defense in Depth
+
+The paper notes that safety interlocks reduce the _impact_ of invalid orchestration attempts but do not reduce their _probability_. ARGUS acknowledges this by layering defenses:
+
+[cols="1,2,2"]
+|===
+| Layer | What It Does | What It Cannot Do
+
+| Deterministic routing (L1–L4)
+| Prevents workflow queries from reaching the LLM
+| Cannot handle genuinely novel requests
+
+| Context injection (L2)
+| Ensures the LLM has accurate state when consulted
+| Cannot prevent the LLM from ignoring or misinterpreting context
+
+| Stage directives (L3)
+| Hard-coded rules prevent the LLM from advising skips
+| Cannot catch every possible confabulation
+|===
+
+No single layer eliminates hallucination. Together, they confine it to the narrowest possible boundary: the LLM's interpretation of requests that survive four levels of deterministic routing. This is the architectural consequence of stem:[H_{MCP}(i) > 0] — you cannot make it zero within the model, so you minimize the surface area where the model operates.
+
+== The Sequencing Problem and Manifests
+
+=== Where Grounding Falls Short
+
+Interactive testing of CALYPSO (v7.2.0) revealed a specific failure mode predicted by the paper's heterogeneous graph analysis. Data-state grounding answers **"where am I?"** reliably — the LLM reads artifact state and correctly identifies which stages are complete. But **"what comes next?"** is delegated to LLM inference, which drifts:
+
+- After `search`, the LLM skips `gather` and jumps to harmonization
+- After `gather`, the LLM forgets to offer `rename`
+- After `python train.py`, the LLM jumps to "Federation Dispatch" without acknowledging sub-steps
+
+In graph-theoretic terms: the current architecture makes the graph skinny (low stem:[\varepsilon_t]) for state queries but wide (high stem:[\varepsilon_t]) for sequencing queries. The LLM faces a broad choice space when inferring the next step, and the per-step error probability at these junctures is non-trivial.
+
+=== Manifests as Further IAS Collapse
+
+The solution is to extend the IAS principle from individual actions to entire workflow sequences. A **persona manifest** (`fedml.manifest.yaml`) defines the complete conversational DAG:
+
+[source,yaml]
+----
+stages:
+  - id: gather
+    previous: search
+    produces:
+      - "${project}/input/.cohort"
+    instruction: >
+      Add datasets to your cohort...
+    commands:
+      - add <dataset>
+      - gather
+
+  - id: harmonize
+    previous: [gather, rename]
+    produces:
+      - "${project}/input/.harmonized"
+    instruction: >
+      Harmonize your cohort to ensure consistent data formats...
+    commands:
+      - harmonize
+----
+
+Each stage declares `previous` (DAG topology), `produces` (data-state outputs), `instruction` (what to tell the user), and `commands` (exact available actions). The LLM reads the manifest rather than inferring the next step.
+
+In the paper's terms, this collapses the sequencing action space the same way stem:[F] collapses the orchestration space. The mapping from "current state" to "next guidance" becomes deterministic: look up the current stage in the manifest, read its `instruction` and `commands`, present them to the user. The LLM no longer navigates a distribution over possible next steps; it reads a single canonical answer.
+
+=== The MCP–IAS Spectrum in Practice
+
+The paper describes a spectrum from fully agentic (LLM controls all tool selection) to fully deterministic (LLM only selects intents). ARGUS sits near the deterministic end, and each architectural improvement has moved it further:
+
+[cols="1,2,1"]
+|===
+| Version | Architectural Move | Spectrum Position
+
+| v5.0.0
+| Headless core, shell builtins
+| LLM handles routing + state + sequencing
+
+| v6.0.0
+| Workflow patterns, data-state grounding
+| LLM handles sequencing only
+
+| v6.1.0
+| NL intent resolution, stage directives
+| LLM handles guidance text only
+
+| v7.2.0 (planned)
+| Persona manifests
+| LLM interprets NL, reads manifest for everything else
+|===
+
+Each step narrows the stem:[\varepsilon_t] at another class of decision point. The trajectory is toward a system where the LLM's only probabilistic contribution is translating natural language into formal intents — the irreducible residual that the paper identifies as the one place where hallucination cannot be architecturally eliminated.
+
+== The Fingerprint Extension
+
+The manifest design includes a further data-state innovation: **Merkle fingerprinting** over the DAG. Each stage's artifact carries a fingerprint that is a function of its own content and all ancestor fingerprints:
+
+[stem]
+++++
+\text{fp}(s) = \text{hash}(\text{content}(s), \text{fp}(\text{parent}_1), \ldots, \text{fp}(\text{parent}_n))
+++++
+
+This enables staleness detection without a controller. If a user revisits an earlier stage and changes it, the fingerprint chain breaks at every downstream stage whose recorded parent fingerprints no longer match. The runtime detects invalidation by reading artifacts — pure data-state, no event bus, no dirty bit.
+
+This is the data-state analog of the paper's observation that safety interlocks are reactive (they respond to errors after the fact) while structural constraints are preventive (they make errors impossible by construction). Fingerprinting makes stale state _visible_ rather than relying on a controller to track it.
+
+== Summary
+
+The paper proves that orchestration hallucination probability is non-zero for any probabilistic policy over a non-trivial action graph, and increases with workflow length. The architectural remedy is to remove the LLM from the orchestration loop entirely, confining it to intent interpretation.
+
+ARGUS implements this remedy through:
+
+1. **Deterministic routing** — four levels of pattern matching before LLM fallback (the IAS mapping stem:[F])
+2. **Data-state grounding** — materialized artifacts as ground truth, not model assertions (enforcing stem:[\mathcal{S}_{valid}])
+3. **Context injection** — live VFS queries fed to the LLM, not cached memory (preventing context drift)
+4. **Stage directives** — hard-coded rules constraining LLM output (defense in depth)
+5. **Persona manifests** (in progress) — collapsing sequencing to deterministic DAG lookup (extending stem:[F] to full workflow paths)
+6. **Merkle fingerprinting** (in progress) — data-state staleness detection without controllers
+
+Each layer exists because the mathematics demands it. Hallucination is not a quality issue to be solved with better prompts; it is a structural property of probabilistic systems. The only sound response is to minimize the surface area where probability governs decisions.
+
+== References
+
+* Pienaar, R. "Reasoning, LLMs, and Agentic Programs: Agents Will Always Lie, So Clinical Truth Must Live Outside the Model." 2026.
+* See also: `docs/agentic.adoc` — ARGUS positioning vs agentic design patterns
+* See also: `docs/CURRENT.md` — Active manifest and DAG fingerprinting design
+* See also: `docs/persona-workflows.adoc` — Data-state grounding and workflow definitions
+
+---
+_Last updated: {revdate}_

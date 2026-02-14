@@ -147,3 +147,7 @@ Honest architecture documentation acknowledges what remains unresolved:
 **LLM model dependency.** CALYPSO's guidance quality depends on the underlying model's capabilities. The grounding layers mitigate hallucination risk, but they do not eliminate the dependency on model quality for explanation, context synthesis, and conversational flow.
 
 **Offline and degraded-mode operation.** If the LLM backend is unavailable, CALYPSO's deterministic layers (shell commands, workflow dispatch, intent resolution) continue to work, but guidance and explanation degrade. The current architecture does not have a formal degraded-mode specification.
+
+== Further Reading
+
+For the mathematical proof that agentic orchestration carries irreducible hallucination risk and why ARGUS's architecture is the necessary consequence, see `docs/agentic-safety.adoc`.

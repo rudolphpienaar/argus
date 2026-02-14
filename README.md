@@ -48,6 +48,8 @@ LLM-only state tracking drifts in long, asynchronous workflows. ARGUS prevents t
 - Workflow progress is grounded in explicit, materialized artifacts (files/markers/paths), not optimistic in-memory counters.
 - ORACLE-style tests verify behavior through the assistant interface, but assertions are made against deterministic internal state.
 
+This design is not a stylistic preference — it is a consequence of the mathematical limits of probabilistic systems. The formal argument is developed in [Agentic Safety Foundations](docs/agentic-safety.adoc); a plain-language summary is in [Why ARGUS Doesn't Let the AI Drive](docs/why-not-agentic.adoc).
+
 See also:
 - `docs/intents.adoc` (intent-action switchboard)
 - `docs/persona-workflows.adoc` (artifact-grounded workflow semantics)
@@ -136,13 +138,15 @@ New to the project? Read these in sequence. They build on each other — startin
 
 1. [The ARGUS Story](backstory/story.md): why the project exists, the problem it addresses, and the design principles that followed.
 2. [Design Philosophy](docs/philosophy.adoc): SeaGaP-MP workflow model, user personas, and the conceptual framework behind every stage.
-3. [Agentic Design Patterns](docs/agentic.adoc): how ARGUS compares to existing agentic AI patterns and where it diverges.
-4. [Architecture](docs/architecture.adoc): system topology, event/state flow, and the layer model.
-5. [VCS Specification](docs/vcs.adoc): the filesystem and shell substrate that grounds all workflow state.
-6. [Calypso AI Core](docs/calypso.adoc): the shared browser/CLI intent layer — identity, architecture, and routing chain.
-7. [Persona Workflows](docs/persona-workflows.adoc): declarative workflow contracts, validation conditions, and artifact semantics.
-8. [Developer Onboarding](docs/onboarding.adoc): practical setup, coding patterns, and contribution guidelines.
-9. [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): naming conventions, typing rules, and code standards.
+3. [Why ARGUS Doesn't Let the AI Drive](docs/why-not-agentic.adoc): plain-language explanation of why agentic orchestration is structurally unsafe and what ARGUS does instead.
+4. [Agentic Design Patterns](docs/agentic.adoc): how ARGUS compares to existing agentic AI patterns and where it diverges.
+5. [Architecture](docs/architecture.adoc): system topology, event/state flow, and the layer model.
+6. [VCS Specification](docs/vcs.adoc): the filesystem and shell substrate that grounds all workflow state.
+7. [Calypso AI Core](docs/calypso.adoc): the shared browser/CLI intent layer — identity, architecture, and routing chain.
+8. [Calypso Service Architecture](docs/calypso-architecture.adoc): the WebSocket service layer — protocol, transport, modules, and shared sessions.
+9. [Persona Workflows](docs/persona-workflows.adoc): declarative workflow contracts, validation conditions, and artifact semantics.
+10. [Developer Onboarding](docs/onboarding.adoc): practical setup, coding patterns, and contribution guidelines.
+11. [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): naming conventions, typing rules, and code standards.
 
 ### Current (Active Specs)
 
@@ -151,13 +155,17 @@ New to the project? Read these in sequence. They build on each other — startin
 - [Framework Patterns](docs/framework.adoc): canonical implementation patterns.
 - [VCS Specification](docs/vcs.adoc): filesystem/shell substrate and provider model.
 - [Calypso AI Core](docs/calypso.adoc): shared browser/CLI core and runtime modes.
+- [Calypso Service Architecture](docs/calypso-architecture.adoc): WebSocket service layer and module reference.
 - [SeaGaP Workflow](docs/seagap-workflow.adoc): UX behavior by stage.
 - [Persona Workflows](docs/persona-workflows.adoc): declarative workflow contracts.
 - [Intents and Routing](docs/intents.adoc): intent-action switchboard.
 - [ORACLE Testing](docs/oracle.adoc): assistant-driven verification model.
+- [Why Not Agentic](docs/why-not-agentic.adoc): plain-language case for deterministic orchestration.
+- [Agentic Safety Foundations](docs/agentic-safety.adoc): formal mathematical argument and IAS proof.
 - [Agentic Design Patterns](docs/agentic.adoc): comparison with agentic AI landscape.
 - [Visual Language](docs/visual_language.adoc): LCARS interaction and motion grammar.
 - [Development Context Timeline](docs/CONTEXT.md): versioned architecture trajectory.
+- [Active Design Work](docs/CURRENT.md): manifest-driven sequencing and DAG fingerprinting.
 - [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): coding and naming standards.
 
 ### Narrative Context
