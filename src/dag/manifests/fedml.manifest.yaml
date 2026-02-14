@@ -1,0 +1,314 @@
+# fedml.manifest.yaml
+#
+# Persona manifest for the Federated ML (SeaGaP-MP) workflow.
+# Defines the complete conversational DAG from dataset discovery
+# through federated model publication.
+#
+# 14 stages across 4 phases. Every stage produces an artifact.
+
+authors: ATLAS Team <atlas@childrens.harvard.edu>
+name: "Federated ML — SeaGaP-MP Pipeline"
+description: >
+  Full lifecycle from dataset discovery through federated model publication.
+  Search, Gather, Harmonize, Code, Train, Federate, Execute, Publish.
+category: Federated Learning
+persona: fedml
+version: 1.0.0
+locked: false
+
+stages:
+
+  # ─── Phase 1: Search & Gather ────────────────────────────────
+
+  - id: search
+    name: Dataset Discovery
+    phase: search-and-gather
+    previous: ~
+    optional: false
+    produces:
+      - search.json
+    parameters:
+      keywords: null
+      modality: null
+      anatomy: null
+      catalog: atlas
+    instruction: >
+      Search the ATLAS catalog for datasets matching your research criteria.
+      Use keywords, modality filters, or anatomical region. Each search
+      appends to the discovery log — you can search as many times as needed.
+    commands:
+      - search <keywords>
+
+  - id: gather
+    name: Cohort Assembly
+    phase: search-and-gather
+    previous: search
+    optional: false
+    produces:
+      - gather.json
+    parameters:
+      auto_select: false
+    instruction: >
+      Add datasets to your cohort from the search results. When your
+      selection is complete, run 'gather' to assemble the cohort and
+      create your project workspace.
+    commands:
+      - add <dataset>
+      - remove <dataset>
+      - show cohort
+      - gather
+
+  - id: rename
+    name: Project Rename
+    phase: search-and-gather
+    previous: gather
+    optional: true
+    produces:
+      - rename.json
+    parameters:
+      name: null
+    instruction: >
+      Your project was created with an auto-generated name (e.g. DRAFT-1234).
+      Rename it now if you'd like a meaningful identifier. You can skip this
+      step — the auto-generated name works fine.
+    commands:
+      - rename <new-name>
+
+  # ─── Phase 2: Harmonize ──────────────────────────────────────
+
+  - id: harmonize
+    name: Data Harmonization
+    phase: harmonize
+    previous: [gather, rename]
+    optional: false
+    produces:
+      - harmonize.json
+    parameters:
+      resolution: [1.0, 1.0, 1.0]
+      naming_convention: snake_case
+      label_schema: default
+    instruction: >
+      Harmonize your cohort to ensure consistent data formats across sites.
+      This applies image resampling, filename normalization, label schema
+      alignment, and metadata standardization. Harmonization is critical
+      for federated training — heterogeneous data causes silent failures.
+    commands:
+      - harmonize
+    skip_warning:
+      short: Cohort not harmonized.
+      reason: >
+        Federated learning requires consistent data formats across sites.
+        Without harmonization, your model may fail on heterogeneous inputs
+        (different resolutions, naming conventions, or label schemas).
+      max_warnings: 2
+
+  # ─── Phase 3: Code & Validate ────────────────────────────────
+
+  - id: code
+    name: Code Development
+    phase: code-and-validate
+    previous: harmonize
+    optional: false
+    produces:
+      - code.json
+    parameters:
+      scaffold: true
+      framework: flower
+    instruction: >
+      Develop your training code. The scaffold generates src/train.py with
+      Flower client hooks, a Dockerfile, and plugin metadata. You can edit
+      the code freely — each code/test cycle is recorded. When you're
+      satisfied, move to local validation.
+    commands:
+      - proceed
+      - code
+    skip_warning:
+      short: Project structure not scaffolded.
+      reason: >
+        The FedML workflow requires a train.py with Flower client hooks and
+        a properly configured Dockerfile for containerization. Scaffolding
+        generates the required structure.
+      max_warnings: 2
+
+  - id: train
+    name: Local Validation
+    phase: code-and-validate
+    previous: code
+    optional: false
+    produces:
+      - train.json
+    parameters:
+      epochs: 1
+      batch_size: 32
+    instruction: >
+      Run your training code locally to validate it before federation.
+      Federation distributes your code to remote sites where debugging is
+      difficult or impossible. A successful local run creates a .local_pass
+      marker. You can iterate — go back to 'code' if tests fail.
+    commands:
+      - python train.py
+      - train
+    skip_warning:
+      short: Local training not validated.
+      reason: >
+        Federation distributes your code to remote sites where debugging
+        is difficult or impossible. Running locally first catches import
+        errors, data loading issues, model architecture problems, and
+        resource constraints.
+      max_warnings: 2
+
+  # ─── Phase 4: Federation ─────────────────────────────────────
+
+  - id: federate-brief
+    name: Federation Briefing
+    phase: federation
+    previous: train
+    optional: false
+    produces:
+      - briefing.json
+    parameters: {}
+    instruction: >
+      Review the federation briefing. This summarizes what will happen:
+      your code will be transcompiled for Flower, containerized as a
+      MERIDIAN-compliant OCI image, published to the ChRIS store, and
+      dispatched to the federation network. Confirm to proceed.
+    commands:
+      - federate
+
+  - id: federate-transcompile
+    name: Flower Transcompilation
+    phase: federation
+    previous: federate-brief
+    optional: false
+    produces:
+      - transcompile.json
+    parameters:
+      flower_version: "1.5"
+      strategy: fedavg
+    instruction: >
+      Your training code is being transcompiled for the Flower federated
+      learning framework. This wraps train.py in a Flower client, generates
+      node.py for site-local execution, and adds the federation protocol
+      hooks. Review the generated code if needed.
+    commands:
+      - show transcompile
+      - approve
+
+  - id: federate-containerize
+    name: Container Build
+    phase: federation
+    previous: federate-transcompile
+    optional: false
+    produces:
+      - containerize.json
+    parameters:
+      base_image: "python:3.11-slim"
+      gpu: false
+    instruction: >
+      Your transcompiled code is being built into a MERIDIAN-compliant
+      OCI container image. This packages your code, dependencies, and
+      Flower client into a reproducible container that can execute at
+      any federation site.
+    commands:
+      - show container
+      - approve
+
+  - id: federate-publish-config
+    name: Publication Configuration
+    phase: federation
+    previous: federate-containerize
+    optional: false
+    produces:
+      - publish-config.json
+    parameters:
+      app_name: null
+      organization: null
+      visibility: private
+    instruction: >
+      Configure your application for publication to the ChRIS store.
+      Set the application name, organization, and visibility. Private
+      applications are only visible to your organization; public
+      applications are discoverable by all ATLAS users.
+    commands:
+      - config name <app-name>
+      - config org <organization>
+      - config visibility <public|private>
+      - approve
+
+  - id: federate-publish-execute
+    name: Registry Publication
+    phase: federation
+    previous: federate-publish-config
+    optional: false
+    produces:
+      - publish-execute.json
+    parameters: {}
+    instruction: >
+      Your container image is being pushed to the ChRIS store registry.
+      This makes it available for federation dispatch. The publication
+      record includes the image digest, registry URL, and metadata.
+    commands:
+      - show publish
+      - approve
+
+  - id: federate-dispatch
+    name: Federation Dispatch
+    phase: federation
+    previous: federate-publish-execute
+    optional: false
+    produces:
+      - dispatch.json
+    parameters:
+      sites: null
+      rounds: 5
+      timeout_minutes: 60
+    instruction: >
+      Your application is being dispatched to the federation network.
+      Select target sites or accept the default (all sites with matching
+      data). The dispatch creates a federation job and begins coordination
+      with the aggregator.
+    commands:
+      - dispatch
+      - dispatch --sites <site1,site2>
+
+  - id: federate-execute
+    name: Federated Training Execution
+    phase: federation
+    previous: federate-dispatch
+    optional: false
+    produces:
+      - execute.json
+    parameters:
+      monitor_interval_s: 30
+    instruction: >
+      Federated training is in progress. The aggregator coordinates
+      training rounds across participating sites. You can monitor
+      progress, view per-round metrics, and wait for completion.
+      The execution record captures all rounds, site participation,
+      and aggregated metrics.
+    commands:
+      - status
+      - show metrics
+      - show rounds
+
+  - id: federate-model-publish
+    name: Model Publication
+    phase: federation
+    previous: federate-execute
+    optional: false
+    produces:
+      - model-publish.json
+    parameters:
+      model_name: null
+      model_version: null
+      description: null
+    instruction: >
+      Federated training is complete. The aggregated model weights are
+      available in the aggregator's output directory. Publish the trained
+      model to the ATLAS marketplace, making it discoverable by clinical
+      users and other researchers. The publication record includes full
+      provenance — from initial dataset search through every federation
+      round.
+    commands:
+      - publish model
+      - show provenance

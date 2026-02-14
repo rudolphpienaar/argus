@@ -256,8 +256,8 @@ The manifest begins with a header containing metadata about the workflow:
 authors: ATLAS Team <atlas@childrens.harvard.edu>
 name: "Federated ML — SeaGaP-MP Pipeline"
 description: >
-  Full lifecycle from dataset discovery through federation dispatch.
-  Search, Gather, Harmonize, Code, Train, Federate.
+  Full lifecycle from dataset discovery through federated model publication.
+  Search, Gather, Harmonize, Code, Train, Federate, Execute, Publish.
 category: Federated Learning
 persona: fedml
 version: 1.0.0
@@ -353,12 +353,13 @@ Stage fields:
   summaries, and user-facing messages.
 
 | `phase`
-| yes
-| Grouping identifier for progress display and UI breadcrumbs. Multiple
-  stages can share the same phase. For example, `search`, `gather`, and
-  `rename` all belong to phase `search-and-gather`. Phases provide
+| no
+| Optional grouping identifier for progress display and UI breadcrumbs.
+  Multiple stages can share the same phase. For example, `search`, `gather`,
+  and `rename` all belong to phase `search-and-gather`. Phases provide
   high-level progress indication ("You are in the Search & Gather phase")
-  while stages provide granular tracking.
+  while stages provide granular tracking. If omitted, the stage is its own
+  group or the UI derives grouping from topology.
 
 | `previous`
 | yes
@@ -747,65 +748,181 @@ When a user logs in and selects a persona, a session is created under
     data/                                  ← gather artifacts
     rename/
       data/                                ← rename artifacts (or skip sentinel)
-      harmonize/
-        data/                              ← harmonize artifacts
-        code/
-          data/                            ← code artifacts (accumulating)
-          train/
-            data/                          ← local validation artifacts
-            federate-brief/
-              data/
-              federate-transcompile/
+      _join_gather_rename/                 ← topological join node
+        data/                              ← join.json + symlinks to parent data/
+          gather -> ../../../../data       ← ref to gather's artifacts
+          rename -> ../../data             ← ref to rename's artifacts
+        harmonize/
+          data/                            ← harmonize artifacts
+          code/
+            data/                          ← code artifacts (accumulating)
+            train/
+              data/                        ← local validation artifacts
+              federate-brief/
                 data/
-                federate-containerize/
+                federate-transcompile/
                   data/
-                  federate-publish-config/
+                  federate-containerize/
                     data/
-                    federate-publish-execute/
+                    federate-publish-config/
                       data/
-                      federate-dispatch/
-                        data/              ← terminal stage
+                      federate-publish-execute/
+                        data/
+                        federate-dispatch/
+                          data/
+                          federate-execute/
+                            data/
+                            federate-model-publish/
+                              data/        ← terminal stage
 ----
 
 The session ID is generated at creation time (timestamp + random suffix) and
 is unique across all sessions for that persona.
 
-=== Joins via Symlinks
+NOTE: The full FedML session tree nests 14+ levels deep (including the join
+node). This is a known ergonomic concern — deeply nested directories are
+awkward to navigate manually. For now this is accepted as a consequence of
+the ChRIS nesting convention, and the session tree is primarily
+machine-consumed (the user works in the flat project tree). Alternatives
+such as hybrid nesting or phase-level grouping may be explored later.
+
+=== Joins via Topological Join Nodes
+
+==== What the Problem Is
 
 The nested directory structure naturally captures linear paths and branches.
 But joins — where a stage has multiple parents — break the nesting, because
 a directory can only physically sit in one parent.
 
-The solution is symlinks. A join stage nests physically under its **primary
-parent** (the first entry in `previous`). Non-direct parents are represented
-as symlinks within the stage's directory, pointing to the other parent's
-location in the tree:
+An earlier design attempted to solve this with symlinks at the stage
+directory level: placing a `gather` symlink inside `harmonize/` to represent
+the join edge. This was wrong. The nesting convention `<parent>/<child>`
+means a subdirectory is a child. A symlink to `gather` inside `harmonize`
+declares "gather is a child of harmonize" — the opposite of the actual
+relationship, and it introduces a cycle in the directory structure.
+
+==== How ChRIS Handles It
+
+In ChRIS, when a plugin takes input from multiple parents, a **topological
+copy** node is inserted at the convergence point. This is a real node in the
+pipeline DAG — it materializes data, it gets fingerprinted, and it appears in
+the feed tree. The topological copy makes the convergence explicit as a
+data-state event rather than hiding it in a structural trick.
+
+==== How ARGUS Handles It
+
+ARGUS follows the same principle. When a stage declares multiple parents
+(`previous: [gather, rename]`), the session materializer inserts a
+**topological join node** at the convergence point. The join node:
+
+- Is named `_join_<parent1>_<parent2>` (parents listed alphabetically)
+- Nests physically under the last parent in the linear chain
+- Has its own `data/` directory containing:
+  * A `join.json` artifact recording the convergence metadata
+  * Symlinks to each parent's `data/` directory (input references)
+- The downstream stage (e.g. `harmonize`) nests under the join node
 
 [source]
 ----
 ~/sessions/fedml/session-<id>/
   gather/
-    data/
+    data/                                  ← gather artifacts
     rename/
-      harmonize/
-        data/                              ← harmonize artifacts
-        gather -> ../../../gather          ← symlink: join to non-direct parent
+      data/                                ← rename artifacts
+      _join_gather_rename/                 ← topological join node
+        data/                              ← join artifact + parent refs
+          join.json                        ← convergence metadata + fingerprint
+          gather -> ../../../../data       ← symlink to gather's artifacts
+          rename -> ../../data             ← symlink to rename's artifacts
+        harmonize/
+          data/                            ← harmonize artifacts
 ----
 
-The symlink makes the join edge traversable. The runtime can follow it to
-read the parent's artifacts and verify its fingerprint. For a human exploring
-the tree, `readlink` reveals the relationship.
+==== Why This Works
 
-**Why symlinks and not copies?** The parent's artifacts should exist in
-exactly one place. Copying them would create divergence — if the parent is
-re-executed, the copy becomes stale but isn't detected. Symlinks are
-references, not duplicates. They point to the canonical location.
+The join node resolves the nesting problem without introducing cycles or
+false parent-child relationships:
 
-**Backend generalization:** The concept of "symlink" adapts to each storage
-backend. On a POSIX filesystem, it is a literal symlink. On object storage,
-it is a small reference object containing the target path. On ZeroFS, it is
-whatever linking primitive that system provides. The `StorageBackend.link()`
-method abstracts the mechanism while preserving the semantics.
+- **No cycles.** Symlinks live inside the join node's `data/` directory,
+  not at the stage directory level. They are input references ("here is where
+  my data comes from"), not topology declarations ("this is my child").
+
+- **Self-documenting.** `ls _join_gather_rename/data/` shows exactly what
+  feeds into the downstream stages. The directory name itself declares which
+  streams converge. A human can read the tree and understand provenance
+  without consulting the manifest.
+
+- **Proper data-state.** The join node is a real materialized node with its
+  own `join.json` artifact and its own fingerprint. It participates in the
+  Merkle chain like every other node. If a parent is re-executed, the join
+  node's recorded parent fingerprints become stale, and that staleness
+  cascades to everything downstream.
+
+- **Consistent.** Join nodes are always created when a stage has multiple
+  parents, regardless of whether one parent is an ancestor of the other.
+  The runtime never needs to reason about "implicit" vs "explicit" joins —
+  every join is explicit.
+
+==== Join Node Artifact
+
+The `join.json` artifact records:
+
+[source,json]
+----
+{
+  "stage": "_join_gather_rename",
+  "timestamp": "2026-02-14T10:32:00Z",
+  "parameters_used": {},
+  "content": {
+    "parents": ["gather", "rename"],
+    "parent_paths": {
+      "gather": "../../../../data",
+      "rename": "../../data"
+    }
+  },
+  "_fingerprint": "c9d2e1...",
+  "_parent_fingerprints": {
+    "gather": "a3f8c2...",
+    "rename": "b1d4f3..."
+  }
+}
+----
+
+The content block records the parent references. The envelope carries the
+fingerprint chain. The downstream stage (`harmonize`) lists the join node
+as its parent in the session tree, and the join node's fingerprint
+incorporates both parent fingerprints — so any upstream change propagates
+through the join into all downstream stages.
+
+==== Manifest vs Session Tree Divergence
+
+The manifest declares 12 stages for the FedML workflow. The session tree
+materializes those 12 stages plus N join nodes (one per multi-parent stage).
+This is a well-defined, deterministic transform:
+
+1. The parser reads the manifest and produces a `DAGDefinition` with the
+   declared stages and edges.
+2. The session materializer walks the DAG and identifies every node with
+   multiple parents.
+3. For each such node, it inserts a `_join_<parents>` node between the
+   parents and the downstream stage.
+4. The join node is synthetic (not in the manifest) but real in the session
+   tree — it materializes, fingerprints, and participates in the chain.
+
+The manifest remains clean and human-authored. The session tree reflects
+the operational reality of how data flows converge.
+
+==== Backend Generalization
+
+The symlinks inside `data/` are input references, not topology. Their
+mechanism adapts to the storage backend:
+
+- **POSIX filesystem:** literal symlinks
+- **Object storage:** small reference objects containing the target path
+- **ZeroFS:** whatever linking primitive that system provides
+
+The `StorageBackend.link_create()` method abstracts the mechanism. The
+semantics are uniform: "this reference resolves to that parent's artifacts."
 
 === Session Lifecycle
 
@@ -1251,10 +1368,11 @@ computation.
   calls it for every stage.
 
 | `link(source, target)`
-| Create a join reference from source to target. On a POSIX filesystem,
-  this is a symlink. On object storage, a small reference object
-  containing the target path. The semantics are: "source points to target;
-  reading source resolves to target's content."
+| Create a join input reference from source to target. Used inside
+  topological join nodes' `data/` directories to reference parent artifact
+  directories. On a POSIX filesystem, this is a symlink. On object storage,
+  a small reference object containing the target path. The semantics are:
+  "source points to target; reading source resolves to target's content."
 
 | `list(path)`
 | Enumerate children of a path. Returns an array of child names (not full
@@ -1276,7 +1394,7 @@ computation.
 | `backend/fs.ts`
 | Future
 | Real filesystem on the CalypsoServer sandbox. Enables persistent sessions
-  across server restarts. Uses real symlinks for joins.
+  across server restarts. Uses real symlinks for join node input references.
 
 | `backend/object.ts`
 | Future
@@ -1335,8 +1453,9 @@ tests can:
 
 == FedML Manifest Reference
 
-The complete FedML manifest up to harmonization, showing all fields for each
-stage:
+The complete FedML manifest with all 14 stages. The full file lives at
+`src/dag/manifests/fedml.manifest.yaml`; the first four stages are shown
+here in full, with remaining stages summarized:
 
 [source,yaml]
 ----
@@ -1345,8 +1464,8 @@ stage:
 authors: ATLAS Team <atlas@childrens.harvard.edu>
 name: "Federated ML — SeaGaP-MP Pipeline"
 description: >
-  Full lifecycle from dataset discovery through federation dispatch.
-  Search, Gather, Harmonize, Code, Train, Federate.
+  Full lifecycle from dataset discovery through federated model publication.
+  Search, Gather, Harmonize, Code, Train, Federate, Execute, Publish.
 category: Federated Learning
 persona: fedml
 version: 1.0.0
@@ -1428,9 +1547,21 @@ stages:
         Without harmonization, your model may fail on heterogeneous inputs.
       max_warnings: 2
 
-  # Remaining stages: code, train, federate-brief, federate-transcompile,
-  # federate-containerize, federate-publish-config, federate-publish-execute,
-  # federate-dispatch
+  # Phase 3: Code & Validate
+  # code          → harmonize     produces: code.json           (accumulating)
+  # train         → code          produces: train.json           (.local_pass)
+
+  # Phase 4: Federation (8-step sequence)
+  # federate-brief            → train                produces: briefing.json
+  # federate-transcompile     → federate-brief       produces: transcompile.json
+  # federate-containerize     → federate-transcompile produces: containerize.json
+  # federate-publish-config   → federate-containerize produces: publish-config.json
+  # federate-publish-execute  → federate-publish-config produces: publish-execute.json
+  # federate-dispatch         → federate-publish-execute produces: dispatch.json
+  # federate-execute          → federate-dispatch    produces: execute.json
+  # federate-model-publish    → federate-execute     produces: model-publish.json (terminal)
+
+  # See src/dag/manifests/fedml.manifest.yaml for the complete definition.
 ----
 
 == Example Script

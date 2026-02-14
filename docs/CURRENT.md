@@ -68,24 +68,28 @@ When a user logs in and selects a persona, a **session** is created. The session
     data/                                  ← gather artifacts (cohort composition)
     rename/
       data/                                ← rename artifacts (or skip sentinel)
-      harmonize/
-        data/                              ← harmonize artifacts
-        code/
-          data/                            ← code artifacts (accumulating: code + test cycles)
-          train/
-            data/                          ← local validation artifacts
-            federate-brief/
-              data/                        ← briefing record
-              federate-transcompile/
-                data/                      ← transcompile artifacts
-                federate-containerize/
-                  data/                    ← container build artifacts
-                  ...                      ← federation continues nesting
+      _join_gather_rename/                 ← topological join node
+        data/                              ← join.json + symlinks to parent data/
+        harmonize/
+          data/                            ← harmonize artifacts
+          code/
+            data/                          ← code artifacts (accumulating: code + test cycles)
+            train/
+              data/                        ← local validation artifacts
+              federate-brief/
+                data/                      ← briefing record
+                federate-transcompile/
+                  data/                    ← transcompile artifacts
+                  federate-containerize/
+                    data/                  ← container build artifacts
+                    ...                    ← federation continues nesting
 ```
 
 The nesting literally encodes the DAG path in the filesystem. You can `ls` ancestry. Users don't work here directly — this is the computation record.
 
 Sessions enable persistence: a user can log out, come back, choose a session, and Calypso continues where they left off.
+
+> **Pin:** The full FedML tree nests 16+ levels deep (including join nodes). This is a known ergonomic concern for manual navigation. Accepted for now — the session tree is primarily machine-consumed and the user works in the flat project tree. Alternatives (hybrid nesting, phase grouping) may be explored later.
 
 ### Project Tree — Working Space
 
@@ -100,29 +104,37 @@ The user works in a familiar, flat project directory:
 
 The session tree records **what happened**. The project tree is **where you work**. Session artifacts reference or snapshot the project state at each transition — that's what gets fingerprinted.
 
-### Joins via Symlinks
+### Joins via Topological Join Nodes
 
-The nested directory structure naturally captures linear/branching paths. Joins from non-direct ancestors use **symlinks**:
+The nested directory structure captures linear/branching paths, but joins (multi-parent convergence) break nesting — a directory can only sit in one parent. Placing a symlink to a parent *inside* a stage directory falsely declares that parent as a child and introduces a cycle.
+
+Following ChRIS's topological copy pattern, ARGUS inserts a **topological join node** at every convergence point. The join node is a real materialized node named `_join_<parent1>_<parent2>` (parents alphabetical):
 
 ```
 ~/sessions/fedml/session-<id>/
   gather/
+    data/                                  ← gather artifacts
     rename/
-      harmonize/
-        data/                              ← harmonize artifacts
-        gather -> ../../../gather          ← symlink: join edge to non-direct parent
+      data/                                ← rename artifacts
+      _join_gather_rename/                 ← topological join node
+        data/                              ← join.json + parent refs
+          join.json                        ← convergence metadata + fingerprint
+          gather -> ../../../../data       ← symlink to gather's artifacts
+          rename -> ../../data             ← symlink to rename's artifacts
+        harmonize/
+          data/                            ← harmonize artifacts
 ```
 
-Harmonize nests physically under `rename/` (primary parent) but the symlink to `gather/` makes the join explicit and traversable. The runtime:
+Key properties:
+- **Always created** for any multi-parent stage — no implicit vs explicit distinction
+- **Self-documenting** — `ls _join_gather_rename/data/` shows what converges
+- **No cycles** — symlinks inside `data/` are input references, not topology
+- **Proper data-state** — `join.json` gets fingerprinted into the Merkle chain
+- **Manifest stays clean** — join nodes are synthetic (inserted by the materializer), not declared in the manifest
 
-1. Reads `previous: [gather, rename]` from the manifest
-2. Resolves `rename` via direct parent directory
-3. Resolves `gather` via symlink
-4. Checks both parents' `data/` for artifacts and fingerprints
+The manifest declares 12 FedML stages; the session tree materializes 12 + N join nodes.
 
-This mirrors how ChRIS handles topological copies — joins are linked, not duplicated. The symlink **is** the join edge materialized in the filesystem.
-
-**Generalization:** On a real filesystem, joins are symlinks. On object storage, they're reference/pointer objects. On ZeroFS, whatever linking primitive it provides. The storage backend abstracts this (see DAG Engine below).
+**Backend generalization:** Symlinks inside `data/` are input references. On a POSIX filesystem, literal symlinks. On object storage, reference objects. On ZeroFS, whatever linking primitive it provides.
 
 ## DAG Invalidation via Fingerprinting
 
@@ -206,7 +218,7 @@ src/dag/
 ### Layer Separation
 
 - **`graph/`** — pure topology. Parses YAML, validates DAG structure, resolves readiness. No I/O. Reads manifests and scripts through the same parser.
-- **`store/`** — pure I/O. Materializes the DAG into storage: creates directories, writes artifacts, creates symlinks/links for joins. Manages session lifecycle. Backend-agnostic through the `StorageBackend` interface.
+- **`store/`** — pure I/O. Materializes the DAG into storage: creates directories, writes artifacts, inserts topological join nodes, creates input reference links inside join `data/` directories. Manages session lifecycle. Backend-agnostic through the `StorageBackend` interface.
 - **`fingerprint/`** — pure verification. Computes hashes, validates the Merkle chain, detects staleness. Read-only against the materialized tree.
 
 ### StorageBackend Interface
@@ -259,9 +271,11 @@ The FedML manifest covers the full SeaGaP-MP pipeline. Current stage inventory:
 | `federate-containerize` | federate-transcompile | `containerize.json`, `.containerized` | OCI image build |
 | `federate-publish-config` | federate-containerize | `publish-config.json` | App name, org, visibility |
 | `federate-publish-execute` | federate-publish-config | `publish.json`, `.published` | Registry push |
-| `federate-dispatch` | federate-publish-execute | `dispatch.json`, `.federated` | Dispatch + 5 rounds |
+| `federate-dispatch` | federate-publish-execute | `dispatch.json`, `.federated` | Dispatch to federation network |
+| `federate-execute` | federate-dispatch | `execute.json` | Federated training rounds |
+| `federate-model-publish` | federate-execute | `model-publish.json`, `.model_published` | Publish trained model |
 
-**Total: 12 stages across 4 phases. Every stage produces an artifact.**
+**Total: 14 stages across 4 phases. Every stage produces an artifact.**
 
 ## Manifest-Stage Contract
 
@@ -292,7 +306,7 @@ Fields:
 |-------|---------|
 | `id` | Unique stage identifier |
 | `name` | Human-readable stage name |
-| `phase` | Grouping for progress display |
+| `phase` | Optional grouping for progress display |
 | `previous` | Parent stage(s) — DAG topology |
 | `optional` | Whether the stage can be skipped |
 | `produces` | Artifacts this stage materializes (always non-empty) |
