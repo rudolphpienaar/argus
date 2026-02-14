@@ -1,7 +1,7 @@
 # CURRENT: Manifest-Driven Workflow Sequencing
 
 > Active design document. Updated as thinking evolves.
-> Last updated: 2026-02-12
+> Last updated: 2026-02-14
 
 ## Problem Statement
 
@@ -45,60 +45,86 @@ The manifest DAG follows the ChRIS pipeline convention where each node declares 
 - **Joining** — a node listing multiple parents
 - **Linear sequences** — the common case, just one `previous`
 
-```yaml
-stages:
-  - id: gather
-    previous: search
-    produces:
-      - "${project}/input/.cohort"
+### Every Stage Produces an Artifact
 
-  - id: rename
-    previous: gather
-    optional: true
-    produces: []              # pass-through — no gate artifact
+Following ChRIS data-state DAG semantics, **every stage materializes an artifact** — no exceptions. There are no "pass-through" stages. This keeps the runtime uniform: check `produces`, check fingerprint, done.
 
-  - id: harmonize
-    previous: [gather, rename]   # join — rename is optional branch
-    produces:
-      - "${project}/input/.harmonized"
-```
+- **Repeatable stages** (search, code/test) use an **accumulation model**: each iteration appends to the artifact (e.g., `search.json` logs all queries and results). The final state is what gets fingerprinted when the user moves on.
+- **Optional stages** that are skipped still materialize a **skip sentinel** (e.g., `{skipped: true, default: "DRAFT-1234"}`). The sentinel gets fingerprinted like any other artifact.
+- **Informational stages** (federate-brief) materialize a record of what was presented (e.g., the briefing content and timestamp).
 
-### `previous` vs `produces` (topology vs data-state)
+This eliminates all special-casing in the runtime. The Merkle chain is unbroken across every node.
 
-These are orthogonal concerns:
+## Two Trees: Session and Project
 
-- **`previous`** = structural topology. "Where do I sit in the DAG?" Used for rendering, sequencing guidance, understanding flow. Pure graph relationship.
+### Session Tree — Provenance Record
 
-- **`produces`** = data-state output. "What artifacts does this stage materialize?" The runtime checks these to determine readiness. This is data-state grounding applied to the manifest.
-
-**Readiness is derived, not declared.** A stage is ready when all `produces` of all `previous` stages are materialized. No separate `requires` field needed — it falls out of the graph structure plus the output declarations.
-
-### Stages That Produce Nothing
-
-Stages like `search`, `rename`, and `federate-brief` are informational or interactive. They declare `produces: []` and are treated as pass-through — any downstream stage sees them as trivially complete and the runtime looks further back up the DAG for the real gate.
-
-## Optional Branches
-
-Optional stages (like `rename`) are modeled as proper DAG branches that rejoin:
+When a user logs in and selects a persona, a **session** is created. The session tree is a ChRIS-style nested DAG materialization where each stage nests inside its parent:
 
 ```
-gather ──→ rename ──→ harmonize
-   │                     ↑
-   └─────────────────────┘
+~/sessions/fedml/session-<id>/
+  data/                                    ← search artifacts (search.json)
+  gather/
+    data/                                  ← gather artifacts (cohort composition)
+    rename/
+      data/                                ← rename artifacts (or skip sentinel)
+      harmonize/
+        data/                              ← harmonize artifacts
+        code/
+          data/                            ← code artifacts (accumulating: code + test cycles)
+          train/
+            data/                          ← local validation artifacts
+            federate-brief/
+              data/                        ← briefing record
+              federate-transcompile/
+                data/                      ← transcompile artifacts
+                federate-containerize/
+                  data/                    ← container build artifacts
+                  ...                      ← federation continues nesting
 ```
 
-- `harmonize` has `previous: [gather, rename]`
-- `rename` is marked `optional: true` with `produces: []`
-- If the user transits from `gather` directly to `harmonize`, the runtime sees two parents, one optional and unmaterialized
-- The system prompts explicitly: "Do you want to skip the rename?"
-- If skipped, a sentinel artifact is materialized (e.g., `{skipped: true, default: "auto-generated-name"}`) so the DAG stays artifact-gated everywhere
-- No special "skip" logic in the runtime — just a different artifact value
+The nesting literally encodes the DAG path in the filesystem. You can `ls` ancestry. Users don't work here directly — this is the computation record.
+
+Sessions enable persistence: a user can log out, come back, choose a session, and Calypso continues where they left off.
+
+### Project Tree — Working Space
+
+The user works in a familiar, flat project directory:
+
+```
+~/projects/<project>/
+  input/                                   ← mounted datasets, .cohort, .harmonized
+  src/                                     ← train.py, user code, whatever they add
+  .local_pass
+```
+
+The session tree records **what happened**. The project tree is **where you work**. Session artifacts reference or snapshot the project state at each transition — that's what gets fingerprinted.
+
+### Joins via Symlinks
+
+The nested directory structure naturally captures linear/branching paths. Joins from non-direct ancestors use **symlinks**:
+
+```
+~/sessions/fedml/session-<id>/
+  gather/
+    rename/
+      harmonize/
+        data/                              ← harmonize artifacts
+        gather -> ../../../gather          ← symlink: join edge to non-direct parent
+```
+
+Harmonize nests physically under `rename/` (primary parent) but the symlink to `gather/` makes the join explicit and traversable. The runtime:
+
+1. Reads `previous: [gather, rename]` from the manifest
+2. Resolves `rename` via direct parent directory
+3. Resolves `gather` via symlink
+4. Checks both parents' `data/` for artifacts and fingerprints
+
+This mirrors how ChRIS handles topological copies — joins are linked, not duplicated. The symlink **is** the join edge materialized in the filesystem.
+
+**Generalization:** On a real filesystem, joins are symlinks. On object storage, they're reference/pointer objects. On ZeroFS, whatever linking primitive it provides. The storage backend abstracts this (see DAG Engine below).
 
 ## DAG Invalidation via Fingerprinting
-
-### The Problem
-
-The workflow is not a forced wizard. A user can reach harmonization, realize they forgot a dataset, and jump back to `gather`. When they change the cohort, downstream artifacts (`.harmonized`, `train.py`, `.local_pass`) become stale. How does the system detect this?
 
 ### Merkle Chain Over the DAG
 
@@ -119,33 +145,85 @@ This gives three things for free:
 ### Artifact Fingerprint Format
 
 ```yaml
-# ${project}/input/.cohort
+# In session tree: gather/data/result.json
 created: 2026-02-12T14:30:00Z
 datasets: [ds-001, ds-002]
 _fingerprint: a3f8c2...
 _parent_fingerprints:
-  search: null          # root — no parent artifact
+  search: 7b2e91...
 ```
 
 Then downstream:
 
 ```yaml
-# ${project}/input/.harmonized
+# In session tree: gather/rename/harmonize/data/result.json
 created: 2026-02-12T14:35:00Z
 _fingerprint: b7d1e4...
 _parent_fingerprints:
-  gather: a3f8c2...     # gather's fingerprint at harmonize-time
+  gather: a3f8c2...
+  rename: c4d9f1...       # even if rename was a skip sentinel
 ```
 
 Runtime check: `artifact.parent_fingerprints.gather === current_gather_artifact.fingerprint` → fresh. Mismatch → stale, needs redo.
 
-This is essentially `make` semantics (timestamp comparison) but **content-addressed** (hash comparison), which is strictly better — re-running `gather` with the same datasets doesn't force a cascade.
+Content-addressed (hash comparison), not timestamp-based — re-running `gather` with the same datasets doesn't force a cascade.
 
 ### Staleness Response
 
 Open question: does the user see staleness as a **warning** or a **hard gate**?
 
 Likely a warning: "Your harmonization was based on a different cohort. Re-run harmonize?" The manifest could declare this per-stage (`on_stale: warn | block`).
+
+## DAG Engine: `src/dag/`
+
+The DAG machinery is a foundational layer — on par with VFS and the workflow engine. It has its own top-level module:
+
+```
+src/dag/
+  graph/
+    types.ts               ← DAGNode, DAGEdge, DAGDefinition (common output)
+    validator.ts           ← cycle detection, orphan check, join validation (common)
+    resolver.ts            ← walk topology, compute readiness from store state (common)
+    parser/
+      manifest.ts          ← manifest YAML → DAGDefinition
+      script.ts            ← script YAML → DAGDefinition
+      common.ts            ← shared parsing utilities (YAML loading, previous normalization)
+
+  store/
+    types.ts               ← StorageBackend interface
+    SessionStore.ts        ← session lifecycle (create/resume/list) against any backend
+    backend/
+      vfs.ts               ← VFS backend (current — in-memory)
+      fs.ts                ← real filesystem backend (future)
+      object.ts            ← object storage backend (future)
+
+  fingerprint/
+    hasher.ts              ← compute stage fingerprints from content + parent fps
+    chain.ts               ← Merkle chain validation, staleness detection
+    types.ts               ← FingerprintRecord, StalenessResult
+```
+
+### Layer Separation
+
+- **`graph/`** — pure topology. Parses YAML, validates DAG structure, resolves readiness. No I/O. Reads manifests and scripts through the same parser.
+- **`store/`** — pure I/O. Materializes the DAG into storage: creates directories, writes artifacts, creates symlinks/links for joins. Manages session lifecycle. Backend-agnostic through the `StorageBackend` interface.
+- **`fingerprint/`** — pure verification. Computes hashes, validates the Merkle chain, detects staleness. Read-only against the materialized tree.
+
+### StorageBackend Interface
+
+```
+write(path, data)          ← materialize an artifact
+read(path)                 ← retrieve artifact
+exists(path)               ← check materialization
+link(source, target)       ← create a join reference (symlink / object ref / etc.)
+list(path)                 ← enumerate children
+```
+
+Today: VFS backend. Future: real FS on CalypsoServer sandbox, object storage, ZeroFS. Swap the backend, everything else stays the same.
+
+### Integration
+
+CalypsoCore and WorkflowEngine consume `src/dag/` rather than implementing any DAG logic inline. The existing `WorkflowEngine.stages_completed()` would eventually delegate to `dag/fingerprint/chain.ts` for readiness checks.
 
 ## FedML Manifest: Stage Inventory
 
@@ -155,35 +233,35 @@ The FedML manifest covers the full SeaGaP-MP pipeline. Current stage inventory:
 
 | Stage | Previous | Produces | Notes |
 |-------|----------|----------|-------|
-| `search` | (root) | — | Dataset discovery, repeatable |
-| `gather` | search | `.cohort` | Cohort assembly, project creation |
-| `rename` | gather | — | Optional, branches and rejoins at harmonize |
+| `search` | (root) | `search.json` | Accumulating: logs all queries + results |
+| `gather` | search | `gather.json`, `.cohort` | Cohort assembly, project creation |
+| `rename` | gather | `rename.json` (or skip sentinel) | Optional branch, rejoins at harmonize |
 
 ### Phase 2: Harmonize
 
 | Stage | Previous | Produces | Notes |
 |-------|----------|----------|-------|
-| `harmonize` | gather, rename | `.harmonized` | Data standardization, soft-skip warning |
+| `harmonize` | gather, rename | `harmonize.json` | Data standardization, soft-skip warning |
 
 ### Phase 3: Code & Validate
 
 | Stage | Previous | Produces | Notes |
 |-------|----------|----------|-------|
-| `code` | harmonize | `src/train.py` | Scaffold project structure |
-| `train` | code | `.local_pass` | Local validation before federation |
+| `code` | harmonize | `code.json` | Accumulating: code + test cycles |
+| `train` | code | `train.json`, `.local_pass` | Local validation |
 
 ### Phase 4: Federation (5-step handshake)
 
 | Stage | Previous | Produces | Notes |
 |-------|----------|----------|-------|
-| `federate-brief` | train | — | Informational briefing |
-| `federate-transcompile` | federate-brief | `artifact.json` | Inject Flower hooks, generate node.py |
-| `federate-containerize` | federate-transcompile | `.containerized` | Build OCI image |
-| `federate-publish-config` | federate-containerize | — | Collect app name, org, visibility |
-| `federate-publish-execute` | federate-publish-config | `.published` | Push to registry |
-| `federate-dispatch` | federate-publish-execute | `.federated` | Dispatch + 5 federated rounds |
+| `federate-brief` | train | `briefing.json` | Briefing record |
+| `federate-transcompile` | federate-brief | `transcompile.json` | Flower hooks, node.py |
+| `federate-containerize` | federate-transcompile | `containerize.json`, `.containerized` | OCI image build |
+| `federate-publish-config` | federate-containerize | `publish-config.json` | App name, org, visibility |
+| `federate-publish-execute` | federate-publish-config | `publish.json`, `.published` | Registry push |
+| `federate-dispatch` | federate-publish-execute | `dispatch.json`, `.federated` | Dispatch + 5 rounds |
 
-**Total: 12 stages across 4 phases.**
+**Total: 12 stages across 4 phases. Every stage produces an artifact.**
 
 ## Manifest-Stage Contract
 
@@ -196,7 +274,7 @@ Each stage in the manifest declares:
   previous: [gather, rename]
   optional: false
   produces:
-    - "${project}/input/.harmonized"
+    - harmonize.json
   instruction: >
     Harmonize your cohort to ensure consistent data formats...
   commands:
@@ -217,7 +295,7 @@ Fields:
 | `phase` | Grouping for progress display |
 | `previous` | Parent stage(s) — DAG topology |
 | `optional` | Whether the stage can be skipped |
-| `produces` | Artifacts this stage materializes (data-state outputs) |
+| `produces` | Artifacts this stage materializes (always non-empty) |
 | `instruction` | What to tell the user at this stage |
 | `commands` | Exact commands available |
 | `skip_warning` | Educational warning if user tries to skip |
@@ -227,7 +305,9 @@ Fields:
 - [ ] Finalize manifest YAML schema
 - [ ] Write `fedml.manifest.yaml` with full stage definitions
 - [ ] Define script-manifest anchoring (`manifest:` field in scripts)
-- [ ] Implement manifest loader in runtime
-- [ ] Wire `instruction` and `commands` into LLM context injection
-- [ ] Implement fingerprint generation and staleness detection
-- [ ] Explore FS materialization (VFS → real filesystem on server sandbox)
+- [ ] Design `src/dag/` module — types, interfaces, graph parser
+- [ ] Implement `StorageBackend` interface + VFS backend
+- [ ] Implement `SessionStore` — session creation, resume, listing
+- [ ] Implement fingerprint generation and Merkle chain validation
+- [ ] Wire manifest `instruction` and `commands` into LLM context injection
+- [ ] Explore real FS backend for CalypsoServer sandbox
