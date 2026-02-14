@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { CalypsoStoreActions } from '../CalypsoCore.js';
+import type { CalypsoStoreActions } from '../types.js';
 import type { Dataset, AppState } from '../../core/models/types.js';
 import { store, state } from '../../core/state/store.js';
 

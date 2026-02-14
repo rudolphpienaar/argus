@@ -116,3 +116,32 @@ export interface CalypsoCoreConfig {
     /** Workflow ID to use (default: 'fedml') */
     workflowId?: string;
 }
+
+// ─── Store Actions Interface ───────────────────────────────────────────────
+
+/**
+ * Interface for store actions that CalypsoCore needs.
+ * This avoids circular dependencies with the full Store class.
+ */
+export interface CalypsoStoreActions {
+    /** Get current state snapshot */
+    state_get(): Partial<AppState>;
+
+    /** Reset to initial state */
+    reset(): void;
+
+    /** Select a dataset */
+    dataset_select(dataset: Dataset): void;
+
+    /** Deselect a dataset by ID */
+    dataset_deselect(id: string): void;
+
+    /** Get selected datasets */
+    datasets_getSelected(): Dataset[];
+
+    /** Get active project */
+    project_getActive(): { id: string; name: string } | null;
+
+    /** Set current stage */
+    stage_set(stage: AppState['currentStage']): void;
+}

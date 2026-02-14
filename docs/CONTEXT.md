@@ -4,6 +4,12 @@ This document captures the architectural trajectory of ARGUS so current decision
 
 ## Narrative Timeline
 
+### 2026-02-12 (v7.2.0): Calypso WebSocket Service Architecture
+
+The monolithic CLI (2081 lines) and HTTP-only server (456 lines) were decomposed into a layered WebSocket service with nine focused modules. A typed protocol layer enables shared sessions — multiple clients (TUI, future WUI, test harnesses) connect to the same CalypsoCore instance via WebSocket and see identical VFS/Store/workflow state. The duplicate script engine (~560 lines copied from ScriptRuntime) was eliminated. See `docs/calypso-architecture.adoc` for the full specification.
+
+Interactive testing revealed that while data-state grounding answers "where am I?" reliably, the LLM drifts on "what comes next?" — skipping stages, forgetting optional steps, and confabulating plausible but wrong sequences. This motivated the manifest-driven sequencing design now under active development. See `docs/CURRENT.md`.
+
 ### 2026-02-06 (v6.1.0): Data-State Grounding
 
 The platform formalized a key principle: workflow progress is proven by materialized artifacts, not by optimistic in-memory counters. That brought ARGUS explicitly in line with ChRIS-style DAG semantics and clarified why markers such as `.harmonized`, `train.py`, and `.local_pass` are treated as state truth.

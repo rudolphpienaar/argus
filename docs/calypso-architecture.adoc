@@ -1,0 +1,320 @@
+= Calypso Service Architecture
+:revnumber: 7.2.0
+:revdate: 2026-02-12
+:toc: macro
+:toclevels: 3
+:sectnums:
+
+toc::[]
+
+== Overview
+
+As of v7.2.0, Calypso is a **layered WebSocket service** with clean separation
+between protocol, transport, core logic, and presentation. The prior monolithic
+architecture (a 2081-line CLI client and 456-line HTTP-only server) has been
+decomposed into nine focused modules totaling ~2300 lines, plus two thin entry
+points.
+
+This document describes the current architecture, the modules, and the rationale
+for the refactoring.
+
+== Architecture Diagram
+
+[source]
+----
+                          ┌─────────────────────────┐
+                          │     Entry Points         │
+                          │                          │
+                          │  calypso-server.ts (20L) │
+                          │  calypso/cli/main.ts(35L)│
+                          └────────┬────────┬────────┘
+                                   │        │
+                    ┌──────────────┘        └──────────────┐
+                    ▼                                      ▼
+   ┌────────────────────────────────┐    ┌─────────────────────────────────┐
+   │        SERVER LAYER            │    │         CLIENT LAYER            │
+   │                                │    │                                 │
+   │  CalypsoServer.ts    (252L)    │    │  CalypsoClient.ts     (201L)   │
+   │  ├─ HTTP + WebSocket server    │    │  ├─ WS transport               │
+   │  ├─ CalypsoCore lifecycle      │    │  ├─ Correlation ID matching    │
+   │  └─ Session management         │    │  └─ Promise-based API          │
+   │                                │    │                                 │
+   │  RestHandler.ts      (240L)    │    └──────────────┬──────────────────┘
+   │  └─ 12 REST route handlers     │                   │
+   │                                │                   ▼
+   │  WebSocketHandler.ts (150L)    │    ┌─────────────────────────────────┐
+   │  └─ Per-connection dispatch    │    │       PRESENTATION LAYER       │
+   └────────────────┬───────────────┘    │                                 │
+                    │                    │  cli/Repl.ts          (448L)   │
+                    ▼                    │  ├─ Login / persona prompts    │
+   ┌────────────────────────────────┐    │  ├─ Tab completion             │
+   │        PROTOCOL LAYER          │    │  └─ Command dispatch           │
+   │                                │    │                                 │
+   │  protocol/types.ts   (114L)    │    │  ui/tui/TuiRenderer.ts (704L) │
+   │  ├─ ClientMessage (5 types)    │    │  ├─ Spinner, colors, tables   │
+   │  ├─ ServerMessage (6 types)    │    │  ├─ Response animation        │
+   │  └─ Correlation ID generation  │    │  └─ Harmonization animation   │
+   └────────────────────────────────┘    │                                 │
+                                         │  ui/tui/SyntaxHighlight (160L) │
+                    ▲                    │  └─ ANSI syntax highlighting   │
+                    │                    └─────────────────────────────────┘
+                    │
+   ┌────────────────────────────────┐
+   │        CALYPSO CORE            │
+   │  (unchanged — src/lcarslm/)    │
+   │                                │
+   │  CalypsoCore.ts     (2049L)    │
+   │  ├─ Shell builtins             │
+   │  ├─ Workflow commands          │
+   │  ├─ NL action intent           │
+   │  └─ LLM fallback              │
+   │                                │
+   │  FederationOrchestrator.ts     │
+   │  ScriptRuntime.ts              │
+   │  engine.ts (LCARSEngine)       │
+   └────────────────────────────────┘
+----
+
+== Module Reference
+
+=== Protocol Layer: `src/calypso/protocol/`
+
+==== `types.ts` (114 lines)
+
+Defines the typed WebSocket message protocol. All messages carry a correlation
+`id` for request/response matching.
+
+**Client → Server messages:**
+
+[cols="1,2"]
+|===
+| Type | Purpose
+
+| `command`
+| Execute a shell or workflow command
+
+| `login`
+| Authenticate with username
+
+| `persona`
+| Set active workflow/persona
+
+| `prompt`
+| Fetch current shell prompt string
+
+| `tab-complete`
+| Request tab completions for partial input
+|===
+
+**Server → Client messages:**
+
+[cols="1,2"]
+|===
+| Type | Purpose
+
+| `response`
+| Command execution result (wraps `CalypsoResponse`)
+
+| `login-response`
+| Login result with available workflows
+
+| `persona-response`
+| Persona selection result
+
+| `prompt-response`
+| Current prompt string
+
+| `tab-complete-response`
+| Completion candidates
+
+| `error`
+| Error with message string
+|===
+
+=== Server Layer: `src/calypso/server/`
+
+==== `CalypsoServer.ts` (252 lines)
+
+The combined HTTP + WebSocket server. Holds a single `CalypsoCore` instance
+shared across all connections, enabling shared sessions.
+
+Key responsibilities:
+
+* **`calypso_initialize()`** — Creates VFS, Shell, ContentRegistry, CalypsoCore
+  with full documentation bundle and simulated ATLAS datasets.
+* **HTTP server** — Serves REST API via `RestHandler` and static files.
+* **WebSocket server** — Accepts upgrades on `/calypso/ws`, delegates each
+  connection to `WebSocketHandler`.
+* **`GlobalStoreAdapter`** — Implements `CalypsoStoreActions` for headless mode
+  (in-memory store without DOM).
+
+==== `RestHandler.ts` (240 lines)
+
+All REST route handlers extracted from the original `calypso-server.ts`.
+Handles 12 endpoints (`/calypso/command`, `/calypso/health`, `/calypso/login`,
+etc.) via a single `restRequest_handle(req, res, deps)` dispatcher that returns
+a boolean indicating whether the request was handled.
+
+The REST API remains functional for simple integrations but is superseded by
+WebSocket for interactive clients.
+
+==== `WebSocketHandler.ts` (150 lines)
+
+Per-connection handler that maps incoming `ClientMessage` types to CalypsoCore
+methods and returns correlated `ServerMessage` responses. Handles connection
+lifecycle (message parsing, error wrapping, cleanup on disconnect).
+
+=== Client Layer: `src/calypso/client/`
+
+==== `CalypsoClient.ts` (201 lines)
+
+Surface-agnostic WebSocket transport. Used by the TUI REPL today and designed
+for future browser WUI use.
+
+Features:
+
+* **Correlation IDs** — Each request carries a unique ID; the client matches
+  responses by ID, enabling concurrent in-flight requests.
+* **Promise-based API** — `command_send()`, `login_send()`, `persona_send()`,
+  `prompt_fetch()`, `tabComplete()` all return Promises.
+* **30-second timeout** — Pending requests auto-reject after timeout.
+* **Clean disconnect** — All pending requests reject on connection close.
+
+=== Presentation Layer: `src/calypso/ui/tui/`
+
+==== `TuiRenderer.ts` (704 lines)
+
+All terminal rendering logic extracted from the original monolithic CLI.
+
+Exports:
+
+* `COLORS` — ANSI color palette (amber, gold, sky, rose, etc.)
+* `spinner_start()` — Braille-animation spinner with contextual labels
+* `harmonization_animate()` — Multi-phase harmonization progress animation
+* `response_renderAnimated()` — Character-by-character response streaming
+* `table_render()` — Box-drawing table renderer
+* `message_style()` — Response marker styling (bullets, warnings, headers)
+
+==== `SyntaxHighlight.ts` (160 lines)
+
+ANSI syntax highlighting for code blocks in LLM responses. Supports Python,
+JSON, YAML, Bash, TypeScript/JavaScript, and Markdown with automatic language
+detection from file extensions and content heuristics.
+
+=== REPL: `src/calypso/cli/`
+
+==== `Repl.ts` (448 lines)
+
+The WebSocket-based interactive REPL. Combines `CalypsoClient` for transport
+with `TuiRenderer` for presentation.
+
+Flow:
+
+1. Connect to CalypsoServer via WebSocket
+2. Present login prompt → send `login` message
+3. Present persona selection → send `persona` message
+4. Enter command loop: read input → `command_send()` → render response
+5. Handle special cases: scripts, `quit`, tab completion
+
+==== `main.ts` (35 lines)
+
+Thin entry point. Parses `--host`, `--port`, `--url` arguments and calls
+`repl_start()`.
+
+== Running Calypso
+
+=== Start the Server
+
+[source,bash]
+----
+$ make calypso
+# Starts CalypsoServer on :8081 (HTTP + WebSocket)
+# Single CalypsoCore instance serves all clients
+----
+
+=== Connect via WebSocket CLI
+
+[source,bash]
+----
+$ make calypso-ws
+# Connects to ws://localhost:8081/calypso/ws
+# Full REPL with login, persona, tab completion
+----
+
+=== Connect via Legacy HTTP CLI (deprecated)
+
+[source,bash]
+----
+$ make calypso-cli
+# Uses HTTP transport — functional but deprecated
+# Will be removed once WebSocket client is proven
+----
+
+== Shared Sessions
+
+The WebSocket architecture enables **shared sessions**: multiple clients
+(TUI, future WUI, test harnesses) connect to the same `CalypsoCore` instance
+and see the same VFS, Store, and workflow state. This is a fundamental shift
+from the HTTP model where each request was stateless and session state lived
+only on the server.
+
+[source]
+----
+                    ┌───────────────┐
+                    │ CalypsoServer  │
+                    │                │
+                    │  CalypsoCore   │  ◄── single instance
+                    │  ├─ VFS       │
+                    │  ├─ Store     │
+                    │  └─ Shell     │
+                    └──┬─────────┬──┘
+                       │         │
+              WebSocket│         │WebSocket
+                       │         │
+                  ┌────┴───┐ ┌───┴────┐
+                  │TUI REPL│ │  WUI   │  ◄── future
+                  └────────┘ └────────┘
+----
+
+== Migration from Monolith
+
+The refactoring (v7.2.0) decomposed two monolithic files into the layered
+architecture described above:
+
+[cols="2,1,1,2"]
+|===
+| Component | Before | After | Change
+
+| `calypso-cli.ts`
+| 2081 lines
+| 710 lines (deprecated)
+| TUI rendering, syntax highlighting, duplicate script engine extracted
+
+| `calypso-server.ts`
+| 456 lines
+| 20 lines (thin entry)
+| Server logic, REST handlers, WS support extracted
+
+| New focused modules
+| 0
+| 9 modules, 2304 lines
+| Protocol, server, client, UI, REPL
+|===
+
+The duplicate script engine (~560 lines copied from `ScriptRuntime`) was
+eliminated entirely — the WebSocket client delegates script execution to
+CalypsoCore's `ScriptRuntime` via the protocol.
+
+== Relation to Other Documents
+
+* **`calypso.adoc`** — Identity, lore, interaction model, visual signature.
+  The conceptual "who is Calypso" document. Still current.
+* **`persona-workflows.adoc`** — Workflow DAG definitions and data-state
+  grounding. Describes _what_ Calypso guides users through.
+* **This document** — _How_ Calypso is built. The service architecture,
+  module boundaries, and deployment model.
+* **`CURRENT.md`** — Active design work on manifest-driven workflow
+  sequencing and DAG fingerprinting (see `docs/CURRENT.md`).
+
+---
+_Last updated: {revdate} (v{revnumber})_

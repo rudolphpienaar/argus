@@ -1,6 +1,6 @@
 = CALYPSO: The AI Core
-:revnumber: 6.0.2
-:revdate: 2026-02-05
+:revnumber: 7.2.0
+:revdate: 2026-02-12
 :toc: macro
 :toclevels: 3
 :sectnums:
@@ -379,26 +379,49 @@ These commands are primarily used for debugging and ORACLE testing, but are avai
 
 == Source Structure
 
+As of v7.2.0, the Calypso service is split across two source trees:
+
 [source]
 ----
-src/lcarslm/
-├── CalypsoCore.ts          # DOM-free orchestrator (NEW)
-├── engine.ts               # LCARSEngine: LLM client wrapper
-├── client.ts               # OpenAI client
-├── gemini.ts               # Gemini client
-├── types.ts                # CalypsoResponse, CalypsoAction, Intent
-│
+src/lcarslm/                        # CalypsoCore — the AI brain
+├── CalypsoCore.ts                  #   DOM-free orchestrator
+├── engine.ts                       #   LCARSEngine: LLM client wrapper
+├── client.ts                       #   OpenAI client
+├── gemini.ts                       #   Gemini client
+├── types.ts                        #   CalypsoResponse, CalypsoAction, Intent
+├── federation/
+│   └── FederationOrchestrator.ts   #   5-step federation handshake
+├── scripts/
+│   └── ScriptRuntime.ts            #   .clpso script execution
 ├── adapters/
-│   ├── BrowserAdapter.ts   # Connects CalypsoCore → Terminal + DOM
-│   ├── CLIAdapter.ts       # Connects CalypsoCore → stdout/stdin
-│   └── NodeAdapter.ts      # Connects CalypsoCore → test harness
-│
-└── AIService.ts            # Legacy browser integration (uses BrowserAdapter)
+│   ├── BrowserAdapter.ts           #   CalypsoCore → Terminal + DOM
+│   ├── CLIAdapter.ts               #   CalypsoCore → stdout/stdin
+│   ├── NodeAdapter.ts              #   CalypsoCore → test harness
+│   └── StoreAdapter.ts             #   Headless store implementation
+└── AIService.ts                    #   Legacy browser integration
 
-src/cli/
-├── calypso-server.ts       # Headless server entry point
-└── calypso-cli.ts          # CLI REPL client
+src/calypso/                        # Service layer — protocol, transport, UI
+├── protocol/
+│   └── types.ts                    #   WebSocket message types + correlation IDs
+├── server/
+│   ├── CalypsoServer.ts            #   HTTP + WebSocket server
+│   ├── RestHandler.ts              #   REST route handlers
+│   └── WebSocketHandler.ts         #   Per-connection WS dispatch
+├── client/
+│   └── CalypsoClient.ts            #   Shared WS transport (TUI + future WUI)
+├── ui/tui/
+│   ├── TuiRenderer.ts              #   Spinner, colors, tables, animation
+│   └── SyntaxHighlight.ts          #   ANSI syntax highlighting
+└── cli/
+    ├── Repl.ts                     #   WebSocket REPL loop
+    └── main.ts                     #   Thin CLI entry point
+
+src/cli/                            # Entry points (thin wrappers)
+├── calypso-server.ts               #   → CalypsoServer.calypsoServer_start()
+└── calypso-cli.ts                  #   Legacy HTTP CLI (deprecated)
 ----
+
+NOTE: For the full service architecture specification, see `docs/calypso-architecture.adoc`.
 
 == Integration with ORACLE
 
@@ -418,12 +441,17 @@ This separation allows:
 
 == Future Enhancements
 
+=== In Progress
+
+1. **Manifest-Driven Sequencing**: Persona manifests (`*.manifest.yaml`) that define complete conversational DAGs, grounding "what comes next" the same way VFS markers ground "where am I." See `docs/CURRENT.md`.
+2. **DAG Fingerprinting**: Merkle chain over the workflow DAG for staleness detection when users revisit earlier stages.
+3. **Browser WUI Client**: `src/calypso/ui/web/` — browser-side WebSocket client sharing the same CalypsoClient transport as the TUI.
+
 === Planned
 
 1. **Persistent Sessions**: Save/restore VFS and Store state across CLI sessions
-2. **Script Mode**: Execute `.calypso` script files for batch operations
-3. **Remote Mode**: Connect CLI to a remote ARGUS instance for debugging
-4. **Plugin System**: Register custom commands and intent handlers
+2. **FS Materialization**: VFS → real filesystem on the CalypsoServer sandbox
+3. **Script-Manifest Anchoring**: Scripts declare `manifest:` field, validated against manifest stages
 
 === Research
 
