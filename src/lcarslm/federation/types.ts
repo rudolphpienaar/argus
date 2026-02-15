@@ -8,12 +8,18 @@
 
 export type FederationVisibility = 'public' | 'private';
 
+/**
+ * Federation step IDs — aligned 1:1 with fedml.manifest.yaml stage IDs.
+ */
 export type FederationStep =
-    | 'transcompile'
-    | 'containerize'
-    | 'publish_prepare'
-    | 'publish_configure'
-    | 'dispatch_compute';
+    | 'federate-brief'
+    | 'federate-transcompile'
+    | 'federate-containerize'
+    | 'federate-publish-config'
+    | 'federate-publish-execute'
+    | 'federate-dispatch'
+    | 'federate-execute'
+    | 'federate-model-publish';
 
 export interface FederationPublishConfig {
     appName: string | null;

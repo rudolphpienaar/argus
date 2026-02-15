@@ -2,15 +2,30 @@
 
 ## What Just Happened
 
-Completed the full DAG engine integration into CalypsoCore (Phase 2-3 of the plan in
-`~/.claude/plans/snappy-marinating-fairy.md`). The old `WorkflowEngine` static class
-with 5 hardcoded stages and `eval()`-based validation has been replaced by a
-manifest-driven DAG engine with topology-aware session tree paths.
+1. Completed DAG engine integration into CalypsoCore — old `WorkflowEngine` replaced by
+   manifest-driven DAG engine with topology-aware session tree paths.
 
-### Key Accomplishment: Topology-Aware Session Tree
+2. **Aligned FederationOrchestrator command protocol with fedml.manifest.yaml.** The old
+   `federate --yes` sledgehammer (5-step state machine) has been replaced by semantic
+   commands matching the 8 manifest stages: `approve`, `show transcompile`, `config name`,
+   `dispatch`, `status`, `publish model`. The oracle exercises the real command language.
 
-The session directory tree now mirrors the DAG topology — each stage nests under its
-primary parent, creating a filesystem structure that IS the provenance chain:
+### Federation Command Protocol (NEW)
+
+| Manifest stage | Command(s) | What happens |
+|---|---|---|
+| `federate-brief` | `federate` | Show briefing, advance to transcompile |
+| `federate-transcompile` | `approve`, `show transcompile` | Materialize Flower transcompilation |
+| `federate-containerize` | `approve`, `show container` | Build OCI container image |
+| `federate-publish-config` | `config name/org/visibility`, `approve` | Configure publication metadata |
+| `federate-publish-execute` | `approve`, `show publish` | Push to registry |
+| `federate-dispatch` | `dispatch [--sites]` | Dispatch to federation network |
+| `federate-execute` | `status`, `show metrics/rounds` | Monitor training (auto-completes) |
+| `federate-model-publish` | `publish model`, `show provenance` | Publish model, write `.federated` |
+
+`federate --yes` still works as backward-compat alias for `approve`.
+
+### Topology-Aware Session Tree
 
 ```
 session-root/
@@ -28,7 +43,7 @@ session-root/
             data/federate-brief.json
 ```
 
-## Architecture After Migration
+## Architecture
 
 ### DAG Engine (`src/dag/`)
 
@@ -40,9 +55,9 @@ session-root/
 | Bridge | `bridge/WorkflowAdapter.ts`, `bridge/CompletionMapper.ts`, `bridge/SessionPaths.ts` | 34 |
 | Manifests | `manifests/fedml.manifest.yaml`, `manifests/chris.manifest.yaml` | — |
 
-Total: 159 DAG tests + 164 other tests = **323 tests all passing**.
+Total: **323 tests all passing**.
 
-### Bridge Layer (the CalypsoCore-facing API)
+### Bridge Layer
 
 ```
 WorkflowAdapter          — CalypsoCore's single entry point
@@ -54,91 +69,78 @@ WorkflowAdapter          — CalypsoCore's single entry point
   └─ stagePaths          — Map<string, StagePath> topology-aware paths
 
 CompletionMapper         — Maps stage IDs → VFS artifact checks
-  ├─ fedmlMapper_create()  — search/rename alias to gather, federation aliases to federate-brief
-  └─ chrisMapper_create()  — publish never auto-completes (action stage)
-
 SessionPaths             — Computes topology-aware paths from DAG structure
-  └─ sessionPaths_compute() — walks parent chains, builds nesting paths
 ```
 
-### CalypsoCore Session Lifecycle
+### FederationOrchestrator
 
-1. **Constructor** creates session: `~/sessions/<workflow>/session-<timestamp>/`
-2. **`sessionArtifact_write(stageId, content)`** writes `ArtifactEnvelope` at topology-aware path
-3. All `position_resolve()`/`transition_check()` pass `this.sessionPath`
-4. `FederationOrchestrator.session_set(artifactPath)` receives the full federate-brief path
+```
+FederationOrchestrator.command(verb, rawArgs, username)
+  ├─ 'federate'  → step_brief()             — show briefing
+  ├─ 'approve'   → step_approve()           — context-dependent: advance current step
+  ├─ 'show'      → step_show(subcommand)    — transcompile/container/publish/metrics/rounds/provenance
+  ├─ 'config'    → step_config()            — name/org/visibility
+  ├─ 'dispatch'  → step_dispatch()          — initiate federation
+  ├─ 'status'    → step_status()            — training progress
+  └─ 'publish'   → step_publish()           — model publication (completes handshake)
+```
+
+`FederationStep` type: 8 values aligned 1:1 with manifest stage IDs.
+
+### CalypsoCore Routing
+
+`workflow_dispatch()` switch routes: `federate`, `approve`, `show`, `config`, `dispatch`,
+`status`, `publish` — all federation sub-commands gated on `this.federation.active`.
+When no handshake active, these fall through to null → LLM.
 
 ### Dual-Write Pattern (Current)
 
 Action handlers write BOTH:
-- **Dotfile markers** to project workspace (`.cohort`, `.harmonized`, `.local_pass`, `.federated`) — consumed by Shell guards, CohortProfiler, FederationOrchestrator readiness checks
-- **ArtifactEnvelopes** to session tree — source of truth for workflow state via CompletionMapper
-
-Dotfile markers are legacy operational guards. Session tree artifacts are the DAG-grounded source of truth.
-
-## What Was Deleted
-
-| File | Reason |
-|------|--------|
-| `src/core/workflows/WorkflowEngine.ts` | Replaced by `WorkflowAdapter` |
-| `src/core/workflows/definitions/fedml.ts` | Replaced by `fedml.manifest.yaml` |
-| `src/core/workflows/definitions/chris.ts` | Replaced by `chris.manifest.yaml` |
-| `src/core/workflows/WorkflowEngine.test.ts` | Replaced by `bridge.test.ts` |
-| `src/core/logic/ProjectManager.ts` methods | `project_gather_complete()` and related removed; marker writes moved to CalypsoCore |
-
-## What Survives in `src/core/workflows/`
-
-Only type re-exports:
-- `types.ts` — re-exports `WorkflowSummary`, `TransitionResult` from bridge
-- `index.ts` — re-exports from `types.ts`
-
-## Dotfile Markers Still In Use (Legacy Guards)
-
-These are still written to the project workspace AND checked by non-DAG code:
-
-| Marker | Written by | Read by |
-|--------|-----------|---------|
-| `.cohort` | `ProjectManager.project_gather()` | `CohortProfiler`, `CalypsoCore.workflow_nextStep()` guard |
-| `.harmonized` | `ProjectManager.project_harmonize()` | `CalypsoCore.workflow_nextStep()` guard |
-| `.local_pass` | `Shell.ts` (python train.py hook) | `Shell.ts` (federation readiness), `CalypsoCore` |
-| `.federated` | `FederationOrchestrator` | `CalypsoCore.workflow_nextStep()` |
+- **Dotfile markers** to project workspace — consumed by Shell guards, CohortProfiler
+- **ArtifactEnvelopes** to session tree — source of truth for workflow state
 
 ## Logical Next Steps
 
 ### Near-term: Eliminate Dual-Write
-Migrate the dotfile marker consumers to read from session tree instead:
-1. `Shell.ts:659` — checks `.local_pass` for federation readiness → should check session tree `train` artifact
-2. `Shell.ts:465` — writes `.local_pass` → already dual-writing to session tree, remove dotfile write
-3. `CalypsoCore.ts:719,755,1141` — guards that check `.harmonized`, `.local_pass`, `.federated` → use `position_resolve()`
-4. `ProjectManager.ts:157,253` — writes `.cohort`, `.harmonized` → already dual-writing, remove dotfile writes
-5. `CohortProfiler` — reads `.cohort` → check session tree `gather` artifact
+Migrate dotfile marker consumers to read from session tree instead:
+1. `Shell.ts` — checks `.local_pass` for federation readiness
+2. `CalypsoCore.ts` — guards that check `.harmonized`, `.local_pass`, `.federated`
+3. `ProjectManager.ts` — writes `.cohort`, `.harmonized`
+
+### Medium-term: Per-Stage Federation Artifacts
+Currently all 8 federation sub-stages alias to `federate-brief` artifact.
+Future: each step writes its own artifact at its topology-aware path.
 
 ### Medium-term: SessionStore Integration
-The `SessionStore` (`src/dag/store/SessionStore.ts`) provides an async API with fingerprinting
-and metadata. Currently the bridge uses raw VFS writes. Future: have `sessionArtifact_write()`
-go through `SessionStore.artifact_write()` for automatic fingerprinting and parent-chain
-validation.
-
-### Medium-term: Fine-Grained Federation Tracking
-Currently all 8 federation sub-stages alias to `federate-brief` artifact. Future: each
-federation step writes its own artifact at its topology-aware path (e.g.
-`train/federate-brief/federate-transcompile/data/federate-transcompile.json`).
+Have `sessionArtifact_write()` go through `SessionStore.artifact_write()` for
+automatic fingerprinting and parent-chain validation.
 
 ## Test & Build Commands
 
 ```bash
 npx vitest run                    # 323 tests, all pass
 npm run build                     # tsc + manifest copy + knowledge bundle
-node scripts/oracle-runner.mjs    # FedML smoke oracle (26 steps, topology-aware assertions)
+node scripts/oracle-runner.mjs    # FedML smoke oracle (28 steps, semantic federation commands)
 npx tsc --noEmit                  # type check only
 ```
 
 ## Oracle
 
 `tests/oracle/fedml-smoke.oracle.json` — reflexive NL testing where Calypso tests herself.
-Uses `${session}` variable (resolved via `core.session_getPath()` in `scripts/oracle-runner.mjs`).
-Assertions use topology-aware paths:
 
+Federation steps now use semantic manifest commands:
+```
+federate                     → briefing
+approve                      → transcompile
+approve                      → containerize
+config name histo-exp1-federated → set app name
+approve                      → confirm publish config
+approve                      → registry publication
+dispatch                     → dispatch to sites
+publish model                → publish trained model + complete handshake
+```
+
+Session tree assertions use topology-aware paths:
 ```
 ${session}/gather/data/gather.json
 ${session}/gather/harmonize/data/harmonize.json

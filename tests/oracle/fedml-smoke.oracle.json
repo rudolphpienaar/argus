@@ -74,41 +74,51 @@
     {
       "send": "federate",
       "success": true,
-      "output_contains": "Ready for STEP 1/5"
+      "output_contains": "FEDERATION BRIEFING"
     },
     {
-      "send": "federate --yes",
+      "send": "approve",
       "success": true,
-      "output_contains": "STEP 1/5 COMPLETE: SOURCE CODE TRANSCOMPILE"
+      "output_contains": "FLOWER TRANSCOMPILATION"
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/data/node.py"
     },
     {
-      "send": "federate --yes",
+      "send": "approve",
       "success": true,
-      "output_contains": "STEP 2/5 COMPLETE: CONTAINER COMPILATION"
+      "output_contains": "CONTAINER BUILD"
     },
     {
-      "send": "federate --name histo-exp1-federated",
+      "send": "config name histo-exp1-federated",
       "success": true,
-      "output_contains": "STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION"
+      "output_contains": "PUBLISH METADATA UPDATED"
     },
     {
-      "send": "federate --yes",
+      "send": "approve",
       "success": true,
-      "output_contains": "STEP 4/5 COMPLETE: MARKETPLACE PUBLISH"
+      "output_contains": "PUBLICATION CONFIGURATION CONFIRMED"
+    },
+    {
+      "send": "approve",
+      "success": true,
+      "output_contains": "REGISTRY PUBLICATION"
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/containerize/marketplace-publish/data/publish-receipt.json"
     },
     {
-      "send": "federate --yes",
+      "send": "dispatch",
       "success": true,
-      "output_contains": "DISPATCH COMPLETE"
+      "output_contains": "FEDERATION DISPATCH"
     },
     {
       "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/containerize/marketplace-publish/dispatch/federated-rounds/data/round-05.json"
+    },
+    {
+      "send": "publish model",
+      "success": true,
+      "output_contains": "MODEL PUBLICATION"
     },
     {
       "vfs_exists": "${session}/gather/harmonize/code/train/federate-brief/data/federate-brief.json"
@@ -119,7 +129,7 @@
       "output_contains": "federate --rerun"
     },
     {
-      "send": "federate --yes",
+      "send": "federate",
       "success": true,
       "output_contains": "FEDERATION ALREADY COMPLETED"
     }

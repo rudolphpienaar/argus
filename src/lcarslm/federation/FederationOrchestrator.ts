@@ -1,11 +1,19 @@
 /**
- * @file FederationOrchestrator - Multi-Phase Federation Handshake
+ * @file FederationOrchestrator - Manifest-Aligned Federation Handshake
  *
- * Manages the 5-step federation workflow: transcompile, containerize,
- * publish prepare, publish configure, and dispatch + compute rounds.
+ * Manages the 8-step federation workflow aligned 1:1 with fedml.manifest.yaml
+ * stage IDs. Each step responds to its manifest-defined commands:
+ *
+ *   federate-brief          → federate
+ *   federate-transcompile   → show transcompile, approve
+ *   federate-containerize   → show container, approve
+ *   federate-publish-config → config name/org/visibility, approve
+ *   federate-publish-execute→ show publish, approve
+ *   federate-dispatch       → dispatch [--sites]
+ *   federate-execute        → status, show metrics, show rounds
+ *   federate-model-publish  → publish model, show provenance
+ *
  * Each step materializes DAG artifacts in VFS before advancing.
- *
- * Extracted from CalypsoCore to isolate federation state management.
  *
  * @module
  */
@@ -23,12 +31,15 @@ import type { ArtifactEnvelope } from '../../dag/store/types.js';
 /**
  * Orchestrates the multi-phase federation handshake protocol.
  *
- * The federation flow is a 5-step DAG:
- *   1. Source Code Transcompile
- *   2. Container Compilation
- *   3. Marketplace Publish Preparation
- *   4. Marketplace Publish (configure + execute)
- *   5. Dispatch + Federated Compute Rounds
+ * The federation flow is an 8-step sequence matching the manifest:
+ *   1. Federation Briefing        (federate-brief)
+ *   2. Flower Transcompilation    (federate-transcompile)
+ *   3. Container Build            (federate-containerize)
+ *   4. Publication Configuration  (federate-publish-config)
+ *   5. Registry Publication       (federate-publish-execute)
+ *   6. Federation Dispatch        (federate-dispatch)
+ *   7. Federated Training         (federate-execute)
+ *   8. Model Publication          (federate-model-publish)
  *
  * Each step materializes artifacts in VFS before advancing to the next.
  */
@@ -46,16 +57,21 @@ export class FederationOrchestrator {
 
     /**
      * Set the federation artifact path for session tree writes.
-     * @param artifactPath - Full VFS path to federate artifact (e.g. session/gather/.../federate-brief/data/federate-brief.json)
      */
     session_set(artifactPath: string): void {
         this.federateArtifactPath = artifactPath;
     }
 
+    // ─── Public API ───────────────────────────────────────────────────
+
     /**
-     * Start or advance the federation sequence.
+     * Route a command verb to the appropriate federation step handler.
+     *
+     * @param verb - Command verb: federate, approve, show, config, dispatch, status, publish
+     * @param rawArgs - Remaining tokens after the verb
+     * @param username - Active username for path resolution
      */
-    federate(rawArgs: string[], username: string): CalypsoResponse {
+    command(verb: string, rawArgs: string[], username: string): CalypsoResponse {
         const activeMeta = this.storeActions.project_getActive();
         if (!activeMeta) {
             return this.response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
@@ -64,13 +80,14 @@ export class FederationOrchestrator {
         const projectName: string = activeMeta.name;
         const projectBase: string = `/home/${username}/projects/${projectName}`;
         const args: FederationArgs = this.args_parse(rawArgs);
-        const metadataCommandIssued: boolean = args.name !== null || args.org !== null || args.visibility !== null;
 
+        // Abort
         if (args.abort) {
             this.federationState = null;
             return this.response_create('○ FEDERATION HANDSHAKE ABORTED. NO DISPATCH PERFORMED.', [], true);
         }
 
+        // Already-complete check
         const federationComplete: boolean = this.vfs.node_stat(`${projectBase}/.federated`) !== null;
         const stateMatchesProject: boolean = !!this.federationState && this.federationState.projectId === activeMeta.id;
 
@@ -89,307 +106,75 @@ export class FederationOrchestrator {
             );
         }
 
-        let stateInitialized: boolean = false;
+        // Initialize state if needed
         if (args.restart || !stateMatchesProject) {
             this.federationState = this.state_create(activeMeta.id, projectName);
-            stateInitialized = true;
+
+            // If restart + approve in same command, tell user to review first
+            if (args.confirm) {
+                return this.response_create(
+                    [
+                        args.restart
+                            ? '○ FEDERATION RERUN CONTEXT INITIALIZED.'
+                            : '○ FEDERATION CONTEXT INITIALIZED.',
+                        '',
+                        '○ No step was executed yet.',
+                        '○ Review step briefing first, then confirm execution.',
+                        '',
+                        'Next:',
+                        '  `federate`',
+                        'Then confirm:',
+                        '  `approve`'
+                    ].join('\n'),
+                    [],
+                    true
+                );
+            }
         }
 
-        if (stateInitialized && args.confirm) {
-            return this.response_create(
-                [
-                    args.restart
-                        ? '○ FEDERATION RERUN CONTEXT INITIALIZED.'
-                        : '○ FEDERATION CONTEXT INITIALIZED.',
-                    '',
-                    '○ No step was executed yet.',
-                    '○ Review step briefing first, then confirm execution.',
-                    '',
-                    'Next:',
-                    '  `federate`',
-                    'Then confirm STEP 1/5:',
-                    '  `federate --yes`'
-                ].join('\n'),
-                [],
-                true
-            );
-        }
-
-        const metadataUpdated: boolean = this.publish_mutate(args);
         const dag: FederationDagPaths = this.dag_paths(projectBase);
-        const federationState: FederationState | null = this.federationState;
-        if (!federationState) {
+        const state: FederationState | null = this.federationState;
+        if (!state) {
             return this.response_create('>> ERROR: FEDERATION STATE INITIALIZATION FAILED.', [], false);
         }
 
-        if (federationState.step === 'transcompile') {
-            if (!args.confirm) {
-                const lines: string[] = [
-                    '● FEDERATION PRECHECK COMPLETE.',
-                    `○ SOURCE VERIFIED: ${projectBase}/src/train.py`,
-                    `○ DAG ROOT: ${dag.crosscompileBase}`,
-                    '',
-                    '● PHASE 1/3 · STEP 1/5 PENDING: SOURCE CODE TRANSCOMPILE.',
-                    '○ This step generates federated node code from local training source.',
-                    '',
-                    'Ready for STEP 1/5 (Source Code Transcompile)?',
-                    '  `federate --yes`',
-                    '  `federate --abort`'
-                ];
-                if (metadataUpdated) {
-                    lines.push('', '○ NOTE: PUBLISH SETTINGS CAPTURED EARLY FOR PHASE 2/3.');
+        // Route by verb
+        switch (verb) {
+            case 'federate':
+                // Backward compat: federate --yes → approve
+                if (args.confirm && this.federationState) {
+                    return this.step_approve(state, projectBase, dag, projectName, args);
                 }
-                return this.response_create(lines.join('\n'), [], true);
-            }
+                return this.step_brief(state, projectBase, dag, args);
 
-            this.dag_step1TranscompileMaterialize(projectBase);
-            federationState.step = 'containerize';
+            case 'approve':
+                return this.step_approve(state, projectBase, dag, projectName, args);
 
-            return this.response_create(
-                [
-                    '● PHASE 1/3 · STEP 1/5 COMPLETE: SOURCE CODE TRANSCOMPILE.',
-                    '',
-                    '○ [1/5] SOURCE CODE TRANSCOMPILE COMPLETE.',
-                    `○ READING SOURCE: ${projectBase}/src/train.py`,
-                    '○ PARSING TRAIN LOOP AND DATA LOADER CONTRACTS...',
-                    '○ INJECTING FLOWER CLIENT/SERVER HOOKS...',
-                    '○ EMITTING FEDERATED ENTRYPOINT: node.py',
-                    '○ WRITING EXECUTION ADAPTERS: flower_hooks.py',
-                    '○ WRITING TRANSCOMPILE RECEIPTS + ARTIFACT MANIFEST...',
-                    '',
-                    `○ ARTIFACTS MATERIALIZED: ${dag.crosscompileData}`,
-                    `○ NEXT DAG NODE READY: ${dag.containerizeBase}`,
-                    '',
-                    'Ready for STEP 2/5 (Container Compilation)?',
-                    '  `federate --yes`',
-                    '  `federate --abort`'
-                ].join('\n'),
-                [],
-                true
-            );
+            case 'show':
+                return this.step_show(state, rawArgs, projectBase, dag);
+
+            case 'config':
+                return this.step_config(state, rawArgs, args);
+
+            case 'dispatch':
+                return this.step_dispatch(state, projectBase, dag, projectName, args);
+
+            case 'status':
+                return this.step_status(state, projectBase, dag);
+
+            case 'publish':
+                return this.step_publish(state, projectBase, dag, projectName);
+
+            default:
+                return this.response_create(`>> ERROR: Unknown federation verb '${verb}'.`, [], false);
         }
+    }
 
-        if (federationState.step === 'containerize') {
-            if (!args.confirm) {
-                const lines: string[] = [
-                    '● PHASE 1/3 · STEP 2/5 PENDING: CONTAINER COMPILATION.',
-                    '○ This step packages the transcompiled node into a runnable federation image.',
-                    '',
-                    'Ready for STEP 2/5 (Container Compilation)?',
-                    '  `federate --yes`',
-                    '  `federate --abort`'
-                ];
-                if (metadataUpdated) {
-                    lines.push('', '○ NOTE: PUBLISH SETTINGS CAPTURED EARLY FOR PHASE 2/3.');
-                }
-                return this.response_create(lines.join('\n'), [], true);
-            }
-
-            this.dag_step2ContainerizeMaterialize(projectBase);
-            try {
-                this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
-            } catch { /* ignore */ }
-            federationState.step = 'publish_prepare';
-
-            return this.response_create(
-                [
-                    '● PHASE 1/3 · STEP 2/5 COMPLETE: CONTAINER COMPILATION.',
-                    '',
-                    '○ [2/5] CONTAINER COMPILATION COMPLETE.',
-                    '○ RESOLVING BASE IMAGE + RUNTIME DEPENDENCIES...',
-                    '○ STAGING FEDERATED ENTRYPOINT + FLOWER HOOKS...',
-                    '○ BUILDING SIMULATED OCI IMAGE LAYERS...',
-                    '○ WRITING SBOM + IMAGE DIGEST + BUILD LOG...',
-                    '',
-                    `○ ARTIFACTS MATERIALIZED: ${dag.containerizeData}`,
-                    `○ NEXT DAG NODE READY: ${dag.publishBase}`,
-                    '',
-                    '● PHASE 1/3 COMPLETE: BUILD ARTIFACTS.',
-                    '',
-                    'Ready for STEP 3/5 (Marketplace Publish Preparation)?',
-                    '  `federate --yes`',
-                    '  `federate --abort`'
-                ].join('\n'),
-                [],
-                true
-            );
-        }
-
-        if (federationState.step === 'publish_prepare') {
-            if (metadataCommandIssued) {
-                federationState.step = 'publish_configure';
-                return this.response_create(
-                    [
-                        '● PHASE 2/3 · STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION.',
-                        ...(metadataUpdated ? ['', '○ PUBLISH METADATA UPDATED.'] : []),
-                        '',
-                        '○ Reviewing publish metadata prior to marketplace push.',
-                        ...this.publish_promptLines(federationState.publish)
-                    ].join('\n'),
-                    [],
-                    true
-                );
-            }
-
-            if (!args.confirm) {
-                return this.response_create(
-                    [
-                        '● PHASE 2/3 · STEP 3/5 PENDING: MARKETPLACE PUBLISH PREPARATION.',
-                        '○ This step captures app identity, org namespace, and visibility.',
-                        '',
-                        'Ready for STEP 3/5 (Publish Preparation)?',
-                        '  `federate --yes`',
-                        '  `federate --abort`'
-                    ].join('\n'),
-                    [],
-                    true
-                );
-            }
-
-            federationState.step = 'publish_configure';
-            return this.response_create(
-                [
-                    '● PHASE 2/3 · STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION.',
-                    '○ Please confirm publish metadata for the container artifact.',
-                    '',
-                    ...this.publish_promptLines(federationState.publish)
-                ].join('\n'),
-                [],
-                true
-            );
-        }
-
-        if (federationState.step === 'publish_configure') {
-            if (!args.confirm) {
-                const lines: string[] = [
-                    '● PHASE 2/3 · STEP 3/5 ACTIVE: MARKETPLACE PUBLISH PREPARATION.',
-                    ...(metadataUpdated ? ['', '○ PUBLISH METADATA UPDATED.'] : []),
-                    '',
-                    ...this.publish_promptLines(federationState.publish)
-                ];
-                return this.response_create(lines.join('\n'), [], true);
-            }
-
-            if (!federationState.publish.appName) {
-                return this.response_create(
-                    [
-                        '>> APP NAME REQUIRED BEFORE PUBLISH EXECUTION.',
-                        '○ SET: `federate --name <app-name>`',
-                        '○ THEN CONTINUE WITH: `federate --yes`'
-                    ].join('\n'),
-                    [],
-                    false
-                );
-            }
-
-            this.dag_step4PublishMaterialize(projectBase, federationState.publish);
-            try {
-                this.vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
-            } catch { /* ignore */ }
-            federationState.step = 'dispatch_compute';
-
-            return this.response_create(
-                [
-                    '● PHASE 2/3 · STEP 4/5 COMPLETE: MARKETPLACE PUBLISH.',
-                    '',
-                    '○ [3/5] MARKETPLACE PUBLISHING COMPLETE.',
-                    '○ SIGNING IMAGE REFERENCE + REGISTRY MANIFEST...',
-                    '○ WRITING APP METADATA + PUBLISH RECEIPTS...',
-                    ...this.publishSummary_lines(federationState.publish),
-                    `○ ARTIFACTS MATERIALIZED: ${dag.publishData}`,
-                    `○ NEXT DAG NODE READY: ${dag.dispatchBase}`,
-                    '',
-                    'Ready for STEP 5/5 (Dispatch + Federated Compute Rounds)?',
-                    '  `federate --yes`',
-                    '  `federate --abort`'
-                ].join('\n'),
-                [],
-                true
-            );
-        }
-
-        // Dispatch + federated compute phase (step 5/5)
-        if (!args.confirm) {
-            if (metadataUpdated) {
-                return this.response_create(
-                    [
-                        '○ STEP 5/5 IS ACTIVE. PUBLISH SETTINGS ARE LOCKED AFTER STEP 4/5.',
-                        '',
-                        'Ready for STEP 5/5 (Dispatch + Federated Compute Rounds)?',
-                        '  `federate --yes`',
-                        '  `federate --abort`'
-                    ].join('\n'),
-                    [],
-                    true
-                );
-            }
-            return this.response_create(
-                [
-                    'Ready for STEP 5/5 (Dispatch + Federated Compute Rounds)?',
-                    '  `federate --yes`',
-                    '  `federate --abort`'
-                ].join('\n'),
-                [],
-                true
-            );
-        }
-
-        this.dag_phase3Materialize(projectBase);
-        try {
-            this.vfs.file_create(`${projectBase}/.federated`, new Date().toISOString());
-        } catch { /* ignore */ }
-
-        // Materialize federate artifact in session tree (topology-aware path)
-        if (this.federateArtifactPath) {
-            try {
-                const dataDir = this.federateArtifactPath.substring(0, this.federateArtifactPath.lastIndexOf('/'));
-                this.vfs.dir_create(dataDir);
-                const envelope: ArtifactEnvelope = {
-                    stage: 'federate-brief',
-                    timestamp: new Date().toISOString(),
-                    parameters_used: {},
-                    content: { projectName: projectName, status: 'COMPLETED' },
-                    _fingerprint: '',
-                    _parent_fingerprints: {},
-                };
-                this.vfs.file_create(this.federateArtifactPath, JSON.stringify(envelope));
-            } catch { /* ignore */ }
-        }
-
-        this.federationState = null;
-
-        const lines: string[] = [
-            '● PHASE 3/3 · STEP 5/5 COMPLETE: DISPATCH & FEDERATED COMPUTE.',
-            '',
-            '○ [4/5] DISPATCH TO REMOTE SITES INITIALIZED.',
-            `○ INGESTING SOURCE: ${projectBase}/src/train.py`,
-            '',
-            '○ INJECTING Flower PROTOCOLS (Client/Server hooks)...',
-            '○ WRAPPING TRAIN LOOP INTO Flower.Client OBJECT...',
-            '',
-            '○ USING PREPUBLISHED FEDERATION CONTAINER...',
-            '○ RESOLVING PARTICIPANT ENDPOINTS...',
-            '',
-            '○ DISTRIBUTING CONTAINER TO TRUSTED DOMAINS...',
-            '  [BCH] -> DISPATCHED',
-            '  [MGH] -> DISPATCHED',
-            '  [BIDMC] -> DISPATCHED',
-            '',
-            '○ [5/5] FEDERATED COMPUTE ROUNDS:',
-            '  ROUND 1/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.62',
-            '  ROUND 2/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.71',
-            '  ROUND 3/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.79',
-            '  ROUND 4/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.84',
-            '  ROUND 5/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.89',
-            '',
-            `○ ARTIFACTS MATERIALIZED: ${dag.dispatchData}`,
-            `○ ROUND METRICS MATERIALIZED: ${dag.roundsData}`,
-            '',
-            '>> NEXT: Ask `next?` for deployment/monitor guidance.',
-            '<span class="success">● DISPATCH COMPLETE. HANDSHAKE IN PROGRESS...</span>'
-        ];
-
-        return this.response_create(lines.join('\n'), [{ type: 'federation_start' }], true);
+    /**
+     * Start or advance the federation sequence (backward-compat wrapper).
+     */
+    federate(rawArgs: string[], username: string): CalypsoResponse {
+        return this.command('federate', rawArgs, username);
     }
 
     /**
@@ -413,10 +198,574 @@ export class FederationOrchestrator {
         return this.federationState?.step ?? null;
     }
 
-    // ─── Argument Parsing ─────────────────────────────────────────────────
+    // ─── Step Handlers ────────────────────────────────────────────────
+
+    /**
+     * federate-brief: Show federation briefing and advance to transcompile.
+     */
+    private step_brief(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+        args: FederationArgs,
+    ): CalypsoResponse {
+        const metadataUpdated: boolean = this.publish_mutate(args);
+        const lines: string[] = [
+            '● FEDERATION BRIEFING',
+            '',
+            '○ Your code will be:',
+            '  1. Transcompiled for Flower federated learning framework',
+            '  2. Containerized as a MERIDIAN-compliant OCI image',
+            '  3. Published to the ChRIS store registry',
+            '  4. Dispatched to the federation network',
+            '  5. Executed across participating sites',
+            '  6. Aggregated model published to marketplace',
+            '',
+            `○ SOURCE: ${projectBase}/src/train.py`,
+            `○ DAG ROOT: ${dag.crosscompileBase}`,
+            '',
+            'Review complete. Approve to begin transcompilation:',
+            '  `approve`',
+            '  `federate --abort`',
+        ];
+        if (metadataUpdated) {
+            lines.push('', '○ NOTE: PUBLISH SETTINGS CAPTURED EARLY.');
+        }
+
+        state.step = 'federate-transcompile';
+        return this.response_create(lines.join('\n'), [], true);
+    }
+
+    /**
+     * Context-dependent approve: advance whatever step we're on.
+     */
+    private step_approve(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+        projectName: string,
+        args: FederationArgs,
+    ): CalypsoResponse {
+        this.publish_mutate(args);
+
+        switch (state.step) {
+            case 'federate-brief':
+                // Brief hasn't been shown yet; show it and advance
+                return this.step_brief(state, projectBase, dag, args);
+
+            case 'federate-transcompile':
+                return this.step_transcompile_approve(state, projectBase, dag);
+
+            case 'federate-containerize':
+                return this.step_containerize_approve(state, projectBase, dag);
+
+            case 'federate-publish-config':
+                return this.step_publishConfig_approve(state, projectBase, dag);
+
+            case 'federate-publish-execute':
+                return this.step_publishExecute_approve(state, projectBase, dag, projectName);
+
+            case 'federate-dispatch':
+                return this.response_create(
+                    '○ Dispatch requires the `dispatch` command, not `approve`.\n  `dispatch`\n  `dispatch --sites BCH,MGH,BIDMC`',
+                    [], false
+                );
+
+            case 'federate-execute':
+                return this.response_create(
+                    '○ Training is in progress. Use `status` or `show rounds` to monitor.',
+                    [], true
+                );
+
+            case 'federate-model-publish':
+                return this.response_create(
+                    '○ Use `publish model` to publish the trained model.',
+                    [], true
+                );
+
+            default:
+                return this.response_create('>> ERROR: No pending step to approve.', [], false);
+        }
+    }
+
+    /**
+     * Approve transcompile → materialize step 1, advance to containerize.
+     */
+    private step_transcompile_approve(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+    ): CalypsoResponse {
+        this.dag_step1TranscompileMaterialize(projectBase);
+        state.step = 'federate-containerize';
+
+        return this.response_create(
+            [
+                '● STEP 1/8 COMPLETE: FLOWER TRANSCOMPILATION.',
+                '',
+                '○ READING SOURCE: train.py',
+                '○ PARSING TRAIN LOOP AND DATA LOADER CONTRACTS...',
+                '○ INJECTING FLOWER CLIENT/SERVER HOOKS...',
+                '○ EMITTING FEDERATED ENTRYPOINT: node.py',
+                '○ WRITING EXECUTION ADAPTERS: flower_hooks.py',
+                '○ WRITING TRANSCOMPILE RECEIPTS + ARTIFACT MANIFEST...',
+                '',
+                `○ ARTIFACTS MATERIALIZED: ${dag.crosscompileData}`,
+                '',
+                'Next: review container build or approve directly:',
+                '  `show container` — Review container configuration',
+                '  `approve`        — Build container image',
+            ].join('\n'),
+            [],
+            true
+        );
+    }
+
+    /**
+     * Approve containerize → materialize step 2, advance to publish-config.
+     */
+    private step_containerize_approve(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+    ): CalypsoResponse {
+        this.dag_step2ContainerizeMaterialize(projectBase);
+        try {
+            this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
+        } catch { /* ignore */ }
+        state.step = 'federate-publish-config';
+
+        return this.response_create(
+            [
+                '● STEP 2/8 COMPLETE: CONTAINER BUILD.',
+                '',
+                '○ RESOLVING BASE IMAGE + RUNTIME DEPENDENCIES...',
+                '○ STAGING FEDERATED ENTRYPOINT + FLOWER HOOKS...',
+                '○ BUILDING OCI IMAGE LAYERS...',
+                '○ WRITING SBOM + IMAGE DIGEST + BUILD LOG...',
+                '',
+                `○ ARTIFACTS MATERIALIZED: ${dag.containerizeData}`,
+                '',
+                'Next: configure publication metadata:',
+                `  \`config name <app-name>\` — Set application name (current: ${state.publish.appName ?? '(unset)'})`,
+                `  \`config org <namespace>\`  — Set organization`,
+                `  \`config visibility <public|private>\``,
+                '  `approve`                — Accept defaults and publish',
+            ].join('\n'),
+            [],
+            true
+        );
+    }
+
+    /**
+     * Approve publish-config → advance to publish-execute.
+     */
+    private step_publishConfig_approve(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+    ): CalypsoResponse {
+        if (!state.publish.appName) {
+            return this.response_create(
+                [
+                    '>> APP NAME REQUIRED BEFORE PUBLICATION.',
+                    '○ SET: `config name <app-name>`',
+                    '○ THEN: `approve`'
+                ].join('\n'),
+                [],
+                false
+            );
+        }
+
+        state.step = 'federate-publish-execute';
+        return this.response_create(
+            [
+                '● PUBLICATION CONFIGURATION CONFIRMED.',
+                '',
+                ...this.publishSummary_lines(state.publish),
+                '',
+                'Next: review or approve registry publication:',
+                '  `show publish`  — Review publication details',
+                '  `approve`       — Push to registry',
+            ].join('\n'),
+            [],
+            true
+        );
+    }
+
+    /**
+     * Approve publish-execute → materialize step 4, advance to dispatch.
+     */
+    private step_publishExecute_approve(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+        projectName: string,
+    ): CalypsoResponse {
+        this.dag_step4PublishMaterialize(projectBase, state.publish);
+        try {
+            this.vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
+        } catch { /* ignore */ }
+        state.step = 'federate-dispatch';
+
+        return this.response_create(
+            [
+                '● STEP 5/8 COMPLETE: REGISTRY PUBLICATION.',
+                '',
+                '○ SIGNING IMAGE REFERENCE + REGISTRY MANIFEST...',
+                '○ WRITING APP METADATA + PUBLISH RECEIPTS...',
+                ...this.publishSummary_lines(state.publish),
+                '',
+                `○ ARTIFACTS MATERIALIZED: ${dag.publishData}`,
+                '',
+                'Next: dispatch to federation network:',
+                '  `dispatch`                  — Dispatch to all sites',
+                '  `dispatch --sites BCH,MGH`  — Dispatch to specific sites',
+            ].join('\n'),
+            [],
+            true
+        );
+    }
+
+    /**
+     * show: Route to appropriate display based on subcommand or current step.
+     */
+    private step_show(
+        state: FederationState,
+        rawArgs: string[],
+        projectBase: string,
+        dag: FederationDagPaths,
+    ): CalypsoResponse {
+        const sub = rawArgs.join(' ').toLowerCase().trim();
+
+        if (sub.startsWith('transcompile') || sub.startsWith('transpile')) {
+            return this.response_create(
+                [
+                    '● TRANSCOMPILATION REVIEW',
+                    '',
+                    `○ SOURCE: ${projectBase}/src/train.py`,
+                    `○ OUTPUT: ${dag.crosscompileData}`,
+                    '○ ARTIFACTS: node.py, flower_hooks.py, transcompile.log, artifact.json',
+                    '',
+                    '○ The transcompiler wraps your training loop in Flower client hooks',
+                    '  and generates a federated entrypoint (node.py) for site-local execution.',
+                    '',
+                    state.step === 'federate-transcompile' ? '  `approve` — Proceed with transcompilation' : '○ (already completed)',
+                ].join('\n'),
+                [], true
+            );
+        }
+
+        if (sub.startsWith('container')) {
+            return this.response_create(
+                [
+                    '● CONTAINER BUILD REVIEW',
+                    '',
+                    `○ BASE IMAGE: python:3.11-slim`,
+                    `○ OUTPUT: ${dag.containerizeData}`,
+                    '○ ARTIFACTS: Dockerfile, image.tar, image.digest, sbom.json, build.log',
+                    '',
+                    '○ The container packages your transcompiled code, dependencies, and',
+                    '  Flower client into a MERIDIAN-compliant OCI image.',
+                    '',
+                    state.step === 'federate-containerize' ? '  `approve` — Build container image' : '○ (already completed)',
+                ].join('\n'),
+                [], true
+            );
+        }
+
+        if (sub.startsWith('publish')) {
+            return this.response_create(
+                [
+                    '● PUBLICATION REVIEW',
+                    '',
+                    ...this.publishSummary_lines(state.publish),
+                    `○ OUTPUT: ${dag.publishData}`,
+                    '',
+                    state.step === 'federate-publish-execute' ? '  `approve` — Push to registry' : '○ (already completed or not yet configured)',
+                ].join('\n'),
+                [], true
+            );
+        }
+
+        if (sub.startsWith('metric')) {
+            return this.step_showMetrics(projectBase, dag);
+        }
+
+        if (sub.startsWith('round')) {
+            return this.step_showRounds(projectBase, dag);
+        }
+
+        if (sub.startsWith('provenance')) {
+            return this.step_showProvenance(state, projectBase, dag);
+        }
+
+        // Bare "show" — context-dependent
+        return this.response_create(
+            [
+                '● FEDERATION SHOW COMMANDS',
+                '',
+                '  `show transcompile` — Review transcompilation output',
+                '  `show container`    — Review container build',
+                '  `show publish`      — Review publication config',
+                '  `show metrics`      — Show training metrics',
+                '  `show rounds`       — Show per-round details',
+                '  `show provenance`   — Show full provenance chain',
+            ].join('\n'),
+            [], true
+        );
+    }
+
+    /**
+     * config: Update publish metadata during federate-publish-config step.
+     */
+    private step_config(
+        state: FederationState,
+        rawArgs: string[],
+        args: FederationArgs,
+    ): CalypsoResponse {
+        // Parse "config name X", "config org Y", "config visibility public"
+        const sub = rawArgs[0]?.toLowerCase();
+        if (sub === 'name' && rawArgs[1]) {
+            state.publish.appName = rawArgs.slice(1).join(' ');
+        } else if (sub === 'org' && rawArgs[1]) {
+            state.publish.org = rawArgs.slice(1).join(' ');
+        } else if (sub === 'visibility' && rawArgs[1]) {
+            const vis = rawArgs[1].toLowerCase();
+            if (vis === 'public' || vis === 'private') {
+                state.publish.visibility = vis;
+            }
+        } else {
+            // Also handle --name/--org from args_parse
+            this.publish_mutate(args);
+        }
+
+        return this.response_create(
+            [
+                '● PUBLISH METADATA UPDATED.',
+                '',
+                ...this.publishSummary_lines(state.publish),
+                '',
+                'Continue configuring or approve:',
+                '  `config name <app-name>`',
+                '  `config org <namespace>`',
+                '  `config visibility <public|private>`',
+                '  `approve` — Accept configuration',
+            ].join('\n'),
+            [],
+            true
+        );
+    }
+
+    /**
+     * dispatch: Initiate federation dispatch.
+     */
+    private step_dispatch(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+        projectName: string,
+        args: FederationArgs,
+    ): CalypsoResponse {
+        if (state.step !== 'federate-dispatch') {
+            return this.response_create(
+                `○ Cannot dispatch yet — current step is ${state.step}. Complete earlier steps first.`,
+                [], false
+            );
+        }
+
+        // Materialize dispatch + round artifacts
+        this.dag_phase3Materialize(projectBase);
+        state.step = 'federate-execute';
+
+        const participants = ['BCH', 'MGH', 'BIDMC'];
+        return this.response_create(
+            [
+                '● STEP 6/8 COMPLETE: FEDERATION DISPATCH.',
+                '',
+                '○ RESOLVING PARTICIPANT ENDPOINTS...',
+                '○ DISTRIBUTING CONTAINER TO TRUSTED DOMAINS...',
+                ...participants.map(s => `  [${s}] -> DISPATCHED`),
+                '',
+                `○ ARTIFACTS MATERIALIZED: ${dag.dispatchData}`,
+                '',
+                '● STEP 7/8: FEDERATED TRAINING EXECUTION.',
+                '',
+                '○ FEDERATED COMPUTE ROUNDS:',
+                '  ROUND 1/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.62',
+                '  ROUND 2/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.71',
+                '  ROUND 3/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.79',
+                '  ROUND 4/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.84',
+                '  ROUND 5/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.89',
+                '',
+                `○ ROUND METRICS MATERIALIZED: ${dag.roundsData}`,
+                '',
+                'Training complete. Publish the aggregated model:',
+                '  `publish model`    — Publish trained model to marketplace',
+                '  `show provenance`  — View full provenance chain',
+                '  `show rounds`      — View per-round details',
+            ].join('\n'),
+            [],
+            true
+        );
+    }
+
+    /**
+     * status: Show current federation training status.
+     */
+    private step_status(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+    ): CalypsoResponse {
+        if (state.step === 'federate-execute' || state.step === 'federate-model-publish') {
+            return this.response_create(
+                [
+                    '● FEDERATION TRAINING STATUS: COMPLETE',
+                    '',
+                    '○ 5/5 rounds completed.',
+                    '○ Final aggregate accuracy: 0.89',
+                    '○ All 3 sites participated successfully.',
+                    '',
+                    `○ Metrics: ${dag.roundsData}/aggregate-metrics.json`,
+                    '',
+                    state.step === 'federate-execute'
+                        ? 'Next:\n  `publish model` — Publish trained model'
+                        : '○ Ready for model publication.',
+                ].join('\n'),
+                [], true
+            );
+        }
+
+        return this.response_create(
+            `○ Federation training has not started yet. Current step: ${state.step}`,
+            [], true
+        );
+    }
+
+    /**
+     * publish model: Publish the aggregated model and complete the handshake.
+     */
+    private step_publish(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+        projectName: string,
+    ): CalypsoResponse {
+        // Only "publish model" triggers completion
+        if (state.step !== 'federate-execute' && state.step !== 'federate-model-publish') {
+            return this.response_create(
+                `○ Cannot publish model yet — current step is ${state.step}. Complete federation first.`,
+                [], false
+            );
+        }
+
+        // Write final markers
+        try {
+            this.vfs.file_create(`${projectBase}/.federated`, new Date().toISOString());
+        } catch { /* ignore */ }
+
+        // Materialize session tree artifact
+        if (this.federateArtifactPath) {
+            try {
+                const dataDir = this.federateArtifactPath.substring(0, this.federateArtifactPath.lastIndexOf('/'));
+                this.vfs.dir_create(dataDir);
+                const envelope: ArtifactEnvelope = {
+                    stage: 'federate-brief',
+                    timestamp: new Date().toISOString(),
+                    parameters_used: {},
+                    content: { projectName: projectName, status: 'COMPLETED' },
+                    _fingerprint: '',
+                    _parent_fingerprints: {},
+                };
+                this.vfs.file_create(this.federateArtifactPath, JSON.stringify(envelope));
+            } catch { /* ignore */ }
+        }
+
+        this.federationState = null;
+
+        return this.response_create(
+            [
+                '● STEP 8/8 COMPLETE: MODEL PUBLICATION.',
+                '',
+                '○ AGGREGATED MODEL WEIGHTS PACKAGED.',
+                '○ PROVENANCE CHAIN ATTACHED (search → gather → harmonize → code → train → federate).',
+                '○ MODEL PUBLISHED TO ATLAS MARKETPLACE.',
+                '',
+                `○ PROJECT: ${projectName}`,
+                `○ MARKER: ${projectBase}/.federated`,
+                '',
+                '<span class="success">● FEDERATION COMPLETE.</span>',
+                '',
+                '>> NEXT: Ask `next?` for post-federation guidance.',
+            ].join('\n'),
+            [{ type: 'federation_start' }],
+            true
+        );
+    }
+
+    // ─── Show Sub-Handlers ────────────────────────────────────────────
+
+    private step_showMetrics(projectBase: string, dag: FederationDagPaths): CalypsoResponse {
+        return this.response_create(
+            [
+                '● FEDERATION METRICS',
+                '',
+                '○ Final aggregate accuracy: 0.89',
+                '○ Loss trajectory: 0.38 → 0.11',
+                '○ Rounds: 5/5 complete',
+                '○ Participants: BCH, MGH, BIDMC (3/3)',
+                '',
+                `○ Details: ${dag.roundsData}/aggregate-metrics.json`,
+            ].join('\n'),
+            [], true
+        );
+    }
+
+    private step_showRounds(projectBase: string, dag: FederationDagPaths): CalypsoResponse {
+        return this.response_create(
+            [
+                '● FEDERATION ROUNDS',
+                '',
+                '  ROUND 1/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.62',
+                '  ROUND 2/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.71',
+                '  ROUND 3/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.79',
+                '  ROUND 4/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.84',
+                '  ROUND 5/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.89',
+                '',
+                `○ Details: ${dag.roundsData}`,
+            ].join('\n'),
+            [], true
+        );
+    }
+
+    private step_showProvenance(
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+    ): CalypsoResponse {
+        return this.response_create(
+            [
+                '● PROVENANCE CHAIN',
+                '',
+                '  search → gather → harmonize → code → train → federate',
+                '',
+                `  ○ Source: ${projectBase}/src/train.py`,
+                `  ○ Transcompiled: ${dag.crosscompileData}`,
+                `  ○ Containerized: ${dag.containerizeData}`,
+                `  ○ Published: ${dag.publishData}`,
+                `  ○ Dispatched: ${dag.dispatchData}`,
+                `  ○ Rounds: ${dag.roundsData}`,
+            ].join('\n'),
+            [], true
+        );
+    }
+
+    // ─── Argument Parsing ─────────────────────────────────────────────
 
     /**
      * Parse federate arguments into structured flags.
+     * Preserves backward compatibility with --yes, --name, --org, etc.
      */
     private args_parse(rawArgs: string[]): FederationArgs {
         const parsed: FederationArgs = {
@@ -475,7 +824,7 @@ export class FederationOrchestrator {
         return parsed;
     }
 
-    // ─── State Management ─────────────────────────────────────────────────
+    // ─── State Management ─────────────────────────────────────────────
 
     /**
      * Create initial federation state for a project.
@@ -483,7 +832,7 @@ export class FederationOrchestrator {
     private state_create(projectId: string, projectName: string): FederationState {
         return {
             projectId,
-            step: 'transcompile',
+            step: 'federate-brief',
             publish: {
                 appName: `${projectName}-fedapp`,
                 org: null,
@@ -494,8 +843,6 @@ export class FederationOrchestrator {
 
     /**
      * Apply publish config mutations from command arguments.
-     *
-     * @returns True if any publish setting changed
      */
     private publish_mutate(args: FederationArgs): boolean {
         if (!this.federationState) return false;
@@ -517,46 +864,18 @@ export class FederationOrchestrator {
         return changed;
     }
 
-    // ─── Display Helpers ──────────────────────────────────────────────────
+    // ─── Display Helpers ──────────────────────────────────────────────
 
-    /**
-     * Render publish settings summary lines.
-     */
     private publishSummary_lines(publish: FederationPublishConfig): string[] {
         return [
             `○ APP: ${publish.appName ?? '(unset)'}`,
             `○ ORG: ${publish.org ?? '(none)'}`,
             `○ VISIBILITY: ${publish.visibility.toUpperCase()}`,
-            '○ IMAGE PUBLISHED TO INTERNAL REGISTRY.'
         ];
     }
 
-    /**
-     * Render publish prompt and current config.
-     */
-    private publish_promptLines(publish: FederationPublishConfig): string[] {
-        return [
-            `○ CURRENT APP: ${publish.appName ?? '(unset)'}`,
-            `○ CURRENT ORG: ${publish.org ?? '(none)'}`,
-            `○ CURRENT VISIBILITY: ${publish.visibility.toUpperCase()}`,
-            '',
-            'Provide or adjust metadata:',
-            '  `federate --name <app-name>`',
-            '  `federate --org <namespace>`',
-            '  `federate --private` or `federate --public`',
-            '',
-            'When metadata is ready:',
-            '  Ready for STEP 4/5 (Marketplace Publish)?',
-            '    `federate --yes`',
-            '    `federate --abort`'
-        ];
-    }
+    // ─── DAG Materialization ──────────────────────────────────────────
 
-    // ─── DAG Materialization ──────────────────────────────────────────────
-
-    /**
-     * Resolve canonical DAG paths for federate stage materialization.
-     */
     private dag_paths(projectBase: string): FederationDagPaths {
         const crosscompileBase: string = `${projectBase}/src/source-crosscompile`;
         const crosscompileData: string = `${crosscompileBase}/data`;
@@ -579,18 +898,12 @@ export class FederationOrchestrator {
         };
     }
 
-    /**
-     * Write a DAG artifact, creating parent directories if required.
-     */
     private dag_write(path: string, content: string): void {
         const parent: string = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
         this.vfs.dir_create(parent);
         this.vfs.node_write(path, content);
     }
 
-    /**
-     * Materialize step-1 (source-crosscompile) DAG artifacts.
-     */
     private dag_step1TranscompileMaterialize(projectBase: string): void {
         const dag: FederationDagPaths = this.dag_paths(projectBase);
         const now: string = new Date().toISOString();
@@ -641,9 +954,6 @@ export class FederationOrchestrator {
         );
     }
 
-    /**
-     * Materialize step-2 (container compilation) DAG artifacts.
-     */
     private dag_step2ContainerizeMaterialize(projectBase: string): void {
         const dag: FederationDagPaths = this.dag_paths(projectBase);
         const now: string = new Date().toISOString();
@@ -672,9 +982,6 @@ export class FederationOrchestrator {
         );
     }
 
-    /**
-     * Materialize step-4 (marketplace publish execution) DAG artifacts.
-     */
     private dag_step4PublishMaterialize(projectBase: string, publish: FederationPublishConfig): void {
         const dag: FederationDagPaths = this.dag_paths(projectBase);
         const now: string = new Date().toISOString();
@@ -716,9 +1023,6 @@ export class FederationOrchestrator {
         );
     }
 
-    /**
-     * Materialize phase-3 (dispatch + federated rounds) DAG artifacts.
-     */
     private dag_phase3Materialize(projectBase: string): void {
         const dag: FederationDagPaths = this.dag_paths(projectBase);
         const now: string = new Date().toISOString();
@@ -790,7 +1094,7 @@ export class FederationOrchestrator {
         );
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────
+    // ─── Helpers ──────────────────────────────────────────────────────
 
     private response_create(
         message: string,

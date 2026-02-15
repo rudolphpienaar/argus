@@ -588,12 +588,16 @@ WORKFLOW COMMANDS:
   harmonize         - Standardize cohort for federation
   proceed / code    - Scaffold training environment
   python train.py   - Run local training
-  federate          - Start federation sequence (3-phase handshake)
-  federate --name <app> - Set marketplace app name (phase 2)
-  federate --org <name> - Set marketplace org/namespace (phase 2)
-  federate --private | --public - Set publish visibility (phase 2)
-  federate --yes    - Confirm pending federation step
-  federate --rerun  - Re-initialize federation from step 1/5 (explicit restart)
+  federate          - Start federation briefing
+  approve           - Confirm current federation step
+  show <what>       - Review step details (transcompile, container, publish, metrics, rounds, provenance)
+  config name <app> - Set marketplace app name
+  config org <name> - Set org/namespace
+  config visibility <public|private>
+  dispatch          - Dispatch to federation network
+  status            - Check federation training status
+  publish model     - Publish trained model
+  federate --rerun  - Restart federation from step 1
   federate --abort  - Abort federation handshake
 
 TIP: Type /next anytime to see what to do next!`;
@@ -1156,29 +1160,48 @@ Requirements:
         if (stageId.startsWith('federate')) {
             lines.push('**Next step: Federated Training**');
             lines.push('');
-            if (this.federation.currentStep === 'transcompile') {
-                lines.push('Federation Step 1/5 is pending: source transcompile.');
+            if (this.federation.currentStep === 'federate-brief') {
+                lines.push('Review the federation briefing.');
                 lines.push('');
-                lines.push('  `federate --yes` — Execute step 1/5');
-                lines.push('  `federate --abort` — Cancel federation handshake');
-            } else if (this.federation.currentStep === 'containerize') {
-                lines.push('Federation Step 2/5 is pending: container compilation.');
+                lines.push('  `federate` — Show federation briefing');
+            } else if (this.federation.currentStep === 'federate-transcompile') {
+                lines.push('Step 1/8: Flower transcompilation pending.');
                 lines.push('');
-                lines.push('  `federate --yes` — Execute step 2/5');
-                lines.push('  `federate --abort` — Cancel federation handshake');
-            } else if (this.federation.currentStep === 'publish_prepare' || this.federation.currentStep === 'publish_configure') {
-                lines.push('Federation Step 3/5 is active: marketplace publish metadata.');
+                lines.push('  `show transcompile` — Review transcompilation plan');
+                lines.push('  `approve`           — Execute transcompilation');
+            } else if (this.federation.currentStep === 'federate-containerize') {
+                lines.push('Step 2/8: Container build pending.');
                 lines.push('');
-                lines.push('  `federate --name <app-name>` — Set app name');
-                lines.push('  `federate --org <org>` — Set org/namespace (optional)');
-                lines.push('  `federate --private` — Publish privately');
-                lines.push('  `federate --yes` — Confirm next publish action');
-                lines.push('  `federate --abort` — Cancel federation handshake');
-            } else if (this.federation.currentStep === 'dispatch_compute') {
-                lines.push('Federation Step 5/5 is pending: dispatch + federated rounds.');
+                lines.push('  `show container` — Review container configuration');
+                lines.push('  `approve`        — Build container image');
+            } else if (this.federation.currentStep === 'federate-publish-config') {
+                lines.push('Step 4/8: Publication configuration.');
                 lines.push('');
-                lines.push('  `federate --yes` — Dispatch to participants and run rounds');
-                lines.push('  `federate --abort` — Cancel federation handshake');
+                lines.push('  `config name <app-name>` — Set app name');
+                lines.push('  `config org <namespace>` — Set org (optional)');
+                lines.push('  `config visibility <public|private>`');
+                lines.push('  `approve`                — Accept configuration');
+            } else if (this.federation.currentStep === 'federate-publish-execute') {
+                lines.push('Step 5/8: Registry publication pending.');
+                lines.push('');
+                lines.push('  `show publish` — Review publication details');
+                lines.push('  `approve`      — Push to registry');
+            } else if (this.federation.currentStep === 'federate-dispatch') {
+                lines.push('Step 6/8: Federation dispatch pending.');
+                lines.push('');
+                lines.push('  `dispatch`                  — Dispatch to all sites');
+                lines.push('  `dispatch --sites BCH,MGH`  — Dispatch to specific sites');
+            } else if (this.federation.currentStep === 'federate-execute') {
+                lines.push('Step 7/8: Federated training in progress.');
+                lines.push('');
+                lines.push('  `status`       — Check training status');
+                lines.push('  `show rounds`  — View per-round details');
+                lines.push('  `show metrics` — View aggregate metrics');
+            } else if (this.federation.currentStep === 'federate-model-publish') {
+                lines.push('Step 8/8: Model publication pending.');
+                lines.push('');
+                lines.push('  `publish model`    — Publish trained model');
+                lines.push('  `show provenance`  — View provenance chain');
             } else {
                 lines.push('Local training complete. Ready to distribute across nodes.');
                 lines.push('');
@@ -1248,7 +1271,12 @@ Requirements:
         }
 
         if (this.federation.active) {
-            return this.workflow_federate([isAffirm ? '--yes' : '--abort']);
+            const username = this.shell.env_get('USER') || 'user';
+            return this.federation.command(
+                isAffirm ? 'approve' : 'federate',
+                isAffirm ? [] : ['--abort'],
+                username,
+            );
         }
 
         if (!this.federationReady_is()) {
@@ -1330,6 +1358,43 @@ Requirements:
 
             case 'federate':
                 response = this.workflow_federate(args);
+                break;
+
+            // Federation sub-stage commands — gated on active handshake
+            case 'approve':
+                if (this.federation.active) {
+                    response = this.workflow_federationCommand('approve', args);
+                }
+                break;
+
+            case 'show':
+                if (this.federation.active) {
+                    response = this.workflow_federationCommand('show', args);
+                }
+                break;
+
+            case 'config':
+                if (this.federation.active) {
+                    response = this.workflow_federationCommand('config', args);
+                }
+                break;
+
+            case 'dispatch':
+                if (this.federation.active) {
+                    response = this.workflow_federationCommand('dispatch', args);
+                }
+                break;
+
+            case 'status':
+                if (this.federation.active) {
+                    response = this.workflow_federationCommand('status', args);
+                }
+                break;
+
+            case 'publish':
+                if (this.federation.active) {
+                    response = this.workflow_federationCommand('publish', args);
+                }
                 break;
 
             case 'proceed':
@@ -1731,7 +1796,15 @@ Requirements:
      */
     private workflow_federate(rawArgs: string[] = []): CalypsoResponse {
         const username = this.shell.env_get('USER') || 'user';
-        return this.federation.federate(rawArgs, username);
+        return this.federation.command('federate', rawArgs, username);
+    }
+
+    /**
+     * Route a federation sub-stage command (approve, show, config, dispatch, status, publish).
+     */
+    private workflow_federationCommand(verb: string, rawArgs: string[]): CalypsoResponse {
+        const username = this.shell.env_get('USER') || 'user';
+        return this.federation.command(verb, rawArgs, username);
     }
 
     /**
