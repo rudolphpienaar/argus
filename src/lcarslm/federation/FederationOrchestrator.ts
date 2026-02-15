@@ -18,6 +18,7 @@ import type {
     FederationDagPaths,
     FederationPublishConfig
 } from './types.js';
+import type { ArtifactEnvelope } from '../../dag/store/types.js';
 
 /**
  * Orchestrates the multi-phase federation handshake protocol.
@@ -35,10 +36,21 @@ export class FederationOrchestrator {
     /** Multi-phase federation handshake state. */
     private federationState: FederationState | null = null;
 
+    /** Full path to the federate artifact file in session tree. */
+    private federateArtifactPath: string = '';
+
     constructor(
         private vfs: VirtualFileSystem,
         private storeActions: CalypsoStoreActions
     ) {}
+
+    /**
+     * Set the federation artifact path for session tree writes.
+     * @param artifactPath - Full VFS path to federate artifact (e.g. session/gather/.../federate-brief/data/federate-brief.json)
+     */
+    session_set(artifactPath: string): void {
+        this.federateArtifactPath = artifactPath;
+    }
 
     /**
      * Start or advance the federation sequence.
@@ -326,6 +338,24 @@ export class FederationOrchestrator {
         try {
             this.vfs.file_create(`${projectBase}/.federated`, new Date().toISOString());
         } catch { /* ignore */ }
+
+        // Materialize federate artifact in session tree (topology-aware path)
+        if (this.federateArtifactPath) {
+            try {
+                const dataDir = this.federateArtifactPath.substring(0, this.federateArtifactPath.lastIndexOf('/'));
+                this.vfs.dir_create(dataDir);
+                const envelope: ArtifactEnvelope = {
+                    stage: 'federate-brief',
+                    timestamp: new Date().toISOString(),
+                    parameters_used: {},
+                    content: { projectName: projectName, status: 'COMPLETED' },
+                    _fingerprint: '',
+                    _parent_fingerprints: {},
+                };
+                this.vfs.file_create(this.federateArtifactPath, JSON.stringify(envelope));
+            } catch { /* ignore */ }
+        }
+
         this.federationState = null;
 
         const lines: string[] = [

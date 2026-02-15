@@ -23,7 +23,7 @@
     {
       "send": "/scripts hist-harmonize",
       "success": true,
-      "output_contains": "rename histo-exp1"
+      "output_contains": "[s4_rename] rename"
     },
     {
       "send": "/run hist-harmoniize",
@@ -47,23 +47,17 @@
       "vfs_exists": "/home/${user}/searches/latest.txt"
     },
     {
-      "vfs_exists": "/home/${user}/projects/${project}/input/gather/data/latest.json"
+      "vfs_exists": "${session}/gather/data/gather.json"
     },
     {
-      "vfs_exists": "/home/${user}/projects/${project}/ops/rename/data/receipt.json"
-    },
-    {
-      "vfs_exists": "/home/${user}/projects/${project}/input/harmonize/data/report.json"
-    },
-    {
-      "vfs_exists": "/home/${user}/projects/${project}/input/.harmonized"
+      "vfs_exists": "${session}/gather/harmonize/data/harmonize.json"
     },
     {
       "send": "proceed",
       "success": true
     },
     {
-      "vfs_exists": "/home/${user}/projects/${project}/src/train.py"
+      "vfs_exists": "${session}/gather/harmonize/code/data/code.json"
     },
     {
       "send": "cd /home/${user}/projects/${project}/src",
@@ -75,7 +69,7 @@
       "output_contains": "LOCAL TRAINING COMPLETE"
     },
     {
-      "vfs_exists": "/home/${user}/projects/${project}/.local_pass"
+      "vfs_exists": "${session}/gather/harmonize/code/train/data/train.json"
     },
     {
       "send": "federate",
@@ -117,7 +111,7 @@
       "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/containerize/marketplace-publish/dispatch/federated-rounds/data/round-05.json"
     },
     {
-      "vfs_exists": "/home/${user}/projects/${project}/.federated"
+      "vfs_exists": "${session}/gather/harmonize/code/train/federate-brief/data/federate-brief.json"
     },
     {
       "send": "next?",

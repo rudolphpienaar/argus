@@ -1,0 +1,349 @@
+/**
+ * @file Workflow Adapter
+ *
+ * CalypsoCore-facing API that wraps the DAG engine. Replaces the old
+ * WorkflowEngine static class with manifest-driven workflow resolution.
+ *
+ * The adapter owns:
+ * - The parsed DAGDefinition (from YAML manifest)
+ * - The CompletionMapper (VFS → stage completion)
+ * - Skip-count state (in-memory, same as old WorkflowState)
+ *
+ * @module dag/bridge
+ * @see docs/dag-engine.adoc
+ */
+
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+import type { DAGDefinition, DAGNode, WorkflowPosition, ManifestHeader } from '../graph/types.js';
+import type { CompletionMapper } from './CompletionMapper.js';
+import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
+import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
+
+import { manifest_parse } from '../graph/parser/manifest.js';
+import { dag_resolve, position_resolve } from '../graph/resolver.js';
+import { fedmlMapper_create, chrisMapper_create } from './CompletionMapper.js';
+
+// ─── Protocol-Facing Types ─────────────────────────────────────
+
+/**
+ * Workflow summary for selection UI and APIs.
+ * Matches the old WorkflowSummary shape for backward compatibility.
+ */
+export interface WorkflowSummary {
+    id: string;
+    name: string;
+    persona: string;
+    description: string;
+    stageCount: number;
+}
+
+/**
+ * Result of a workflow transition check.
+ * Matches the old TransitionResult shape for backward compatibility.
+ */
+export interface TransitionResult {
+    allowed: boolean;
+    warning: string | null;
+    reason: string | null;
+    suggestion: string | null;
+    skipCount: number;
+    hardBlock: boolean;
+    skippedStageId: string | null;
+}
+
+// ─── Manifest Registry ─────────────────────────────────────────
+
+interface ManifestEntry {
+    yamlPath: string;
+    mapper: (pathMap: Map<string, StagePath>) => CompletionMapper;
+}
+
+/** Resolve path relative to this module's directory. */
+function modulePath_resolve(relativePath: string): string {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    return resolve(__dirname, relativePath);
+}
+
+/** Registry of available workflow manifests. */
+const MANIFEST_REGISTRY: Record<string, ManifestEntry> = {
+    fedml: {
+        yamlPath: modulePath_resolve('../manifests/fedml.manifest.yaml'),
+        mapper: fedmlMapper_create,
+    },
+    chris: {
+        yamlPath: modulePath_resolve('../manifests/chris.manifest.yaml'),
+        mapper: chrisMapper_create,
+    },
+};
+
+// ─── WorkflowAdapter ───────────────────────────────────────────
+
+/**
+ * Manifest-driven workflow adapter for CalypsoCore.
+ *
+ * Replaces the old WorkflowEngine static class. Wraps the DAG engine's
+ * resolver + CompletionMapper + skip-count state into a single API.
+ */
+export class WorkflowAdapter {
+    readonly workflowId: string;
+    private readonly definition: DAGDefinition;
+    private readonly mapper: CompletionMapper;
+    private skipCounts: Record<string, number> = {};
+
+    /** Reverse index: command string → DAGNode. */
+    private readonly commandIndex: Map<string, DAGNode>;
+
+    /** Topology-aware session tree paths for each stage. */
+    private readonly _stagePaths: Map<string, StagePath>;
+
+    constructor(workflowId: string, definition: DAGDefinition, mapper: CompletionMapper) {
+        this.workflowId = workflowId;
+        this.definition = definition;
+        this.mapper = mapper;
+
+        // Compute topology-aware session tree paths from DAG structure
+        this._stagePaths = sessionPaths_compute(definition);
+
+        // Build command → stage reverse index
+        this.commandIndex = new Map();
+        for (const node of definition.nodes.values()) {
+            for (const cmd of node.commands) {
+                // Extract the base command word (e.g. "search <keywords>" → "search")
+                const baseCmd = cmd.split(/\s+/)[0].toLowerCase();
+                this.commandIndex.set(baseCmd, node);
+            }
+        }
+    }
+
+    // ─── Static Factory ────────────────────────────────────────
+
+    /**
+     * Load a workflow adapter by ID from the manifest registry.
+     *
+     * @param workflowId - Workflow identifier (e.g. 'fedml', 'chris')
+     * @returns Configured WorkflowAdapter instance
+     * @throws If workflow not found in registry
+     */
+    static definition_load(workflowId: string): WorkflowAdapter {
+        const entry = MANIFEST_REGISTRY[workflowId];
+        if (!entry) {
+            const available = Object.keys(MANIFEST_REGISTRY).join(', ');
+            throw new Error(`Workflow '${workflowId}' not found. Available: ${available}`);
+        }
+
+        const yaml = readFileSync(entry.yamlPath, 'utf-8');
+        const definition = manifest_parse(yaml);
+        const pathMap = sessionPaths_compute(definition);
+        const mapper = entry.mapper(pathMap);
+
+        return new WorkflowAdapter(workflowId, definition, mapper);
+    }
+
+    /**
+     * Get summaries of all available workflows.
+     */
+    static workflows_summarize(): WorkflowSummary[] {
+        const summaries: WorkflowSummary[] = [];
+
+        for (const [id, entry] of Object.entries(MANIFEST_REGISTRY)) {
+            try {
+                const yaml = readFileSync(entry.yamlPath, 'utf-8');
+                const def = manifest_parse(yaml);
+                const header = def.header as ManifestHeader;
+                summaries.push({
+                    id,
+                    name: header.name,
+                    persona: header.persona,
+                    description: header.description.split('\n')[0],
+                    stageCount: def.nodes.size,
+                });
+            } catch {
+                // Skip manifests that fail to parse
+            }
+        }
+
+        return summaries;
+    }
+
+    /**
+     * Get all available workflow IDs.
+     */
+    static workflows_list(): string[] {
+        return Object.keys(MANIFEST_REGISTRY);
+    }
+
+    // ─── Position Resolution ───────────────────────────────────
+
+    /**
+     * Resolve the current workflow position.
+     *
+     * This is the primary query — replaces the old separate calls to
+     * `stages_completed()` + `stage_next()`.
+     *
+     * @param vfs - VirtualFileSystem for completion checks
+     * @param sessionPath - Active session path (e.g. /home/user/sessions/fedml/session-xxx)
+     * @returns WorkflowPosition describing "where are we?"
+     */
+    position_resolve(vfs: VirtualFileSystem, sessionPath: string): WorkflowPosition {
+        const completedIds = this.mapper.completedIds_resolve(vfs, sessionPath);
+        return position_resolve(this.definition, completedIds);
+    }
+
+    // ─── Transition Check ──────────────────────────────────────
+
+    /**
+     * Check if a command transition is allowed based on workflow state.
+     *
+     * @param command - Command being attempted (e.g. 'harmonize', 'code')
+     * @param vfs - VirtualFileSystem for completion checks
+     * @param sessionPath - Active session path
+     * @returns TransitionResult with allowed status and warnings
+     */
+    transition_check(
+        command: string,
+        vfs: VirtualFileSystem,
+        sessionPath: string,
+    ): TransitionResult {
+        const baseCmd = command.split(/\s+/)[0].toLowerCase();
+        const targetNode = this.commandIndex.get(baseCmd);
+
+        // If command doesn't map to any stage, allow it (not workflow-controlled)
+        if (!targetNode) {
+            return WorkflowAdapter.result_allowed();
+        }
+
+        const completedIds = this.mapper.completedIds_resolve(vfs, sessionPath);
+
+        // If target stage is already completed, allow
+        if (completedIds.has(targetNode.id)) {
+            return WorkflowAdapter.result_allowed();
+        }
+
+        // Check if all parents are complete
+        const readiness = dag_resolve(this.definition, completedIds);
+        const nodeReadiness = readiness.find(r => r.nodeId === targetNode.id);
+
+        if (!nodeReadiness || nodeReadiness.pendingParents.length === 0) {
+            return WorkflowAdapter.result_allowed();
+        }
+
+        // Find the first blocking parent that has a skip_warning
+        for (const parentId of nodeReadiness.pendingParents) {
+            const parentNode = this.definition.nodes.get(parentId);
+            if (parentNode?.skip_warning) {
+                const skipCount = this.skipCounts[parentNode.id] || 0;
+                const maxWarnings = parentNode.skip_warning.max_warnings;
+
+                // If warned enough times, allow
+                if (skipCount >= maxWarnings) {
+                    return WorkflowAdapter.result_allowed();
+                }
+
+                const isSecondWarning = skipCount >= 1;
+                const suggestion = parentNode.commands.length > 0
+                    ? `Run '${parentNode.commands[0]}' to complete this step.`
+                    : null;
+
+                return {
+                    allowed: false,
+                    warning: parentNode.skip_warning.short,
+                    reason: isSecondWarning ? parentNode.skip_warning.reason : null,
+                    suggestion,
+                    skipCount,
+                    hardBlock: false,
+                    skippedStageId: parentNode.id,
+                };
+            }
+        }
+
+        // No skip warning on blocking parent — allow silently
+        return WorkflowAdapter.result_allowed();
+    }
+
+    // ─── Command → Stage Lookup ────────────────────────────────
+
+    /**
+     * Find which stage handles a given command.
+     *
+     * @param command - Command string (e.g. 'harmonize', 'proceed')
+     * @returns The DAGNode, or null if no stage handles this command
+     */
+    stage_forCommand(command: string): DAGNode | null {
+        const baseCmd = command.split(/\s+/)[0].toLowerCase();
+        return this.commandIndex.get(baseCmd) ?? null;
+    }
+
+    // ─── Skip Management ───────────────────────────────────────
+
+    /**
+     * Increment skip counter for a stage.
+     * Called when user proceeds despite a warning.
+     */
+    skip_increment(stageId: string): number {
+        const current = this.skipCounts[stageId] || 0;
+        this.skipCounts[stageId] = current + 1;
+        return this.skipCounts[stageId];
+    }
+
+    /**
+     * Clear skip counter for a stage (called when stage completes).
+     */
+    stage_complete(stageId: string): void {
+        delete this.skipCounts[stageId];
+    }
+
+    // ─── Progress ──────────────────────────────────────────────
+
+    /**
+     * Get a human-readable workflow progress summary.
+     */
+    progress_summarize(vfs: VirtualFileSystem, sessionPath: string): string {
+        const pos = this.position_resolve(vfs, sessionPath);
+        const header = this.definition.header as ManifestHeader;
+
+        let summary = `Workflow: ${header.name}\n`;
+        summary += `Progress: ${pos.progress.completed}/${pos.progress.total} stages\n\n`;
+
+        for (const node of this.definition.nodes.values()) {
+            const isComplete = pos.completedStages.includes(node.id);
+            const marker = isComplete ? '●' : '○';
+            summary += `  ${marker} ${node.name}`;
+            if (pos.currentStage?.id === node.id) {
+                summary += ' ← NEXT';
+            }
+            summary += '\n';
+        }
+
+        return summary;
+    }
+
+    // ─── Access ────────────────────────────────────────────────
+
+    /** Get the underlying DAG definition. */
+    get dag(): DAGDefinition {
+        return this.definition;
+    }
+
+    /** Get the topology-aware session tree paths. */
+    get stagePaths(): Map<string, StagePath> {
+        return this._stagePaths;
+    }
+
+    // ─── Private ───────────────────────────────────────────────
+
+    private static result_allowed(): TransitionResult {
+        return {
+            allowed: true,
+            warning: null,
+            reason: null,
+            suggestion: null,
+            skipCount: 0,
+            hardBlock: false,
+            skippedStageId: null,
+        };
+    }
+}

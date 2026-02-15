@@ -18,6 +18,9 @@ import type {
     JoinNodeContent,
     SessionStoreInterface,
 } from './types.js';
+import { VfsBackend } from './backend/vfs.js';
+import { SessionStore } from './SessionStore.js';
+import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // Test Fixtures
@@ -51,36 +54,76 @@ function skipSentinel_create(stage: string, reason: string): ArtifactEnvelope {
 
 describe('dag/store/backend/vfs', () => {
 
-    // These tests will import VfsBackend once implemented.
-    // The VFS backend wraps the existing VirtualFileSystem.
+    function backend_create(): VfsBackend {
+        const vfs = new VirtualFileSystem('test');
+        return new VfsBackend(vfs);
+    }
 
-    it.todo('should write and read an artifact');
-    // backend.artifact_write('/sessions/fedml/s1/data/search.json', jsonStr)
-    // backend.artifact_read('/sessions/fedml/s1/data/search.json') === jsonStr
+    it('should write and read an artifact', async () => {
+        const backend = backend_create();
+        const data = JSON.stringify({ hello: 'world' });
+        await backend.artifact_write('/home/test/sessions/s1/data/search.json', data);
+        const result = await backend.artifact_read('/home/test/sessions/s1/data/search.json');
+        expect(result).toBe(data);
+    });
 
-    it.todo('should return null for nonexistent path');
-    // backend.artifact_read('/nonexistent') === null
+    it('should return null for nonexistent path', async () => {
+        const backend = backend_create();
+        const result = await backend.artifact_read('/home/test/nonexistent');
+        expect(result).toBeNull();
+    });
 
-    it.todo('should check path existence');
-    // After write: path_exists returns true
-    // Before write: path_exists returns false
+    it('should check path existence', async () => {
+        const backend = backend_create();
+        expect(await backend.path_exists('/home/test/sessions/s1/data/x.json')).toBe(false);
+        await backend.artifact_write('/home/test/sessions/s1/data/x.json', '{}');
+        expect(await backend.path_exists('/home/test/sessions/s1/data/x.json')).toBe(true);
+    });
 
-    it.todo('should create directories recursively');
-    // backend.dir_create('/a/b/c') creates all intermediate dirs
+    it('should create directories recursively', async () => {
+        const backend = backend_create();
+        await backend.dir_create('/home/test/a/b/c');
+        expect(await backend.path_exists('/home/test/a/b/c')).toBe(true);
+        expect(await backend.path_exists('/home/test/a/b')).toBe(true);
+        expect(await backend.path_exists('/home/test/a')).toBe(true);
+    });
 
-    it.todo('should list children of a directory');
-    // After creating /a/b and /a/c:
-    // backend.children_list('/a') === ['b', 'c']
+    it('should list children of a directory', async () => {
+        const backend = backend_create();
+        await backend.dir_create('/home/test/parent/child1');
+        await backend.dir_create('/home/test/parent/child2');
+        const children = await backend.children_list('/home/test/parent');
+        expect(children.sort()).toEqual(['child1', 'child2']);
+    });
 
-    it.todo('should create links (virtual symlinks)');
-    // backend.link_create('/sessions/fedml/s1/gather/rename/harmonize/gather', '/sessions/fedml/s1/gather')
-    // backend.path_exists('/sessions/fedml/s1/gather/rename/harmonize/gather') === true
+    it('should create links (virtual symlinks)', async () => {
+        const backend = backend_create();
+        await backend.dir_create('/home/test/sessions/s1/gather/data');
+        await backend.link_create(
+            '/home/test/sessions/s1/join/data/gather',
+            '/home/test/sessions/s1/gather/data',
+        );
+        expect(await backend.path_exists('/home/test/sessions/s1/join/data/gather')).toBe(true);
+        const content = await backend.artifact_read('/home/test/sessions/s1/join/data/gather');
+        const parsed = JSON.parse(content!);
+        expect(parsed.__link).toBe(true);
+        expect(parsed.target).toBe('/home/test/sessions/s1/gather/data');
+    });
 
-    it.todo('should handle write to existing path (overwrite)');
-    // Write once, write again with different data, read returns latest
+    it('should handle write to existing path (overwrite)', async () => {
+        const backend = backend_create();
+        await backend.artifact_write('/home/test/sessions/s1/data/x.json', '{"v":1}');
+        await backend.artifact_write('/home/test/sessions/s1/data/x.json', '{"v":2}');
+        const result = await backend.artifact_read('/home/test/sessions/s1/data/x.json');
+        expect(result).toBe('{"v":2}');
+    });
 
-    it.todo('should handle empty directory listing');
-    // backend.children_list('/empty') === []
+    it('should handle empty directory listing', async () => {
+        const backend = backend_create();
+        await backend.dir_create('/home/test/empty');
+        const children = await backend.children_list('/home/test/empty');
+        expect(children).toEqual([]);
+    });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -89,135 +132,334 @@ describe('dag/store/backend/vfs', () => {
 
 describe('dag/store/SessionStore', () => {
 
-    // These tests will import SessionStore once implemented.
+    function store_create(): { store: SessionStore; backend: VfsBackend } {
+        const vfs = new VirtualFileSystem('test');
+        const backend = new VfsBackend(vfs);
+        const store = new SessionStore(backend, '/home/test/sessions');
+        return { store, backend };
+    }
 
     // ─── Session Lifecycle ──────────────────────────────────────
 
     describe('session lifecycle', () => {
 
-        it.todo('should create a new session with unique ID');
-        // session = session_create('fedml', '1.0.0')
-        // session.id should be non-empty string
-        // session.persona === 'fedml'
-        // session.manifestVersion === '1.0.0'
-        // session.rootPath should contain session.id
+        it('should create a new session with unique ID', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            expect(session.id).toBeTruthy();
+            expect(session.persona).toBe('fedml');
+            expect(session.manifestVersion).toBe('1.0.0');
+            expect(session.rootPath).toContain(session.id);
+        });
 
-        it.todo('should create session root directory and data/ subdirectory');
-        // After session_create, backend should have:
-        // ~/sessions/fedml/session-<id>/
-        // ~/sessions/fedml/session-<id>/data/
+        it('should create session root directory and data/ subdirectory', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            expect(await backend.path_exists(session.rootPath)).toBe(true);
+            expect(await backend.path_exists(`${session.rootPath}/data`)).toBe(true);
+        });
 
-        it.todo('should write session metadata as session.json');
-        // ~/sessions/fedml/session-<id>/session.json should exist
-        // and contain SessionMetadata fields
+        it('should write session metadata as session.json', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const raw = await backend.artifact_read(`${session.rootPath}/session.json`);
+            expect(raw).toBeTruthy();
+            const meta = JSON.parse(raw!) as SessionMetadata;
+            expect(meta.id).toBe(session.id);
+            expect(meta.persona).toBe('fedml');
+            expect(meta.manifestVersion).toBe('1.0.0');
+        });
 
-        it.todo('should resume an existing session');
-        // created = session_create('fedml', '1.0.0')
-        // resumed = session_resume('fedml', created.id)
-        // resumed should match created
+        it('should resume an existing session', async () => {
+            const { store } = store_create();
+            const created = await store.session_create('fedml', '1.0.0');
+            const resumed = await store.session_resume('fedml', created.id);
+            expect(resumed).not.toBeNull();
+            expect(resumed!.id).toBe(created.id);
+            expect(resumed!.persona).toBe(created.persona);
+            expect(resumed!.rootPath).toBe(created.rootPath);
+        });
 
-        it.todo('should return null when resuming nonexistent session');
-        // session_resume('fedml', 'nonexistent') === null
+        it('should return null when resuming nonexistent session', async () => {
+            const { store } = store_create();
+            const result = await store.session_resume('fedml', 'nonexistent');
+            expect(result).toBeNull();
+        });
 
-        it.todo('should list sessions for a persona ordered by lastActive');
-        // Create three sessions, list should return all three
-        // Most recently active first
+        it('should list sessions for a persona ordered by lastActive', async () => {
+            const { store } = store_create();
+            const s1 = await store.session_create('fedml', '1.0.0');
+            await new Promise(r => setTimeout(r, 5));
+            const s2 = await store.session_create('fedml', '1.0.0');
+            await new Promise(r => setTimeout(r, 5));
+            const s3 = await store.session_create('fedml', '1.0.0');
+            const list = await store.sessions_list('fedml');
+            expect(list.length).toBe(3);
+            // Most recently created should be first (latest lastActive)
+            expect(list[0].id).toBe(s3.id);
+        });
 
-        it.todo('should return empty list for persona with no sessions');
-        // sessions_list('unknown') === []
+        it('should return empty list for persona with no sessions', async () => {
+            const { store } = store_create();
+            const list = await store.sessions_list('unknown');
+            expect(list).toEqual([]);
+        });
 
-        it.todo('should update lastActive on resume');
-        // Create session, wait briefly, resume
-        // resumed.lastActive > created.lastActive
+        it('should update lastActive on resume', async () => {
+            const { store } = store_create();
+            const created = await store.session_create('fedml', '1.0.0');
+            // Small delay to ensure different timestamp
+            await new Promise(r => setTimeout(r, 5));
+            const resumed = await store.session_resume('fedml', created.id);
+            expect(resumed!.lastActive >= created.lastActive).toBe(true);
+        });
     });
 
     // ─── Stage Path Resolution ──────────────────────────────────
 
     describe('stage path resolution', () => {
 
-        it.todo('should resolve root stage path');
-        // stagePath_resolve(session, ['search']) === '<rootPath>/data'
-        // Root stage artifacts go in <root>/data/
+        it('should resolve root stage path', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const path = store.stagePath_resolve(session, ['search']);
+            expect(path).toBe(`${session.rootPath}/data`);
+        });
 
-        it.todo('should resolve linear stage path');
-        // stagePath_resolve(session, ['search', 'gather'])
-        //   === '<rootPath>/gather/data'
+        it('should resolve linear stage path', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const path = store.stagePath_resolve(session, ['search', 'gather']);
+            expect(path).toBe(`${session.rootPath}/gather/data`);
+        });
 
-        it.todo('should resolve path through a topological join node');
-        // stagePath_resolve(session, ['search', 'gather', 'rename',
-        //   '_join_gather_rename', 'harmonize'])
-        //   === '<rootPath>/gather/rename/_join_gather_rename/harmonize/data'
+        it('should resolve path through a topological join node', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const path = store.stagePath_resolve(session, [
+                'search', 'gather', 'rename',
+                '_join_gather_rename', 'harmonize',
+            ]);
+            expect(path).toBe(`${session.rootPath}/gather/rename/_join_gather_rename/harmonize/data`);
+        });
 
-        it.todo('should resolve deeply nested federation path through join');
-        // stagePath_resolve(session, ['search', 'gather', 'rename',
-        //   '_join_gather_rename', 'harmonize', 'code', 'train', 'federate-brief'])
-        //   === '<rootPath>/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/data'
+        it('should resolve deeply nested federation path through join', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const path = store.stagePath_resolve(session, [
+                'search', 'gather', 'rename',
+                '_join_gather_rename', 'harmonize', 'code', 'train', 'federate-brief',
+            ]);
+            expect(path).toBe(`${session.rootPath}/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/data`);
+        });
     });
 
     // ─── Artifact Materialization ───────────────────────────────
 
     describe('artifact materialization', () => {
 
-        it.todo('should write an artifact to the stage data directory');
-        // artifact_write(session, ['search'], artifact)
-        // File should exist at <rootPath>/data/search.json
+        it('should write an artifact to the stage data directory', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const artifact = artifact_create('search', { results: [1, 2, 3] });
+            await store.artifact_write(session, ['search'], artifact);
+            expect(await backend.path_exists(`${session.rootPath}/data/search.json`)).toBe(true);
+        });
 
-        it.todo('should read a previously written artifact');
-        // artifact_write then artifact_read returns same envelope
+        it('should read a previously written artifact', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const artifact = artifact_create('search', { results: [1, 2, 3] });
+            await store.artifact_write(session, ['search'], artifact);
+            const read = await store.artifact_read(session, ['search']);
+            expect(read).not.toBeNull();
+            expect(read!.stage).toBe('search');
+            expect(read!.content).toEqual({ results: [1, 2, 3] });
+        });
 
-        it.todo('should return null for unmaterialized artifact');
-        // artifact_read for a stage that hasn't run → null
+        it('should return null for unmaterialized artifact', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const read = await store.artifact_read(session, ['search']);
+            expect(read).toBeNull();
+        });
 
-        it.todo('should check artifact existence');
-        // Before write: artifact_exists → false
-        // After write: artifact_exists → true
+        it('should check artifact existence', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            expect(await store.artifact_exists(session, ['search'])).toBe(false);
+            await store.artifact_write(session, ['search'], artifact_create('search', {}));
+            expect(await store.artifact_exists(session, ['search'])).toBe(true);
+        });
 
-        it.todo('should materialize a skip sentinel for optional stages');
-        // Write a skip sentinel for 'rename'
-        // artifact_read returns envelope with skipped: true in content
+        it('should materialize a skip sentinel for optional stages', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const sentinel = skipSentinel_create('rename', 'User chose to skip');
+            await store.artifact_write(session, ['search', 'gather', 'rename'], sentinel);
+            const read = await store.artifact_read(session, ['search', 'gather', 'rename']);
+            expect(read).not.toBeNull();
+            const content = read!.content as unknown as SkipSentinelContent;
+            expect(content.skipped).toBe(true);
+        });
 
-        it.todo('should overwrite an existing artifact (re-execution)');
-        // Write artifact, write different artifact to same stage
-        // Read returns the second artifact
+        it('should overwrite an existing artifact (re-execution)', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            await store.artifact_write(session, ['search'], artifact_create('search', { v: 1 }));
+            await store.artifact_write(session, ['search'], artifact_create('search', { v: 2 }));
+            const read = await store.artifact_read(session, ['search']);
+            expect(read!.content).toEqual({ v: 2 });
+        });
 
-        it.todo('should create intermediate directories for nested stages');
-        // artifact_write to a deep path creates all parent dirs
+        it('should create intermediate directories for nested stages', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const artifact = artifact_create('train', { model: 'resnet' });
+            await store.artifact_write(session, ['search', 'gather', 'harmonize', 'code', 'train'], artifact);
+            expect(await backend.path_exists(`${session.rootPath}/gather/harmonize/code/train/data`)).toBe(true);
+        });
     });
 
     // ─── Topological Join Nodes ─────────────────────────────────
 
     describe('topological join nodes', () => {
 
-        it.todo('should materialize a join node directory named _join_<parents>');
-        // harmonize has previous: [gather, rename]
-        // joinNode_materialize creates _join_gather_rename/ under rename/
-        // parents listed alphabetically in the name
+        it('should materialize a join node directory named _join_<parents>', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const name = await store.joinNode_materialize(
+                session,
+                {
+                    gather: ['search', 'gather'],
+                    rename: ['search', 'gather', 'rename'],
+                },
+                ['search', 'gather', 'rename'],
+            );
+            expect(name).toBe('_join_gather_rename');
+            expect(await backend.path_exists(`${session.rootPath}/gather/rename/_join_gather_rename`)).toBe(true);
+        });
 
-        it.todo('should create data/ subdirectory inside join node');
-        // _join_gather_rename/data/ should exist after materialization
+        it('should create data/ subdirectory inside join node', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            await store.joinNode_materialize(
+                session,
+                {
+                    gather: ['search', 'gather'],
+                    rename: ['search', 'gather', 'rename'],
+                },
+                ['search', 'gather', 'rename'],
+            );
+            expect(await backend.path_exists(`${session.rootPath}/gather/rename/_join_gather_rename/data`)).toBe(true);
+        });
 
-        it.todo('should write join.json artifact in join data/ directory');
-        // _join_gather_rename/data/join.json should exist
-        // Contains: parents, parent_paths, fingerprint, parent_fingerprints
+        it('should write join.json artifact in join data/ directory', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            await store.joinNode_materialize(
+                session,
+                {
+                    gather: ['search', 'gather'],
+                    rename: ['search', 'gather', 'rename'],
+                },
+                ['search', 'gather', 'rename'],
+            );
+            const raw = await backend.artifact_read(`${session.rootPath}/gather/rename/_join_gather_rename/data/join.json`);
+            expect(raw).toBeTruthy();
+            const content = JSON.parse(raw!) as JoinNodeContent;
+            expect(content.parents).toEqual(['gather', 'rename']);
+        });
 
-        it.todo('should create input reference links to each parent data/ directory');
-        // _join_gather_rename/data/gather -> ../../../../data (symlink to gather's artifacts)
-        // _join_gather_rename/data/rename -> ../../data (symlink to rename's artifacts)
+        it('should create input reference links to each parent data/ directory', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            await store.joinNode_materialize(
+                session,
+                {
+                    gather: ['search', 'gather'],
+                    rename: ['search', 'gather', 'rename'],
+                },
+                ['search', 'gather', 'rename'],
+            );
+            // Links should exist in the join data/ directory
+            expect(await backend.path_exists(`${session.rootPath}/gather/rename/_join_gather_rename/data/gather`)).toBe(true);
+            expect(await backend.path_exists(`${session.rootPath}/gather/rename/_join_gather_rename/data/rename`)).toBe(true);
+        });
 
-        it.todo('should return the join node name');
-        // joinNode_materialize returns '_join_gather_rename'
+        it('should return the join node name', async () => {
+            const { store } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            const name = await store.joinNode_materialize(
+                session,
+                {
+                    gather: ['search', 'gather'],
+                    rename: ['search', 'gather', 'rename'],
+                },
+                ['search', 'gather', 'rename'],
+            );
+            expect(name).toBe('_join_gather_rename');
+        });
 
-        it.todo('should always create join nodes for multi-parent stages');
-        // Even when one parent is an ancestor of the other,
-        // the join node is always created for consistency
+        it('should always create join nodes for multi-parent stages', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            // Even when gather is an ancestor of rename, join is created
+            await store.joinNode_materialize(
+                session,
+                {
+                    gather: ['search', 'gather'],
+                    rename: ['search', 'gather', 'rename'],
+                },
+                ['search', 'gather', 'rename'],
+            );
+            expect(await backend.path_exists(`${session.rootPath}/gather/rename/_join_gather_rename`)).toBe(true);
+        });
 
-        it.todo('should handle three-parent joins');
-        // If a stage has previous: [a, b, c]
-        // Creates _join_a_b_c/ with links to all three parents
+        it('should handle three-parent joins', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            // root -> a, root -> b, root -> c, then d joins a+b+c
+            // nest under c (path: ['root', 'c'])
+            const name = await store.joinNode_materialize(
+                session,
+                {
+                    a: ['root', 'a'],
+                    b: ['root', 'b'],
+                    c: ['root', 'c'],
+                },
+                ['root', 'c'],
+            );
+            expect(name).toBe('_join_a_b_c');
+            expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data`)).toBe(true);
+            // All three links
+            expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data/a`)).toBe(true);
+            expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data/b`)).toBe(true);
+            expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data/c`)).toBe(true);
+        });
 
-        it.todo('should allow downstream stage to nest under join node');
-        // After join materialization, harmonize/ nests under _join_gather_rename/
-        // Full path: rename/_join_gather_rename/harmonize/data/
+        it('should allow downstream stage to nest under join node', async () => {
+            const { store, backend } = store_create();
+            const session = await store.session_create('fedml', '1.0.0');
+            await store.joinNode_materialize(
+                session,
+                {
+                    gather: ['search', 'gather'],
+                    rename: ['search', 'gather', 'rename'],
+                },
+                ['search', 'gather', 'rename'],
+            );
+            // Now write harmonize artifact nesting under the join node
+            const artifact = artifact_create('harmonize', { harmonized: true });
+            await store.artifact_write(
+                session,
+                ['search', 'gather', 'rename', '_join_gather_rename', 'harmonize'],
+                artifact,
+            );
+            expect(await backend.path_exists(
+                `${session.rootPath}/gather/rename/_join_gather_rename/harmonize/data/harmonize.json`,
+            )).toBe(true);
+        });
     });
 });
 

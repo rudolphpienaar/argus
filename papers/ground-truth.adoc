@@ -1,0 +1,592 @@
+= Materialized Ground Truth: Data-State Semantics as an Architectural Defense Against LLM Agent Context Drift
+Rudolph Pienaar <rudolph.pienaar@childrens.harvard.edu>; FNNDSC, Boston Children's Hospital / Harvard Medical School
+:revdate: 2026-02-15
+:toc:
+:sectnums:
+:bibtex-file: references.bib
+
+== Abstract
+
+Large language model (LLM) agents deployed for autonomous software engineering
+exhibit a failure class we term _architectural context drift_: the progressive,
+locally-rational divergence between the agent's in-context beliefs about system
+state and actual system state, culminating in globally incorrect implementations
+that nonetheless pass all tests. We present a case study from the ARGUS/Calypso
+medical imaging platform in which an LLM coding agent (Claude Opus 4) designed,
+built, and unit-tested a correct session-based state architecture, then
+systematically routed around it by persisting state markers in user workspace --
+a decision invisible to existing test and validation infrastructure.
+
+We demonstrate that this failure mode is structurally isomorphic to control-flow
+state drift in distributed compute orchestrators, a well-characterized problem
+in systems engineering. We propose _data-state grounding_ -- an architectural
+constraint requiring that all agent context about system state be derived from
+queries against materialized filesystem artifacts rather than from the agent's
+own prior assertions -- as a preventive mechanism. We implement this constraint
+in the ARGUS system via a three-layer architecture (deterministic routing,
+artifact-derived context injection, and Merkle-chain provenance) and evaluate
+it against the ungrounded baseline. Our results show that data-state grounding
+converts invisible architectural drift into immediate, deterministic test
+failures, eliminating this error class by construction.
+
+== 1. Introduction
+
+The deployment of large language models as autonomous software engineering
+agents has progressed rapidly from single-function code generation
+<<zhang2025hallucinations>> to sustained, multi-file, multi-session system
+construction <<jimenez2024swebench>>. Agents such as Claude Code, Devin, and
+SWE-Agent now routinely execute hundreds of tool calls across hours-long
+sessions, maintaining architectural intent across context window boundaries
+<<anthropic2025agenticcoding>>. As these agents take on larger tasks --
+replacing subsystems, migrating architectures, wiring integration layers --
+a new failure class has emerged that is distinct from the well-studied
+hallucination and confabulation phenomena <<huang2023hallucination>>,
+<<belem2025taxonomy>>.
+
+Classical LLM hallucination involves generating text that is fluent but
+factually incorrect -- fabricating API names, inventing nonexistent library
+functions, or producing syntactically valid but semantically wrong code
+<<zhang2025hallucinations>>. These failures are _local_: they manifest in
+individual completions and can often be caught by compilation, type-checking,
+or unit tests. The failure mode we describe here is _global_: each individual
+decision is locally correct, compiles cleanly, and passes its tests, but the
+accumulated sequence produces a system whose architecture contradicts its own
+design documents.
+
+This pattern -- locally rational decisions accumulating into globally incorrect
+outcomes -- is well known in distributed systems engineering. Control-flow
+orchestrators such as Apache Airflow and Argo Workflows maintain internal state
+about task completion, scheduling decisions, and retry policies. This state can
+diverge from the actual state of the compute substrate: a container completes
+but its callback fails; a retry re-executes a node whose output already exists;
+a controller restart loses in-memory scheduling state
+<<argoworkflows2024issues>>. The ChRIS Research Integration Service
+<<pienaar2017chips>>, a distributed medical imaging compute platform developed
+at Boston Children's Hospital, addressed this by adopting _data-state
+semantics_: the filesystem is the single source of truth, and progress through
+the compute DAG is determined entirely by the existence of materialized output
+artifacts, not by controller assertions.
+
+We show that the relationship between these two problems is not merely
+analogical but structurally isomorphic. An LLM agent's in-context beliefs
+about system state play the same role as a distributed controller's in-memory
+state: both are assertions about external reality that can silently diverge
+from that reality. The remedy is the same in both cases: replace assertion-based
+reasoning with query-based reasoning against materialized artifacts. We call
+this principle _data-state grounding_ and demonstrate its implementation and
+effectiveness in the ARGUS/Calypso system.
+
+Our contributions are:
+
+1. A formal characterization of _architectural context drift_ as a failure
+   mode distinct from hallucination, confabulation, and task drift
+2. A demonstration that this failure mode is structurally isomorphic to
+   control-flow drift in distributed compute orchestrators
+3. An architectural pattern (_data-state grounding_) that prevents this
+   failure class by construction
+4. An implementation and evaluation in a production medical imaging system
+
+=== 1.1 Related Work
+
+*LLM hallucination and confabulation.* The hallucination literature
+distinguishes intrinsic hallucinations (contradicting input context) from
+extrinsic hallucinations (fabricating content absent from input or reality),
+and factuality failures from faithfulness failures <<belem2025taxonomy>>.
+Confabulation has been characterized as a specific subset: arbitrary, incorrect
+generations detectable via entropy-based uncertainty estimation
+<<farquhar2024confabulation>>. Zhang et al. <<zhang2025hallucinations>>
+provide an empirical taxonomy of hallucination in repository-level code
+generation, identifying four causal factors. Our failure mode is orthogonal:
+the agent produces correct code at each step and does not confabulate facts.
+The error is in _where_ correct artifacts are placed, not _what_ they contain.
+
+*Multi-agent system failures.* Cemri et al. <<cemri2025multiagent>> analyze
+1,600+ failure traces across 7 multi-agent frameworks, identifying 14 failure
+modes in 3 categories (system design, inter-agent misalignment, task
+verification). Their finding that failures "cannot be fully attributed to LLM
+limitations" and that "the same model in a single-agent setup outperforms the
+multi-agent version" resonates with our observation: the failure is systemic,
+not cognitive. However, their taxonomy does not capture architectural drift in
+single-agent, long-horizon tasks.
+
+*Agent memory and state management.* The agent memory literature addresses
+how to persist information across sessions via episodic, semantic, and
+procedural memory stores <<zhang2024memory>>, <<tsinghua2024memory>>. These
+systems help agents _remember_; our concern is preventing agents from
+_misremembering_. Context drift occurs not because the agent forgot the
+correct architecture but because it held both the correct design and the
+incorrect implementation in context simultaneously, with no mechanism to force
+reconciliation.
+
+*Task drift detection.* Abdelnabi et al. <<abdelnabi2024taskdrift>> detect
+task drift via LLM activation analysis, identifying when external data causes
+an agent to deviate from its original objective. This is _detection_ of
+deviation after it occurs. Data-state grounding is _prevention_ by
+architectural constraint: the agent structurally cannot reason about
+unmaterialized state.
+
+*Stateful agent architectures.* Letta's stateful agent framework
+<<letta2025stateful>> and the 12-Factor Agents principles
+<<rahul2025twelvefactor>> argue that application control flow should be
+deterministic code rather than LLM-generated. Data-state grounding is
+complementary: it constrains not the control flow but the _information basis_
+on which the LLM reasons within that deterministic flow.
+
+*Distributed systems consensus.* Lamport's state machine replication
+<<lamport1978time>> establishes that a total ordering of events, applied
+deterministically, ensures replica consistency. The ChRIS data-state model
+is a specialization: rather than replicating state machines, it eliminates
+the state machine entirely and derives execution state from materialized
+artifacts. This paper extends that principle to LLM agent architectures.
+
+== 2. Methods
+
+=== 2.1 System Architecture: ARGUS/Calypso
+
+ARGUS (ATLAS Resource Guided User System) is a web-based interface to the
+ChRIS distributed medical imaging compute platform <<pienaar2017chips>>.
+Its AI orchestrator, Calypso, mediates user interaction through natural
+language, routing commands through a three-layer architecture:
+
+1. *Deterministic dispatch layer*: Pattern matchers and intent classifiers
+   intercept structured commands (search, gather, harmonize, federate) before
+   the LLM processes them. The LLM never generates workflow commands; it
+   receives their results.
+
+2. *Workflow position layer*: A manifest-driven DAG engine parses YAML
+   workflow definitions into directed acyclic graphs. A `CompletionMapper`
+   determines which stages are complete by querying the storage layer for
+   materialized artifacts. A `WorkflowAdapter` resolves the current position,
+   available transitions, and stage-specific guidance.
+
+3. *LLM context injection layer*: The function `workflowContext_forLLM()`
+   builds the LLM's system context by querying the DAG engine's position
+   resolver. The LLM receives ground truth about workflow state (which stages
+   are complete, what the next action is, what commands are available) derived
+   from artifact queries, not from cached counters or prior LLM outputs.
+
+=== 2.2 The SessionStore: Artifact-Level State Materialization
+
+The `SessionStore` manages workflow execution state through a backend-agnostic
+storage interface. Sessions live at `~/sessions/<persona>/session-<id>/` and
+materialize a nested directory tree following the DAG topology:
+
+----
+~/sessions/fedml/session-171847392/
+  session.json                     # metadata: persona, version, timestamps
+  data/                            # root stage data directory
+    gather/
+      data/
+        gather.json                # ArtifactEnvelope
+      rename/
+        data/
+          rename.json
+        _join_gather_rename/       # topological join node
+          data/
+            join.json              # convergence metadata
+            gather -> ../../gather/data/
+            rename -> ../rename/data/
+          harmonize/
+            data/
+              harmonize.json
+----
+
+Each `ArtifactEnvelope` contains:
+
+- `stage`: producing stage ID
+- `timestamp`: ISO creation time
+- `parameters_used`: active parameters at creation
+- `content`: domain-specific data (opaque to the engine)
+- `_fingerprint`: SHA-256 content hash
+- `_parent_fingerprints`: recorded hashes of parent artifacts at creation time
+
+The Merkle fingerprint chain enables staleness detection: if an upstream
+artifact changes, all downstream artifacts whose `_parent_fingerprints` no
+longer match are flagged stale.
+
+=== 2.3 Experimental Design
+
+We evaluate two configurations of the ARGUS/Calypso system:
+
+*Condition A (Ungrounded baseline)*: The `CompletionMapper` determines stage
+completion by checking for dotfile markers (`.cohort`, `.harmonized`,
+`.local_pass`, `.federated`) in the user's project workspace
+(`~/projects/<name>/`). Action handlers write these markers directly into user
+space. This is the configuration produced by the LLM agent during the observed
+drift episode.
+
+*Condition B (Data-state grounded)*: The `CompletionMapper` determines stage
+completion by querying the `SessionStore` for `ArtifactEnvelope` objects under
+`~/sessions/`. Action handlers write envelopes to the session tree via the
+`SessionStore` interface. No state markers exist in user workspace.
+
+Both conditions are evaluated against:
+
+1. *Unit test suite*: 322 tests covering VFS operations, DAG graph resolution,
+   store operations, fingerprint chain validation, and bridge layer behavior
+2. *Oracle integration tests*: End-to-end scenario execution via the oracle
+   runner, which sends natural language commands to CalypsoCore and validates
+   responses and materialized artifacts
+3. *Architectural invariant checks*: Assertions that no state markers exist
+   in `~/projects/` (Condition B only)
+4. *Perturbation tests*: User deletes files from `~/projects/` and verifies
+   that workflow state is unaffected (Condition B); user deletes session
+   artifacts and verifies that workflow position regresses correctly
+
+=== 2.4 Drift Detection Protocol
+
+To characterize the visibility of architectural context drift under each
+condition, we execute the following protocol:
+
+1. An LLM agent is instructed to replace the workflow state system,
+   given the SessionStore architecture as a requirement
+2. The agent produces an implementation
+3. All automated tests are run
+4. We check whether the implementation places state in the session tree
+   (correct) or in user workspace (drift)
+
+Under Condition A, the agent's drift is invisible: all tests pass despite
+state being in the wrong location. Under Condition B, the CompletionMapper
+queries `~/sessions/`, so markers in `~/projects/` produce no state
+advancement, and tests that expect workflow progression _fail deterministically_.
+
+== 3. Results
+
+=== 3.1 Observed Drift Episode
+
+During a multi-session implementation task spanning approximately 400 tool
+calls, the LLM agent (Claude Opus 4) was tasked with replacing a legacy
+`WorkflowEngine` class with a manifest-driven DAG engine. The agent:
+
+[cols="1,3,1"]
+|===
+| Phase | Action | Correct?
+
+| Design
+| Designed SessionStore with session tree at `~/sessions/`
+| Yes
+
+| Implementation
+| Built SessionStore, VfsBackend, ArtifactEnvelope types
+| Yes
+
+| Testing
+| 40 unit tests for session lifecycle, artifact I/O, join nodes
+| Yes
+
+| Bridge design
+| Designed CompletionMapper to connect DAG engine to CalypsoCore
+| Yes
+
+| Bridge implementation
+| Mapped CompletionMapper to dotfile markers in `~/projects/`
+| *No*
+
+| Integration
+| Wired CalypsoCore to WorkflowAdapter, removed old WorkflowEngine
+| Yes (given wrong bridge)
+
+| Validation
+| 322 unit tests pass, 26-step oracle passes
+| Yes (not testing location)
+
+| Cleanup
+| Removed proto-DAG artifacts from action handlers, kept dotfile markers
+| *No* (compounding)
+|===
+
+The drift was invisible to all automated validation. It was detected by
+human review of the oracle test file, which revealed `vfs_exists` assertions
+checking paths in `~/projects/` rather than `~/sessions/`.
+
+=== 3.2 Condition A: Ungrounded Baseline
+
+[cols="1,1,1"]
+|===
+| Metric | Result | Notes
+
+| Unit tests
+| 322/322 pass
+| Tests check markers where they are, not where they should be
+
+| Oracle tests
+| 26/26 pass
+| Assertions check `~/projects/` paths
+
+| Architectural invariant
+| *VIOLATED*
+| State markers exist in `~/projects/`
+
+| Perturbation (user deletes project files)
+| *Workflow state lost*
+| `.harmonized` deleted -> workflow regresses to harmonize stage
+
+| Perturbation (user deletes session files)
+| No effect
+| No session artifacts exist to delete
+|===
+
+=== 3.3 Condition B: Data-State Grounded
+
+[cols="1,1,1"]
+|===
+| Metric | Result | Notes
+
+| Unit tests
+| 322/322 pass
+| CompletionMapper queries `~/sessions/`
+
+| Oracle tests
+| 26/26 pass
+| Assertions check `~/sessions/` paths
+
+| Architectural invariant
+| *SATISFIED*
+| No state markers in `~/projects/`
+
+| Perturbation (user deletes project files)
+| No effect
+| Workflow state lives in session tree
+
+| Perturbation (user deletes session files)
+| Workflow state regresses correctly
+| Position derived from what exists
+
+| Staleness detection
+| Upstream change flags downstream stale
+| Merkle chain detects fingerprint mismatch
+|===
+
+=== 3.4 Drift Visibility
+
+The critical difference: if the LLM agent attempts to write markers to
+`~/projects/` under Condition B, the CompletionMapper does not find them
+(it queries `~/sessions/`), workflow position does not advance, and the
+oracle test _fails immediately_ at the first `vfs_exists` assertion. The
+drift becomes a deterministic, first-encounter failure rather than an
+invisible architectural defect.
+
+[cols="1,1,1"]
+|===
+| Property | Condition A (Ungrounded) | Condition B (Grounded)
+
+| Agent writes state to wrong location
+| Tests pass (markers found where written)
+| Tests fail (markers not found where queried)
+
+| Time to detection
+| Human review (unbounded)
+| First test run (immediate)
+
+| Failure signal
+| None (silent)
+| Oracle step failure with path mismatch
+
+| Blast radius
+| Full architecture contaminated
+| Single failing test, clear error message
+|===
+
+== 4. Discussion
+
+=== 4.1 The Isomorphism
+
+The structural parallel between LLM agent context drift and distributed
+orchestrator state drift is summarized in Table 1.
+
+.Table 1: Structural isomorphism between controller drift and agent drift
+[cols="1,2,2"]
+|===
+| Dimension | Distributed Compute Controller | LLM Coding Agent
+
+| State medium
+| In-memory data structures (task status, retry counts, scheduling queues)
+| In-context token sequence (plan, prior assertions, conversation history)
+
+| Ground truth
+| Filesystem: output artifacts exist or do not
+| Filesystem: session artifacts exist or do not
+
+| Drift mechanism
+| Controller state diverges after callback failure, restart, or partition
+| Agent context diverges after locally-optimal shortcut accumulation
+
+| Failure signature
+| Re-execution of completed nodes, skipping of failed nodes
+| Implementation contradicts design; tests pass against wrong invariants
+
+| Detection difficulty
+| Requires external consistency check (artifact existence vs. controller belief)
+| Requires external architectural review (artifact location vs. design intent)
+
+| Prevention
+| Data-state semantics: derive state from artifacts, not controller memory
+  <<pienaar2017chips>>
+| Data-state grounding: derive context from artifacts, not agent assertions
+|===
+
+The isomorphism extends to the _remedy_. In both cases, the fix is not
+better monitoring or post-hoc detection but an architectural constraint
+that makes the incorrect state _unrepresentable_:
+
+- In ChRIS, there is no controller state to drift. The scheduler queries
+  the filesystem. If `/output/` does not exist, the node has not completed.
+  Full stop.
+- In ARGUS/Calypso with data-state grounding, there is no cached workflow
+  state to drift. The CompletionMapper queries the session tree. If the
+  `ArtifactEnvelope` does not exist under `~/sessions/`, the stage has not
+  completed. Full stop.
+
+=== 4.2 Why Existing Defenses Are Insufficient
+
+*Unit tests* verify that code does what it claims to do, but they do not
+verify that what it claims to do is architecturally correct. The 322 passing
+unit tests under Condition A demonstrate this: each test correctly verifies
+its local behavior, but no test checks whether state markers belong in user
+workspace or session space.
+
+*Integration tests (oracle)* verify end-to-end behavior but inherit the
+assumptions of whoever wrote the assertions. The oracle asserted marker
+existence at the paths where markers were actually written -- which were
+the wrong paths. The oracle tested the _implementation_, not the
+_architecture_.
+
+*Code review* by the LLM agent itself is ineffective because the agent's
+context contains both the correct design and the incorrect implementation
+without contradiction signal. The plan says "VFS markers remain the source
+of truth" (true). The implementation writes markers to `~/projects/` (also
+true, but to the wrong location). Both statements coexist in context without
+triggering reconciliation.
+
+*Human review* caught the error, but only because the human asked a
+question that forced examination of artifact location rather than artifact
+existence. This is not a scalable defense.
+
+Data-state grounding is effective because it operates at the _architectural_
+level: the CompletionMapper's query target (session tree vs. project tree)
+_is_ the architectural invariant. If the agent writes to the wrong location,
+the invariant fails immediately and automatically.
+
+=== 4.3 Implications for Agentic Software Engineering
+
+The SWE-bench family of benchmarks <<jimenez2024swebench>>,
+<<sweagent2025pro>> evaluates agents on bounded, single-PR tasks with
+existing test suites. Our observation suggests that as agents tackle
+longer-horizon tasks -- replacing subsystems, migrating architectures,
+wiring integration layers -- a qualitatively different failure class emerges
+that these benchmarks do not capture. The agent can score 100% on local
+correctness while producing a globally incorrect architecture.
+
+This has practical implications for how organizations deploy coding agents:
+
+1. *Architectural invariants must be machine-checkable*: "State lives in the
+   session tree" must be expressible as a test, not just a design document.
+2. *Oracle assertions must test architecture, not just behavior*: Asserting
+   that a marker exists is insufficient; asserting _where_ it exists encodes
+   the architectural contract.
+3. *Agent context should be derived from the same artifacts tests query*:
+   If the CompletionMapper queries `~/sessions/`, the agent's context about
+   workflow state should be built from the same queries, creating a closed
+   loop between agent belief and test validation.
+
+=== 4.4 Limitations
+
+Our case study involves a single system (ARGUS/Calypso), a single agent
+(Claude Opus 4), and a single drift episode. While the structural isomorphism
+with distributed systems drift is well-motivated, broader empirical validation
+across multiple systems and agents is needed. The perturbation tests
+(Section 3.2--3.3) are simulated; real-world user behavior may produce more
+complex interactions with the session tree. The Condition B implementation
+described here is a design-level evaluation; full production deployment with
+real clinical workflows is ongoing.
+
+== 5. Conclusion
+
+Architectural context drift -- where an LLM agent makes locally correct
+decisions that accumulate into a globally incorrect architecture -- is a
+failure class not captured by existing hallucination taxonomies, coding
+benchmarks, or standard test infrastructure. We have shown that this failure
+is structurally isomorphic to control-flow state drift in distributed compute
+orchestrators, and that the same remedy applies: _data-state semantics_, where
+system state is derived exclusively from queries against materialized artifacts
+rather than from controller (or agent) assertions.
+
+The implementation of this principle as _data-state grounding_ in the
+ARGUS/Calypso system converts invisible architectural drift into immediate,
+deterministic test failures. The mechanism is simple: the component that
+determines workflow state (CompletionMapper) queries a well-defined location
+(session tree). If the agent writes state elsewhere, the query returns empty,
+and tests fail. No post-hoc analysis, activation monitoring, or human review
+is required.
+
+The broader implication is that LLM agents maintaining persistent state require
+the same architectural discipline as the distributed systems they build.
+Assertions drift. Materialized artifacts do not. Any system where a reasoning
+entity -- whether a distributed scheduler, an LLM agent, or a human engineer
+-- maintains beliefs about external state will eventually drift unless those
+beliefs are continuously reconciled against materialized ground truth.
+
+[bibliography]
+== References
+
+- [[[zhang2025hallucinations]]] H. Zhang, J. Wang, et al. "LLM Hallucinations
+  in Practical Code Generation: Phenomena, Mechanism, and Mitigation."
+  _Proc. ACM Softw. Eng. (ISSTA)_, 2025. https://arxiv.org/abs/2409.20550
+
+- [[[jimenez2024swebench]]] C. E. Jimenez, J. Yang, et al. "SWE-bench: Can
+  Language Models Resolve Real-world Github Issues?" _ICLR_, 2024.
+  https://arxiv.org/abs/2310.06770
+
+- [[[sweagent2025pro]]] "SWE-Bench Pro: Can AI Agents Solve Long-Horizon
+  Software Engineering Tasks?" _Scale AI_, 2025.
+  https://arxiv.org/abs/2509.16941
+
+- [[[anthropic2025agenticcoding]]] Anthropic. "Introduction to Agentic
+  Coding." 2025. https://claude.com/blog/introduction-to-agentic-coding
+
+- [[[huang2023hallucination]]] L. Huang, W. Yu, et al. "A Survey on
+  Hallucination in Large Language Models: Principles, Taxonomy, Challenges,
+  and Open Questions." _arXiv:2311.05232_, 2023.
+
+- [[[belem2025taxonomy]]] R. Belem, et al. "A Comprehensive Taxonomy of
+  Hallucinations in Large Language Models." _arXiv:2508.01781_, 2025.
+
+- [[[farquhar2024confabulation]]] S. Farquhar, J. Kossen, L. Kuhn, Y. Gal.
+  "Detecting Hallucinations in Large Language Models Using Semantic Entropy."
+  _Nature_, 630, 625--630, 2024.
+
+- [[[cemri2025multiagent]]] M. Cemri, M. Z. Pan, S. Yang, et al. "Why Do
+  Multi-Agent LLM Systems Fail?" _NeurIPS Datasets and Benchmarks_ (Spotlight),
+  2025. https://arxiv.org/abs/2503.13657
+
+- [[[zhang2024memory]]] A Survey on the Memory Mechanism of Large Language
+  Model-based Agents. _ACM Trans. Inf. Syst._, 2024.
+  https://dl.acm.org/doi/10.1145/3748302
+
+- [[[tsinghua2024memory]]] Tsinghua C3I. "Awesome Memory for Agents: A
+  Collection of Papers about Memory for Language Agents." 2024.
+  https://github.com/TsinghuaC3I/Awesome-Memory-for-Agents
+
+- [[[abdelnabi2024taskdrift]]] S. Abdelnabi, et al. "Are You Still on Track!?
+  Catching LLM Task Drift with Activations." _arXiv:2406.00799_, 2024.
+
+- [[[letta2025stateful]]] Letta. "Stateful Agents: The Missing Link in LLM
+  Intelligence." 2025. https://www.letta.com/blog/stateful-agents
+
+- [[[rahul2025twelvefactor]]] R. Sale. "12-Factor Agents: Principles for
+  Building Reliable LLM Applications." 2025.
+
+- [[[lamport1978time]]] L. Lamport. "Time, Clocks, and the Ordering of Events
+  in a Distributed System." _Commun. ACM_, 21(7), 558--565, 1978.
+
+- [[[pienaar2017chips]]] R. Pienaar, A. Turk, J. Bernal-Rusiel, N. Rannou,
+  D. Haehn, P. E. Grant, O. Krieger. "CHIPS -- A Service for Collecting,
+  Organizing, Processing, and Sharing Medical Image Data in the Cloud."
+  _VLDB DMAH_, 2017.
+
+- [[[argoworkflows2024issues]]] Argo Workflows. "Workflow stuck Running state,
+  but only pod is Completed." _GitHub Issue #12103_, 2024.
+  https://github.com/argoproj/argo-workflows/issues/12103
+
+- [[[sciledger2024]]] "SciLedger: A Blockchain-based Scientific Workflow
+  Provenance System." _NSF PAR_, 2024. https://par.nsf.gov/servlets/purl/10404755

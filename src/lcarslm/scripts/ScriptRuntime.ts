@@ -415,7 +415,7 @@ export class ScriptRuntime {
         stepId: string,
         runtime: ScriptRuntimeContext
     ): ScriptValueResolution {
-        if (typeof rawValue === 'string' && rawValue.startsWith('$')) {
+        if (typeof rawValue === 'string' && rawValue.startsWith('${')) {
             const exprResult: unknown = this.scriptStructured_expressionResolve(rawValue, runtime);
             if (exprResult !== undefined) {
                 return { ok: true, value: exprResult };
@@ -450,27 +450,66 @@ export class ScriptRuntime {
     }
 
     /**
-     * Resolve an expression reference ($outputs.alias.field, $defaults.key).
+     * Resolve a ${...} expression reference.
+     *
+     * Syntax: ${name}, ${name.field}, ${scope.path}, ${a ?? b}
+     *
+     * Bare names (no recognized scope prefix) resolve against outputs first,
+     * then defaults. Scoped names (outputs., defaults., answers.) resolve
+     * directly. The ?? operator provides fallback: try left, if undefined
+     * try right.
      */
     private scriptStructured_expressionResolve(expr: string, runtime: ScriptRuntimeContext): unknown {
         const trimmed: string = expr.trim();
-        if (!trimmed.startsWith('$')) return undefined;
+        if (!trimmed.startsWith('${') || !trimmed.endsWith('}')) return undefined;
 
-        const path: string = trimmed.slice(1);
+        const inner: string = trimmed.slice(2, -1).trim();
+
+        // Handle ?? fallback operator
+        if (inner.includes('??')) {
+            const parts: string[] = inner.split('??').map(p => p.trim());
+            for (const part of parts) {
+                const result: unknown = this.scriptStructured_pathResolve(part, runtime);
+                if (result !== undefined) return result;
+            }
+            return undefined;
+        }
+
+        return this.scriptStructured_pathResolve(inner, runtime);
+    }
+
+    /**
+     * Resolve a single dotted path against the runtime scopes.
+     *
+     * If the first segment is a known scope (outputs, defaults, answers),
+     * resolve the rest within that scope. Otherwise treat the entire path
+     * as an outputs reference (bare name shorthand).
+     */
+    private scriptStructured_pathResolve(path: string, runtime: ScriptRuntimeContext): unknown {
         const dotIndex: number = path.indexOf('.');
-        if (dotIndex === -1) return undefined;
+        if (dotIndex !== -1) {
+            const scope: string = path.slice(0, dotIndex);
+            const rest: string = path.slice(dotIndex + 1);
 
-        const scope: string = path.slice(0, dotIndex);
-        const rest: string = path.slice(dotIndex + 1);
+            if (scope === 'outputs' && runtime.outputs) {
+                return this.scriptStructured_referenceResolve(rest, runtime.outputs);
+            }
+            if (scope === 'defaults' && runtime.defaults) {
+                return this.scriptStructured_referenceResolve(rest, runtime.defaults);
+            }
+            if (scope === 'answers' && runtime.answers) {
+                return this.scriptStructured_referenceResolve(rest, runtime.answers);
+            }
+        }
 
-        if (scope === 'outputs' && runtime.outputs) {
-            return this.scriptStructured_referenceResolve(rest, runtime.outputs);
+        // Bare name or unrecognized scope — search outputs first, then defaults
+        if (runtime.outputs) {
+            const result: unknown = this.scriptStructured_referenceResolve(path, runtime.outputs);
+            if (result !== undefined) return result;
         }
-        if (scope === 'defaults' && runtime.defaults) {
-            return this.scriptStructured_referenceResolve(rest, runtime.defaults);
-        }
-        if (scope === 'answers' && runtime.answers) {
-            return this.scriptStructured_referenceResolve(rest, runtime.answers);
+        if (runtime.defaults) {
+            const result: unknown = this.scriptStructured_referenceResolve(path, runtime.defaults);
+            if (result !== undefined) return result;
         }
 
         return undefined;

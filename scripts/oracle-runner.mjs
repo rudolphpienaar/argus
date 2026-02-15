@@ -12,13 +12,14 @@ const verbose = process.argv.includes('--verbose');
  * Replace known template variables in step text.
  *
  * @param {string} value
- * @param {{ user: string, project: string|null }} vars
+ * @param {{ user: string, project: string|null, session: string|null }} vars
  * @returns {string}
  */
 function interpolate(value, vars) {
     return value
         .replaceAll('${user}', vars.user)
-        .replaceAll('${project}', vars.project || '');
+        .replaceAll('${project}', vars.project || '')
+        .replaceAll('${session}', vars.session || '');
 }
 
 /**
@@ -166,8 +167,9 @@ async function scenario_run(modules, scenario) {
     const name = scenario.data.name || scenario.file;
     const username = scenario.data.username || 'oracle';
     const steps = Array.isArray(scenario.data.steps) ? scenario.data.steps : [];
-    const vars = { user: username, project: null };
+    const vars = { user: username, project: null, session: null };
     const runtime = runtime_create(modules, username);
+    vars.session = runtime.core.session_getPath();
 
     console.log(`\n[ORACLE] ${name}`);
 

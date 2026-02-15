@@ -34,7 +34,6 @@ import { MOCK_PROJECTS } from '../core/data/projects.js';
 import { project_gather, project_rename, project_harmonize } from '../core/logic/ProjectManager.js';
 import { projectDir_populate, chrisProject_populate } from '../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../generated/version.js';
-import { WorkflowEngine } from '../core/workflows/WorkflowEngine.js';
 import {
     scripts_list,
     type CalypsoScript
@@ -43,13 +42,10 @@ import {
     controlPlaneIntent_resolve,
     type ControlPlaneIntent
 } from './routing/ControlPlaneRouter.js';
-import type {
-    WorkflowDefinition,
-    WorkflowState,
-    WorkflowContext,
-    TransitionResult,
-    WorkflowSummary
-} from '../core/workflows/types.js';
+import { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
+import type { TransitionResult, WorkflowSummary } from '../dag/bridge/WorkflowAdapter.js';
+import type { WorkflowPosition } from '../dag/graph/types.js';
+import type { ArtifactEnvelope } from '../dag/store/types.js';
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -89,29 +85,14 @@ export class CalypsoCore {
         'them', 'those', 'these', 'all', 'both', 'everything'
     ]);
 
-    /** Map of workflow commands to their intent identifiers */
-    private static readonly COMMAND_TO_INTENT: Readonly<Record<string, string>> = {
-        'search': 'SEARCH',
-        'add': 'ADD',
-        'gather': 'GATHER',
-        'review': 'GATHER',
-        'harmonize': 'HARMONIZE',
-        'proceed': 'PROCEED',
-        'code': 'CODE',
-        'train': 'TRAIN',
-        'python': 'PYTHON',
-        'federate': 'FEDERATE',
-        'mount': 'PROCEED'
-    };
-
     // Store reference for state access (injected as interface to avoid circular deps)
     private storeActions: CalypsoStoreActions;
 
-    /** Active workflow definition */
-    private workflowDefinition: WorkflowDefinition;
+    /** Manifest-driven workflow adapter (replaces old WorkflowEngine + state) */
+    private workflowAdapter: WorkflowAdapter;
 
-    /** Current workflow state (completed stages, skip counts) */
-    private workflowState: WorkflowState;
+    /** Session tree root path — source of truth for workflow state. */
+    private sessionPath: string;
 
     /** Federation orchestrator (multi-phase handshake). */
     private federation: FederationOrchestrator;
@@ -129,13 +110,24 @@ export class CalypsoCore {
         this.simulationMode = config.simulationMode ?? false;
         this.knowledge = config.knowledge;
 
-        // Initialize workflow engine with default 'fedml' workflow
+        // Initialize manifest-driven workflow adapter
         const workflowId: string = config.workflowId ?? 'fedml';
-        this.workflowDefinition = WorkflowEngine.definition_load(workflowId);
-        this.workflowState = WorkflowEngine.state_create(workflowId);
+        this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
 
-        // Initialize federation orchestrator
+        // Create session tree — materializes workflow state outside user workspace
+        const username: string = shell.env_get('USER') || 'user';
+        const sessionId: string = `session-${Date.now()}`;
+        this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
+        try {
+            vfs.dir_create(`${this.sessionPath}/data`);
+        } catch { /* session root already exists */ }
+
+        // Initialize federation orchestrator with topology-aware artifact path
         this.federation = new FederationOrchestrator(vfs, storeActions);
+        const federatePath = this.workflowAdapter.stagePaths.get('federate-brief');
+        if (federatePath) {
+            this.federation.session_set(`${this.sessionPath}/${federatePath.artifactFile}`);
+        }
 
         // Initialize script runtime with command executor callback
         this.scripts = new ScriptRuntime(
@@ -238,6 +230,12 @@ export class CalypsoCore {
             const message: string = shellResult.stderr
                 ? `${shellResult.stdout}\n<error>${shellResult.stderr}</error>`
                 : shellResult.stdout;
+
+            // Materialize train artifact when python train.py succeeds
+            if (shellResult.exitCode === 0 && primaryCommand === 'python' && trimmed.includes('train.py')) {
+                this.sessionArtifact_write('train', { status: 'LOCAL_PASS' });
+            }
+
             return this.response_create(message, [], shellResult.exitCode === 0);
         }
 
@@ -350,7 +348,7 @@ export class CalypsoCore {
      */
     public reset(): void {
         this.storeActions.reset();
-        this.workflowState = WorkflowEngine.state_create(this.workflowDefinition.id);
+        this.workflowAdapter = WorkflowAdapter.definition_load(this.workflowAdapter.workflowId);
         this.lastMentionedDatasets = [];
         this.federation.state_reset();
         this.scripts.session_reset();
@@ -379,17 +377,24 @@ export class CalypsoCore {
      */
     public workflow_set(workflowId: string | null): boolean {
         if (!workflowId) {
-            // Disable workflow enforcement by setting a permissive state
-            this.workflowState = {
-                workflowId: 'none',
-                skipCounts: {}
-            };
+            // When disabling, keep current adapter (transition checks still work
+            // but will allow everything since stages resolve as complete)
             return true;
         }
 
         try {
-            this.workflowDefinition = WorkflowEngine.definition_load(workflowId);
-            this.workflowState = WorkflowEngine.state_create(workflowId);
+            this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
+
+            // Create new session for the new workflow
+            const username: string = this.shell.env_get('USER') || 'user';
+            const sessionId: string = `session-${Date.now()}`;
+            this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
+            try { this.vfs.dir_create(`${this.sessionPath}/data`); } catch { /* exists */ }
+            const fedPath = this.workflowAdapter.stagePaths.get('federate-brief');
+            if (fedPath) {
+                this.federation.session_set(`${this.sessionPath}/${fedPath.artifactFile}`);
+            }
+
             return true;
         } catch {
             return false;
@@ -402,7 +407,14 @@ export class CalypsoCore {
      * @returns Current workflow ID or 'none' if disabled
      */
     public workflow_get(): string {
-        return this.workflowState.workflowId;
+        return this.workflowAdapter.workflowId;
+    }
+
+    /**
+     * Get the active session path in the session tree.
+     */
+    public session_getPath(): string {
+        return this.sessionPath;
     }
 
     /**
@@ -411,7 +423,7 @@ export class CalypsoCore {
      * @returns Array of workflow summaries
      */
     public workflows_available(): WorkflowSummary[] {
-        return WorkflowEngine.workflows_summarize();
+        return WorkflowAdapter.workflows_summarize();
     }
 
     // ─── Special Commands (/command) ───────────────────────────────────────
@@ -709,6 +721,7 @@ TIP: Type /next anytime to see what to do next!`;
                 lines.push('○ HARMONIZATION ALREADY COMPLETE');
             } else {
                 project_harmonize(project);
+                this.sessionArtifact_write('harmonize', { projectName: project.name, status: 'COMPLETED' });
                 lines.push('○ HARMONIZATION COMPLETE');
             }
         }
@@ -720,6 +733,7 @@ TIP: Type /next anytime to see what to do next!`;
                 lines.push('○ CODE SCAFFOLD ALREADY PRESENT');
             } else {
                 projectDir_populate(this.vfs, username, project.name);
+                this.sessionArtifact_write('code', { projectName: project.name, workflow: 'fedml' });
                 lines.push('○ CODE SCAFFOLD GENERATED (train.py, config.yaml, requirements.txt)');
             }
 
@@ -947,29 +961,30 @@ Requirements:
     // ─── Workflow Engine Integration ────────────────────────────────────────
 
     /**
-     * Build the workflow context for validation checks.
+     * Write an artifact envelope to the session tree at the topology-aware path.
+     * Path is resolved from the DAG structure via WorkflowAdapter.stagePaths.
      *
-     * @returns WorkflowContext with store, vfs, and project path
+     * @param stageId - Stage identifier (e.g. 'gather', 'harmonize')
+     * @param content - Domain-specific content for the artifact
      */
-    private workflowContext_build(): WorkflowContext {
-        const activeMeta = this.storeActions.project_getActive();
-        const username: string = this.shell.env_get('USER') || 'user';
-        const projectPath: string = activeMeta
-            ? `/home/${username}/projects/${activeMeta.name}`
-            : `/home/${username}/projects/DRAFT`;
+    private sessionArtifact_write(stageId: string, content: Record<string, unknown>): void {
+        const stagePath = this.workflowAdapter.stagePaths.get(stageId);
+        if (!stagePath) return; // Stage not in manifest
 
-        return {
-            store: {
-                selectedDatasets: { length: this.storeActions.datasets_getSelected().length }
-            },
-            vfs: {
-                exists: (path: string): boolean => {
-                    const resolved: string = path.replace(/\$\{project\}/g, projectPath);
-                    return this.vfs.node_stat(resolved) !== null;
-                }
-            },
-            project: projectPath
-        };
+        const dataDir = `${this.sessionPath}/${stagePath.dataDir}`;
+        const filePath = `${this.sessionPath}/${stagePath.artifactFile}`;
+        try {
+            this.vfs.dir_create(dataDir);
+            const envelope: ArtifactEnvelope = {
+                stage: stageId,
+                timestamp: new Date().toISOString(),
+                parameters_used: {},
+                content,
+                _fingerprint: '',
+                _parent_fingerprints: {},
+            };
+            this.vfs.file_create(filePath, JSON.stringify(envelope));
+        } catch { /* ignore — artifact write is best-effort during transition */ }
     }
 
     /**
@@ -979,27 +994,7 @@ Requirements:
      * @returns TransitionResult with allowed status and warnings
      */
     private workflow_checkTransition(cmd: string): TransitionResult {
-        const intent: string | undefined = CalypsoCore.COMMAND_TO_INTENT[cmd];
-        if (!intent) {
-            // Command not tracked by workflow — allow
-            return {
-                allowed: true,
-                warning: null,
-                reason: null,
-                suggestion: null,
-                skipCount: 0,
-                hardBlock: false,
-                skippedStageId: null
-            };
-        }
-
-        const context: WorkflowContext = this.workflowContext_build();
-        return WorkflowEngine.transition_check(
-            this.workflowState,
-            this.workflowDefinition,
-            intent,
-            context
-        );
+        return this.workflowAdapter.transition_check(cmd, this.vfs, this.sessionPath);
     }
 
     /**
@@ -1032,12 +1027,9 @@ Requirements:
      * @param cmd - The command that was executed
      */
     private workflowStage_complete(cmd: string): void {
-        const intent: string | undefined = CalypsoCore.COMMAND_TO_INTENT[cmd];
-        if (!intent) return;
-
-        const stage = WorkflowEngine.stage_forIntent(this.workflowDefinition, intent);
+        const stage = this.workflowAdapter.stage_forCommand(cmd);
         if (stage) {
-            WorkflowEngine.stage_complete(this.workflowState, stage.id);
+            this.workflowAdapter.stage_complete(stage.id);
         }
     }
 
@@ -1047,8 +1039,7 @@ Requirements:
      * @returns Human-readable progress string
      */
     public workflow_progress(): string {
-        const context: WorkflowContext = this.workflowContext_build();
-        return WorkflowEngine.progress_summarize(this.workflowDefinition, context);
+        return this.workflowAdapter.progress_summarize(this.vfs, this.sessionPath);
     }
 
     /**
@@ -1060,18 +1051,17 @@ Requirements:
      * @returns Formatted workflow context for system prompt injection
      */
     private workflowContext_forLLM(): string {
-        const context: WorkflowContext = this.workflowContext_build();
-        const completedStages: string[] = WorkflowEngine.stages_completed(this.workflowDefinition, context);
-        const nextStage = WorkflowEngine.stage_next(this.workflowDefinition, context);
+        const pos: WorkflowPosition = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
         const activeMeta = this.storeActions.project_getActive();
+        const header = this.workflowAdapter.dag.header as import('../dag/graph/types.js').ManifestHeader;
 
         const lines: string[] = [];
         lines.push('### CURRENT WORKFLOW STATE');
-        lines.push(`- Workflow: ${this.workflowDefinition.name}`);
-        lines.push(`- Completed stages: ${completedStages.length > 0 ? completedStages.join(', ') : 'none'}`);
+        lines.push(`- Workflow: ${header.name}`);
+        lines.push(`- Completed stages: ${pos.completedStages.length > 0 ? pos.completedStages.join(', ') : 'none'}`);
 
-        if (nextStage) {
-            lines.push(`- Next required: ${nextStage.id} (${nextStage.name})`);
+        if (pos.currentStage) {
+            lines.push(`- Next required: ${pos.currentStage.id} (${pos.currentStage.name})`);
         } else {
             lines.push('- Status: All stages complete');
         }
@@ -1082,22 +1072,13 @@ Requirements:
             lines.push('- Active project: none');
         }
 
-        // Add specific guidance for the LLM based on workflow state
-        if (nextStage?.id === 'harmonize') {
+        // Stage directives from manifest instruction field
+        if (pos.currentStage) {
             lines.push('');
-            lines.push('IMPORTANT: User must run `harmonize` before proceeding to code/training.');
-            lines.push('Do NOT suggest skipping harmonization. If user asks to code or train,');
-            lines.push('remind them to harmonize first.');
-        } else if (nextStage?.id === 'gather' && completedStages.length === 0) {
-            lines.push('');
-            lines.push('IMPORTANT: User has not started the workflow. Guide them to search for');
-            lines.push('datasets first using `search <query>`, then `add <id>` to build a cohort.');
-        } else if (nextStage?.id === 'code') {
-            lines.push('');
-            lines.push('Data is harmonized. User can now proceed to code development with `proceed` or `code`.');
-        } else if (nextStage?.id === 'train') {
-            lines.push('');
-            lines.push('Code scaffolded. User should run local training with `python train.py` before federation.');
+            lines.push(`IMPORTANT: ${pos.currentStage.instruction.trim()}`);
+            if (pos.availableCommands.length > 0) {
+                lines.push(`Available commands: ${pos.availableCommands.join(', ')}`);
+            }
         }
 
         return lines.join('\n');
@@ -1110,19 +1091,18 @@ Requirements:
      * @returns Structured guidance with specific command suggestions
      */
     public workflow_nextStep(): string {
-        const context: WorkflowContext = this.workflowContext_build();
+        const pos: WorkflowPosition = this.workflowAdapter.position_resolve(
+            this.vfs, this.sessionPath
+        );
         const activeMeta = this.storeActions.project_getActive();
         const selectedDatasets: Dataset[] = this.storeActions.datasets_getSelected();
-        const nextStage = WorkflowEngine.stage_next(this.workflowDefinition, context);
-        const completedStages: string[] = WorkflowEngine.stages_completed(this.workflowDefinition, context);
 
         const lines: string[] = [];
-        lines.push(`● **CALYPSO GUIDANCE** — ${this.workflowDefinition.name}`);
+        lines.push(`● **CALYPSO GUIDANCE** — ${this.workflowAdapter.dag.header.name}`);
         lines.push('');
 
         // Check if we have a project
         if (!activeMeta) {
-            // No project — user needs to search/gather datasets first
             if (selectedDatasets.length === 0) {
                 lines.push('○ You have no datasets selected yet.');
                 lines.push('');
@@ -1146,7 +1126,6 @@ Requirements:
 
         lines.push(`○ Project: **${projectName}**`);
 
-        // Check if project should be renamed
         if (isDraft) {
             lines.push('');
             lines.push('**Tip:** Give your project a meaningful name:');
@@ -1154,9 +1133,7 @@ Requirements:
         }
         lines.push('');
 
-        // Check workflow stage
-        if (!nextStage) {
-            // All stages complete
+        if (pos.isComplete) {
             lines.push('● **Workflow complete!** All stages have been completed.');
             lines.push('');
             const username: string = this.shell.env_get('USER') || 'user';
@@ -1173,88 +1150,57 @@ Requirements:
             return lines.join('\n');
         }
 
-        // Determine what's missing based on the next stage
-        const stageId: string = nextStage.id;
+        // Current stage guidance — federation sub-steps get special handling
+        const stageId: string = pos.currentStage!.id;
 
-        switch (stageId) {
-            case 'gather':
-                lines.push('**Next step: Gather datasets**');
-                lines.push('  `search <query>` — Find relevant datasets');
-                lines.push('  `add <id>` — Add to your cohort');
-                lines.push('  `gather` — Create project from selection');
-                break;
-
-            case 'harmonize':
-                lines.push('**Next step: Data Harmonization** ⚠️');
+        if (stageId.startsWith('federate')) {
+            lines.push('**Next step: Federated Training**');
+            lines.push('');
+            if (this.federation.currentStep === 'transcompile') {
+                lines.push('Federation Step 1/5 is pending: source transcompile.');
                 lines.push('');
-                lines.push('Before training, your cohort **must** be standardized for federated learning.');
-                lines.push('This ensures consistent image formats, metadata, and quality metrics across all sites.');
+                lines.push('  `federate --yes` — Execute step 1/5');
+                lines.push('  `federate --abort` — Cancel federation handshake');
+            } else if (this.federation.currentStep === 'containerize') {
+                lines.push('Federation Step 2/5 is pending: container compilation.');
                 lines.push('');
-                lines.push('  `harmonize` — Run the harmonization engine');
+                lines.push('  `federate --yes` — Execute step 2/5');
+                lines.push('  `federate --abort` — Cancel federation handshake');
+            } else if (this.federation.currentStep === 'publish_prepare' || this.federation.currentStep === 'publish_configure') {
+                lines.push('Federation Step 3/5 is active: marketplace publish metadata.');
                 lines.push('');
-                lines.push('*This step is required before proceeding to model development.*');
-                break;
-
-            case 'code':
-                lines.push('**Next step: Model Development**');
+                lines.push('  `federate --name <app-name>` — Set app name');
+                lines.push('  `federate --org <org>` — Set org/namespace (optional)');
+                lines.push('  `federate --private` — Publish privately');
+                lines.push('  `federate --yes` — Confirm next publish action');
+                lines.push('  `federate --abort` — Cancel federation handshake');
+            } else if (this.federation.currentStep === 'dispatch_compute') {
+                lines.push('Federation Step 5/5 is pending: dispatch + federated rounds.');
                 lines.push('');
-                lines.push('Your data is harmonized and ready. Now define your model architecture.');
+                lines.push('  `federate --yes` — Dispatch to participants and run rounds');
+                lines.push('  `federate --abort` — Cancel federation handshake');
+            } else {
+                lines.push('Local training complete. Ready to distribute across nodes.');
                 lines.push('');
-                lines.push('  `proceed` or `code` — Scaffold the training environment');
-                lines.push('');
-                lines.push('This will generate `train.py`, `config.yaml`, and other boilerplate.');
-                break;
-
-            case 'train':
-                lines.push('**Next step: Local Training**');
-                lines.push('');
-                lines.push('Test your model locally before federation.');
-                lines.push('');
-                lines.push('  `python train.py` — Run local training');
-                lines.push('  `python train.py --epochs 5` — Quick validation run');
-                break;
-
-            case 'federate':
-                lines.push('**Next step: Federated Training**');
-                lines.push('');
-                if (this.federation.currentStep === 'transcompile') {
-                    lines.push('Federation Step 1/5 is pending: source transcompile.');
-                    lines.push('');
-                    lines.push('  `federate --yes` — Execute step 1/5');
-                    lines.push('  `federate --abort` — Cancel federation handshake');
-                } else if (this.federation.currentStep === 'containerize') {
-                    lines.push('Federation Step 2/5 is pending: container compilation.');
-                    lines.push('');
-                    lines.push('  `federate --yes` — Execute step 2/5');
-                    lines.push('  `federate --abort` — Cancel federation handshake');
-                } else if (this.federation.currentStep === 'publish_prepare' || this.federation.currentStep === 'publish_configure') {
-                    lines.push('Federation Step 3/5 is active: marketplace publish metadata.');
-                    lines.push('');
-                    lines.push('  `federate --name <app-name>` — Set app name');
-                    lines.push('  `federate --org <org>` — Set org/namespace (optional)');
-                    lines.push('  `federate --private` — Publish privately');
-                    lines.push('  `federate --yes` — Confirm next publish action');
-                    lines.push('  `federate --abort` — Cancel federation handshake');
-                } else if (this.federation.currentStep === 'dispatch_compute') {
-                    lines.push('Federation Step 5/5 is pending: dispatch + federated rounds.');
-                    lines.push('');
-                    lines.push('  `federate --yes` — Dispatch to participants and run rounds');
-                    lines.push('  `federate --abort` — Cancel federation handshake');
-                } else {
-                    lines.push('Local training complete. Ready to distribute across nodes.');
-                    lines.push('');
-                    lines.push('  `federate` — Initialize the federation sequence');
+                lines.push('  `federate` — Initialize the federation sequence');
+            }
+        } else {
+            // Generic stage guidance from manifest
+            const stage = pos.currentStage!;
+            lines.push(`**Next step: ${stage.name}**`);
+            lines.push('');
+            lines.push(stage.instruction.trim());
+            lines.push('');
+            if (pos.availableCommands.length > 0) {
+                for (const cmd of pos.availableCommands) {
+                    lines.push(`  \`${cmd}\``);
                 }
-                break;
-
-            default:
-                lines.push(`**Next stage:** ${nextStage.name}`);
-                lines.push(`  Available commands: ${nextStage.intents.map(i => `\`${i.toLowerCase()}\``).join(', ')}`);
+            }
         }
 
         // Show progress indicator
         lines.push('');
-        lines.push(`Progress: ${completedStages.length}/${this.workflowDefinition.stages.length} stages complete`);
+        lines.push(`Progress: ${pos.progress.completed}/${pos.progress.total} stages complete`);
 
         return lines.join('\n');
     }
@@ -1326,9 +1272,10 @@ Requirements:
      * Returns true when federate is the next required workflow stage.
      */
     private federationReady_is(): boolean {
-        const context: WorkflowContext = this.workflowContext_build();
-        const nextStage = WorkflowEngine.stage_next(this.workflowDefinition, context);
-        return nextStage?.id === 'federate';
+        const pos: WorkflowPosition = this.workflowAdapter.position_resolve(
+            this.vfs, this.sessionPath
+        );
+        return pos.currentStage?.id.startsWith('federate') ?? false;
     }
 
     // ─── Workflow Commands ─────────────────────────────────────────────────
@@ -1351,7 +1298,7 @@ Requirements:
 
         if (!transition.allowed && transition.skippedStageId) {
             // Increment skip counter and format warning
-            WorkflowEngine.skip_increment(this.workflowState, transition.skippedStageId);
+            this.workflowAdapter.skip_increment(transition.skippedStageId);
             warningPrefix = this.workflowWarning_format(transition) + '\n\n';
         }
 
@@ -1437,6 +1384,12 @@ Requirements:
 
         project_harmonize(project);
 
+        // Materialize harmonize artifact in session tree
+        this.sessionArtifact_write('harmonize', {
+            projectName: project.name,
+            status: 'COMPLETED',
+        });
+
         // Return special marker for CLI to run animation
         // The marker tells the adapter to run harmonization animation
         return this.response_create(
@@ -1466,6 +1419,12 @@ Requirements:
 
         // Execute deterministic side effect
         project_rename(project, newName);
+
+        // Materialize rename artifact in session tree
+        this.sessionArtifact_write('rename', {
+            oldName: activeMeta.name,
+            newName,
+        });
 
         const actions: CalypsoAction[] = [
             { type: 'project_rename', id: project.id, newName }
@@ -1668,6 +1627,12 @@ Requirements:
         // Delegate to ProjectManager to handle draft creation and VFS mounting
         const activeProject = project_gather(dataset);
 
+        // Materialize gather artifact in session tree
+        this.sessionArtifact_write('gather', {
+            datasets: [dataset.id],
+            projectName: activeProject.name,
+        });
+
         const actions: CalypsoAction[] = [
             { type: 'dataset_select', id: dataset.id }
         ];
@@ -1810,6 +1775,12 @@ Requirements:
         } catch {
             // output already exists
         }
+
+        // Materialize code artifact in session tree
+        this.sessionArtifact_write('code', {
+            projectName: project.name,
+            workflow: workflowType,
+        });
 
         const actions: CalypsoAction[] = [
             { type: 'stage_advance', stage: 'process', workflow: workflowType }
@@ -1987,6 +1958,7 @@ Requirements:
                 const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === activeMeta.id);
                 if (project) {
                     project_harmonize(project);
+                    this.sessionArtifact_write('harmonize', { projectName: project.name, status: 'COMPLETED' });
                     return this.response_create('__HARMONIZE_ANIMATE__', [], true);
                 }
             }

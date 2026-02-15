@@ -1,0 +1,107 @@
+# chris.manifest.yaml
+#
+# Persona manifest for the ChRIS Plugin Developer workflow.
+# Simpler than FedML — no harmonization or federation steps.
+#
+# 4 stages. Every stage produces an artifact.
+
+authors: FNNDSC <dev@babymri.org>
+name: "ChRIS Plugin — Developer Pipeline"
+description: >
+  Pipeline for building and deploying ChRIS plugins.
+  Simpler than FedML — no harmonization or federation steps.
+category: Plugin Development
+persona: appdev
+version: 1.0.0
+locked: false
+
+stages:
+
+  # ─── Phase 1: Data Assembly ─────────────────────────────────
+
+  - id: gather
+    name: Test Data Assembly
+    phase: data-assembly
+    previous: ~
+    optional: false
+    produces:
+      - gather.json
+    parameters:
+      auto_select: false
+    instruction: >
+      Search for and select test datasets for your plugin. Use 'search'
+      to find relevant data, 'add' to build your test cohort, and 'gather'
+      to assemble the project workspace.
+    commands:
+      - search <keywords>
+      - add <dataset>
+      - gather
+
+  # ─── Phase 2: Plugin Development ────────────────────────────
+
+  - id: code
+    name: Plugin Development
+    phase: development
+    previous: gather
+    optional: false
+    produces:
+      - code.json
+    parameters:
+      scaffold: true
+      plugin_type: ds
+    instruction: >
+      Develop your ChRIS plugin. Scaffolding generates src/main.py with
+      argument parsing, a Dockerfile with a ChRIS-compatible base image,
+      and chris_plugin_info.json for plugin metadata.
+    commands:
+      - proceed chris
+      - code
+    skip_warning:
+      short: Plugin structure not scaffolded.
+      reason: >
+        ChRIS plugins require a specific directory structure with main.py,
+        Dockerfile, and chris_plugin_info.json. The scaffolding generates
+        the required structure.
+      max_warnings: 2
+
+  # ─── Phase 3: Local Testing ─────────────────────────────────
+
+  - id: test
+    name: Local Testing
+    phase: testing
+    previous: code
+    optional: false
+    produces:
+      - test.json
+    parameters: {}
+    instruction: >
+      Test your plugin locally. ChRIS plugins run in isolated containers,
+      so local testing verifies argument parsing, file I/O, and error
+      handling before deployment.
+    commands:
+      - python main.py
+      - test
+    skip_warning:
+      short: Plugin not tested locally.
+      reason: >
+        ChRIS plugins run in isolated containers. Local testing verifies
+        argument parsing, file I/O, and error handling before deployment.
+      max_warnings: 2
+
+  # ─── Phase 4: Publication ───────────────────────────────────
+
+  - id: publish
+    name: Plugin Publication
+    phase: publication
+    previous: test
+    optional: false
+    produces:
+      - publish.json
+    parameters:
+      visibility: public
+    instruction: >
+      Publish your plugin to the ChRIS store. This makes it available
+      for other users to discover and use in their pipelines.
+    commands:
+      - publish
+      - deploy

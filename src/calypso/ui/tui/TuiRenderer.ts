@@ -214,7 +214,7 @@ export function scriptStepPlan_resolve(command: string): ScriptStepPlan {
                 lines: [
                     'Computing path migration plan for active project root.',
                     'Applying VFS move and shell-context synchronization.',
-                    'Writing rename receipt into ops/rename/data/.'
+                    'Updating project model and shell context.'
                 ]
             };
         case 'harmonize':
