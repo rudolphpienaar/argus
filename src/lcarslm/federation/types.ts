@@ -48,7 +48,6 @@ export interface FederationDagPaths {
 }
 
 export interface FederationArgs {
-    confirm: boolean;
     abort: boolean;
     restart: boolean;
     name: string | null;

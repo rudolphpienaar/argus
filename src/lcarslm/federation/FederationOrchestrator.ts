@@ -110,21 +110,14 @@ export class FederationOrchestrator {
         if (args.restart || !stateMatchesProject) {
             this.federationState = this.state_create(activeMeta.id, projectName);
 
-            // If restart + approve in same command, tell user to review first
-            if (args.confirm) {
+            // Restart initializes state; user must then run `federate` to see briefing
+            if (args.restart) {
                 return this.response_create(
                     [
-                        args.restart
-                            ? '○ FEDERATION RERUN CONTEXT INITIALIZED.'
-                            : '○ FEDERATION CONTEXT INITIALIZED.',
-                        '',
-                        '○ No step was executed yet.',
-                        '○ Review step briefing first, then confirm execution.',
+                        '○ FEDERATION RERUN CONTEXT INITIALIZED.',
                         '',
                         'Next:',
-                        '  `federate`',
-                        'Then confirm:',
-                        '  `approve`'
+                        '  `federate` — Review federation briefing',
                     ].join('\n'),
                     [],
                     true
@@ -141,10 +134,6 @@ export class FederationOrchestrator {
         // Route by verb
         switch (verb) {
             case 'federate':
-                // Backward compat: federate --yes → approve
-                if (args.confirm && this.federationState) {
-                    return this.step_approve(state, projectBase, dag, projectName, args);
-                }
                 return this.step_brief(state, projectBase, dag, args);
 
             case 'approve':
@@ -769,7 +758,6 @@ export class FederationOrchestrator {
      */
     private args_parse(rawArgs: string[]): FederationArgs {
         const parsed: FederationArgs = {
-            confirm: false,
             abort: false,
             restart: false,
             name: null,
@@ -781,10 +769,6 @@ export class FederationOrchestrator {
             const token: string = rawArgs[i].toLowerCase();
             const rawToken: string = rawArgs[i];
 
-            if (token === '--yes' || token === 'yes' || token === 'confirm') {
-                parsed.confirm = true;
-                continue;
-            }
             if (token === '--abort' || token === 'abort' || token === 'cancel') {
                 parsed.abort = true;
                 continue;
