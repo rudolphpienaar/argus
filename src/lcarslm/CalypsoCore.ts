@@ -223,6 +223,39 @@ export class CalypsoCore {
         return this.storeActions.state_get();
     }
 
+    /**
+     * Resolve tab completion candidates for a partial line.
+     */
+    public tab_complete(line: string): string[] {
+        const parts = line.split(/\s+/);
+        const last = parts[parts.length - 1] || '';
+        
+        // Resolve directory and name prefix
+        let dir = '.';
+        let prefix = last;
+        
+        if (last.includes('/')) {
+            const lastSlash = last.lastIndexOf('/');
+            dir = last.substring(0, lastSlash) || '/';
+            prefix = last.substring(lastSlash + 1);
+        }
+
+        try {
+            const resolvedDir = this.vfs.path_resolve(dir);
+            const children = this.vfs.dir_list(resolvedDir);
+            
+            return children
+                .filter(c => c.name.toLowerCase().startsWith(prefix.toLowerCase()))
+                .map(c => {
+                    const base = dir === '.' ? '' : (dir.endsWith('/') ? dir : dir + '/');
+                    const suffix = c.type === 'folder' ? '/' : '';
+                    return base + c.name + suffix;
+                });
+        } catch {
+            return [];
+        }
+    }
+
     // ─── Pipeline Handlers ──────────────────────────────────────────────────
 
     private async special_handle(input: string): Promise<CalypsoResponse> {
@@ -318,8 +351,18 @@ export class CalypsoCore {
 
         if (response?.success) {
             this.workflowStage_complete(cmd);
-            if (stage.id !== 'search') {
-                this.sessionArtifact_write(stage.id, { command: cmd, args, timestamp: new Date().toISOString() });
+            
+            // Materialize session tree artifact for workflow progress
+            const sp = this.workflowAdapter.stagePaths.get(stage.id);
+            const artifactPath = sp ? `${this.sessionPath}/${sp.artifactFile}` : null;
+
+            if (artifactPath) {
+                // If it's a search, the SearchProvider already materialized it topologically
+                // via its own internal logic (if called via workflow_search).
+                // For other stages, we write a generic envelope here.
+                if (stage.id !== 'search') {
+                    this.sessionArtifact_write(stage.id, { command: cmd, args, timestamp: new Date().toISOString() });
+                }
             }
         }
         return response;
@@ -327,7 +370,13 @@ export class CalypsoCore {
 
     private workflow_search(query: string): CalypsoResponse {
         const results = this.searchProvider.search(query);
-        const snap = this.searchProvider.snapshot_materialize(query, results);
+        
+        // Materialize topologically if search is part of current workflow
+        const stage = this.workflowAdapter.stage_forCommand('search');
+        const sp = stage ? this.workflowAdapter.stagePaths.get(stage.id) : null;
+        const topologicalPath = sp ? `${this.sessionPath}/${sp.dataDir}` : undefined;
+
+        const snap = this.searchProvider.snapshot_materialize(query, results, topologicalPath);
         const display = this.searchProvider.displayPath_resolve(snap);
         const snapLine = display ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${display}`)}` : '';
 

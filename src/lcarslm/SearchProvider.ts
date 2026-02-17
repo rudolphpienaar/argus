@@ -103,41 +103,61 @@ export class SearchProvider {
     }
 
     /**
-     * Materialize a search snapshot artifact under ~/searches.
+     * Materialize a search snapshot artifact.
+     * If sessionPath is provided, writes to topological session tree location.
+     * Otherwise defaults to legacy ~/searches path.
      */
-    public snapshot_materialize(query: string, results: Dataset[]): string | null {
+    public snapshot_materialize(query: string, results: Dataset[], sessionPath?: string): string | null {
         const username: string = this.shell.env_get('USER') || 'user';
-        const searchRoot: string = `/home/${username}/searches`;
         const now: Date = new Date();
         const timestamp: string = now.toISOString().replace(/[:.]/g, '-');
         const nonce: string = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-        const snapshotPath: string = `${searchRoot}/search-${timestamp}-${nonce}.json`;
+        
+        let targetPath: string;
+        let isTopological = false;
+
+        if (sessionPath) {
+            // Topological path: ~/sessions/.../search/data/search.json
+            targetPath = `${sessionPath}/search.json`;
+            isTopological = true;
+        } else {
+            const searchRoot: string = `/home/${username}/searches`;
+            this.vfs.dir_create(searchRoot);
+            targetPath = `${searchRoot}/search-${timestamp}-${nonce}.json`;
+        }
 
         try {
-            this.vfs.dir_create(searchRoot);
-            this.vfs.file_create(
-                snapshotPath,
-                JSON.stringify(
-                    {
-                        query,
-                        generatedAt: now.toISOString(),
-                        count: results.length,
-                        results: results.map((ds: Dataset) => ({
-                            id: ds.id,
-                            name: ds.name,
-                            modality: ds.modality,
-                            annotationType: ds.annotationType,
-                            provider: ds.provider,
-                            imageCount: ds.imageCount
-                        }))
-                    },
-                    null,
-                    2
-                )
-            );
-            this.vfs.node_write(`${searchRoot}/latest.txt`, `${snapshotPath}
-`);
-            return snapshotPath;
+            const content = {
+                query,
+                generatedAt: now.toISOString(),
+                count: results.length,
+                results: results.map((ds: Dataset) => ({
+                    id: ds.id,
+                    name: ds.name,
+                    modality: ds.modality,
+                    annotationType: ds.annotationType,
+                    provider: ds.provider,
+                    imageCount: ds.imageCount
+                }))
+            };
+
+            // If topological, wrap in ArtifactEnvelope to satisfy DAG Engine
+            const envelope = isTopological ? {
+                stage: 'search',
+                timestamp: now.toISOString(),
+                parameters_used: { query },
+                content,
+                _fingerprint: '',
+                _parent_fingerprints: {}
+            } : content;
+
+            this.vfs.file_create(targetPath, JSON.stringify(envelope, null, 2));
+            
+            if (!isTopological) {
+                this.vfs.node_write(`/home/${username}/searches/latest.txt`, `${targetPath}\n`);
+            }
+            
+            return targetPath;
         } catch {
             return null;
         }

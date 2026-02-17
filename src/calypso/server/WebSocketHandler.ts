@@ -98,32 +98,14 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
                 }
 
                 case 'tab-complete': {
-                    // Tab completion via VFS ls — simplified for now
                     const calypso = deps.calypso_get();
-                    try {
-                        const response = await calypso.command_execute(`ls ${msg.line}`);
-                        const names: string[] = [];
-                        const lines = response.message.split('\n');
-                        for (const line of lines) {
-                            const match = line.match(/^(?:<[^>]+>)?([^\s<]+)/);
-                            if (match && match[1]) {
-                                names.push(match[1].replace(/<[^>]+>/g, ''));
-                            }
-                        }
-                        send({
-                            type: 'tab-complete-response',
-                            id: msg.id,
-                            completions: names,
-                            partial: msg.line
-                        });
-                    } catch {
-                        send({
-                            type: 'tab-complete-response',
-                            id: msg.id,
-                            completions: [],
-                            partial: msg.line
-                        });
-                    }
+                    const completions = calypso.tab_complete(msg.line);
+                    send({
+                        type: 'tab-complete-response',
+                        id: msg.id,
+                        completions,
+                        partial: msg.line
+                    });
                     break;
                 }
 
