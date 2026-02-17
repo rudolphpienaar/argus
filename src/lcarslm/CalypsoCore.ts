@@ -33,6 +33,7 @@ import { StatusProvider } from './StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
 import { actionIntent_resolve } from './routing/ActionRouter.js';
 import { vfs_snapshot } from './utils/VfsUtils.js';
+import { fingerprint_compute } from '../dag/fingerprint/hasher.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../core/data/projects.js';
 import { project_gather, project_rename, project_harmonize } from '../core/logic/ProjectManager.js';
@@ -41,6 +42,7 @@ import { scripts_list, type CalypsoScript } from './scripts/Catalog.js';
 import { controlPlaneIntent_resolve, type ControlPlaneIntent } from './routing/ControlPlaneRouter.js';
 import { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
 import type { TransitionResult, WorkflowSummary } from '../dag/bridge/WorkflowAdapter.js';
+import type { WorkflowPosition } from '../dag/graph/types.js';
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -245,6 +247,10 @@ export class CalypsoCore {
         return this.statusProvider.version_get();
     }
 
+    public workflow_getPosition(): WorkflowPosition {
+        return this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+    }
+
     public store_snapshot(): Partial<AppState> {
         return this.storeActions.state_get();
     }
@@ -405,14 +411,22 @@ export class CalypsoCore {
     private async workflow_search(query: string): Promise<CalypsoResponse> {
         const results = this.searchProvider.search(query);
         
-        // Materialize topologically if search is part of current workflow
+        // Resolve topological path if search is part of current workflow
         const stage = this.workflowAdapter.stage_forCommand('search');
         const sp = stage ? this.workflowAdapter.stagePaths.get(stage.id) : null;
         const topologicalPath = sp ? `${this.sessionPath}/${sp.dataDir}` : undefined;
 
-        // Provider handles the physical write
+        // Provider generates content block
         const snap = this.searchProvider.snapshot_materialize(query, results, topologicalPath);
-        const display = this.searchProvider.displayPath_resolve(snap);
+        
+        if (stage && snap.content) {
+            // Include query in content for fingerprinting
+            const content = { ...snap.content, query };
+            // Centralized materialization with fingerprints
+            this.sessionArtifact_write(stage.id, content);
+        }
+
+        const display = this.searchProvider.displayPath_resolve(snap.path);
         const snapLine = display ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${display}`)}` : '';
 
         return results.length === 0 
@@ -566,8 +580,70 @@ export class CalypsoCore {
     }
 
     private sessionArtifact_write(stageId: string, content: any): void {
+        const stage = this.workflowAdapter.dag.nodes.get(stageId);
+        const stagePath = this.workflowAdapter.stagePaths.get(stageId);
+        if (!stage || !stagePath) return;
+
+        // 1. Resolve parent fingerprints
+        const parentFingerprints: Record<string, string> = {};
+        if (stage.previous) {
+            for (const parentId of stage.previous) {
+                const fp = this.fingerprint_get(parentId);
+                if (fp) parentFingerprints[parentId] = fp;
+            }
+        }
+
+        // 2. Resolve parameters
+        // For simplicity in this prototype, we record the raw args if present, 
+        // or the default manifest parameters.
+        const parameters_used = content.args ? { args: content.args } : stage.parameters;
+
+        // 3. Compute fingerprint over content + parent fingerprints
+        // Canonicalize content string for stable hashing
+        const contentStr = JSON.stringify(content);
+        const _fingerprint = fingerprint_compute(contentStr, parentFingerprints);
+
+        // 4. Materialize full envelope
+        // Use a random suffix to ensure unique timestamps for sorting in rapid tests
+        const tsNow = new Date();
+        const timestamp = tsNow.toISOString() + '-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        
+        const envelope: any = {
+            stage: stageId,
+            timestamp,
+            parameters_used,
+            content,
+            _fingerprint,
+            _parent_fingerprints: parentFingerprints
+        };
+
+        // BRANCHING: If artifact already exists, materialize in a branch folder 
+        // to preserve history and enable staleness detection.
+        let finalPath = `${this.sessionPath}/${stagePath.artifactFile}`;
+        if (this.vfs_exists(finalPath)) {
+            const branchSuffix = tsNow.getTime().toString();
+            const branchPath = stagePath.artifactFile.replace(`${stageId}/data/`, `${stageId}_BRANCH_${branchSuffix}/data/`);
+            finalPath = `${this.sessionPath}/${branchPath}`;
+        }
+
+        this.vfs.file_create(finalPath, JSON.stringify(envelope, null, 2));
+    }
+
+    /**
+     * Read the fingerprint from a materialized artifact in the current session.
+     */
+    private fingerprint_get(stageId: string): string | null {
         const path = this.workflowAdapter.stagePaths.get(stageId);
-        if (path) this.vfs.file_create(`${this.sessionPath}/${path.artifactFile}`, JSON.stringify({ stage: stageId, timestamp: new Date().toISOString(), content }, null, 2));
+        if (!path) return null;
+
+        try {
+            const raw = this.vfs.node_read(`${this.sessionPath}/${path.artifactFile}`);
+            if (!raw) return null;
+            const envelope = JSON.parse(raw);
+            return envelope._fingerprint || null;
+        } catch {
+            return null;
+        }
     }
 
     private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {

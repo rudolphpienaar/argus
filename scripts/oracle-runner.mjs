@@ -9,6 +9,16 @@ const ROOT = process.cwd();
 const verbose = process.argv.includes('--verbose');
 
 /**
+ * Strip ANSI escape codes from a string.
+ * @param {string} str
+ * @returns {string}
+ */
+function stripAnsi(str) {
+    // eslint-disable-next-line no-control-regex
+    return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+}
+
+/**
  * Replace known template variables in step text.
  *
  * @param {string} value
@@ -211,9 +221,9 @@ async function scenario_run(modules, scenario) {
                 const required = Array.isArray(step.output_contains)
                     ? step.output_contains
                     : [step.output_contains];
-                const msg = String(response.message || '').toLowerCase();
+                const msg = stripAnsi(String(response.message || '')).toLowerCase();
                 for (const token of required) {
-                    if (!msg.includes(token.toLowerCase())) {
+                    if (!msg.toLowerCase().includes(token.toLowerCase())) {
                         throw new Error(`${label} Missing output token: "${token}"`);
                     }
                 }
@@ -237,6 +247,24 @@ async function scenario_run(modules, scenario) {
             }
             if (verbose) {
                 console.log(`${label} exists ${target}`);
+            }
+        }
+
+        if (step.vfs_stale) {
+            const state = runtime.core.store_snapshot();
+            const sessionPath = runtime.core.session_getPath();
+            // We need to call position_resolve indirectly or check the state
+            // CalypsoCore doesn't expose stale stages directly in state,
+            // but WorkflowAdapter does in position_resolve.
+            // Let's use the status command which should show staleness if we add it.
+            const pos = runtime.core.workflow_getPosition(); // I'll add this to CalypsoCore
+            const isStale = pos.staleStages.includes(step.vfs_stale);
+            
+            if (!isStale) {
+                throw new Error(`${label} Expected stage to be STALE but it was not: ${step.vfs_stale}`);
+            }
+            if (verbose) {
+                console.log(`${label} stale ${step.vfs_stale}`);
             }
         }
     }

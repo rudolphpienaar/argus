@@ -25,6 +25,8 @@ import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
 import { manifest_parse } from '../graph/parser/manifest.js';
 import { dag_resolve, position_resolve } from '../graph/resolver.js';
 import { manifestMapper_create } from './CompletionMapper.js';
+import { chain_validate } from '../fingerprint/chain.js';
+import type { FingerprintRecord } from '../fingerprint/types.js';
 
 // ─── Protocol-Facing Types ─────────────────────────────────────
 
@@ -187,7 +189,76 @@ export class WorkflowAdapter {
      */
     position_resolve(vfs: VirtualFileSystem, sessionPath: string): WorkflowPosition {
         const completedIds = this.mapper.completedIds_resolve(vfs, sessionPath);
-        return position_resolve(this.definition, completedIds);
+
+        // Perform staleness detection across the DAG.
+        // We need to find the LATEST materialized version of each stage
+        // to determine if the workflow has drifted.
+        const artifactReader = (stageId: string): FingerprintRecord | null => {
+            const node = this.definition.nodes.get(stageId);
+            const targetId = (node?.completes_with !== undefined && node.completes_with !== null)
+                ? node.completes_with
+                : stageId;
+
+            // Deep search for all artifacts matching this stage ID
+            const all = this.artifacts_find(vfs, sessionPath, targetId);
+            if (all.length === 0) return null;
+
+            // Sort by timestamp descending to find the latest
+            all.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+            const latest = all[0];
+
+            return {
+                fingerprint: latest.fingerprint,
+                parentFingerprints: latest.parentFingerprints,
+            };
+        };
+
+        const validation = chain_validate(this.definition, artifactReader);
+        const staleIds = new Set(validation.staleStages.map(s => s.stageId));
+
+        return position_resolve(this.definition, completedIds, staleIds);
+    }
+
+    /**
+     * Search the VFS session tree recursively for artifacts matching a stage ID.
+     */
+    private artifacts_find(vfs: VirtualFileSystem, path: string, stageId: string): any[] {
+        const results: any[] = [];
+        try {
+            const nodes = vfs.dir_list(path);
+            for (const node of nodes) {
+                if (node.type === 'folder') {
+                    results.push(...this.artifacts_find(vfs, node.path, stageId));
+                } else if (node.name.endsWith('.json')) {
+                    const rec = this.fingerprintRecord_read(vfs, node.path);
+                    if (rec && rec.stageId === stageId) {
+                        results.push({
+                            timestamp: rec.timestamp,
+                            fingerprint: rec.fingerprint,
+                            parentFingerprints: rec.parentFingerprints
+                        });
+                    }
+                }
+            }
+        } catch { /* ignore */ }
+        return results;
+    }
+
+    private fingerprintRecord_read(vfs: VirtualFileSystem, path: string): any | null {
+        try {
+            const raw = vfs.node_read(path);
+            if (!raw) return null;
+            const envelope = JSON.parse(raw);
+            if (!envelope._fingerprint || !envelope._parent_fingerprints) return null;
+            return {
+                stageId: envelope.stage,
+                timestamp: envelope.timestamp,
+                fingerprint: envelope._fingerprint,
+                parentFingerprints: envelope._parent_fingerprints,
+            };
+        } catch {
+            return null;
+        }
     }
 
     // ─── Transition Check ──────────────────────────────────────
@@ -329,8 +400,12 @@ export class WorkflowAdapter {
 
         for (const node of this.definition.nodes.values()) {
             const isComplete = pos.completedStages.includes(node.id);
-            const marker = isComplete ? '●' : '○';
-            summary += `  ${marker} ${node.name}`;
+            const isStale = pos.staleStages.includes(node.id);
+            
+            // Marker: ● Complete, ○ Incomplete, * Stale
+            const marker = isStale ? '*' : (isComplete ? '●' : '○');
+            const status = isStale ? ' [STALE]' : '';
+            summary += `  ${marker} ${node.name}${status}`;
             if (pos.currentStage?.id === node.id) {
                 summary += ' ← NEXT';
             }

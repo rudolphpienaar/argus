@@ -104,8 +104,13 @@ export class SearchProvider {
 
     /**
      * Materialize a search snapshot artifact.
+     * Returns the content block and physical path.
      */
-    public snapshot_materialize(query: string, results: Dataset[], sessionPath?: string): string | null {
+    public snapshot_materialize(
+        query: string, 
+        results: Dataset[], 
+        sessionPath?: string
+    ): { content: any, path: string | null } {
         const username: string = this.shell.env_get('USER') || 'user';
         const now: Date = new Date();
         const timestamp: string = now.toISOString().replace(/[:.]/g, '-');
@@ -124,7 +129,7 @@ export class SearchProvider {
 
         try {
             const content = {
-                query,
+                query, // CRITICAL: Inclusion of query ensures different search intents yield different fingerprints
                 generatedAt: now.toISOString(),
                 count: results.length,
                 results: results.map((ds: Dataset) => ({
@@ -137,25 +142,18 @@ export class SearchProvider {
                 }))
             };
 
-            const envelope = isTopological ? {
-                stage: 'search',
-                timestamp: now.toISOString(),
-                parameters_used: { query },
-                content,
-                _fingerprint: '',
-                _parent_fingerprints: {}
-            } : content;
-
-            // vfs.file_create is now recursive
-            this.vfs.file_create(targetPath, JSON.stringify(envelope, null, 2));
-            
-            if (!isTopological) {
-                this.vfs.node_write(`/home/${username}/searches/latest.txt`, `${targetPath}\n`);
+            if (isTopological) {
+                // Return for core to wrap in envelope with fingerprints
+                return { content, path: targetPath };
             }
+
+            // Legacy standalone search write
+            this.vfs.file_create(targetPath, JSON.stringify(content, null, 2));
+            this.vfs.node_write(`/home/${username}/searches/latest.txt`, `${targetPath}\n`);
             
-            return targetPath;
+            return { content, path: targetPath };
         } catch {
-            return null;
+            return { content: null, path: null };
         }
     }
 
