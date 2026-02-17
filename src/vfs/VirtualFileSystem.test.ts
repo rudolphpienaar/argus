@@ -242,8 +242,10 @@ describe('VirtualFileSystem', () => {
             expect(second.getTime()).toBeGreaterThanOrEqual(first.getTime());
         });
 
-        it('should throw if parent does not exist', () => {
-            expect(() => vfs.file_create('/nonexistent/dir/file.txt')).toThrow('Parent directory does not exist');
+        it('should create parent directories if they do not exist', () => {
+            vfs.file_create('/new/dir/file.txt', 'hello');
+            expect(vfs.node_stat('/new/dir')).not.toBeNull();
+            expect(vfs.node_read('/new/dir/file.txt')).toBe('hello');
         });
     });
 

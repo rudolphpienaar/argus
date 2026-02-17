@@ -93,7 +93,7 @@ export function controlPlaneIntent_resolve(
         return { plane: 'control', action: 'scripts_list' };
     }
 
-    if (hasScriptNoun && (hasListCue || !hasRunCue)) {
+    if (hasScriptNoun && (hasListCue || hasDetailCue || !hasRunCue)) {
         return { plane: 'control', action: 'scripts_list' };
     }
 
@@ -109,7 +109,7 @@ export function controlPlaneIntent_resolve(
 function text_normalize(value: string): string {
     return value
         .toLowerCase()
-        .replace(/[^a-z0-9/_-]+/g, ' ')
+        .replace(/[^a-z0-9/-]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 }
@@ -167,15 +167,21 @@ function scriptRef_forms(ref: string): string[][] {
 
     const forms: string[] = [
         normalized,
-        normalized.replace(/_/g, '-'),
-        normalized.replace(/-/g, '_'),
+        normalized.replace(/_/g, ' '),
+        normalized.replace(/-/g, ' '),
         normalized.replace(/[-_]/g, ' ')
     ];
 
     const tokenForms: string[][] = [];
+    const seen = new Set<string>();
+
     for (const form of forms) {
         const tokens: string[] = form.split(/[\s]+/).filter((token: string): boolean => token.length > 0);
-        if (tokens.length > 0) tokenForms.push(tokens);
+        const key = tokens.join('|');
+        if (tokens.length > 0 && !seen.has(key)) {
+            tokenForms.push(tokens);
+            seen.add(key);
+        }
     }
 
     return tokenForms;

@@ -241,6 +241,26 @@ ARGUS satisfies all ORACLE requirements:
 | In-process `CalypsoCore` execution for ORACLE, plus Calypso HTTP API for external clients
 |===
 
+=== Systematic Path and Stress Testing
+
+As of v9.0.5, ORACLE has been extended to systematically verify the **Manifest-Driven DAG Engine**. This ensures that Calypso correctly enforces workflow constraints across different persona paths.
+
+==== Systematic Path Testing
+Scenarios like `fedml-comprehensive.oracle.json` verify multiple valid paths through a single workflow. By using the `/reset` command, a test script can:
+1. Walk a **Linear Path** (e.g., skip optional `rename` step).
+2. Reset the system state and re-initialize the session.
+3. Walk a **Branched Path** (e.g., execute `rename` before `harmonize`).
+4. Verify that downstream artifacts (e.g., `harmonize.json`) are correctly materialized regardless of the path taken.
+
+==== Stress Testing
+The `fedml-stress.oracle.json` scenario intentionally executes steps out of order to verify the **Soft Enforcement Model**:
+- **Dependency Blocking**: Attempting a downstream stage (e.g., `harmonize`) before an upstream stage (e.g., `search`) correctly triggers a warning.
+- **Soft-Block Progression**:
+    * **Attempt 1**: Triggers a short warning (e.g., "Cohort not harmonized").
+    * **Attempt 2**: Triggers a detailed reason (e.g., "Federated learning requires consistent formats").
+    * **Attempt 3**: Allows the action to proceed (Expert override).
+- **Materialization Verification**: Ensures that artifacts (e.g., `code.json`) are only created when the action is actually executed, not when a warning is shown.
+
 === The CalypsoCore Abstraction
 
 The key architectural decision enabling ORACLE is the **CalypsoCore** — a DOM-free orchestrator that can run in Node.js without a browser. See `docs/calypso.adoc` for the full specification.
@@ -520,7 +540,7 @@ ORACLE scenarios use JSON files with the `.oracle.json` extension in `tests/orac
     {
       "send": "search histology",
       "success": true,
-      "output_contains": "FOUND"
+      "output_contains": ["FOUND", "DATASET"]
     },
     {
       "send": "add ds-006",
@@ -534,15 +554,20 @@ ORACLE scenarios use JSON files with the `.oracle.json` extension in `tests/orac
 }
 ----
 
-Supported step keys in the current runner:
+Supported step keys:
 
-1. `send` - execute one Calypso command string.
+1. `send` - execute one Calypso command string. Supports `${user}`, `${project}`, and `${session}` interpolation.
 2. `success` - expected boolean for the previous `send`.
-3. `output_contains` - string or string[] that must appear in the response message.
-4. `capture_project` - when `true`, stores active project name into `${project}`.
-5. `vfs_exists` - asserts path existence after interpolation (`${user}`, `${project}`).
+3. `output_contains` - string or string[] that must appear in the response message (case-insensitive).
+4. `capture_project` - when `true`, stores the active project name into the `${project}` variable.
+5. `vfs_exists` - asserts path existence after interpolation.
 
-Reference scenario: `tests/oracle/fedml-smoke.oracle.json`.
+=== Advanced Runner Features
+
+The `oracle-runner.mjs` provides the following capabilities:
+- **Session Continuity**: Re-fetches the `${session}` path after every command, allowing scripts to handle session-reinitializing commands like `/reset`.
+- **Case-Insensitive Matching**: Ensures that presentation-layer casing changes do not break logic tests.
+- **Diagnostic Logging**: In verbose mode (`--verbose`), the runner logs response messages and VFS confirmations for every step.
 
 == Test Execution
 
@@ -632,7 +657,8 @@ jobs:
 - Systems with AI/conversational interfaces as primary interaction mode
 - Applications where internal state is the source of truth
 - Workflows that span multiple stages/components
-- Regression testing of integration seams
+- **Regression testing of manifest constraints and DAG logic**
+- **Stress testing of out-of-order interaction flows**
 
 === When ORACLE Is Not Appropriate
 
@@ -700,7 +726,7 @@ The reflexive nature of ORACLE — using the system to test itself — is not a 
 
 - [[[metamorphic]]] Chen, T.Y., Cheung, S.C., Yiu, S.M. "Metamorphic Testing: A New Approach for Generating Next Test Cases." Technical Report HKUST-CS98-01, 1998.
 
-- [[[selfhealing]]] Kephart, J.O., Chess, D.M. "The Vision of Autonomic Computing." IEEE Computer, 2003. https://doi.org/10.1109/MC.2003.1160055
+- [[[selfhealing]]] Kephart, J.O., Chess, D., M. "The Vision of Autonomic Computing." IEEE Computer, 2003. https://doi.org/10.1109/MC.2003.1160055
 
 - [[[qualizeal]]] QualiZeal. "The Rise of Agentic AI: Transforming Software Testing in 2025 and Beyond." 2025. https://qualizeal.com/the-rise-of-agentic-ai-transforming-software-testing-in-2025-and-beyond/
 

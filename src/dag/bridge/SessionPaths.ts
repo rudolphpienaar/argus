@@ -55,22 +55,18 @@ export function sessionPaths_compute(definition: DAGDefinition): Map<string, Sta
 
     for (const node of definition.nodes.values()) {
         const ancestors = ancestorChain_build(node, definition);
+        const artifactName = (node.produces && node.produces.length > 0) 
+            ? node.produces[0] 
+            : `${node.id}.json`;
 
-        if (ancestors.length === 0) {
-            // Root node: artifact at rootPath/data/<id>.json
-            paths.set(node.id, {
-                dataDir: 'data',
-                artifactFile: `data/${node.id}.json`,
-            });
-        } else {
-            // Non-root: nest under ancestors (skip the root ancestor since
-            // it maps to rootPath/ implicitly)
-            const nesting = [...ancestors.slice(1), node.id].join('/');
-            paths.set(node.id, {
-                dataDir: `${nesting}/data`,
-                artifactFile: `${nesting}/data/${node.id}.json`,
-            });
-        }
+        // Include the full ancestor chain + the current node for nesting.
+        // This ensures the root stage (e.g. 'search') gets its own directory.
+        const nesting = [...ancestors, node.id].join('/');
+        
+        paths.set(node.id, {
+            dataDir: `${nesting}/data`,
+            artifactFile: `${nesting}/data/${artifactName}`,
+        });
     }
 
     return paths;

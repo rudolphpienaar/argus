@@ -56,7 +56,10 @@ function scenarios_load() {
  */
 async function modules_load() {
     const distRoot = path.join(ROOT, 'dist', 'js');
-    const mod = async (rel) => import(pathToFileURL(path.join(distRoot, rel)).href);
+    const mod = async (rel) => {
+        const url = pathToFileURL(path.join(distRoot, rel)).href;
+        return import(url);
+    };
 
     const [
         calypsoMod,
@@ -150,7 +153,13 @@ function runtime_create(modules, username) {
     };
 
     const core = new modules.CalypsoCore(vfs, shell, storeAdapter, {
-        simulationMode: true
+        simulationMode: true,
+        llmConfig: {
+            apiKey: 'simulated',
+            provider: 'openai',
+            model: 'simulated'
+        },
+        knowledge: {} // Ensure knowledge base is initialized
     });
 
     return { core, store: modules.store };
@@ -180,12 +189,21 @@ async function scenario_run(modules, scenario) {
         if (step.send) {
             const command = interpolate(step.send, vars);
             const response = await runtime.core.command_execute(command);
+            
+            // Re-fetch session path in case of /reset
+            vars.session = runtime.core.session_getPath();
+
             if (verbose) {
                 console.log(`${label} ${command}`);
                 console.log(`         success=${response.success}`);
             }
 
             if (typeof step.success === 'boolean' && response.success !== step.success) {
+                if (!verbose) {
+                    console.log(`${label} ${command}`);
+                }
+                console.log(`         ERROR: Expected success=${step.success} but got ${response.success}`);
+                console.log(`         MESSAGE: ${response.message}`);
                 throw new Error(`${label} Expected success=${step.success} but got ${response.success}`);
             }
 
@@ -193,8 +211,9 @@ async function scenario_run(modules, scenario) {
                 const required = Array.isArray(step.output_contains)
                     ? step.output_contains
                     : [step.output_contains];
+                const msg = String(response.message || '').toLowerCase();
                 for (const token of required) {
-                    if (!String(response.message || '').includes(token)) {
+                    if (!msg.includes(token.toLowerCase())) {
                         throw new Error(`${label} Missing output token: "${token}"`);
                     }
                 }

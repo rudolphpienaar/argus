@@ -44,20 +44,20 @@
       "capture_project": true
     },
     {
-      "vfs_exists": "/home/${user}/searches/latest.txt"
+      "vfs_exists": "${session}/search/data/search.json"
     },
     {
-      "vfs_exists": "${session}/gather/data/gather.json"
+      "vfs_exists": "${session}/search/gather/data/gather.json"
     },
     {
-      "vfs_exists": "${session}/gather/harmonize/data/harmonize.json"
+      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
     },
     {
       "send": "proceed",
       "success": true
     },
     {
-      "vfs_exists": "${session}/gather/harmonize/code/data/code.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
     },
     {
       "send": "cd /home/${user}/projects/${project}/src",
@@ -69,7 +69,7 @@
       "output_contains": "LOCAL TRAINING COMPLETE"
     },
     {
-      "vfs_exists": "${session}/gather/harmonize/code/train/data/train.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/data/train.json"
     },
     {
       "send": "federate",
@@ -121,7 +121,7 @@
       "output_contains": "MODEL PUBLICATION"
     },
     {
-      "vfs_exists": "${session}/gather/harmonize/code/train/federate-brief/data/federate-brief.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/data/briefing.json"
     },
     {
       "send": "next?",

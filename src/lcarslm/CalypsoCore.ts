@@ -65,7 +65,11 @@ export class CalypsoCore {
 
     /** Registry of workflow handlers (shared capabilities). */
     private readonly HANDLER_REGISTRY: Record<string, (cmd: string, args: string[]) => Promise<CalypsoResponse | null> | CalypsoResponse | null> = {
-        'search': (_, args) => this.workflow_search(args.join(' ')),
+        'search': async (_, args) => {
+            const query = args.join(' ');
+            // console.log(`[HANDLER] SEARCH QUERY: "${query}"`);
+            return await this.workflow_search(query);
+        },
         'gather': async (cmd, args) => {
             if (cmd === 'add') return await this.workflow_add(args[0]);
             if (cmd === 'remove' || cmd === 'deselect') return this.workflow_remove(args[0]);
@@ -73,15 +77,15 @@ export class CalypsoCore {
             if (cmd === 'mount') return this.workflow_mount();
             return null;
         },
-        'rename': (_, args) => {
+        'rename': async (_, args) => {
             let nameArg: string = args.join(' ');
             if (nameArg.toLowerCase().startsWith('to ')) {
                 nameArg = nameArg.substring(3).trim();
             }
-            return this.workflow_rename(nameArg);
+            return await this.workflow_rename(nameArg);
         },
-        'harmonize': () => this.workflow_harmonize(),
-        'scaffold': (_, args) => this.workflow_proceed(args[0]),
+        'harmonize': async () => await this.workflow_harmonize(),
+        'scaffold': async (_, args) => await this.workflow_proceed(args[0]),
         'train': () => null, 
         'publish': () => null, 
         'federation': (cmd, args) => {
@@ -107,8 +111,8 @@ export class CalypsoCore {
         this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
         this.statusProvider = new StatusProvider(vfs, storeActions, this.workflowAdapter);
 
-        if (config.llmConfig && !this.simulationMode) {
-            this.engine = new LCARSEngine(config.llmConfig, config.knowledge);
+        if (config.llmConfig) {
+            this.engine = new LCARSEngine(config.llmConfig, config.knowledge, this.simulationMode);
             this.activeProvider = config.llmConfig.provider;
             this.activeModel = config.llmConfig.model;
         } else {
@@ -120,7 +124,8 @@ export class CalypsoCore {
             this.statusProvider,
             this.searchProvider,
             storeActions,
-            (msg, actions, success) => this.response_create(msg, actions, success)
+            (msg, actions, success) => this.response_create(msg, actions, success),
+            (cmd) => this.command_execute(cmd)
         );
 
         const username: string = shell.env_get('USER') || 'user';
@@ -152,10 +157,24 @@ export class CalypsoCore {
         const scriptPrompt = await this.scripts.maybeConsumeInput(trimmed);
         if (scriptPrompt) return scriptPrompt;
 
-        if (trimmed.startsWith('/')) return this.special_handle(trimmed);
+        if (trimmed.startsWith('/')) {
+            const parts = trimmed.slice(1).split(/\s+/);
+            const cmd = parts[0].toLowerCase();
+            if (cmd === 'run' || cmd === 'scripts') {
+                // fall through to primary command check below
+            } else {
+                return this.special_handle(trimmed);
+            }
+        }
 
-        if (primary === 'scripts') return this.scripts.scripts_response(parts.slice(1));
-        if (primary === 'run') return this.scripts.script_execute(parts.slice(1));
+        if (primary === 'scripts' || (trimmed.startsWith('/') && trimmed.toLowerCase().startsWith('/scripts'))) {
+            const args = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
+            return this.scripts.scripts_response(args);
+        }
+        if (primary === 'run' || (trimmed.startsWith('/') && trimmed.toLowerCase().startsWith('/run'))) {
+            const args = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
+            return this.scripts.script_execute(args);
+        }
 
         const controlResult = await this.control_handle(trimmed);
         if (controlResult) return controlResult;
@@ -171,8 +190,11 @@ export class CalypsoCore {
         const shellResult = await this.shell_handle(trimmed, primary);
         if (shellResult) return shellResult;
 
-        const workflowResult = await this.workflow_dispatch(trimmed);
-        if (workflowResult) return workflowResult;
+        // Only attempt workflow dispatch if it's a likely command (single word or known command)
+        if (this.workflowAdapter.stage_forCommand(primary)) {
+            const workflowResult = await this.workflow_dispatch(trimmed);
+            if (workflowResult) return workflowResult;
+        }
 
         const guidance = this.guidance_handle(trimmed);
         if (guidance) return guidance;
@@ -187,6 +209,10 @@ export class CalypsoCore {
 
     public prompt_get(): string {
         return this.shell.prompt_render();
+    }
+
+    public session_getPath(): string {
+        return this.sessionPath;
     }
 
     public workflow_set(workflowId: string | null): boolean {
@@ -290,6 +316,13 @@ export class CalypsoCore {
                 return this.response_create(this.statusProvider.status_generate(this.simulationMode, this.activeProvider, this.activeModel), [], true);
             case 'key':
                 return this.key_register(args[0], args[1]);
+            case 'workflows': {
+                const workflows = this.workflows_available();
+                const progress = workflows.map(w => `○ [${w.id}] ${w.name}: ${w.description}`).join('\n');
+                return this.response_create(progress, [], true);
+            }
+            case 'scripts':
+                return this.scripts.scripts_response(args);
             case 'help':
                 return this.response_create(this.help_format(), [], true);
             case 'greet': return this.response_create('__GREET_ASYNC__', [], true);
@@ -334,12 +367,18 @@ export class CalypsoCore {
         if (!transition.allowed && transition.skippedStageId) {
             this.workflowAdapter.skip_increment(transition.skippedStageId);
             const warning = CalypsoPresenter.workflowWarning_format(transition);
-            const response = await this.workflow_execute(cmd, args);
-            if (response) response.message = warning + '\n\n' + response.message;
-            return response;
+            
+            // If it's a soft warning, we DO NOT execute. We just return the warning.
+            // The next time the user tries, skip_increment will eventually allow it.
+            return this.response_create(warning, [], false);
         }
 
-        return await this.workflow_execute(cmd, args);
+        if (!transition.allowed && transition.hardBlock) {
+            return this.response_create(CalypsoPresenter.error_format(transition.warning!), [], false);
+        }
+
+        const res = await this.workflow_execute(cmd, args);
+        return res;
     }
 
     private async workflow_execute(cmd: string, args: string[]): Promise<CalypsoResponse | null> {
@@ -352,23 +391,18 @@ export class CalypsoCore {
         if (response?.success) {
             this.workflowStage_complete(cmd);
             
-            // Materialize session tree artifact for workflow progress
-            const sp = this.workflowAdapter.stagePaths.get(stage.id);
-            const artifactPath = sp ? `${this.sessionPath}/${sp.artifactFile}` : null;
-
-            if (artifactPath) {
-                // If it's a search, the SearchProvider already materialized it topologically
-                // via its own internal logic (if called via workflow_search).
-                // For other stages, we write a generic envelope here.
-                if (stage.id !== 'search') {
-                    this.sessionArtifact_write(stage.id, { command: cmd, args, timestamp: new Date().toISOString() });
-                }
-            }
+            // AUTOMATED MATERIALIZATION: 
+            this.sessionArtifact_write(stage.id, { 
+                command: cmd, 
+                args, 
+                timestamp: new Date().toISOString(),
+                result: response.success
+            });
         }
         return response;
     }
 
-    private workflow_search(query: string): CalypsoResponse {
+    private async workflow_search(query: string): Promise<CalypsoResponse> {
         const results = this.searchProvider.search(query);
         
         // Materialize topologically if search is part of current workflow
@@ -376,12 +410,13 @@ export class CalypsoCore {
         const sp = stage ? this.workflowAdapter.stagePaths.get(stage.id) : null;
         const topologicalPath = sp ? `${this.sessionPath}/${sp.dataDir}` : undefined;
 
+        // Provider handles the physical write
         const snap = this.searchProvider.snapshot_materialize(query, results, topologicalPath);
         const display = this.searchProvider.displayPath_resolve(snap);
         const snapLine = display ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${display}`)}` : '';
 
         return results.length === 0 
-            ? this.response_create(CalypsoPresenter.info_format(`NO MATCHING DATASETS FOUND FOR "${query}".`), [], true)
+            ? this.response_create(CalypsoPresenter.info_format(`NO MATCHING DATASETS FOUND FOR "${query}".`), [], false)
             : this.response_create(CalypsoPresenter.success_format(`FOUND ${results.length} MATCHING DATASET(S):`) + `\n${CalypsoPresenter.searchListing_format(results)}\n\n${CalypsoPresenter.searchDetails_format(results)}${snapLine}`, [{ type: 'workspace_render', datasets: results }], true);
     }
 
@@ -429,13 +464,41 @@ export class CalypsoCore {
         return this.response_create(CalypsoPresenter.success_format(`RENAMED TO [${newName}]`), [{ type: 'project_rename', id: project.id, newName }], true);
     }
 
-    private workflow_proceed(type?: string): CalypsoResponse {
+    private async workflow_proceed(type?: string): Promise<CalypsoResponse> {
         const workflow = this.proceedWorkflow_resolve(type);
         if (!workflow) return this.response_create(CalypsoPresenter.error_format('INVALID WORKFLOW TYPE.'), [], false);
+
+        const active = this.storeActions.project_getActive();
+        if (active) {
+            const username = this.shell.env_get('USER') || 'user';
+            const projectPath = `/home/${username}/projects/${active.name}/src`;
+            this.shell.env_set('PROJECT', active.name);
+            
+            const { projectDir_populate, chrisProject_populate } = await import('../vfs/providers/ProjectProvider.js');
+            if (workflow === 'chris') {
+                chrisProject_populate(this.vfs, username, active.name);
+            } else {
+                projectDir_populate(this.vfs, username, active.name);
+            }
+            
+            this.vfs.cwd_set(projectPath);
+            this.shell.env_set('PWD', projectPath);
+        }
+
         return this.response_create(CalypsoPresenter.success_format(`PROCEEDING WITH ${workflow.toUpperCase()} WORKFLOW.`), [{ type: 'stage_advance', stage: 'process', workflow }], true);
     }
 
-    private workflow_proceedChris(): CalypsoResponse {
+    private async workflow_proceedChris(): Promise<CalypsoResponse> {
+        const active = this.storeActions.project_getActive();
+        const username = this.shell.env_get('USER') || 'user';
+        if (active) {
+            const projectPath = `/home/${username}/projects/${active.name}/src`;
+            this.shell.env_set('PROJECT', active.name);
+            const { chrisProject_populate } = await import('../vfs/providers/ProjectProvider.js');
+            chrisProject_populate(this.vfs, username, active.name);
+            this.vfs.cwd_set(projectPath);
+            this.shell.env_set('PWD', projectPath);
+        }
         return this.response_create(CalypsoPresenter.success_format('PROCEEDING WITH CHRIS WORKFLOW.'), [{ type: 'stage_advance', stage: 'process', workflow: 'chris' }], true);
     }
 
@@ -461,10 +524,35 @@ export class CalypsoCore {
         this.vfs.reset();
         this.storeActions.reset();
         this.federation.state_reset();
+
+        // Re-initialize session path with a new timestamp
+        const username: string = this.shell.env_get('USER') || 'user';
+        const workflowId: string = this.workflowAdapter.workflowId;
+        const sessionId: string = `session-${Date.now()}`;
+        this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
+        try { this.vfs.dir_create(`${this.sessionPath}/data`); } catch { /* exists */ }
+
+        // Re-sync federation with new session path
+        const fedPath = this.workflowAdapter.stagePaths.get('federate-brief');
+        if (fedPath) {
+            this.federation.session_set(`${this.sessionPath}/${fedPath.artifactFile}`);
+        }
     }
 
     private workflow_nextStep(): string {
         const pos = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+        if (pos.isComplete) {
+            return [
+                '● WORKFLOW COMPLETE.',
+                '',
+                '○ ALL STAGES OF THE FEDERATED ML PIPELINE HAVE BEEN SUCCESSFULLY EXECUTED.',
+                '○ FINAL ARTIFACTS ARE AVAILABLE IN THE SESSION AND PROJECT TREES.',
+                '',
+                'Next Steps:',
+                '  `federate --rerun` — Explicitly start a new federation run',
+                '  `/reset` — Reset system to clean state'
+            ].join('\n');
+        }
         return pos.nextInstruction || 'Workflow complete.';
     }
 
@@ -484,10 +572,17 @@ export class CalypsoCore {
 
     private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {
         if (intent.plane !== 'control') return null;
-        if (intent.action === 'scripts_list') return this.scripts.scripts_response([]);
-        if (intent.action === 'script_run') return this.scripts.script_execute([intent.scriptRef]);
-        if (intent.action === 'script_show') return this.scripts.scripts_response([intent.scriptRef]);
-        return null;
+        
+        let response: CalypsoResponse | null = null;
+        if (intent.action === 'scripts_list') {
+            response = this.scripts.scripts_response([]);
+        } else if (intent.action === 'script_run') {
+            response = await this.scripts.script_execute([intent.scriptRef]);
+        } else if (intent.action === 'script_show') {
+            response = this.scripts.scripts_response([intent.scriptRef]);
+        }
+        
+        return response;
     }
 
     private confirmation_dispatch(input: string): CalypsoResponse | null {
@@ -501,7 +596,7 @@ export class CalypsoCore {
         this.activeProvider = provider as any;
         this.simulationMode = false;
         this.engine = new LCARSEngine({ apiKey: key, model: provider === 'openai' ? 'gpt-4o' : 'gemini-1.5-flash', provider: this.activeProvider! }, this.knowledge);
-        this.llmProvider = new LLMProvider(this.engine, this.statusProvider, this.searchProvider, this.storeActions, (m, a, s) => this.response_create(m, a, s));
+        this.llmProvider = new LLMProvider(this.engine, this.statusProvider, this.searchProvider, this.storeActions, (m, a, s) => this.response_create(m, a, s), (c) => this.command_execute(c));
         return this.response_create(`● AI CORE ONLINE [${provider.toUpperCase()}]`, [], true);
     }
 

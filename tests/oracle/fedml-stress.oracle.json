@@ -1,0 +1,47 @@
+{
+  "name": "FedML Stress: Out-of-Order Execution",
+  "username": "oracle",
+  "steps": [
+    {
+      "send": "harmonize",
+      "success": false,
+      "output_contains": "Cohort not assembled"
+    },
+    {
+      "send": "search pathology",
+      "success": true
+    },
+    {
+      "send": "add ds-006",
+      "success": true
+    },
+    {
+      "send": "ok, can you name this stress-project",
+      "success": true,
+      "output_contains": "successfully updated to 'stress-project'"
+    },
+    {
+      "vfs_exists": "${session}/search/gather/rename/data/rename.json"
+    },
+    {
+      "send": "proceed",
+      "success": false,
+      "output_contains": "Cohort not harmonized"
+    },
+    {
+      "send": "proceed",
+      "success": false,
+      "output_contains": [
+        "REASON: Federated learning requires consistent data formats"
+      ]
+    },
+    {
+      "send": "proceed",
+      "success": true,
+      "output_contains": "PROCEEDING WITH FEDML WORKFLOW"
+    },
+    {
+      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
+    }
+  ]
+}

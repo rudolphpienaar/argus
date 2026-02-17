@@ -104,8 +104,6 @@ export class SearchProvider {
 
     /**
      * Materialize a search snapshot artifact.
-     * If sessionPath is provided, writes to topological session tree location.
-     * Otherwise defaults to legacy ~/searches path.
      */
     public snapshot_materialize(query: string, results: Dataset[], sessionPath?: string): string | null {
         const username: string = this.shell.env_get('USER') || 'user';
@@ -117,12 +115,10 @@ export class SearchProvider {
         let isTopological = false;
 
         if (sessionPath) {
-            // Topological path: ~/sessions/.../search/data/search.json
             targetPath = `${sessionPath}/search.json`;
             isTopological = true;
         } else {
             const searchRoot: string = `/home/${username}/searches`;
-            this.vfs.dir_create(searchRoot);
             targetPath = `${searchRoot}/search-${timestamp}-${nonce}.json`;
         }
 
@@ -141,7 +137,6 @@ export class SearchProvider {
                 }))
             };
 
-            // If topological, wrap in ArtifactEnvelope to satisfy DAG Engine
             const envelope = isTopological ? {
                 stage: 'search',
                 timestamp: now.toISOString(),
@@ -151,6 +146,7 @@ export class SearchProvider {
                 _parent_fingerprints: {}
             } : content;
 
+            // vfs.file_create is now recursive
             this.vfs.file_create(targetPath, JSON.stringify(envelope, null, 2));
             
             if (!isTopological) {

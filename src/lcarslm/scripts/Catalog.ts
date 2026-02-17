@@ -67,7 +67,7 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
                     id: 's1_search',
                     action: 'search',
                     params: {
-                        query: '?'
+                        query: 'histology'
                     },
                     outputs: {
                         alias: 'search_results'
@@ -78,7 +78,8 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
                     action: 'select_dataset',
                     params: {
                         from: '${search_results}',
-                        strategy: 'ask'
+                        strategy: 'by_id',
+                        id: 'ds-006'
                     },
                     outputs: {
                         alias: 'selected_dataset'
@@ -196,7 +197,7 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
                     id: 's1_search',
                     action: 'search',
                     params: {
-                        query: '?'
+                        query: 'histology'
                     },
                     outputs: {
                         alias: 'search_results'
@@ -207,7 +208,8 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
                     action: 'select_dataset',
                     params: {
                         from: '${search_results}',
-                        strategy: 'ask'
+                        strategy: 'by_id',
+                        id: 'ds-006'
                     },
                     outputs: {
                         alias: 'selected_dataset'
@@ -278,7 +280,7 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
                     id: 's1_search',
                     action: 'search',
                     params: {
-                        query: '?'
+                        query: 'histology'
                     },
                     outputs: {
                         alias: 'search_results'
@@ -289,7 +291,8 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
                     action: 'select_dataset',
                     params: {
                         from: '${search_results}',
-                        strategy: 'ask'
+                        strategy: 'by_id',
+                        id: 'ds-006'
                     },
                     outputs: {
                         alias: 'selected_dataset'

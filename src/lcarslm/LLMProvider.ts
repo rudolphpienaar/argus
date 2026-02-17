@@ -21,7 +21,8 @@ export class LLMProvider {
         private readonly status: StatusProvider,
         private readonly search: SearchProvider,
         private readonly store: CalypsoStoreActions,
-        private readonly responseCreator: (msg: string, actions: CalypsoAction[], success: boolean) => CalypsoResponse
+        private readonly responseCreator: (msg: string, actions: CalypsoAction[], success: boolean) => CalypsoResponse,
+        private readonly commandExecutor: (cmd: string) => Promise<CalypsoResponse | null>
     ) {
         this.intentParser = new IntentParser(search, store);
     }
@@ -30,6 +31,8 @@ export class LLMProvider {
      * Query the LLM with system context.
      */
     public async query(input: string, sessionPath: string): Promise<CalypsoResponse> {
+        // We only block if there is NO engine at all. 
+        // LCARSEngine handles the simulationMode internal logic.
         if (!this.engine) {
             return this.responseCreator('>> WARNING: AI CORE OFFLINE. USE WORKFLOW COMMANDS.', [], false);
         }
@@ -39,7 +42,7 @@ export class LLMProvider {
 
         try {
             const response = await this.engine.query(input, selectedIds, false, context);
-            return this.response_process(response);
+            return await this.response_process(response);
         } catch (e: unknown) {
             const errorMsg = e instanceof Error ? e.message : 'UNKNOWN ERROR';
             return this.responseCreator(`>> ERROR: AI QUERY FAILED. ${errorMsg}`, [], false);
@@ -49,8 +52,33 @@ export class LLMProvider {
     /**
      * Process LLM response and extract intents/actions.
      */
-    private response_process(response: QueryResponse): CalypsoResponse {
+    private async response_process(response: QueryResponse): Promise<CalypsoResponse> {
         const { actions, cleanText } = this.intentParser.parse(response.answer);
+
+        // TRIGGER MATERIALIZATION: If the AI decided to select a dataset or proceed,
+        // we execute the corresponding deterministic command through the orchestrator.
+        // This ensures the v9.0.0 DAG Engine sees the materialized artifacts.
+        
+        // 1. Check for [SELECT: ds-xxx]
+        const selectMatches = Array.from(response.answer.matchAll(/\[SELECT: (ds-[0-9]+)\]/g));
+        for (const match of selectMatches) {
+            const dsId = match[1];
+            await this.commandExecutor(`add ${dsId}`);
+        }
+
+        // 2. Check for [ACTION: PROCEED]
+        const proceedMatch = response.answer.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
+        if (proceedMatch) {
+            const type = proceedMatch[1] || '';
+            await this.commandExecutor(`proceed ${type}`.trim());
+        }
+
+        // 3. Check for [ACTION: RENAME]
+        const renameMatch = response.answer.match(/\[ACTION: RENAME\s+([^\]]+)\]/i);
+        if (renameMatch) {
+            const newName = renameMatch[1].trim();
+            await this.commandExecutor(`rename ${newName}`);
+        }
 
         // Special case: if harmonize action was detected (implied by side effect in parser),
         // we need to return the animation marker.

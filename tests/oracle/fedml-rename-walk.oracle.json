@@ -1,0 +1,32 @@
+{
+  "name": "FedML Walk: Rename Branch",
+  "username": "oracle",
+  "steps": [
+    {
+      "send": "search histology",
+      "success": true,
+      "output_contains": "FOUND 1 MATCHING DATASET"
+    },
+    {
+      "send": "add ds-006",
+      "success": true,
+      "output_contains": "DATASET(S) GATHERED"
+    },
+    {
+      "send": "rename walk-test-project",
+      "success": true,
+      "output_contains": "RENAMED TO"
+    },
+    {
+      "vfs_exists": "${session}/search/gather/rename/data/rename.json"
+    },
+    {
+      "send": "harmonize",
+      "success": true,
+      "output_contains": "__HARMONIZE_ANIMATE__"
+    },
+    {
+      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
+    }
+  ]
+}

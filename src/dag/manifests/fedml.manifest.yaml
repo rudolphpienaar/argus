@@ -39,7 +39,13 @@ stages:
     commands:
       - search <keywords>
     handler: search
-    completes_with: gather
+    skip_warning:
+      short: Dataset discovery not performed.
+      reason: >
+        Federated learning requires a clearly defined cohort of datasets.
+        The search stage records the criteria used to identify your data,
+        which is essential for scientific reproducibility and provenance.
+      max_warnings: 2
 
   - id: gather
     name: Cohort Assembly
@@ -61,6 +67,13 @@ stages:
       - gather
       - mount
     handler: gather
+    skip_warning:
+      short: Cohort not assembled.
+      reason: >
+        A project cannot be created without an assembled cohort. The gather
+        stage materializes the cohort into your virtual workspace and
+        prepares the underlying filesystem for training.
+      max_warnings: 2
 
   - id: rename
     name: Project Rename

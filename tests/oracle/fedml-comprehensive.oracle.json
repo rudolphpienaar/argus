@@ -1,0 +1,77 @@
+{
+  "name": "FedML Comprehensive: Linear and Rename Paths",
+  "username": "oracle",
+  "steps": [
+    {
+      "send": "search pathology",
+      "success": true,
+      "output_contains": "FOUND 2 MATCHING DATASET(S)"
+    },
+    {
+      "vfs_exists": "${session}/search/data/search.json"
+    },
+    {
+      "send": "add ds-006",
+      "success": true,
+      "capture_project": true
+    },
+    {
+      "send": "harmonize",
+      "success": true
+    },
+    {
+      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
+    },
+    {
+      "send": "proceed",
+      "success": true
+    },
+    {
+      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
+    },
+    {
+      "vfs_exists": "/home/oracle/projects/${project}/src/train.py"
+    },
+    {
+      "send": "/reset",
+      "success": true
+    },
+    {
+      "send": "search histology",
+      "success": true,
+      "output_contains": "FOUND 1 MATCHING DATASET"
+    },
+    {
+      "vfs_exists": "${session}/search/data/search.json"
+    },
+    {
+      "send": "add ds-006",
+      "success": true,
+      "capture_project": true
+    },
+    {
+      "send": "rename branched-project",
+      "success": true
+    },
+    {
+      "vfs_exists": "${session}/search/gather/rename/data/rename.json"
+    },
+    {
+      "send": "harmonize",
+      "success": true
+    },
+    {
+      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
+    },
+    {
+      "send": "proceed",
+      "success": true
+    },
+    {
+      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
+    },
+    {
+      "vfs_exists": "/home/oracle/projects/branched-project/src/train.py"
+    }
+  ]
+}

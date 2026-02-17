@@ -119,22 +119,26 @@ This allows the UI to show `search` as complete as soon as the project is create
 
 == Session Tree Structure
 
-The session tree materializes the DAG as a physical directory structure under `~/sessions/<persona>/session-<id>/`.
+The session tree materializes the DAG as a physical directory structure under `~/sessions/<persona>/session-<id>/`. Every stage, including the root, is explicitly nested to preserve clear provenance.
 
 [source]
 ----
 ~/sessions/fedml/session-123/
-  data/                    # Stage: search
-    gather/                # Stage: gather
+  search/                  # Stage: search (Root)
+    data/
+      search.json          # Artifact name from manifest
+    gather/                # Stage: gather (Child of search)
       data/
-        gather.json        # The ArtifactEnvelope
-      rename/              # Stage: rename
+        gather.json
+      rename/              # Stage: rename (Child of gather)
         data/
-          _join_.../       # Synthetic Join Node
-            harmonize/     # Stage: harmonize
+          rename.json
+        harmonize/         # Stage: harmonize (Child of rename)
+          data/
+            harmonize.json
 ----
 
-The nesting encodes the DAG path. A stage is considered "Complete" if its primary artifact file exists at its topological path.
+The nesting strictly encodes the DAG path. A stage is considered "Complete" if the artifact filename defined in its manifest `produces` field exists at its topological path.
 
 == Verification and Fingerprinting
 

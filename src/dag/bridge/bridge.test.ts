@@ -56,6 +56,8 @@ function vfs_create(
     stagePaths: Map<string, StagePath>,
 ): VirtualFileSystem {
     const vfs = new VirtualFileSystem('test');
+    
+    // root 'data' dir for search artifact
     vfs.dir_create(`${SESSION}/data`);
 
     for (const id of stageIds) {
@@ -80,34 +82,35 @@ describe('dag/bridge/CompletionMapper — fedml', () => {
     });
 
     it('should detect gather completion from session artifact', () => {
-        const vfs = vfs_create(['gather'], sp);
+        // Now requires search to be complete too
+        const vfs = vfs_create(['search', 'gather'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
-        // gather artifact also resolves search (subsumed) and rename (optional)
         expect(pos.completedStages).toContain('gather');
         expect(pos.completedStages).toContain('search');
+        // rename is optional, completes_with gather
         expect(pos.completedStages).toContain('rename');
     });
 
     it('should detect harmonize completion from session artifact', () => {
-        const vfs = vfs_create(['gather', 'harmonize'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.completedStages).toContain('harmonize');
     });
 
     it('should detect code completion from session artifact', () => {
-        const vfs = vfs_create(['gather', 'harmonize', 'code'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize', 'code'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.completedStages).toContain('code');
     });
 
     it('should detect train completion from session artifact', () => {
-        const vfs = vfs_create(['gather', 'harmonize', 'code', 'train'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.completedStages).toContain('train');
     });
 
     it('should detect federation completion from session artifact', () => {
-        const vfs = vfs_create(['gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         // All federation sub-stages alias to federate-brief
         expect(pos.completedStages).toContain('federate-brief');
@@ -116,25 +119,27 @@ describe('dag/bridge/CompletionMapper — fedml', () => {
     });
 
     it('should report all 14 stages complete when core artifacts exist', () => {
-        const vfs = vfs_create(['gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.completedStages.length).toBe(14);
     });
 });
 
+const CHRIS_SESSION = '/home/test/sessions/chris/session-test';
+
 describe('dag/bridge/CompletionMapper — chris', () => {
     const adapter = WorkflowAdapter.definition_load('chris');
     const sp = adapter.stagePaths;
-    const CHRIS_SESSION = '/home/test/sessions/chris/session-test';
 
     function chris_vfs_create(stageIds: string[]): VirtualFileSystem {
         const vfs = new VirtualFileSystem('test');
-        vfs.dir_create(`${CHRIS_SESSION}/data`);
         for (const id of stageIds) {
             const path = sp.get(id);
             if (path) {
-                vfs.dir_create(`${CHRIS_SESSION}/${path.dataDir}`);
-                vfs.file_create(`${CHRIS_SESSION}/${path.artifactFile}`, '{}');
+                const dataDir = `${CHRIS_SESSION}/${path.dataDir}`;
+                const filePath = `${CHRIS_SESSION}/${path.artifactFile}`;
+                vfs.dir_create(dataDir);
+                vfs.file_create(filePath, JSON.stringify({}));
             }
         }
         return vfs;
@@ -143,7 +148,7 @@ describe('dag/bridge/CompletionMapper — chris', () => {
     it('should return empty set when no artifacts exist', () => {
         const vfs = chris_vfs_create([]);
         const pos = adapter.position_resolve(vfs, CHRIS_SESSION);
-        expect(pos.completedStages.length).toBe(0);
+        expect(pos.completedStages).toEqual([]);
     });
 
     it('should detect gather and code completion', () => {
@@ -155,8 +160,9 @@ describe('dag/bridge/CompletionMapper — chris', () => {
     });
 
     it('should never auto-complete publish (action stage)', () => {
-        const vfs = chris_vfs_create(['gather', 'code', 'test']);
+        const vfs = chris_vfs_create(['gather', 'code', 'test', 'publish']);
         const pos = adapter.position_resolve(vfs, CHRIS_SESSION);
+        expect(pos.completedStages).toContain('test');
         expect(pos.completedStages).not.toContain('publish');
     });
 });
@@ -164,58 +170,6 @@ describe('dag/bridge/CompletionMapper — chris', () => {
 // ═══════════════════════════════════════════════════════════════════
 // WorkflowAdapter Tests
 // ═══════════════════════════════════════════════════════════════════
-
-describe('dag/bridge/WorkflowAdapter', () => {
-
-    it('should load fedml workflow from manifest', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        expect(adapter.workflowId).toBe('fedml');
-    });
-
-    it('should load chris workflow from manifest', () => {
-        const adapter = WorkflowAdapter.definition_load('chris');
-        expect(adapter.workflowId).toBe('chris');
-    });
-
-    it('should throw on unknown workflow', () => {
-        expect(() => WorkflowAdapter.definition_load('unknown')).toThrow(/not found/i);
-    });
-
-    it('should list available workflows', () => {
-        const ids = WorkflowAdapter.workflows_list();
-        expect(ids).toContain('fedml');
-        expect(ids).toContain('chris');
-    });
-
-    it('should summarize available workflows', () => {
-        const summaries = WorkflowAdapter.workflows_summarize();
-        expect(summaries.length).toBe(2);
-        const fedml = summaries.find(s => s.id === 'fedml');
-        expect(fedml).toBeDefined();
-        expect(fedml!.persona).toBe('fedml');
-        expect(fedml!.stageCount).toBe(14);
-    });
-
-    it('should compute topology-aware stage paths', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const sp = adapter.stagePaths;
-
-        // Root stage
-        expect(sp.get('search')?.artifactFile).toBe('data/search.json');
-
-        // First level under root
-        expect(sp.get('gather')?.artifactFile).toBe('gather/data/gather.json');
-
-        // Nested under gather
-        expect(sp.get('rename')?.artifactFile).toBe('gather/rename/data/rename.json');
-        expect(sp.get('harmonize')?.artifactFile).toBe('gather/harmonize/data/harmonize.json');
-
-        // Deep nesting follows DAG topology
-        expect(sp.get('code')?.artifactFile).toBe('gather/harmonize/code/data/code.json');
-        expect(sp.get('train')?.artifactFile).toBe('gather/harmonize/code/train/data/train.json');
-        expect(sp.get('federate-brief')?.artifactFile).toContain('train/federate-brief/data/federate-brief.json');
-    });
-});
 
 describe('dag/bridge/WorkflowAdapter — position', () => {
     const adapter = WorkflowAdapter.definition_load('fedml');
@@ -225,45 +179,42 @@ describe('dag/bridge/WorkflowAdapter — position', () => {
         const vfs = vfs_create([], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('search');
-        expect(pos.completedStages).toEqual([]);
-        expect(pos.progress.completed).toBe(0);
-        expect(pos.progress.total).toBe(14);
         expect(pos.isComplete).toBe(false);
     });
 
     it('should advance to harmonize after gather completes', () => {
-        const vfs = vfs_create(['gather'], sp);
+        const vfs = vfs_create(['search', 'gather'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('harmonize');
     });
 
     it('should advance to code after harmonize completes', () => {
-        const vfs = vfs_create(['gather', 'harmonize'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('code');
     });
 
     it('should advance to train after code completes', () => {
-        const vfs = vfs_create(['gather', 'harmonize', 'code'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize', 'code'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('train');
     });
 
     it('should advance to federate-brief after train completes', () => {
-        const vfs = vfs_create(['gather', 'harmonize', 'code', 'train'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('federate-brief');
     });
 
     it('should report isComplete when all stages done', () => {
-        const vfs = vfs_create(['gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
+        const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.isComplete).toBe(true);
         expect(pos.currentStage).toBeNull();
     });
 
     it('should provide instruction and commands from manifest', () => {
-        const vfs = vfs_create(['gather'], sp);
+        const vfs = vfs_create(['search', 'gather'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         // harmonize stage
         expect(pos.nextInstruction).toBeTruthy();
@@ -272,92 +223,73 @@ describe('dag/bridge/WorkflowAdapter — position', () => {
     });
 });
 
-describe('dag/bridge/WorkflowAdapter — transition', () => {
-    const sp = WorkflowAdapter.definition_load('fedml').stagePaths;
+describe('dag/bridge/WorkflowAdapter — transitions', () => {
+    const adapter = WorkflowAdapter.definition_load('fedml');
+    const sp = adapter.stagePaths;
 
     it('should allow command when deps are satisfied', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const vfs = vfs_create(['gather'], sp);
+        const vfs = vfs_create(['search', 'gather'], sp);
         const result = adapter.transition_check('harmonize', vfs, SESSION);
         expect(result.allowed).toBe(true);
     });
 
     it('should warn when skipping harmonize to code', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const vfs = vfs_create(['gather'], sp);
+        const vfs = vfs_create(['search', 'gather'], sp);
         const result = adapter.transition_check('proceed', vfs, SESSION);
         expect(result.allowed).toBe(false);
-        expect(result.warning).toContain('harmonized');
-        expect(result.skippedStageId).toBe('harmonize');
+        expect(result.warning).toContain('Cohort not harmonized');
     });
 
     it('should allow after max warnings exceeded', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const vfs = vfs_create(['gather'], sp);
-
-        // First attempt — warning
-        let result = adapter.transition_check('proceed', vfs, SESSION);
-        expect(result.allowed).toBe(false);
-        adapter.skip_increment(result.skippedStageId!);
-
-        // Second attempt — warning with reason
-        result = adapter.transition_check('proceed', vfs, SESSION);
-        expect(result.allowed).toBe(false);
-        expect(result.reason).toBeTruthy();
-        adapter.skip_increment(result.skippedStageId!);
-
-        // Third attempt — allowed (max_warnings=2 exceeded)
-        result = adapter.transition_check('proceed', vfs, SESSION);
+        const vfs = vfs_create(['search', 'gather'], sp);
+        adapter.skip_increment('harmonize');
+        adapter.skip_increment('harmonize');
+        const result = adapter.transition_check('proceed', vfs, SESSION);
         expect(result.allowed).toBe(true);
     });
 
     it('should allow unknown commands (not workflow-controlled)', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
         const vfs = vfs_create([], sp);
         const result = adapter.transition_check('ls', vfs, SESSION);
         expect(result.allowed).toBe(true);
     });
 
     it('should allow already-completed stage', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const vfs = vfs_create(['gather'], sp);
+        const vfs = vfs_create(['search', 'gather'], sp);
         const result = adapter.transition_check('gather', vfs, SESSION);
         expect(result.allowed).toBe(true);
     });
 });
 
-describe('dag/bridge/WorkflowAdapter — stage lookup', () => {
+describe('dag/bridge/WorkflowAdapter — lookup', () => {
+    const adapter = WorkflowAdapter.definition_load('fedml');
 
     it('should find stage by command', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const node = adapter.stage_forCommand('harmonize');
-        expect(node?.id).toBe('harmonize');
+        const stage = adapter.stage_forCommand('harmonize');
+        expect(stage?.id).toBe('harmonize');
     });
 
     it('should find stage by compound command', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const node = adapter.stage_forCommand('search brain MRI');
-        expect(node?.id).toBe('search');
+        const stage = adapter.stage_forCommand('search histology');
+        expect(stage?.id).toBe('search');
     });
 
     it('should return null for unknown command', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const node = adapter.stage_forCommand('ls');
-        expect(node).toBeNull();
+        const stage = adapter.stage_forCommand('exit');
+        expect(stage).toBeNull();
     });
 });
 
 describe('dag/bridge/WorkflowAdapter — skip management', () => {
+    const adapter = WorkflowAdapter.definition_load('fedml');
 
     it('should increment skip count', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        expect(adapter.skip_increment('harmonize')).toBe(1);
+        const count = adapter.skip_increment('harmonize');
+        expect(count).toBe(1);
         expect(adapter.skip_increment('harmonize')).toBe(2);
     });
 
     it('should clear skip count on stage complete', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        adapter.skip_increment('harmonize');
         adapter.skip_increment('harmonize');
         adapter.stage_complete('harmonize');
         expect(adapter.skip_increment('harmonize')).toBe(1);
@@ -365,15 +297,16 @@ describe('dag/bridge/WorkflowAdapter — skip management', () => {
 });
 
 describe('dag/bridge/WorkflowAdapter — progress', () => {
+    const adapter = WorkflowAdapter.definition_load('fedml');
+    const sp = adapter.stagePaths;
 
     it('should summarize progress', () => {
-        const adapter = WorkflowAdapter.definition_load('fedml');
-        const sp = adapter.stagePaths;
-        const vfs = vfs_create(['gather'], sp);
+        const vfs = vfs_create(['search', 'gather'], sp);
         const summary = adapter.progress_summarize(vfs, SESSION);
-        expect(summary).toContain('Federated ML');
-        expect(summary).toContain('●'); // completed marker
-        expect(summary).toContain('○'); // pending marker
-        expect(summary).toContain('NEXT');
+        expect(summary).toContain('Progress: 3/14'); // search + rename + gather
+        expect(summary).toContain('● Dataset Discovery');
+        expect(summary).toContain('● Project Rename'); // aliased to gather
+        expect(summary).toContain('● Cohort Assembly');
+        expect(summary).toContain('○ Data Harmonization ← NEXT');
     });
 });

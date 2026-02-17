@@ -30,10 +30,15 @@ export class LCARSEngine {
      * 
      * @param config - The system configuration, or null for simulation mode.
      * @param knowledge - Optional dictionary of system documentation (filename -> content).
+     * @param simulationMode - Explicitly force simulation mode.
      */
-    constructor(config: LCARSSystemConfig | null, knowledge?: Record<string, string>) {
+    constructor(
+        config: LCARSSystemConfig | null, 
+        knowledge?: Record<string, string>,
+        simulationMode: boolean = false
+    ) {
         this.client = config ? (config.provider === 'gemini' ? new GeminiClient(config) : new OpenAIClient(config)) : null;
-        this.isSimulated = !config;
+        this.isSimulated = simulationMode || !config;
         
         let knowledgeContext = "";
         if (knowledge) {
@@ -76,7 +81,7 @@ The context provided to you contains a JSON list of available datasets. Use this
         isSoftVoice: boolean = false,
         workflowContext?: string
     ): Promise<QueryResponse> {
-        // Intercept System Commands
+        // 1. Check for System Commands
         if (userText.toLowerCase().trim() === 'listmodels') {
             const models: string = this.client ? await this.client.listModels() : "SIMULATION MODE: ALL MODELS EMULATED.";
             return {
@@ -85,22 +90,30 @@ The context provided to you contains a JSON list of available datasets. Use this
             };
         }
 
-        // 1. Context Preparation
-        let relevantDatasets: Dataset[] = DATASETS;
-
+        // 2. Simulated Path (RAG and Intent emulation)
         if (this.isSimulated) {
-            // In simulation, we must manually filter because there is no LLM to do it
-            relevantDatasets = this.retrieve(userText);
+            let relevantDatasets: Dataset[] = this.retrieve(userText);
             
             // Simulate processing delay
             await new Promise((resolve: (value: unknown) => void) => setTimeout(resolve, 800));
             
             // Simple Intent Simulation
             let intent = "";
+            let answerCaps = "";
+            let answerSoft = "";
+
             const selectMatch = userText.match(/(?:select|add|choose)\s+(ds-\d{3})/i);
+            const renameMatch = userText.match(/(?:name|rename)\s+(?:this|project)?\s*(?:to\s+)?([a-zA-Z0-9_-]+)/i);
+            const proceedMatch = userText.match(/(?:proceed|next|gather|review|code|let's code)/i);
+
             if (selectMatch) {
                 intent = `\n[SELECT: ${selectMatch[1].toLowerCase()}]`;
-            } else if (userText.match(/(?:proceed|next|gather|review)/i)) {
+            } else if (renameMatch) {
+                const newName = renameMatch[1].toLowerCase();
+                intent = `\n[ACTION: RENAME ${newName}]`;
+                answerCaps = `● PROJECT RENAME PROTOCOL INITIATED. THE CURRENT WORKSPACE HAS BEEN SUCCESSFULLY UPDATED TO '${newName}'.`;
+                answerSoft = `● Project rename protocol initiated. The current workspace has been successfully updated to '${newName}'.`;
+            } else if (proceedMatch) {
                 intent = `\n[ACTION: PROCEED]`;
             } else if (userText.match(/(?:harmonize|standardize|normalize)/i)) {
                 intent = `\n[ACTION: HARMONIZE]`;
@@ -108,18 +121,27 @@ The context provided to you contains a JSON list of available datasets. Use this
 
             const count: number = relevantDatasets.length;
             
-            const answerCaps: string = count > 0 
-                ? `● AFFIRMATIVE. SCAN COMPLETE.\n○ IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS.\n○ DISPLAYING RESULTS.${intent}`
-                : `○ UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR.\n● PLEASE BROADEN SEARCH PARAMETERS.${intent}`;
+            if (!answerCaps) {
+                answerCaps = count > 0 
+                    ? `● AFFIRMATIVE. SCAN COMPLETE.\n○ IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS.\n○ DISPLAYING RESULTS.${intent}`
+                    : (intent ? `● AFFIRMATIVE. COMMAND RECEIVED.${intent}` : `○ UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR.\n● PLEASE BROADEN SEARCH PARAMETERS.`);
+            } else if (intent) {
+                answerCaps += intent;
+            }
 
-            const answerSoft: string = count > 0 
-                ? `● Affirmative. Scan complete.\n○ Identified ${count} dataset(s) matching query parameters.\n○ Displaying results.${intent}`
-                : `○ Unable to comply. No matching records found in current sector.\n● Please broaden search parameters.${intent}`;
+            if (!answerSoft) {
+                answerSoft = count > 0 
+                    ? `● Affirmative. Scan complete.\n○ Identified ${count} dataset(s) matching query parameters.\n○ Displaying results.${intent}`
+                    : (intent ? `● Affirmative. Command received.${intent}` : `○ Unable to comply. No matching records found in current sector.\n● Please broaden search parameters.`);
+            } else if (intent) {
+                answerSoft += intent;
+            }
             
             return { answer: isSoftVoice ? answerSoft : answerCaps, relevantDatasets };
         }
 
-        // 2. Augmentation (Real LLM Path)
+        // 3. Real LLM Path (Retrieval Augmented Generation)
+        let relevantDatasets: Dataset[] = DATASETS;
         const context: string = JSON.stringify(relevantDatasets.map((ds: Dataset): object => ({
             id: ds.id,
             name: ds.name,

@@ -224,20 +224,42 @@ export class WorkflowAdapter {
         const readiness = dag_resolve(this.definition, completedIds);
         const nodeReadiness = readiness.find(r => r.nodeId === targetNode.id);
 
+        // console.log(`[TRANSITION] CMD: ${baseCmd}, NODE: ${targetNode.id}, READY: ${nodeReadiness?.ready}`);
+
         if (!nodeReadiness || nodeReadiness.pendingParents.length === 0) {
             return WorkflowAdapter.result_allowed();
         }
 
-        // Find the first blocking parent that has a skip_warning
+        // Check each blocking parent
         for (const parentId of nodeReadiness.pendingParents) {
             const parentNode = this.definition.nodes.get(parentId);
-            if (parentNode?.skip_warning) {
+            
+            if (!parentNode) continue;
+
+            // If the parent is NOT optional and has NO skip warning, HARD BLOCK.
+            // This prevents silent skipping of critical stages like Search and Gather.
+            if (!parentNode.optional && !parentNode.skip_warning) {
+                return {
+                    allowed: false,
+                    warning: `PREREQUISITE NOT MET: ${parentNode.name.toUpperCase()}`,
+                    reason: `This action requires completion of the '${parentNode.name}' stage.`,
+                    suggestion: parentNode.commands.length > 0 
+                        ? `Run '${parentNode.commands[0]}' to proceed.` 
+                        : 'Complete the previous stage first.',
+                    skipCount: 0,
+                    hardBlock: true,
+                    skippedStageId: parentNode.id
+                };
+            }
+
+            // If it has a skip warning, handle the soft-warning sequence
+            if (parentNode.skip_warning) {
                 const skipCount = this.skipCounts[parentNode.id] || 0;
                 const maxWarnings = parentNode.skip_warning.max_warnings;
 
                 // If warned enough times, allow
                 if (skipCount >= maxWarnings) {
-                    return WorkflowAdapter.result_allowed();
+                    continue; // Check next parent
                 }
 
                 const isSecondWarning = skipCount >= 1;
@@ -257,7 +279,7 @@ export class WorkflowAdapter {
             }
         }
 
-        // No skip warning on blocking parent — allow silently
+        // All blocking parents were either optional or max-warned
         return WorkflowAdapter.result_allowed();
     }
 

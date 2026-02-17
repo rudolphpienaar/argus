@@ -288,10 +288,13 @@ export class ShellBuiltins {
             output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;
             output += `Epoch 5/5 [####################] 100% | Loss: 0.1542 | Acc: 0.95\n\n`;
 
+            // Materialize artifacts in VFS so CLI output matches filesystem state.
             try {
                 this.vfs.dir_create(outputDirPath);
                 this.vfs.file_create(modelPath, 'SIMULATED_PYTORCH_WEIGHTS_BLOB');
                 this.vfs.file_create(statsPath, JSON.stringify({ epoch: 5, loss: 0.1542, accuracy: 0.95, status: 'PASS' }, null, 2));
+                
+                // CRITICAL: Materialize .local_pass marker at project root
                 this.vfs.file_create(`${runRootPath}/.local_pass`, new Date().toISOString());
             } catch { /* ignore */ }
 
