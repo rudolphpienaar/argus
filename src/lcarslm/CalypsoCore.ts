@@ -34,6 +34,7 @@ import { LLMProvider } from './LLMProvider.js';
 import { actionIntent_resolve } from './routing/ActionRouter.js';
 import { vfs_snapshot } from './utils/VfsUtils.js';
 import { fingerprint_compute } from '../dag/fingerprint/hasher.js';
+import type { FingerprintRecord } from '../dag/fingerprint/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../core/data/projects.js';
 import { project_gather, project_rename, project_harmonize } from '../core/logic/ProjectManager.js';
@@ -150,7 +151,7 @@ export class CalypsoCore {
         const username: string = shell.env_get('USER') || 'user';
         const sessionId: string = `session-${Date.now()}`;
         this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
-        try { vfs.dir_create(`${this.sessionPath}/data`); } catch { /* exists */ }
+        // Root stage folders (like search/) are created on-demand by sessionArtifact_write
 
         this.federation = new FederationOrchestrator(vfs, storeActions);
         const fedPath = this.workflowAdapter.stagePaths.get('federate-brief');
@@ -679,24 +680,15 @@ export class CalypsoCore {
     }
 
     /**
-     * Read the fingerprint from a materialized artifact in the current session.
+     * Read the fingerprint from the latest materialized artifact for a stage.
      */
     private fingerprint_get(stageId: string): string | null {
-        const path: StagePath | undefined = this.workflowAdapter.stagePaths.get(stageId);
-        if (!path) {
-            return null;
-        }
-
-        try {
-            const raw: string | null = this.vfs.node_read(`${this.sessionPath}/${path.artifactFile}`);
-            if (!raw) {
-                return null;
-            }
-            const envelope: ArtifactEnvelope = JSON.parse(raw);
-            return envelope._fingerprint || null;
-        } catch {
-            return null;
-        }
+        const record: FingerprintRecord | null = this.workflowAdapter.latestFingerprint_get(
+            this.vfs,
+            this.sessionPath,
+            stageId
+        );
+        return record ? record.fingerprint : null;
     }
 
     private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {

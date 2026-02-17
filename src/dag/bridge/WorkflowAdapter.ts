@@ -205,31 +205,47 @@ export class WorkflowAdapter {
         // We need to find the LATEST materialized version of each stage
         // to determine if the workflow has drifted.
         const artifactReader = (stageId: string): FingerprintRecord | null => {
-            const node: DAGNode | undefined = this.definition.nodes.get(stageId);
-            const targetId: string = (node?.completes_with !== undefined && node.completes_with !== null)
-                ? node.completes_with
-                : stageId;
-
-            // Deep search for all artifacts matching this stage ID
-            const all: ArtifactSearchResult[] = this.artifacts_find(vfs, sessionPath, targetId);
-            if (all.length === 0) {
-                return null;
-            }
-
-            // Sort by timestamp descending to find the latest
-            all.sort((a: ArtifactSearchResult, b: ArtifactSearchResult): number => b.timestamp.localeCompare(a.timestamp));
-            const latest: ArtifactSearchResult = all[0];
-
-            return {
-                fingerprint: latest.fingerprint,
-                parentFingerprints: latest.parentFingerprints,
-            };
+            return this.latestFingerprint_get(vfs, sessionPath, stageId);
         };
 
         const validation: ChainValidationResult = chain_validate(this.definition, artifactReader);
         const staleIds: Set<string> = new Set(validation.staleStages.map((s: StalenessResult): string => s.stageId));
 
         return position_resolve(this.definition, completedIds, staleIds);
+    }
+
+    /**
+     * Find the latest materialized fingerprint record for a stage within a session.
+     *
+     * @param vfs - VirtualFileSystem
+     * @param sessionPath - Path to the session root
+     * @param stageId - The stage ID to look up
+     * @returns The latest fingerprint record, or null if never materialized
+     */
+    public latestFingerprint_get(
+        vfs: VirtualFileSystem,
+        sessionPath: string,
+        stageId: string
+    ): FingerprintRecord | null {
+        const node: DAGNode | undefined = this.definition.nodes.get(stageId);
+        const targetId: string = (node?.completes_with !== undefined && node.completes_with !== null)
+            ? node.completes_with
+            : stageId;
+
+        // Deep search for all artifacts matching this stage ID
+        const all: ArtifactSearchResult[] = this.artifacts_find(vfs, sessionPath, targetId);
+        if (all.length === 0) {
+            return null;
+        }
+
+        // Sort by timestamp descending to find the latest
+        all.sort((a: ArtifactSearchResult, b: ArtifactSearchResult): number => b.timestamp.localeCompare(a.timestamp));
+        const latest: ArtifactSearchResult = all[0];
+
+        return {
+            fingerprint: latest.fingerprint,
+            parentFingerprints: latest.parentFingerprints,
+        };
     }
 
     /**
