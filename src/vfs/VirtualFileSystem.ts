@@ -47,6 +47,25 @@ export class VirtualFileSystem {
         this.dir_create(this.homePath);
     }
 
+    /**
+     * Resets the filesystem to its initial state.
+     */
+    public reset(): void {
+        const username = this.username_get();
+        this.homePath = `/home/${username}`;
+        this.cwd = this.homePath;
+        this.root = node_create('', 'folder', '/');
+        this.dir_create(this.homePath);
+    }
+
+    /**
+     * Returns the current username based on the home path.
+     */
+    public username_get(): string {
+        const segments = this.homePath.split('/').filter(Boolean);
+        return segments[segments.length - 1] || 'user';
+    }
+
     // ─── Content Resolver ───────────────────────────────────────
 
     /**

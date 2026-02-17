@@ -35,8 +35,7 @@ export class FederationContentProvider {
                 '',
                 'if __name__ == "__main__":',
                 '    fl.client.start_client(server_address="127.0.0.1:8080", client=client_fn({}))'
-            ].join('
-')
+            ].join('\n')
         );
 
         this.dag_write(
@@ -48,16 +47,12 @@ export class FederationContentProvider {
                 '',
                 'def eval_hook(batch):',
                 '    return {"val_loss": 0.0, "val_acc": 0.0}'
-            ].join('
-')
+            ].join('\n')
         );
 
         this.dag_write(
             `${dag.crosscompileData}/transcompile.log`,
-            `TRANSPILE START: ${now}
-SOURCE: ${projectBase}/src/train.py
-STATUS: COMPLETE
-`
+            `TRANSPILE START: ${now}\nSOURCE: ${projectBase}/src/train.py\nSTATUS: COMPLETE\n`
         );
 
         this.dag_write(
@@ -94,14 +89,11 @@ STATUS: COMPLETE
                 'COPY ../source-crosscompile/data/node.py /app/node.py',
                 'COPY ../source-crosscompile/data/flower_hooks.py /app/flower_hooks.py',
                 'CMD ["python", "/app/node.py"]'
-            ].join('
-')
+            ].join('\n')
         );
 
-        this.dag_write(`${dag.containerizeData}/image.tar`, 'SIMULATED OCI IMAGE TAR
-');
-        this.dag_write(`${dag.containerizeData}/image.digest`, 'sha256:simulatedfedmlimage0001
-');
+        this.dag_write(`${dag.containerizeData}/image.tar`, 'SIMULATED OCI IMAGE TAR\n');
+        this.dag_write(`${dag.containerizeData}/image.digest`, 'sha256:simulatedfedmlimage0001\n');
         
         this.dag_write(
             `${dag.containerizeData}/sbom.json`,
@@ -110,10 +102,7 @@ STATUS: COMPLETE
 
         this.dag_write(
             `${dag.containerizeData}/build.log`,
-            `BUILD START: ${now}
-LAYER CACHE: HIT
-IMAGE: COMPLETE
-`
+            `BUILD START: ${now}\nLAYER CACHE: HIT\nIMAGE: COMPLETE\n`
         );
     }
 
@@ -159,15 +148,11 @@ IMAGE: COMPLETE
             )
         );
 
-        this.dag_write(`${dag.publishData}/registry-ref.txt`, `internal://argus-marketplace/${appName}:latest
-`);
+        this.dag_write(`${dag.publishData}/registry-ref.txt`, `internal://argus-marketplace/${appName}:latest\n`);
         
         this.dag_write(
             `${dag.publishData}/publish.log`,
-            `PUBLISH START: ${now}
-APP: ${appName}
-STATUS: COMPLETE
-`
+            `PUBLISH START: ${now}\nAPP: ${appName}\nSTATUS: COMPLETE\n`
         );
     }
 
@@ -196,10 +181,7 @@ STATUS: COMPLETE
 
         this.dag_write(
             `${dag.dispatchData}/dispatch.log`,
-            `DISPATCH START: ${now}
-TARGETS: ${participants.join(', ')}
-STATUS: COMPLETE
-`
+            `DISPATCH START: ${now}\nTARGETS: ${participants.join(', ')}\nSTATUS: COMPLETE\n`
         );
 
         participants.forEach(site => {
@@ -233,8 +215,7 @@ STATUS: COMPLETE
             JSON.stringify({ finalAggregate: 0.89, rounds: aggregate, completedAt: now }, null, 2)
         );
 
-        this.dag_write(`${dag.roundsData}/final-checkpoint.bin`, 'SIMULATED_CHECKPOINT_PAYLOAD
-');
+        this.dag_write(`${dag.roundsData}/final-checkpoint.bin`, 'SIMULATED_CHECKPOINT_PAYLOAD\n');
 
         this.dag_write(
             `${projectBase}/.federation-dag.json`,

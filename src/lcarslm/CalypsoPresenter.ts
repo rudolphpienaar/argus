@@ -83,10 +83,10 @@ export class CalypsoPresenter {
         const rows = results.map(ds => {
             const id = ds.id.padEnd(8);
             const modality = ds.modality.padEnd(12);
-            const anatomy = ds.anatomy.padEnd(12);
-            const samples = String(ds.sampleCount).padStart(7);
+            const type = ds.annotationType.padEnd(12);
+            const images = String(ds.imageCount).padStart(7);
             const provider = ds.provider;
-            return `  ${id} ${modality} ${anatomy} ${samples}  ${provider}`;
+            return `  ${id} ${modality} ${type} ${images}  ${provider}`;
         });
 
         return `\n${header}\n${separator}\n${rows.join('\n')}`;

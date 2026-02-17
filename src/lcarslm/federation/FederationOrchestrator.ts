@@ -20,6 +20,7 @@
 
 import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import type { CalypsoResponse, CalypsoAction, CalypsoStoreActions } from '../types.js';
+import { FederationContentProvider } from './FederationContentProvider.js';
 import type {
     FederationState,
     FederationArgs,
@@ -50,10 +51,14 @@ export class FederationOrchestrator {
     /** Full path to the federate artifact file in session tree. */
     private federateArtifactPath: string = '';
 
+    private contentProvider: FederationContentProvider;
+
     constructor(
         private vfs: VirtualFileSystem,
         private storeActions: CalypsoStoreActions
-    ) {}
+    ) {
+        this.contentProvider = new FederationContentProvider(vfs);
+    }
 
     /**
      * Set the federation artifact path for session tree writes.

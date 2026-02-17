@@ -183,6 +183,46 @@ export class CalypsoCore {
         return this.llmProvider.query(trimmed, this.sessionPath);
     }
 
+    // ─── Public API (Restored for Adapters) ───────────────────────────────
+
+    public prompt_get(): string {
+        return this.shell.prompt_render();
+    }
+
+    public workflow_set(workflowId: string | null): boolean {
+        if (!workflowId) return false;
+        try {
+            this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    public workflows_available(): WorkflowSummary[] {
+        return WorkflowAdapter.workflows_summarize();
+    }
+
+    public vfs_exists(path: string): boolean {
+        return this.vfs.node_stat(path) !== null;
+    }
+
+    public vfs_read(path: string): string | null {
+        try {
+            return this.vfs.node_read(path);
+        } catch {
+            return null;
+        }
+    }
+
+    public version_get(): string {
+        return this.statusProvider.version_get();
+    }
+
+    public store_snapshot(): Partial<AppState> {
+        return this.storeActions.state_get();
+    }
+
     // ─── Pipeline Handlers ──────────────────────────────────────────────────
 
     private async special_handle(input: string): Promise<CalypsoResponse> {
@@ -212,7 +252,7 @@ export class CalypsoCore {
                 this.reset();
                 return this.response_create('System reset to clean state.', [], true);
             case 'version':
-                return this.response_create(this.statusProvider.version_get(), [], true);
+                return this.response_create(this.version_get(), [], true);
             case 'status':
                 return this.response_create(this.statusProvider.status_generate(this.simulationMode, this.activeProvider, this.activeModel), [], true);
             case 'key':
@@ -346,6 +386,10 @@ export class CalypsoCore {
         return this.response_create(CalypsoPresenter.success_format(`PROCEEDING WITH ${workflow.toUpperCase()} WORKFLOW.`), [{ type: 'stage_advance', stage: 'process', workflow }], true);
     }
 
+    private workflow_proceedChris(): CalypsoResponse {
+        return this.response_create(CalypsoPresenter.success_format('PROCEEDING WITH CHRIS WORKFLOW.'), [{ type: 'stage_advance', stage: 'process', workflow: 'chris' }], true);
+    }
+
     private workflow_mount(): CalypsoResponse {
         return this.response_create(CalypsoPresenter.success_format('MOUNT COMPLETE.'), [{ type: 'stage_advance', stage: 'process' }], true);
     }
@@ -367,11 +411,7 @@ export class CalypsoCore {
     private reset(): void {
         this.vfs.reset();
         this.storeActions.reset();
-        this.federation.reset();
-    }
-
-    private store_snapshot(): Partial<AppState> {
-        return this.storeActions.state_get();
+        this.federation.state_reset();
     }
 
     private workflow_nextStep(): string {
@@ -394,8 +434,10 @@ export class CalypsoCore {
     }
 
     private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {
-        if (intent.type === 'script_list') return this.scripts.scripts_response([]);
-        if (intent.type === 'script_run' && intent.scriptId) return this.scripts.script_execute([intent.scriptId, ...(intent.args || [])]);
+        if (intent.plane !== 'control') return null;
+        if (intent.action === 'scripts_list') return this.scripts.scripts_response([]);
+        if (intent.action === 'script_run') return this.scripts.script_execute([intent.scriptRef]);
+        if (intent.action === 'script_show') return this.scripts.scripts_response([intent.scriptRef]);
         return null;
     }
 
@@ -424,7 +466,7 @@ export class CalypsoCore {
         return persona === 'appdev' || persona === 'chris' ? 'chris' : 'fedml';
     }
 
-    public vfs_snapshot(path: string = '/', content: boolean = false): VfsSnapshotNode | null {
-        return vfs_snapshot(this.vfs, path, content);
+    public vfs_snapshot(path: string = '/', includeContent: boolean = false): VfsSnapshotNode | null {
+        return vfs_snapshot(this.vfs, path, includeContent);
     }
 }

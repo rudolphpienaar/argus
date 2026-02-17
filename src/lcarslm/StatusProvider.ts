@@ -45,15 +45,14 @@ export class StatusProvider {
         const project = this.store.project_getActive();
         lines.push(`○ ACTIVE PROJECT: ${project ? project.name : 'none'}`);
 
-        return lines.join('
-');
+        return lines.join('\n');
     }
 
     /**
      * Get the system version string.
      */
     public version_get(): string {
-        return `CALYPSO CORE V${VERSION.version} (${VERSION.hash.substring(0, 7)}) [${VERSION.date}]`;
+        return `CALYPSO CORE V${VERSION}`;
     }
 
     /**
@@ -64,27 +63,16 @@ export class StatusProvider {
         const datasets = this.store.datasets_getSelected();
         const activeProject = this.store.project_getActive();
 
-        let context = `--- SYSTEM CONTEXT ---
-`;
-        context += `Current User: ${this.vfs.username_get()}
-`;
-        context += `Working Directory: ${this.vfs.cwd_get()}
-`;
-        context += `Active Project: ${activeProject ? activeProject.name : 'None'}
-`;
-        context += `Selected Datasets: ${datasets.length} (${datasets.map(d => d.id).join(', ')})
-`;
-        context += `
---- WORKFLOW POSITION ---
-`;
-        context += `Workflow: ${this.adapter.workflowId}
-`;
-        context += `Completed Stages: ${pos.completedStages.join(', ') || 'None'}
-`;
-        context += `Current Stage: ${pos.currentStage?.id || 'Complete'}
-`;
-        context += `Ready for: ${pos.availableCommands.join(', ')}
-`;
+        let context = `--- SYSTEM CONTEXT ---\n`;
+        context += `Current User: ${this.vfs.username_get()}\n`;
+        context += `Working Directory: ${this.vfs.cwd_get()}\n`;
+        context += `Active Project: ${activeProject ? activeProject.name : 'None'}\n`;
+        context += `Selected Datasets: ${datasets.length} (${datasets.map(d => d.id).join(', ')})\n`;
+        context += `\n--- WORKFLOW POSITION ---\n`;
+        context += `Workflow: ${this.adapter.workflowId}\n`;
+        context += `Completed Stages: ${pos.completedStages.join(', ') || 'None'}\n`;
+        context += `Current Stage: ${pos.currentStage?.id || 'Complete'}\n`;
+        context += `Ready for: ${pos.availableCommands.join(', ')}\n`;
 
         return context;
     }
