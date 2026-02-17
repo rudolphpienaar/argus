@@ -1,84 +1,125 @@
-= ARGUS Architecture
-:toc:
+= ARGUS System Architecture: A Specification for Data-State Grounding
+:author: ATLAS Project Team
+:revdate: 2026-02-16
+:revnumber: 9.3.0
+:toc: macro
 :toclevels: 3
 :sectnums:
 
-== Core Philosophy: Robust Vanilla
-ARGUS avoids heavy frontend frameworks (React, Vue) to maintain maximum performance and "snap." However, to avoid state desynchronization issues common in imperative Vanilla JS, we employ a **Pub/Sub (Observer) Pattern**.
+toc::[]
 
-== State Management (Pub/Sub)
+== Core Philosophy: The Principle of Data-State Grounding
 
-The application state is centralized in a `Store` that acts as the single source of truth. Components do not mutate state directly; they dispatch **Actions**. The Store mutates the state and broadcasts **Events**. Components subscribe to these events to update the UI.
+The ARGUS system architecture is predicated on the foundational principle of Data-State Grounding. Unlike conventional web applications that maintain the ephemeral state of a user session in-memory or within transient database rows, ARGUS enforces a model where workflow progress is synonymous with the materialization of physical artifacts. This design ensures that the "truth" of a session is always a verifiable property of the filesystem itself.
 
-== Application Logic Layers
+The implementation of this philosophy relies on a strict materialization mandate. Every discrete stage of a federated workflow—from the initial search query to the final model publication—must produce a cryptographically anchored artifact envelope. These envelopes are nested within a session tree that mirrors the topological structure of the workflow's directed acyclic graph (DAG). By grounding the system in this manner, we eliminate the risk of state-drift inherent in probabilistic AI systems. When the AI orchestrator queries the system for the "next step," it does not consult its own memory; it performs a topological walk of the virtual disk. If the required proof-of-work is absent, the system cannot proceed, thereby creating a hard deterministic gate against hallucination or procedural error.
 
-The application logic is decoupled into specialized providers and orchestrators.
+== High-Level System Topology and Communication Matrix
 
-=== Calypso AI Core (Orchestrator)
-**`src/lcarslm/CalypsoCore.ts`**
-*   **Role**: Primary command execution pipeline.
-*   **Architecture**: Modular orchestrator that delegates to logic providers.
-*   **Pipeline**: 11-stage waterfall (Script -> Special -> Control Plane -> Confirmation -> Harmonize -> Shell -> Workflow -> Guidance -> Action -> LLM).
+The ARGUS system employs a decoupled, environment-agnostic topology that separates the high-fidelity presentation layer from the stateful execution core. This bifurcation allows the system to maintain a "thin" client while centralizing complex logic, filesystem management, and AI orchestration within a headless Node.js environment.
 
-=== Logic Providers (Capability Layer)
-As of v9.0.0, heavy logic is isolated into specialized providers:
-*   **`SearchProvider`**: Dataset discovery and anaphora resolution.
-*   **`StatusProvider`**: System status and context generation.
-*   **`LLMProvider`**: LLM orchestration and intent parsing.
-*   **`CalypsoPresenter`**: Visual formatting and LCARS dialect markers.
+=== Integrated Component Diagram
 
-=== The Intent Layer (Local IAS)
-**`src/core/logic/ProjectManager.ts`**
-*   **Role**: Bridges high-level intents ("Gather this dataset") to low-level system operations (VFS mounting, Store mutation).
-*   **Architecture**: Implements the **Intent-Action Service (IAS)** pattern locally.
+The following diagram illustrates the logical distribution of components and the primary communication pathways between the presentation layer and the headless execution core.
 
-== Virtual Computer System (VCS)
+[source]
+----
+   PRESENTATION LAYER (Web/CLI)                EXECUTION CORE (Headless Node.js)
+  ┌─────────────────────────────┐             ┌──────────────────────────────────┐
+  │  STAR TREK LCARS INTERFACE  │             │      CALYPSO SERVICE STACK       │
+  ├──────────────┬──────────────┤             ├───────────────┬──────────────────┤
+  │ ┌──────────┐ │ ┌──────────┐ │             │ ┌───────────┐ │ ┌──────────────┐ │
+  │ │ Terminal │ │ │   IDE    │ │             │ │  Calypso  │ │ Workflow     │ │
+  │ │ Viewport │ │ │  Editor  │ │             │ │  Core     │ │ Adapter      │ │
+  │ └────●─────┘ │ └────●─────┘ │             │ └─────●─────┘ └──────●───────┘ │
+  │      │              │       │             │       │              │         │
+  │      └──────┬───────┘       │             │       └──────┬───────┘         │
+  │             ▼               │             │              ▼                 │
+  │  ┌───────────────────────┐  │             │  ┌──────────────────────────┐  │
+  │  │    Browser Adapter    │  │             │  │     Calypso Server       │  │
+  │  │  (Event / State Hub)  │  │             │  │  (HTTP / WebSocket Hub)   │  │
+  │  └──────────┬────────────┘  │             │  └───────────┬──────────────┘  │
+  └─────────────┼───────────────┘             └──────────────┼─────────────────┘
+                │                                            │
+                │        [WS] Bidirectional State Sync       │
+                ●────────────────────────────────────────────●
+                │                                            │
+                │        [REST] Deterministic Queries        │
+                └────────────────────────────────────────────┘
+----
 
-The VCS (`src/vfs/`) is ARGUS's stateful runtime environment. It provides a POSIX-like in-memory filesystem with content-aware files, a Shell interpreter, and a Provider architecture.
+== Rendering Isolation: The Slot Pattern
 
-=== Components
+The ARGUS interface implements the **Slot Pattern** to manage the visual complexity of the LCARS environment. This is a technique for logical and physical isolation of UI components within a Vanilla TypeScript architecture.
 
-[cols="1,2"]
-|===
-| Component | Location
+The implementation involves designating specific, named DOM containers as "slots" that correspond to top-level keys in the application Store. For example, the `IDE` component occupies the `process-slot`, while the `Terminal` occupies the `command-slot`. Each component is responsible for its own internal state and DOM subtree, but it remains entirely agnostic of its neighbors.
 
-| VirtualFileSystem
-| `src/vfs/VirtualFileSystem.ts` — Tree storage, content storage, path resolution, CWD, events.
+The engineering rationale for this pattern is twofold. First, it prevents shared-state corruption by ensuring that a rendering error or a memory leak in one component (such as a complex medical image viewer) is physically contained within its own slot and cannot propagate to the core command console. Second, it allows for seamless "Hot Swapping" of UI paradigms. Because components only communicate through the global EventBus, the system can replace a standard text editor slot with a high-fidelity DICOM viewer slot without modifying the underlying workflow orchestrator.
 
-| Shell
-| `src/vfs/Shell.ts` — Command interpreter and environment manager.
+== Lifecycle of a Command: The Information Processing Trace
 
-| ShellBuiltins
-| `src/vfs/ShellBuiltins.ts` — Implementation of 20+ POSIX builtins (ls, cd, python, upload, analyze, etc.).
+To understand the architecture as defined by the code, one must trace the propagation of a string through the system's class hierarchy. This trace demonstrates how a fuzzy natural language input is transformed into a deterministic filesystem mutation.
 
-| ContentRegistry
-| `src/vfs/content/ContentRegistry.ts` — Maps file paths to content generators.
+The cascade begins in the **Terminal component**, where the `input_handle` method captures the raw string and dispatches it to the **BrowserAdapter**. The adapter transmits the string over the WebSocket to the **CalypsoServer**, which immediately invokes `CalypsoCore.command_execute()`.
 
-| DatasetProvider
-| `src/vfs/providers/DatasetProvider.ts` — Builds `~/data/cohort/` from selected datasets.
+Inside **CalypsoCore**, the string enters the 11-stage waterfall. The orchestrator first calls `WorkflowAdapter.transition_check()` to validate the command against the active YAML manifest. If the command is valid, the orchestrator dispatches to a specific logic provider. For a filesystem operation, the cascade continues into **Shell.command_execute()**, which resolves the path via `VirtualFileSystem.path_resolve()` and performs the mutation using `VirtualFileSystem.node_write()`.
 
-| ProjectProvider
-| `src/vfs/providers/ProjectProvider.ts` — Scaffolds `$HOME` + populates `~/src/project/`.
-|===
+Once the mutation is complete, the **VirtualFileSystem** emits a `VFS_CHANGED` event. The **Store** captures this event, updates the session metadata, and triggers a global broadcast. Finally, the **Terminal** and **IDE** components, listening on the EventBus, receive the notification and invoke their internal `render()` methods to update their respective slots. This complete loop ensures that every character of user input results in a verifiable, Merkle-proven change to the virtual environment.
 
-=== Data Flow
+=== Processing Flow (Graphviz)
 
-1.  **User types `cat train.py`** in the terminal.
-2.  **Terminal** sends raw input to the **Shell**.
-3.  **Shell** expands variables and delegates to **ShellBuiltins**.
-4.  **ShellBuiltins** calls `vfs.node_read()`.
-5.  **VFS** resolves content via the **ContentRegistry**.
-6.  **Shell** returns a `ShellResult` to the Terminal.
+The following Graphviz DOT specification provides a formal mapping of the command processing cascade.
 
-== Data-State Workflow Semantics
+[source,dot]
+----
+digraph ArgusCommandFlow {
+    rankdir=LR;
+    node [shape=box, fontname="Courier", fontsize=10];
+    edge [fontname="Courier", fontsize=8];
 
-ARGUS's workflow tracking follows the same data-state DAG model used by ChRIS at the compute layer. Progress is proven by the existence of materialized artifacts in the session tree (`~/sessions/`), not by controller assertions.
+    User [label="User Input", shape=ellipse, style=filled, fillcolor=lightgrey];
+    Terminal [label="Terminal.ts\n(ui_render)"];
+    Adapter [label="BrowserAdapter.ts\n(state_sync)"];
+    Server [label="CalypsoServer.ts\n(ws_handle)"];
+    Core [label="CalypsoCore.ts\n(pipeline_dispatch)"];
+    Workflow [label="WorkflowAdapter.ts\n(dag_verify)"];
+    Shell [label="Shell.ts\n(posix_interpret)"];
+    VFS [label="VirtualFileSystem.ts\n(node_mutate)"];
+    Store [label="Store.ts\n(state_hub)"];
+    EventBus [label="EventBus.ts\n(broadcast)"];
 
-=== Grounding the LLM
+    User -> Terminal [label="[EVENT] keydown"];
+    Terminal -> Adapter [label="input_submit()"];
+    Adapter -> Server [label="[WS] command"];
+    Server -> Core [label="command_execute()"];
+    Core -> Workflow [label="transition_check()"];
+    Core -> Shell [label="command_execute()"];
+    Shell -> VFS [label="node_write()"];
+    VFS -> EventBus [label="[EVENT] VFS_CHANGED"];
+    EventBus -> Store [label="state_update()"];
+    EventBus -> Terminal [label="refresh()"];
+}
+----
 
-The data-state model prevents the LLM from drifting on workflow state via:
-*   **Deterministic routing**: Pattern matchers intercept status/progress queries.
-*   **Context injection**: `StatusProvider` builds stage summaries from live VFS.
-*   **Artifact validation**: `WorkflowAdapter` resolves position from materialized envelopes.
+== The Virtual Computer System (VCS)
 
-See `docs/vcs.adoc` and `docs/calypso.adoc` for full specifications.
+The Virtual Computer System is the stateful runtime environment of ARGUS. It is implemented not as a simple data structure, but as a full-stack simulation of a POSIX-compliant mini-computer. This abstraction is critical because it provides a familiar, standard environment for both human operators and AI agents to perform complex file operations before they are committed to real-world infrastructure.
+
+At the base of the VCS is the **Virtual File System (VFS)**, an in-memory tree of nodes that supports standard POSIX semantics, including absolute and relative path resolution, permissions, and modification tracking. Layered above the VFS is the **Shell**, a command interpreter that manages the environment (such as `$HOME`, `$USER`, and `$PWD`) and dispatches to a library of over 20 built-in commands. This includes support for complex operations like `python` script execution and `upload` simulations.
+
+The most advanced feature of the VCS is the **Content Registry and Template System**. To maintain performance and minimize memory overhead, ARGUS employs lazy content generation. File bodies—such as the `train.py` training script or the `meridian.yaml` federation manifest—are not stored statically. Instead, the Content Registry maps file paths to pure TypeScript templates that generate content on-demand based on the current system context (e.g., the specific datasets selected by the user). This ensures that the virtual computer's "disk" always reflects the latest state of the application logic.
+
+== Calypso Intelligence Orchestrator: The Execution Pipeline
+
+Calypso is the orchestrator responsible for mediating between natural language intent and deterministic system functionality. To prevent the "hallucination-first" failure mode common in AI-integrated systems, Calypso employs an 11-stage waterfall execution pipeline. This pipeline ensures that every user input is checked against deterministic handlers before it is ever passed to a Large Language Model.
+
+The pipeline first attempts to resolve the input through the Script Runtime (for active automations) and the Special Command handler (for system operations like `/reset` or `/status`). If these fail, the input is checked against the active DAG manifest via the Workflow Adapter. This stage is critical for "steering" the user through the scientific process; it verifies that the command is appropriate for the current stage and that all Merkle-proven prerequisites have been met. Only if the input remains unresolved after these deterministic checks—and after a search through the POSIX shell builtins—is it finally passed to the LLMProvider. By placing the AI at the end of the waterfall, ARGUS ensures that the LLM functions as a "Natural Language Router" rather than a primary decision-maker.
+
+== Manifest-Driven DAGs and Merkle Provenance
+
+The logic of the federated workflow is entirely externalized from the application code and defined within YAML manifests. This architecture allows the system to remain generic while supporting diverse scientific personas. The integrity of these workflows is maintained through a **Merkle Provenance Chain**.
+
+Each artifact materialized into the VFS session tree contains a SHA-256 fingerprint. This fingerprint is a hash of the artifact's own data combined with the fingerprints of all its parent stages in the DAG. This cryptographic anchoring creates an immutable chain of evidence. If a user re-executes an upstream stage (such as `search`), the system generates a new **Artifact Branch** (e.g., `search_BRANCH_XXXX`). Because this new branch has a different hash, the DAG validator immediately detects that all downstream artifacts (like the assembled cohort) now point to an outdated parent. The system then flags these downstream stages as `[STALE]`, forcing the user to re-verify their data before proceeding to training. This rigorous approach to provenance ensures that every federated model is backed by a perfectly traceable and consistent data-state history.
+
+---
+_Last updated: 2026-02-16 (v9.3.0)_

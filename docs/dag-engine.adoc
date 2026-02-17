@@ -140,13 +140,54 @@ The session tree materializes the DAG as a physical directory structure under `~
 
 The nesting strictly encodes the DAG path. A stage is considered "Complete" if the artifact filename defined in its manifest `produces` field exists at its topological path.
 
-== Verification and Fingerprinting
+== Verification and Fingerprinting: Merkle Provenance
 
-Every artifact carries a **Merkle Fingerprint**:
-- `_fingerprint`: SHA-256(content + parent fingerprints).
-- `_parent_fingerprints`: Map of parent IDs to their fingerprints at execution time.
+Every artifact produced by the DAG engine carries a **Merkle Fingerprint**. This enables high-integrity provenance tracking and deterministic staleness detection without relying on unstable filesystem timestamps.
 
-If a user goes back to an earlier stage (e.g., `gather`) and re-executes it with different data, the fingerprint changes. The `Chain` validator detects that downstream stages (e.g., `harmonize`) now have mismatched parent fingerprints and flags them as **Stale**.
+=== The Merkle Chain
+
+Each `ArtifactEnvelope` contains two critical metadata fields:
+
+*   `_fingerprint`: A SHA-256 hash of the artifact's own `content` block and the fingerprints of all its parent stages.
+*   `_parent_fingerprints`: A map of parent stage IDs to their specific fingerprints at the moment this artifact was created.
+
+**Hashing Formula:**
+`fp(stage) = SHA-256(canonical_json(content) + \0 + sorted_join(parent_id:parent_fp))`
+
+This structure forms a Merkle tree rooted at the terminal stages of the workflow. Because the hash includes the parent fingerprints, any change to an upstream artifact (re-execution with different data) causes a hash mismatch that propagates downstream.
+
+=== Staleness Detection
+
+The DAG engine performs a topological walk of the session tree to validate the Merkle chain. A stage is flagged as **Stale** if:
+
+1.  Its recorded `_parent_fingerprints` do not match the fingerprints of the *latest* materialized versions of those parents.
+2.  Any of its ancestors are themselves stale (Cascading Staleness).
+
+=== Artifact Branching
+
+When a user re-executes a stage (e.g., running `search` again with a different query), ARGUS does not simply overwrite the previous data. Instead, it creates an **Artifact Branch**:
+
+[source]
+----
+~/sessions/fedml/session-123/
+  search/                  # Original execution
+    data/search.json
+  search_BRANCH_177129.../ # Re-execution (Branch)
+    data/search.json       # New fingerprint generated here
+----
+
+Branching ensures that:
+*   **Providence is preserved**: The historical record of the session remains intact.
+*   **Staleness is detectable**: Downstream stages (like `gather`) still point to the fingerprint in the *original* folder, allowing the engine to detect the drift from the *latest* branch.
+
+=== UI Indicators
+
+Staleness is surfaced directly in the Star Trek LCARS interface:
+
+*   **Status Summary**: Stale stages are marked with an asterisk (`*`) and a `[STALE]` tag (e.g., `* Data Harmonization [STALE]`).
+*   **Progress Markers**: The standard affirmative marker (`●`) changes to the stale marker (`◌` or `*`) when the data-state grounding is lost.
+
+To resolve staleness, the user must re-execute the stale stage to "re-ground" it in the updated upstream data.
 
 ---
-_Last updated: 2026-02-16 (v9.0.0)_
+_Last updated: 2026-02-16 (v9.0.9)_
