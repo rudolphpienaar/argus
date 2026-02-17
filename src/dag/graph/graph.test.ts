@@ -437,7 +437,7 @@ describe('dag/graph/validator', () => {
         const node: DAGNode = {
             id: 'dup', name: 'Dup', phase: null, previous: null,
             optional: false, produces: ['x.json'], parameters: {},
-            instruction: '', commands: [], skip_warning: null,
+            instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -456,7 +456,7 @@ describe('dag/graph/validator', () => {
         const node: DAGNode = {
             id: 'empty', name: 'Empty', phase: null, previous: null,
             optional: false, produces: [], parameters: {},
-            instruction: '', commands: [], skip_warning: null,
+            instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -476,12 +476,12 @@ describe('dag/graph/validator', () => {
         const gather: DAGNode = {
             id: 'gather', name: 'Gather', phase: null, previous: null,
             optional: false, produces: ['g.json'], parameters: {},
-            instruction: '', commands: [], skip_warning: null,
+            instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
         };
         const harmonize: DAGNode = {
             id: 'harmonize', name: 'Harmonize', phase: null, previous: ['gather', 'nonexistent'],
             optional: false, produces: ['h.json'], parameters: {},
-            instruction: '', commands: [], skip_warning: null,
+            instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -501,12 +501,12 @@ describe('dag/graph/validator', () => {
         const a: DAGNode = {
             id: 'a', name: 'A', phase: null, previous: ['b'],
             optional: false, produces: ['a.json'], parameters: {},
-            instruction: '', commands: [], skip_warning: null,
+            instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
         };
         const b: DAGNode = {
             id: 'b', name: 'B', phase: null, previous: ['a'],
             optional: false, produces: ['b.json'], parameters: {},
-            instruction: '', commands: [], skip_warning: null,
+            instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -525,7 +525,7 @@ describe('dag/graph/validator', () => {
         const node: DAGNode = {
             id: 'solo', name: 'Solo', phase: null, previous: null,
             optional: false, produces: ['solo.json'], parameters: {},
-            instruction: '', commands: [], skip_warning: null,
+            instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -739,6 +739,8 @@ describe('dag/graph/types contracts', () => {
             parameters: {},
             instruction: 'Search for datasets.',
             commands: ['search'],
+            handler: null,
+            completes_with: null,
             skip_warning: null,
         };
         expect(root.previous).toBeNull();
@@ -756,6 +758,8 @@ describe('dag/graph/types contracts', () => {
             parameters: { resolution: [1.0, 1.0, 1.0] },
             instruction: 'Harmonize your cohort.',
             commands: ['harmonize'],
+            handler: null,
+            completes_with: null,
             skip_warning: {
                 short: 'Not harmonized.',
                 reason: 'FL requires consistent formats.',
@@ -784,6 +788,8 @@ describe('dag/graph/types contracts', () => {
             parameters: {},
             instruction: 'Do alpha.',
             commands: ['alpha'],
+            handler: null,
+            completes_with: null,
             skip_warning: null,
         });
 
@@ -846,6 +852,8 @@ describe('dag/graph/types contracts', () => {
             parameters: { keywords: null },
             instruction: 'Search the ATLAS catalog.',
             commands: ['search <keywords>'],
+            handler: null,
+            completes_with: null,
             skip_warning: null,
         };
         const position: WorkflowPosition = {

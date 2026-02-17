@@ -285,7 +285,7 @@ export class FederationOrchestrator {
         projectBase: string,
         dag: FederationDagPaths,
     ): CalypsoResponse {
-        this.dag_step1TranscompileMaterialize(projectBase);
+        this.contentProvider.transcompile_materialize(projectBase, dag);
         state.step = 'federate-containerize';
 
         return this.response_create(
@@ -318,7 +318,7 @@ export class FederationOrchestrator {
         projectBase: string,
         dag: FederationDagPaths,
     ): CalypsoResponse {
-        this.dag_step2ContainerizeMaterialize(projectBase);
+        this.contentProvider.containerize_materialize(dag);
         try {
             this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
         } catch { /* ignore */ }
@@ -391,7 +391,7 @@ export class FederationOrchestrator {
         dag: FederationDagPaths,
         projectName: string,
     ): CalypsoResponse {
-        this.dag_step4PublishMaterialize(projectBase, state.publish);
+        this.contentProvider.publish_materialize(dag, state.publish);
         try {
             this.vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
         } catch { /* ignore */ }
@@ -564,7 +564,7 @@ export class FederationOrchestrator {
         }
 
         // Materialize dispatch + round artifacts
-        this.dag_phase3Materialize(projectBase);
+        this.contentProvider.dispatch_materialize(projectBase, dag);
         state.step = 'federate-execute';
 
         const participants = ['BCH', 'MGH', 'BIDMC'];
@@ -880,202 +880,6 @@ export class FederationOrchestrator {
             dispatchBase, dispatchData, dispatchReceipts,
             roundsBase, roundsData
         };
-    }
-
-    private dag_write(path: string, content: string): void {
-        const parent: string = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '/';
-        this.vfs.dir_create(parent);
-        this.vfs.node_write(path, content);
-    }
-
-    private dag_step1TranscompileMaterialize(projectBase: string): void {
-        const dag: FederationDagPaths = this.dag_paths(projectBase);
-        const now: string = new Date().toISOString();
-        this.vfs.dir_create(dag.crosscompileData);
-        this.vfs.dir_create(dag.containerizeBase);
-
-        this.dag_write(
-            `${dag.crosscompileData}/node.py`,
-            [
-                '# Auto-generated federated node entrypoint',
-                'import flwr as fl',
-                '',
-                'def client_fn(context):',
-                '    return None',
-                '',
-                'if __name__ == "__main__":',
-                '    fl.client.start_client(server_address="127.0.0.1:8080", client=client_fn({}))'
-            ].join('\n')
-        );
-        this.dag_write(
-            `${dag.crosscompileData}/flower_hooks.py`,
-            [
-                '# Auto-generated Flower hooks',
-                'def train_hook(batch):',
-                '    return {"loss": 0.0, "acc": 0.0}',
-                '',
-                'def eval_hook(batch):',
-                '    return {"val_loss": 0.0, "val_acc": 0.0}'
-            ].join('\n')
-        );
-        this.dag_write(
-            `${dag.crosscompileData}/transcompile.log`,
-            `TRANSPILE START: ${now}\nSOURCE: ${projectBase}/src/train.py\nSTATUS: COMPLETE\n`
-        );
-        this.dag_write(
-            `${dag.crosscompileData}/artifact.json`,
-            JSON.stringify(
-                {
-                    stage: 'source-crosscompile',
-                    status: 'complete',
-                    generatedAt: now,
-                    inputs: [`${projectBase}/src/train.py`],
-                    outputs: ['node.py', 'flower_hooks.py', 'transcompile.log']
-                },
-                null,
-                2
-            )
-        );
-    }
-
-    private dag_step2ContainerizeMaterialize(projectBase: string): void {
-        const dag: FederationDagPaths = this.dag_paths(projectBase);
-        const now: string = new Date().toISOString();
-        this.vfs.dir_create(dag.containerizeData);
-        this.vfs.dir_create(dag.publishBase);
-
-        this.dag_write(
-            `${dag.containerizeData}/Dockerfile`,
-            [
-                'FROM python:3.11-slim',
-                'WORKDIR /app',
-                'COPY ../source-crosscompile/data/node.py /app/node.py',
-                'COPY ../source-crosscompile/data/flower_hooks.py /app/flower_hooks.py',
-                'CMD ["python", "/app/node.py"]'
-            ].join('\n')
-        );
-        this.dag_write(`${dag.containerizeData}/image.tar`, 'SIMULATED OCI IMAGE TAR\n');
-        this.dag_write(`${dag.containerizeData}/image.digest`, 'sha256:simulatedfedmlimage0001\n');
-        this.dag_write(
-            `${dag.containerizeData}/sbom.json`,
-            JSON.stringify({ format: 'spdx-json', generatedAt: now, packages: ['python', 'flwr'] }, null, 2)
-        );
-        this.dag_write(
-            `${dag.containerizeData}/build.log`,
-            `BUILD START: ${now}\nLAYER CACHE: HIT\nIMAGE: COMPLETE\n`
-        );
-    }
-
-    private dag_step4PublishMaterialize(projectBase: string, publish: FederationPublishConfig): void {
-        const dag: FederationDagPaths = this.dag_paths(projectBase);
-        const now: string = new Date().toISOString();
-        this.vfs.dir_create(dag.publishData);
-        this.vfs.dir_create(dag.dispatchBase);
-
-        const appName: string = publish.appName || 'unnamed-fedml-app';
-        this.dag_write(
-            `${dag.publishData}/app.json`,
-            JSON.stringify(
-                {
-                    appName,
-                    org: publish.org,
-                    visibility: publish.visibility,
-                    imageDigest: 'sha256:simulatedfedmlimage0001',
-                    publishedAt: now
-                },
-                null,
-                2
-            )
-        );
-        this.dag_write(
-            `${dag.publishData}/publish-receipt.json`,
-            JSON.stringify(
-                {
-                    status: 'published',
-                    appName,
-                    registry: 'internal://argus-marketplace',
-                    publishedAt: now
-                },
-                null,
-                2
-            )
-        );
-        this.dag_write(`${dag.publishData}/registry-ref.txt`, `internal://argus-marketplace/${appName}:latest\n`);
-        this.dag_write(
-            `${dag.publishData}/publish.log`,
-            `PUBLISH START: ${now}\nAPP: ${appName}\nSTATUS: COMPLETE\n`
-        );
-    }
-
-    private dag_phase3Materialize(projectBase: string): void {
-        const dag: FederationDagPaths = this.dag_paths(projectBase);
-        const now: string = new Date().toISOString();
-        const participants: string[] = ['BCH', 'MGH', 'BIDMC'];
-
-        this.vfs.dir_create(dag.dispatchData);
-        this.vfs.dir_create(dag.dispatchReceipts);
-        this.vfs.dir_create(dag.roundsData);
-
-        this.dag_write(
-            `${dag.dispatchData}/participants.json`,
-            JSON.stringify(
-                participants.map((site: string) => ({ site, endpoint: `federation://${site.toLowerCase()}/node`, status: 'ready' })),
-                null,
-                2
-            )
-        );
-        this.dag_write(
-            `${dag.dispatchData}/dispatch.log`,
-            `DISPATCH START: ${now}\nTARGETS: ${participants.join(', ')}\nSTATUS: COMPLETE\n`
-        );
-        this.dag_write(
-            `${dag.dispatchReceipts}/bch.json`,
-            JSON.stringify({ site: 'BCH', status: 'accepted', timestamp: now }, null, 2)
-        );
-        this.dag_write(
-            `${dag.dispatchReceipts}/mgh.json`,
-            JSON.stringify({ site: 'MGH', status: 'accepted', timestamp: now }, null, 2)
-        );
-        this.dag_write(
-            `${dag.dispatchReceipts}/bidmc.json`,
-            JSON.stringify({ site: 'BIDMC', status: 'accepted', timestamp: now }, null, 2)
-        );
-
-        const rounds: number[] = [1, 2, 3, 4, 5];
-        const aggregate: number[] = [0.62, 0.71, 0.79, 0.84, 0.89];
-        rounds.forEach((round: number, idx: number): void => {
-            this.dag_write(
-                `${dag.roundsData}/round-0${round}.json`,
-                JSON.stringify(
-                    {
-                        round,
-                        participants: participants.map((site: string) => ({ site, status: 'ok' })),
-                        aggregate: aggregate[idx],
-                        timestamp: now
-                    },
-                    null,
-                    2
-                )
-            );
-        });
-        this.dag_write(
-            `${dag.roundsData}/aggregate-metrics.json`,
-            JSON.stringify({ finalAggregate: 0.89, rounds: aggregate, completedAt: now }, null, 2)
-        );
-        this.dag_write(`${dag.roundsData}/final-checkpoint.bin`, 'SIMULATED_CHECKPOINT_PAYLOAD\n');
-
-        this.dag_write(
-            `${projectBase}/.federation-dag.json`,
-            JSON.stringify(
-                {
-                    root: `${projectBase}/src/source-crosscompile`,
-                    lastMaterializedAt: now,
-                    phases: ['source-crosscompile', 'containerize', 'marketplace-publish', 'dispatch', 'federated-rounds']
-                },
-                null,
-                2
-            )
-        );
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────

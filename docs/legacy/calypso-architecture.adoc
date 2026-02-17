@@ -1,0 +1,15 @@
+= Calypso Service Architecture
+:revnumber: 7.2.0
+:revdate: 2026-02-16
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: This document recorded the v7.2.0 refactor which decomposed the monolithic CLI and Server into a layered WebSocket service.
+
+**Superseded by**: link:../calypso.adoc[CALYPSO: The AI Core] and link:../architecture.adoc[ARGUS Architecture] (v9.0.0)
+
+**Reason for Supersession**: In v9.0.0, the orchestrator core was further decomposed into specialized Providers. While the protocol remains valid, the internal logic flow described here (as a monolithic 2000-line core) is no longer accurate.
+====
+
+[... original content ...]

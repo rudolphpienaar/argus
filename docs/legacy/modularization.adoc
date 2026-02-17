@@ -1,0 +1,14 @@
+= LCARS Framework Modularization Plan
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: This was the original blueprint for extracting reusable components (Telemetry, Terminal, Frame System) into the `src/lcars-framework/` directory.
+
+**Reason for Supersession**: The initiative reached its logical conclusion in v3.5.0. The framework is now a stable part of the project infrastructure. New modularization efforts (v9.0.0 logic providers) follow a different pattern and are documented in the core architecture specs.
+====
+
+== Overview
+The goal of this initiative is to transition the ARGUS prototype from a monolithic, tightly-coupled application to a modular, reusable **LCARS Framework**. This framework will provide components and services that can be easily dropped into other medical imaging or federated learning projects.
+
+[... remaining original content ...]

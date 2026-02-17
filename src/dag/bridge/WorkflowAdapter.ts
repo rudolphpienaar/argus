@@ -24,7 +24,7 @@ import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
 
 import { manifest_parse } from '../graph/parser/manifest.js';
 import { dag_resolve, position_resolve } from '../graph/resolver.js';
-import { fedmlMapper_create, chrisMapper_create } from './CompletionMapper.js';
+import { manifestMapper_create } from './CompletionMapper.js';
 
 // ─── Protocol-Facing Types ─────────────────────────────────────
 
@@ -58,7 +58,6 @@ export interface TransitionResult {
 
 interface ManifestEntry {
     yamlPath: string;
-    mapper: (pathMap: Map<string, StagePath>) => CompletionMapper;
 }
 
 /** Resolve path relative to this module's directory. */
@@ -72,11 +71,9 @@ function modulePath_resolve(relativePath: string): string {
 const MANIFEST_REGISTRY: Record<string, ManifestEntry> = {
     fedml: {
         yamlPath: modulePath_resolve('../manifests/fedml.manifest.yaml'),
-        mapper: fedmlMapper_create,
     },
     chris: {
         yamlPath: modulePath_resolve('../manifests/chris.manifest.yaml'),
-        mapper: chrisMapper_create,
     },
 };
 
@@ -138,7 +135,7 @@ export class WorkflowAdapter {
         const yaml = readFileSync(entry.yamlPath, 'utf-8');
         const definition = manifest_parse(yaml);
         const pathMap = sessionPaths_compute(definition);
-        const mapper = entry.mapper(pathMap);
+        const mapper = manifestMapper_create(definition, pathMap);
 
         return new WorkflowAdapter(workflowId, definition, mapper);
     }

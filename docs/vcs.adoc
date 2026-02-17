@@ -807,7 +807,11 @@ This section is a living checklist. Update it with each implementation iteration
 
 | `src/vfs/Shell.ts`
 | [x] Done
-| 15 builtins (cd, pwd, ls, cat, mkdir, touch, rm, cp, mv, echo, env, export, whoami, date, history, help), env vars ($HOME, $USER, $PWD, $PATH, $PERSONA, $STAGE, $PS1), prompt generation with ~ substitution, stage transitions with landing directories, external handler delegation.
+| Environment variables ($HOME, $USER, $PWD, $PATH, $PERSONA, $STAGE, $PS1), prompt generation with ~ substitution, stage transitions with landing directories, and external handler delegation.
+
+| `src/vfs/ShellBuiltins.ts`
+| [x] Done
+| 20+ POSIX-like builtins (cd, pwd, ls, cat, mkdir, touch, rm, cp, mv, echo, env, export, whoami, date, history, help, python, upload, analyze, simulate, harmonize). Decoupled from Shell environment logic.
 
 | Wire Shell to Terminal
 | [x] Done

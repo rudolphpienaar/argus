@@ -14,6 +14,7 @@
  */
 
 import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
+import type { DAGDefinition } from '../graph/types.js';
 import type { StagePath } from './SessionPaths.js';
 
 /**
@@ -78,78 +79,52 @@ function vfsExists(vfs: VirtualFileSystem, path: string): boolean {
  */
 export function topologyMapper_create(
     pathMap: Map<string, StagePath>,
-    aliases: Record<string, string> = {},
+    aliases: Record<string, string | null> = {},
 ): CompletionMapper {
     const checks: Record<string, CompletionCheck> = {};
 
     for (const [stageId] of pathMap) {
-        const targetId = aliases[stageId] || stageId;
-        const targetPath = pathMap.get(targetId);
-        if (targetPath) {
-            checks[stageId] = (vfs, sessionPath) =>
-                vfsExists(vfs, `${sessionPath}/${targetPath.artifactFile}`);
-        }
-    }
+        const targetId = aliases[stageId];
 
-    return completionMapper_create(checks);
-}
-
-// ─── FedML Completion Mapper ───────────────────────────────────
-
-/**
- * Create the FedML completion mapper from topology-aware paths.
- *
- * Search and rename are aliased to gather (subsumed/optional).
- * All federation sub-stages are aliased to a single federate artifact.
- *
- * @param pathMap - Topology-aware path map from WorkflowAdapter
- */
-export function fedmlMapper_create(pathMap?: Map<string, StagePath>): CompletionMapper {
-    if (!pathMap) {
-        // Fallback for tests that don't have a DAGDefinition
-        // This should not be used in production — WorkflowAdapter always passes pathMap
-        return completionMapper_create({});
-    }
-
-    return topologyMapper_create(pathMap, {
-        'search': 'gather',       // subsumed by gather
-        'rename': 'gather',       // optional, completes with gather
-        'federate-brief': 'federate-brief',
-        'federate-transcompile': 'federate-brief',
-        'federate-containerize': 'federate-brief',
-        'federate-publish-config': 'federate-brief',
-        'federate-publish-execute': 'federate-brief',
-        'federate-dispatch': 'federate-brief',
-        'federate-execute': 'federate-brief',
-        'federate-model-publish': 'federate-brief',
-    });
-}
-
-// ─── ChRIS Completion Mapper ───────────────────────────────────
-
-/**
- * Create the ChRIS plugin completion mapper from topology-aware paths.
- *
- * Publish is an action/terminal stage that never auto-completes.
- *
- * @param pathMap - Topology-aware path map from WorkflowAdapter
- */
-export function chrisMapper_create(pathMap?: Map<string, StagePath>): CompletionMapper {
-    if (!pathMap) {
-        return completionMapper_create({});
-    }
-
-    const checks: Record<string, CompletionCheck> = {};
-    for (const [stageId] of pathMap) {
-        if (stageId === 'publish') {
-            checks[stageId] = () => false; // Action/terminal, never auto-complete
+        if (targetId === null) {
+            // Explicitly never auto-completes (action/terminal stage)
+            checks[stageId] = () => false;
         } else {
-            const path = pathMap.get(stageId);
-            if (path) {
+            const finalTargetId = targetId || stageId;
+            const targetPath = pathMap.get(finalTargetId);
+            if (targetPath) {
                 checks[stageId] = (vfs, sessionPath) =>
-                    vfsExists(vfs, `${sessionPath}/${path.artifactFile}`);
+                    vfsExists(vfs, `${sessionPath}/${targetPath.artifactFile}`);
             }
         }
     }
+
     return completionMapper_create(checks);
+}
+
+// ─── Manifest Completion Mapper ────────────────────────────────
+
+/**
+ * Create a generic completion mapper from a DAG definition.
+ *
+ * Reads 'completes_with' aliases directly from the manifest stages.
+ * If 'completes_with' is 'null', the stage is an action/terminal stage
+ * that never auto-completes.
+ *
+ * @param definition - Parsed DAG definition (manifest)
+ * @param pathMap - Topology-aware path map
+ */
+export function manifestMapper_create(
+    definition: DAGDefinition,
+    pathMap: Map<string, StagePath>,
+): CompletionMapper {
+    const aliases: Record<string, string | null> = {};
+
+    for (const node of definition.nodes.values()) {
+        if (node.completes_with !== undefined) {
+            aliases[node.id] = node.completes_with;
+        }
+    }
+
+    return topologyMapper_create(pathMap, aliases);
 }

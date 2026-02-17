@@ -10,89 +10,27 @@ ARGUS avoids heavy frontend frameworks (React, Vue) to maintain maximum performa
 
 The application state is centralized in a `Store` that acts as the single source of truth. Components do not mutate state directly; they dispatch **Actions**. The Store mutates the state and broadcasts **Events**. Components subscribe to these events to update the UI.
 
-=== The Flow
-1.  **User Action:** User clicks a dataset card.
-2.  **Action Dispatch:** UI calls `store.dataset_toggle(id)`.
-3.  **State Mutation:** Store updates the `selectedDatasets` array.
-4.  **Event Broadcast:** Store emits `Events.DATASET_SELECTION_CHANGED`.
-5.  **Reactivity:**
-    *   `search.ts` hears event -> Highlights the card.
-    *   `gather.ts` hears event -> Rebuilds the VCS tree.
-    *   `telemetry.ts` hears event -> Recalculates cost estimates.
-
-=== Key Components
-
-*   **`src/core/state/events.ts`**: The Event Emitter implementation and Event Type definitions.
-*   **`src/core/state/store.ts`**: The central Store class containing application state and business logic actions. All methods follow RPN naming (e.g., `stage_set()`, `marketplace_toggle()`, `asset_install()`).
-
 == Application Logic Layers
 
-The application logic is decoupled from the main entry point (`argus.ts`) into specialized services and routers.
+The application logic is decoupled into specialized providers and orchestrators.
 
-=== Command Routing
-**`src/core/logic/commands.ts`**
-*   **Role**: Dispatches terminal commands to the appropriate subsystem.
-*   **Flow**: Terminal Input -> Shell (builtin check) -> CommandRouter (workflow check) -> AIService (NL query).
-*   **Commands Handled**: `search`, `add`, `review`, `gather`, `mount`, `simulate`.
+=== Calypso AI Core (Orchestrator)
+**`src/lcarslm/CalypsoCore.ts`**
+*   **Role**: Primary command execution pipeline.
+*   **Architecture**: Modular orchestrator that delegates to logic providers.
+*   **Pipeline**: 11-stage waterfall (Script -> Special -> Control Plane -> Confirmation -> Harmonize -> Shell -> Workflow -> Guidance -> Action -> LLM).
+
+=== Logic Providers (Capability Layer)
+As of v9.0.0, heavy logic is isolated into specialized providers:
+*   **`SearchProvider`**: Dataset discovery and anaphora resolution.
+*   **`StatusProvider`**: System status and context generation.
+*   **`LLMProvider`**: LLM orchestration and intent parsing.
+*   **`CalypsoPresenter`**: Visual formatting and LCARS dialect markers.
 
 === The Intent Layer (Local IAS)
 **`src/core/logic/ProjectManager.ts`**
-*   **Role**: Bridges the gap between high-level intents ("Gather this dataset") and low-level system operations (VFS mounting, Store mutation, Shell sync).
+*   **Role**: Bridges high-level intents ("Gather this dataset") to low-level system operations (VFS mounting, Store mutation).
 *   **Architecture**: Implements the **Intent-Action Service (IAS)** pattern locally.
-    - **Concept**: Calypso (or the Web UI) should not orchestrate complex multi-step state mutations. Instead, they call a single "Intent Function" (e.g., `project_gather()`) which encapsulates the procedural logic.
-    - **Parallel**: This mirrors the external **Intent-Action Service** proposal for the ATLAS backend (https://github.com/FNNDSC/intent-server), where an intermediate service translates declarative API intents into procedural orchestration.
-*   **Key Function**: `project_gather(dataset)` — Handles draft project creation, VFS initialization, store updates, and tree mounting in one atomic operation.
-
-=== AI Service
-**`src/lcarslm/AIService.ts`**
-*   **Role**: Manages the RAG (Retrieval Augmented Generation) loop with the LLM backend.
-*   **Responsibility**: Builds context from the search buffer, executes queries via `LCARSEngine`, and parses structured intents (e.g., `[SELECT: ds-123]`) from the response.
-
-=== Stage Lifecycle
-**`src/core/logic/Lifecycle.ts`**
-*   **Role**: Defines the contract for stage transitions.
-*   **Pattern**: Each stage module exports `stage_enter()` and `stage_exit()` hooks. The main orchestrator (`argus.ts`) calls these hooks during transitions, inverting control and keeping the entry point clean.
-
-=== Window Bindings
-**`src/core/logic/WindowBindings.ts`**
-*   **Role**: A centralized registry for all functions exposed to the DOM (for HTML `onclick` attributes). Ensures type safety for global window extensions.
-
-== Event Catalog
-
-[cols="2,2,2,3"]
-|===
-| Event Name | Payload | Triggered By | Listeners (Impact)
-
-| `STATE_CHANGED`
-| `AppState`
-| Any state update
-| Telemetry (Cascade), Marketplace overlay
-
-| `STAGE_CHANGED`
-| `AppState['currentStage']`
-| `store.stage_set()`
-| UI panels, Terminal prompt, Shell `stage_enter()`, Gutters, Stage Lifecycle Hooks
-
-| `DATASET_SELECTION_CHANGED`
-| `Dataset[]`
-| `store.dataset_select()` / `store.dataset_deselect()`
-| Gather VFS, Cost calc, Search Grid, Selection count
-
-| `PROJECT_LOADED`
-| `Project \| null`
-| `store.project_load()`
-| VCS mount, Process IDE population
-
-| `VFS_CHANGED`
-| `{ path: string, operation: string }`
-| VirtualFileSystem mutations
-| IDE tree refresh (future)
-
-| `CWD_CHANGED`
-| `{ oldPath: string, newPath: string }`
-| `vfs.cwd_set()`
-| Shell prompt update
-|===
 
 == Virtual Computer System (VCS)
 
@@ -108,75 +46,39 @@ The VCS (`src/vfs/`) is ARGUS's stateful runtime environment. It provides a POSI
 | `src/vfs/VirtualFileSystem.ts` — Tree storage, content storage, path resolution, CWD, events.
 
 | Shell
-| `src/vfs/Shell.ts` — Command interpreter with 15 builtins, env vars (`$HOME`, `$USER`, `$PWD`, `$PS1`, `$STAGE`, `$PERSONA`), prompt generation.
+| `src/vfs/Shell.ts` — Command interpreter and environment manager.
+
+| ShellBuiltins
+| `src/vfs/ShellBuiltins.ts` — Implementation of 20+ POSIX builtins (ls, cd, python, upload, analyze, etc.).
 
 | ContentRegistry
-| `src/vfs/content/ContentRegistry.ts` — Maps file paths to content generators. Lazy evaluation + caching.
-
-| Templates
-| `src/vfs/content/templates/*.ts` — 14 generators for train.py, config.yaml, README.md, manifest.json, catalog, etc.
+| `src/vfs/content/ContentRegistry.ts` — Maps file paths to content generators.
 
 | DatasetProvider
 | `src/vfs/providers/DatasetProvider.ts` — Builds `~/data/cohort/` from selected datasets.
 
 | ProjectProvider
 | `src/vfs/providers/ProjectProvider.ts` — Scaffolds `$HOME` + populates `~/src/project/`.
-
-| MarketplaceProvider
-| `src/vfs/providers/MarketplaceProvider.ts` — Installs assets to `/bin/`, `/data/sets/`, `~/models/`, etc.
 |===
 
 === Data Flow
 
 1.  **User types `cat train.py`** in the terminal.
-2.  **Terminal** sends the raw input to the **Shell**.
-3.  **Shell** parses the command, resolves the path against `$PWD`.
-4.  **Shell** calls `vfs.node_read()`.
-5.  **VFS** looks up the node. If `content` is null, calls the **ContentRegistry**.
-6.  **ContentRegistry** finds the template, invokes it with `ContentContext`, returns content.
-7.  **VFS** caches content on the node, returns it.
-8.  **Shell** wraps content in `ShellResult { stdout, stderr, exitCode }`.
-9.  **Terminal** renders `stdout`.
-
-=== Integration
-
-*   The VCS is stored as `globals.vcs` (a `VirtualFileSystem` instance).
-*   The Shell is stored as `globals.shell` (a `Shell` instance).
-*   The Terminal delegates all input to `shell.command_execute()`.
-*   Stage transitions call `shell.stage_enter()` for CWD/env updates.
-*   The IDE reads file content from the VCS via `node_read()`.
-
-See `docs/vcs.adoc` for the full specification.
+2.  **Terminal** sends raw input to the **Shell**.
+3.  **Shell** expands variables and delegates to **ShellBuiltins**.
+4.  **ShellBuiltins** calls `vfs.node_read()`.
+5.  **VFS** resolves content via the **ContentRegistry**.
+6.  **Shell** returns a `ShellResult` to the Terminal.
 
 == Data-State Workflow Semantics
 
-ARGUS's workflow tracking follows the same data-state DAG model used by ChRIS at the compute layer. Where ChRIS determines compute progress by the existence of materialized output directories on disk, ARGUS determines workflow progress by the existence of materialized VFS artifacts. There are no in-memory completion counters.
-
-=== The Principle
-
-`WorkflowEngine.stages_completed()` iterates all stages and evaluates each stage's `validation.condition` against the live VFS. The result is computed fresh on every call -- there is no cached completion list. This is the direct application of ChRIS's core insight: **in a data-state system, progress is proven by the existence of data, not asserted by a controller**.
-
-The `WorkflowState` type holds only `workflowId` and `skipCounts` (for soft-blocking UX). It does not track which stages are complete. The VFS is the single source of truth for both the workflow engine and the LLM context injection layer.
+ARGUS's workflow tracking follows the same data-state DAG model used by ChRIS at the compute layer. Progress is proven by the existence of materialized artifacts in the session tree (`~/sessions/`), not by controller assertions.
 
 === Grounding the LLM
 
-The data-state model is reinforced by three independent layers that prevent the LLM from drifting on workflow state:
+The data-state model prevents the LLM from drifting on workflow state via:
+*   **Deterministic routing**: Pattern matchers intercept status/progress queries.
+*   **Context injection**: `StatusProvider` builds stage summaries from live VFS.
+*   **Artifact validation**: `WorkflowAdapter` resolves position from materialized envelopes.
 
-[cols="1,2,2"]
-|===
-| Layer | Mechanism | Purpose
-
-| **Deterministic routing**
-| `workflowPatterns[]` regex intercepts status, progress, and next-step queries
-| Answers come from VFS queries, not LLM reasoning
-
-| **Context injection**
-| `workflowContext_forLLM()` builds stage summary from live VFS
-| When the LLM runs, it sees ground truth derived from data state
-
-| **Stage directives**
-| Hard-coded rules injected when specific stages are pending
-| Prevents LLM from advising users to skip required data transformations
-|===
-
-See `docs/persona-workflows.adoc` for the full specification, including the failure mode analysis that motivated this design and the materialized artifact table.
+See `docs/vcs.adoc` and `docs/calypso.adoc` for full specifications.

@@ -1,0 +1,16 @@
+= ARGUS: Intent-Action Switchboard Registry
+:author: ATLAS Project Team
+:revdate: 2026-02-16
+:revnumber: 1.0.0
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: This document established the "Switchboard" pattern, decoupling natural language intents from deterministic commands.
+
+**Superseded by**: link:../dag-engine.adoc[DAG Engine Specification] (Manifest Handler Registry)
+
+**Reason for Supersession**: Manual switchboard mapping is now handled dynamically via the `handler` field in manifest YAMLs and the `HANDLER_REGISTRY` in `CalypsoCore.ts`.
+====
+
+[... original content ...]

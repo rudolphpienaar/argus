@@ -1,0 +1,15 @@
+= ARGUS Developer Notes
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: This document captured the "lessons learned" from the initial LCARS UI refactor (v0.2.0). It established the correct HTML/CSS structure for authentic LCARS components.
+
+**Reason for Supersession**: The UI patterns are now mature and codified in `src/lcars-framework/`. While the HTML structure remains valid, the project's focus has shifted to agentic logic and DAG orchestration. Developer onboarding is now handled by `docs/onboarding.adoc`.
+====
+
+== LCARS UI Refactoring: Lessons Learned
+
+This document captures the lessons learned during the LCARS UI refactoring of ARGUS v0.2.0. It serves as a reference for future developers (human or AI agent) to understand the correct approach to implementing LCARS-style interfaces.
+
+[... remaining original content ...]

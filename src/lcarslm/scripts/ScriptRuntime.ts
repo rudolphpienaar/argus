@@ -575,201 +575,145 @@ export class ScriptRuntime {
             };
         };
 
-        switch (step.action) {
-            case 'search': {
-                const query: string = String(params.query || '').trim();
-                if (!query) {
-                    return { success: false, actions: [], message: 'missing query for search step' };
-                }
-                const run: ScriptStepExecutionResult = await runCommand(`search ${query}`);
-                if (run.success !== true) return run;
-                return {
-                    success: true,
-                    actions: run.actions,
-                    summary: run.summary,
-                    output: [...this.lastMentionedDatasets_get()]
-                };
-            }
+        if (step.action === 'search') return this.step_search(params, runCommand);
+        if (step.action === 'select_dataset') return this.step_selectDataset(step, params, session);
+        if (step.action === 'add') return this.step_add(params, runCommand);
+        if (step.action === 'rename') return this.step_rename(params, runCommand);
+        if (step.action === 'harmonize') return runCommand('harmonize');
+        if (step.action === 'proceed' || step.action === 'code') return runCommand(step.action);
+        if (step.action === 'run_python') return this.step_runPython(params, runCommand);
+        if (step.action === 'federate.transcompile') return this.step_federateTranscompile(runCommand);
+        if (step.action === 'federate.containerize' || step.action === 'federate.publish' || step.action === 'federate.dispatch_compute') return runCommand('federate --yes');
+        if (step.action === 'federate.publish_metadata') return this.step_federatePublishMetadata(params, runCommand);
 
-            case 'select_dataset': {
-                const rawCandidates: unknown = params.from;
-                const candidates: Dataset[] = Array.isArray(rawCandidates)
-                    ? rawCandidates as Dataset[]
-                    : [];
-                if (candidates.length === 0) {
-                    return { success: false, actions: [], message: 'no dataset candidates available for selection' };
-                }
+        return { success: false, actions: [], message: `unsupported script action: ${step.action}` };
+    }
 
-                const strategy: string = String(params.strategy || 'ask').toLowerCase();
-                let selected: Dataset | null = null;
+    private async step_search(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
+        const query: string = String(params.query || '').trim();
+        if (!query) return { success: false, actions: [], message: 'missing query for search step' };
+        
+        const run = await runCommand(`search ${query}`);
+        if (run.success !== true) return run;
+        
+        return {
+            success: true,
+            actions: run.actions,
+            summary: run.summary,
+            output: [...this.lastMentionedDatasets_get()]
+        };
+    }
 
-                if (strategy === 'first' || strategy === 'best_match') {
-                    selected = candidates[0];
-                } else if (strategy === 'by_id') {
-                    const desired: string = String(params.id || params.dataset || '').trim().toLowerCase();
-                    selected = candidates.find((ds: Dataset): boolean => ds.id.toLowerCase() === desired) || null;
-                } else {
-                    if (candidates.length === 1) {
-                        selected = candidates[0];
-                    } else {
-                        const answerKey: string = `${step.id}.selection`;
-                        const rawChoice: string = (session.context.answers[answerKey] || '').trim();
-                        if (!rawChoice) {
-                            return {
-                                success: 'pending',
-                                actions: [],
-                                pending: {
-                                    kind: 'selection',
-                                    key: answerKey,
-                                    prompt: `Select dataset for ${step.id} by number or id.`,
-                                    options: candidates.map((ds: Dataset, idx: number): string =>
-                                        `  ${idx + 1}. [${ds.id}] ${ds.name} (${ds.modality}/${ds.annotationType})`
-                                    )
-                                }
-                            };
-                        }
+    private async step_add(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
+        const datasetId: string = String(params.dataset || '').trim();
+        if (!datasetId) return { success: false, actions: [], message: 'missing dataset id for add step' };
+        return runCommand(`add ${datasetId}`);
+    }
 
-                        const parsedIndex: number = parseInt(rawChoice, 10);
-                        if (!isNaN(parsedIndex) && parsedIndex >= 1 && parsedIndex <= candidates.length) {
-                            selected = candidates[parsedIndex - 1];
-                        } else {
-                            selected = candidates.find((ds: Dataset): boolean =>
-                                ds.id.toLowerCase() === rawChoice.toLowerCase()
-                            ) || null;
-                        }
-                    }
-                }
+    private async step_rename(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
+        const projectName: string = String(params.project || '').trim();
+        if (!projectName) return { success: false, actions: [], message: 'missing project name for rename step' };
+        return runCommand(`rename ${projectName}`);
+    }
 
-                if (!selected) {
-                    return {
-                        success: 'pending',
-                        actions: [],
-                        pending: {
-                            kind: 'selection',
-                            key: `${step.id}.selection`,
-                            prompt: `Invalid selection. Choose dataset for ${step.id} by number or id.`,
-                            options: candidates.map((ds: Dataset, idx: number): string =>
-                                `  ${idx + 1}. [${ds.id}] ${ds.name} (${ds.modality}/${ds.annotationType})`
-                            )
-                        }
-                    };
-                }
+    private async step_runPython(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
+        const scriptName: string = String(params.script || 'train.py').trim() || 'train.py';
+        const args: string[] = Array.isArray(params.args) ? (params.args as unknown[]).map(String) : [];
+        return runCommand(['python', scriptName, ...args].join(' ').trim());
+    }
 
-                session.context.answers.selected_dataset_id = selected.id;
-                return {
-                    success: true,
-                    actions: [],
-                    summary: `SELECTED DATASET: [${selected.id}] ${selected.name}`,
-                    output: selected
-                };
-            }
+    private async step_federateTranscompile(runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
+        const start = await runCommand('federate');
+        if (start.success !== true) return start;
+        const confirm = await runCommand('federate --yes');
+        if (confirm.success !== true) return confirm;
+        return {
+            success: true,
+            actions: [...start.actions, ...confirm.actions],
+            summary: confirm.summary || start.summary
+        };
+    }
 
-            case 'add': {
-                const datasetId: string = String(params.dataset || '').trim();
-                if (!datasetId) {
-                    return { success: false, actions: [], message: 'missing dataset id for add step' };
-                }
-                return runCommand(`add ${datasetId}`);
-            }
+    private async step_federatePublishMetadata(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
+        const enter = await runCommand('federate --yes');
+        if (enter.success !== true) return enter;
 
-            case 'rename': {
-                const projectName: string = String(params.project || '').trim();
-                if (!projectName) {
-                    return { success: false, actions: [], message: 'missing project name for rename step' };
-                }
-                return runCommand(`rename ${projectName}`);
-            }
+        const actions: CalypsoAction[] = [...enter.actions];
+        let summary = enter.summary;
 
-            case 'harmonize':
-                return runCommand('harmonize');
-            case 'proceed':
-            case 'code':
-                return runCommand(step.action);
-
-            case 'run_python': {
-                const scriptName: string = String(params.script || 'train.py').trim() || 'train.py';
-                const args: string[] = Array.isArray(params.args)
-                    ? (params.args as unknown[]).map((item: unknown): string => String(item))
-                    : [];
-                const cmd: string = ['python', scriptName, ...args].join(' ').trim();
-                return runCommand(cmd);
-            }
-
-            case 'federate.transcompile': {
-                const start: ScriptStepExecutionResult = await runCommand('federate');
-                if (start.success !== true) return start;
-                const confirm: ScriptStepExecutionResult = await runCommand('federate --yes');
-                if (confirm.success !== true) return confirm;
-                return {
-                    success: true,
-                    actions: [...start.actions, ...confirm.actions],
-                    summary: confirm.summary || start.summary
-                };
-            }
-
-            case 'federate.containerize':
-                return runCommand('federate --yes');
-
-            case 'federate.publish_metadata': {
-                const enter: ScriptStepExecutionResult = await runCommand('federate --yes');
-                if (enter.success !== true) return enter;
-
-                const actions: CalypsoAction[] = [...enter.actions];
-                let summary: string | undefined = enter.summary;
-
-                if (params.app_name !== undefined) {
-                    const appName: string = String(params.app_name || '').trim();
-                    if (!appName) {
-                        return { success: false, actions, message: 'missing app_name for publish metadata step' };
-                    }
-                    const appSet: ScriptStepExecutionResult = await runCommand(`federate --name ${appName}`);
-                    actions.push(...appSet.actions);
-                    if (appSet.success !== true) return appSet;
-                    summary = appSet.summary || summary;
-                }
-
-                if (params.org !== undefined) {
-                    const orgName: string = String(params.org || '').trim();
-                    if (orgName) {
-                        const orgSet: ScriptStepExecutionResult = await runCommand(`federate --org ${orgName}`);
-                        actions.push(...orgSet.actions);
-                        if (orgSet.success !== true) return orgSet;
-                        summary = orgSet.summary || summary;
-                    }
-                }
-
-                if (params.visibility !== undefined) {
-                    const visibility: string = String(params.visibility || '').trim().toLowerCase();
-                    if (visibility === 'private' || visibility === 'public') {
-                        const visSet: ScriptStepExecutionResult = await runCommand(
-                            visibility === 'private' ? 'federate --private' : 'federate --public'
-                        );
-                        actions.push(...visSet.actions);
-                        if (visSet.success !== true) return visSet;
-                        summary = visSet.summary || summary;
-                    }
-                }
-
-                return {
-                    success: true,
-                    actions,
-                    summary,
-                    output: {
-                        app_name: params.app_name,
-                        org: params.org,
-                        visibility: params.visibility
-                    }
-                };
-            }
-
-            case 'federate.publish':
-                return runCommand('federate --yes');
-            case 'federate.dispatch_compute':
-                return runCommand('federate --yes');
-
-            default:
-                return { success: false, actions: [], message: `unsupported script action: ${step.action}` };
+        if (params.app_name) {
+            const res = await runCommand(`federate --name ${String(params.app_name).trim()}`);
+            actions.push(...res.actions);
+            if (res.success !== true) return res;
+            summary = res.summary || summary;
         }
+        if (params.org) {
+            const res = await runCommand(`federate --org ${String(params.org).trim()}`);
+            actions.push(...res.actions);
+            if (res.success !== true) return res;
+            summary = res.summary || summary;
+        }
+        if (params.visibility) {
+            const vis = String(params.visibility).trim().toLowerCase();
+            const res = await runCommand(vis === 'private' ? 'federate --private' : 'federate --public');
+            actions.push(...res.actions);
+            if (res.success !== true) return res;
+            summary = res.summary || summary;
+        }
+
+        return {
+            success: true,
+            actions,
+            summary,
+            output: { app_name: params.app_name, org: params.org, visibility: params.visibility }
+        };
+    }
+
+    private step_selectDataset(step: CalypsoStructuredStep, params: Record<string, unknown>, session: ScriptRuntimeSession): ScriptStepExecutionResult {
+        const candidates = Array.isArray(params.from) ? params.from as Dataset[] : [];
+        if (candidates.length === 0) return { success: false, actions: [], message: 'no dataset candidates available' };
+
+        const strategy = String(params.strategy || 'ask').toLowerCase();
+        let selected: Dataset | null = null;
+
+        if (strategy === 'first' || strategy === 'best_match') selected = candidates[0];
+        else if (strategy === 'by_id') {
+            const desired = String(params.id || params.dataset || '').trim().toLowerCase();
+            selected = candidates.find(ds => ds.id.toLowerCase() === desired) || null;
+        } else if (candidates.length === 1) {
+            selected = candidates[0];
+        } else {
+            const key = `${step.id}.selection`;
+            const choice = (session.context.answers[key] || '').trim();
+            if (!choice) {
+                return {
+                    success: 'pending', actions: [],
+                    pending: {
+                        kind: 'selection', key,
+                        prompt: `Select dataset for ${step.id} by number or id.`,
+                        options: candidates.map((ds, i) => `  ${i + 1}. [${ds.id}] ${ds.name} (${ds.modality})`)
+                    }
+                };
+            }
+            const idx = parseInt(choice, 10);
+            selected = (!isNaN(idx) && idx >= 1 && idx <= candidates.length)
+                ? candidates[idx - 1]
+                : candidates.find(ds => ds.id.toLowerCase() === choice.toLowerCase()) || null;
+        }
+
+        if (!selected) {
+            return {
+                success: 'pending', actions: [],
+                pending: {
+                    kind: 'selection', key: `${step.id}.selection`,
+                    prompt: `Invalid selection. Choose dataset for ${step.id}.`,
+                    options: candidates.map((ds, i) => `  ${i + 1}. [${ds.id}] ${ds.name}`)
+                }
+            };
+        }
+
+        session.context.answers.selected_dataset_id = selected.id;
+        return { success: true, actions: [], summary: `SELECTED DATASET: [${selected.id}] ${selected.name}`, output: selected };
     }
 
     // ─── Requirement Checking ─────────────────────────────────────────────

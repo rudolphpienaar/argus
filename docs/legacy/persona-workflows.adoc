@@ -1,0 +1,15 @@
+= Persona Workflows: Legacy Experience Definitions
+:revnumber: 1.0.0
+:revdate: 2026-02-16
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: This document defined the initial transition from hardcoded stage logic to declarative YAML. It introduced the concept of data-state grounding and the "Three Layers of Defense" against LLM drift.
+
+**Superseded by**: link:../dag-engine.adoc[DAG Engine Specification] (v9.0.0)
+
+**Reason for Supersession**: The "Workflow" logic has been fully merged into the **DAG Engine**. The old schema (using `intents` and `validation.condition` JS strings) was replaced by the more robust `handler` and `completes_with` model.
+====
+
+[... original content ...]

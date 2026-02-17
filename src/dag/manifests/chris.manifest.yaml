@@ -36,6 +36,8 @@ stages:
       - search <keywords>
       - add <dataset>
       - gather
+      - mount
+    handler: gather
 
   # ─── Phase 2: Plugin Development ────────────────────────────
 
@@ -56,6 +58,7 @@ stages:
     commands:
       - proceed chris
       - code
+    handler: scaffold
     skip_warning:
       short: Plugin structure not scaffolded.
       reason: >
@@ -81,6 +84,7 @@ stages:
     commands:
       - python main.py
       - test
+    handler: train
     skip_warning:
       short: Plugin not tested locally.
       reason: >
@@ -105,3 +109,5 @@ stages:
     commands:
       - publish
       - deploy
+    handler: publish
+    completes_with: null

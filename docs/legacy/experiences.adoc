@@ -1,0 +1,13 @@
+= ARGUS User Experiences: The SeaGaP-MP Workflow (v4.6.0)
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: Defined the "Filesystem First" UX philosophy and "Draft Project" model.
+
+**Superseded by**: link:../dag-engine.adoc[DAG Engine Specification] (Manifest-Driven UX)
+
+**Reason for Supersession**: UX behavior is now derived directly from manifests in `src/dag/manifests/` rather than being described in a static document.
+====
+
+[... original content ...]

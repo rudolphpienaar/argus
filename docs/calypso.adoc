@@ -1,6 +1,6 @@
 = CALYPSO: The AI Core
-:revnumber: 7.2.0
-:revdate: 2026-02-12
+:revnumber: 9.0.0
+:revdate: 2026-02-16
 :toc: macro
 :toclevels: 3
 :sectnums:
@@ -40,9 +40,9 @@ While ARGUS provides the guided framework (the body), CALYPSO provides the logic
 *   **Workflow Guidance:** Suggesting the next logical steps in the SeaGaP (Search, Gather, Process) pipeline.
 *   **Knowledge Retrieval:** She has read-access to the full system documentation (`docs/*.adoc`) and can explain architecture, file structures, and workflows on demand.
 
-== Architecture: The Headless Core
+== Architecture: The Modular Core
 
-As of v5.0.0, Calypso is architected as a **DOM-free headless core** that can operate in multiple environments: the browser, a Node.js server, or a CLI. This separation enables the ORACLE testing methodology (see `docs/oracle.adoc`).
+As of v9.0.0, Calypso is architected as a **modular orchestrator** that delegates logic to specialized providers. This separation of concerns ensures that the core remains a thin, maintainable pipeline while presentation and heavy logic are isolated.
 
 === The Layer Model
 
@@ -67,58 +67,55 @@ As of v5.0.0, Calypso is architected as a **DOM-free headless core** that can op
                                   │
 ┌─────────────────────────────────┼───────────────────────────────────────────┐
 │                                 ▼                                           │
-│                         CALYPSO CORE                                        │
-│   (DOM-free, pure TypeScript)                                               │
+│                         CALYPSO CORE (Orchestrator)                         │
+│   (Thin pipeline, logic-free)                                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   CalypsoCore.ts                                                            │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │  command_execute(input: string): Promise<CalypsoResponse>           │   │
-│   │  ├── Shell builtins (ls, cd, cat, tree, etc.)                       │   │
-│   │  ├── Workflow commands (search, add, gather, mount, federate)       │   │
-│   │  └── LLM fallback (natural language → intent → action)              │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
+│   CalypsoCore.ts (Pipeline Stages)                                          │
+│   1. Script Capture  4. Control Plane  7. Shell (Builtins)  10. Action Match│
+│   2. Special Cmds    5. Confirmations  8. Workflow Dispatch 11. LLM Query  │
+│   3. Script UX       6. Harmonize      9. Guidance                          │
 │                                                                             │
-│   Depends on (all DOM-free):                                                │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│   │     VFS      │  │    Store     │  │    Shell     │  │ LCARSEngine  │   │
-│   └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘   │
-│                                                                             │
+├──────────┬──────────────────────┬─────────────────────┬─────────────────────┤
+│          ▼                      ▼                     ▼                     │
+│   LOGIC PROVIDERS        PRESENTATION          ROUTERS               UTILS  │
+│   ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌─────┐ │
+│   │ SearchProv   │      │ CalypsoPres  │      │ ControlPlane │      │ VFS │ │
+│   │ StatusProv   │      │ (ANSI/Trek)  │      │ ActionRouter │      │ Snap│ │
+│   │ LLMProv      │      └──────────────┘      └──────────────┘      └─────┘ │
+│   └──────────────┘                                                          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ----
 
 === CalypsoCore
 
-The `CalypsoCore` class is the central orchestrator. It receives natural language input, classifies intent, executes deterministic operations against the VFS/Store, and returns a structured response.
+The `CalypsoCore` class is the central pipeline orchestrator. It manages the flow of user input through a series of deterministic handlers before falling back to the LLM.
 
-**Integration with Intent Layer:**
-Calypso relies on the **Intent Layer** (`src/core/logic/ProjectManager.ts`) to execute complex procedural logic. Instead of manually manipulating the VFS, Store, and Shell in sequence, Calypso calls high-level intent functions like `project_gather()`. This ensures that:
-1.  **Atomicity**: Complex operations (like creating a draft project and mounting data) happen all-or-nothing.
-2.  **Parity**: Headless Calypso executes the exact same logic as the Web UI.
-3.  **Simplicity**: The AI only needs to map natural language to a single function call.
+**Integration with Providers:**
+Calypso delegates all complex logic to specialized providers:
+1.  **SearchProvider**: Handles dataset discovery, anaphora resolution (`that`, `them`), and search snapshots.
+2.  **StatusProvider**: Generates system status blocks, version info, and LLM context summaries.
+3.  **LLMProvider**: Orchestrates LLM queries and processes responses via the `IntentParser`.
+4.  **CalypsoPresenter**: Centralizes all visual formatting (ANSI decorators, LCARS markers `●/○`).
 
 [source,typescript]
 ----
 // src/lcarslm/CalypsoCore.ts
 
 export class CalypsoCore {
-    constructor(
-        private vfs: VirtualFileSystem,
-        private store: Store,
-        private shell: Shell,
-        private engine: LCARSEngine
-    ) {}
-
-    /**
-     * Execute a command (natural language or shell).
-     *
-     * @param input - User input string
-     * @returns Structured response with message and actions
-     */
+    /** Primary command execution pipeline (11 stages). */
     public async command_execute(input: string): Promise<CalypsoResponse> {
-        // 1. Try shell builtins
-        // 2. Try workflow commands (delegates to Intent Layer)
-        // 3. Fall back to LLM
+        // 1. Check script capture
+        // 2. Check special commands (/, snapshots, reset)
+        // 3. Check script discovery
+        // 4. Check control plane intents
+        // 5. Check confirmation gates
+        // 6. Check first-class harmonize
+        // 7. Check shell builtins (delegated to ShellBuiltins)
+        // 8. Check workflow dispatch (manifest-driven)
+        // 9. Check guidance interrogatives
+        // 10. Check imperative action matches
+        // 11. Fall back to LLMProvider
     }
 }
 ----
@@ -136,47 +133,38 @@ export interface CalypsoResponse {
     /** Actions for the adapter to execute */
     actions: CalypsoAction[];
 
+    /** Whether the operation was successful */
+    success: boolean;
+
     /** Optional state snapshot for verification */
     state?: {
-        vfs?: VfsSnapshot;
-        store?: Partial<ExtendedState>;
+        vfs?: VfsSnapshotNode;
+        store?: Partial<AppState>;
     };
 }
-
-export type CalypsoAction =
-    | { type: 'dataset_select'; id: string }
-    | { type: 'dataset_open'; id: string }
-    | { type: 'dataset_deselect'; id: string }
-    | { type: 'project_create'; name: string }
-    | { type: 'project_open'; id: string }
-    | { type: 'project_rename'; id: string; newName: string }
-    | { type: 'stage_advance'; stage: string; workflow?: 'fedml' | 'chris' }
-    | { type: 'workspace_render'; datasets: Dataset[] }
-    | { type: 'overlay_close' }
-    | { type: 'federation_start' }
-    | { type: 'marketplace_open' }
-    | { type: 'marketplace_close' };
 ----
 
-=== Adapters
-
-Adapters translate `CalypsoResponse` into environment-specific behavior:
+=== Logic Providers Reference
 
 [cols="1,2,2"]
 |===
-| Adapter | Environment | Behavior
+| Provider | Responsibilities | Location
 
-| `BrowserAdapter`
-| Web browser (ARGUS UI)
-| Renders to Terminal, manipulates DOM, triggers animations
+| `SearchProvider`
+| Discovery, Anaphora, Snapshots
+| `src/lcarslm/SearchProvider.ts`
 
-| `CLIAdapter`
-| `calypso-cli` REPL
-| Prints to stdout, reads from stdin, no DOM
+| `StatusProvider`
+| Status blocks, Version, Context
+| `src/lcarslm/StatusProvider.ts`
 
-| `NodeAdapter`
-| ORACLE test harness
-| Captures responses, ignores UI actions, enables state assertions
+| `LLMProvider`
+| Query orchestration, Intent parsing
+| `src/lcarslm/LLMProvider.ts`
+
+| `CalypsoPresenter`
+| ANSI formatting, Tables, Markers
+| `src/lcarslm/CalypsoPresenter.ts`
 |===
 
 == Operating Modes
@@ -214,250 +202,45 @@ A command-line client connects to the headless server. The CLI provides an SSH-s
 ----
 $ make calypso-cli
 ╔══════════════════════════════════════════════════════════════╗
-║  CALYPSO CORE V5.1.11                                        ║
+║  CALYPSO CORE V9.0.0                                         ║
 ║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
 ║  Outcomes                                                    ║
 ╚══════════════════════════════════════════════════════════════╝
 Connected to localhost:8081
-
-┌──────────────────────────────────────────────┐
-│  CALYPSO REMOTE ACCESS TERMINAL              │
-│  Authorized personnel only.                  │
-└──────────────────────────────────────────────┘
-login: rudolph
-
-● Welcome, rudolph. I am CALYPSO, ready to assist with your
-  medical imaging workflows.
-○ The ATLAS catalog currently contains 6 datasets with 982
-  total images across 4 modalities.
-
-rudolph@CALYPSO:[~]> search histology
-● FOUND 1 MATCHING DATASET(S):
-  [ds-006] Histology Segmentation (Pathology/Segmentation)
-
-rudolph@CALYPSO:[~]> add that
-● DATASET GATHERED: Histology Segmentation [ds-006]
-○ MOUNTED TO [DRAFT-1234]
-
-rudolph@CALYPSO:[~/projects/DRAFT-1234]> tree input
-input/
-├── ds-006/
-│   ├── images/
-│   └── metadata.json
-└── manifest.json
-
-3 directories, 2 files
-
-rudolph@CALYPSO:[~/projects/DRAFT-1234]> quit
-Goodbye.
 ----
-
-==== CLI Features
-
-**Dynamic Prompt**: The prompt displays `<user>@CALYPSO:[<cwd>]>` with ANSI color coding (green user, cyan host, magenta path). It updates after every command to reflect the current working directory.
-
-**SSH-Style Login**: On startup, the CLI presents a login box. The entered username becomes the VFS home directory owner (e.g., `/home/rudolph/`).
-
-**LLM Greeting**: After login, Calypso generates a personalized greeting via the LLM, including facts about the available ATLAS datasets.
-
-**Spinner**: A braille-animation spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`) with "CALYPSO thinking..." displays during all async LLM operations.
-
-**Markdown Rendering**: LLM responses containing markdown are rendered with ANSI formatting:
-
-[cols="1,2"]
-|===
-| Markdown Syntax | Terminal Rendering
-
-| `**bold text**`
-| Bold bright white
-
-| `*italic text*`
-| Italic
-
-| `` `code` ``
-| Yellow
-
-| `### Heading`
-| Bold cyan
-
-| `\|table\|rows\|`
-| Box-drawing characters (┌─┬─┐)
-|===
-
-**Anaphora Resolution**: Pronouns like "that", "it", "this" in workflow commands (e.g., `add that`, `gather it`) resolve to the most recently discussed dataset(s). Plural forms ("them", "those") resolve to all recently mentioned datasets.
-
-== Visual Signature (Browser Mode)
-
-When running in browser mode, CALYPSO speaks in a distinct visual dialect:
-
-*   **Style:** "MU/TH/UR 6000" (Retro-Industrial / Alien 1979).
-*   **Color:** **LCARS Sky Blue** (Integrated but distinct).
-*   **Typography:** `Share Tech Mono`, uppercase, wide tracking (2px), soft glow.
-*   **Animation:** Text streams character-by-character (Teletype effect), non-blocking.
-
-== Interaction Model
-
-CALYPSO is helpful but industrial. She uses "I" to refer to herself but maintains a professional, research-focused demeanor.
-
-=== Response Markers
-
-*   **Affirmation:** `● AFFIRMATIVE.`
-*   **Data Presentation:** `○ DISPLAYING RESULTS.`
-*   **Error:** `>> ERROR: <description>`
-*   **Warning:** `>> WARNING: <description>`
-
-=== Voice Modulation
-
-Users can adjust Calypso's communication style:
-
-[cols="1,2,2"]
-|===
-| Command | Effect | Response Format
-
-| `quiet` / `mute` / `silence`
-| Disable idle monitoring
-| Silent until reactivated
-
-| `speak` / `unmute`
-| Re-enable voice
-| Resumes normal operation
-
-| `soft voice`
-| Use sentence case
-| "Affirmative. Scan complete."
-
-| `normal voice` / `shout`
-| Use uppercase (default)
-| "● AFFIRMATIVE. SCAN COMPLETE."
-|===
-
-=== Idle Monitoring System (Browser Mode)
-
-Calypso proactively monitors user engagement to prevent workflow stalling.
-
-*   **Trigger:** If the user remains inactive for 10 seconds (mouse/keyboard idle), Calypso initiates a check-in.
-*   **Context Awareness:** She analyzes the current stage and selection buffer to offer specific advice (e.g., "Buffer empty, try searching for..." vs. "Buffer full, ready to code?").
-*   **Persistence:** If inactivity continues, she checks back semi-randomly (every 20-50s) to maintain presence.
-*   **Mute Protocol:** Users can silence her by typing "Mute", "Quiet", or "Silence". She can be reactivated with "Speak" or "Unmute".
-
-NOTE: Idle monitoring is only active in browser mode. Headless mode and CLI mode do not implement idle timers.
-
-== Special Commands
-
-In addition to natural language, Calypso recognizes special commands prefixed with `/`:
-
-[cols="1,3"]
-|===
-| Command | Description
-
-| `/status`
-| Show system status (AI core mode, VFS, project, selected datasets)
-
-| `/key <provider> <key>`
-| Set API key at runtime (`openai` or `gemini`). Activates real LLM mode.
-
-| `/snapshot [path]`
-| Returns JSON snapshot of VFS subtree (default: entire tree)
-
-| `/state`
-| Returns JSON snapshot of Store state
-
-| `/store <property>`
-| Returns specific store property value
-
-| `/reset`
-| Resets VFS and Store to clean state
-
-| `/help`
-| Lists available commands
-
-| `/version`
-| Displays Calypso version and build info
-|===
-
-These commands are primarily used for debugging and ORACLE testing, but are available in all modes.
 
 == Source Structure
 
-As of v7.2.0, the Calypso service is split across two source trees:
+As of v9.0.0, the Calypso service is organized into logic providers and routing modules:
 
 [source]
 ----
 src/lcarslm/                        # CalypsoCore — the AI brain
-├── CalypsoCore.ts                  #   DOM-free orchestrator
+├── CalypsoCore.ts                  #   The Thin Orchestrator
+├── CalypsoPresenter.ts             #   The Visual Language Layer
+├── SearchProvider.ts               #   Discovery & Anaphora
+├── StatusProvider.ts               #   System & Context Summaries
+├── LLMProvider.ts                  #   LLM Query Orchestrator
 ├── engine.ts                       #   LCARSEngine: LLM client wrapper
-├── client.ts                       #   OpenAI client
-├── gemini.ts                       #   Gemini client
 ├── types.ts                        #   CalypsoResponse, CalypsoAction, Intent
 ├── federation/
-│   └── FederationOrchestrator.ts   #   5-step federation handshake
-├── scripts/
-│   └── ScriptRuntime.ts            #   .clpso script execution
-├── adapters/
-│   ├── BrowserAdapter.ts           #   CalypsoCore → Terminal + DOM
-│   ├── CLIAdapter.ts               #   CalypsoCore → stdout/stdin
-│   ├── NodeAdapter.ts              #   CalypsoCore → test harness
-│   └── StoreAdapter.ts             #   Headless store implementation
-└── AIService.ts                    #   Legacy browser integration
-
-src/calypso/                        # Service layer — protocol, transport, UI
-├── protocol/
-│   └── types.ts                    #   WebSocket message types + correlation IDs
-├── server/
-│   ├── CalypsoServer.ts            #   HTTP + WebSocket server
-│   ├── RestHandler.ts              #   REST route handlers
-│   └── WebSocketHandler.ts         #   Per-connection WS dispatch
-├── client/
-│   └── CalypsoClient.ts            #   Shared WS transport (TUI + future WUI)
-├── ui/tui/
-│   ├── TuiRenderer.ts              #   Spinner, colors, tables, animation
-│   └── SyntaxHighlight.ts          #   ANSI syntax highlighting
-└── cli/
-    ├── Repl.ts                     #   WebSocket REPL loop
-    └── main.ts                     #   Thin CLI entry point
-
-src/cli/                            # Entry points (thin wrappers)
-├── calypso-server.ts               #   → CalypsoServer.calypsoServer_start()
-└── calypso-cli.ts                  #   Legacy HTTP CLI (deprecated)
+│   ├── FederationOrchestrator.ts   #   Workflow Handshake
+│   └── FederationContentProvider.ts#   Artifact Generation
+├── routing/
+│   ├── ActionRouter.ts             #   Imperative Intent Routing
+│   ├── ControlPlaneRouter.ts       #   Automation Intents
+│   └── IntentParser.ts             #   LLM Result Parsing
+├── utils/
+│   └── VfsUtils.ts                 #   VFS Snapshotting & Serialization
+└── scripts/
+    └── ScriptRuntime.ts            #   .clpso script execution
 ----
 
 NOTE: For the full service architecture specification, see `docs/calypso-architecture.adoc`.
 
 == Integration with ORACLE
 
-The headless architecture enables the ORACLE testing methodology. See `docs/oracle.adoc` for the full specification.
-
-In summary:
-1. ORACLE test scripts send commands to CalypsoCore
-2. CalypsoCore executes against VFS/Store (deterministic)
-3. Tests assert on resulting state (VFS snapshots, Store properties)
-4. UI rendering is bypassed — testing the logic, not the presentation
-
-This separation allows:
-- Fast CI tests (no browser startup)
-- Fault isolation (core logic vs UI rendering)
-- CLI-based development workflows
-- Scripted automation
-
-== Future Enhancements
-
-=== In Progress
-
-1. **Manifest-Driven Sequencing**: Persona manifests (`*.manifest.yaml`) that define complete conversational DAGs, grounding "what comes next" the same way VFS markers ground "where am I." See `docs/CURRENT.md`.
-2. **DAG Fingerprinting**: Merkle chain over the workflow DAG for staleness detection when users revisit earlier stages.
-3. **Browser WUI Client**: `src/calypso/ui/web/` — browser-side WebSocket client sharing the same CalypsoClient transport as the TUI.
-
-=== Planned
-
-1. **Persistent Sessions**: Save/restore VFS and Store state across CLI sessions
-2. **FS Materialization**: VFS → real filesystem on the CalypsoServer sandbox
-3. **Script-Manifest Anchoring**: Scripts declare `manifest:` field, validated against manifest stages
-
-=== Research
-
-1. **Multi-Agent**: Multiple Calypso instances collaborating on complex workflows
-2. **Learning Mode**: Calypso adapts intent classification based on user corrections
-3. **Voice Interface**: Speech-to-text input, text-to-speech output
+The modular architecture enables precise ORACLE testing. Tests can now assert on specific provider state (e.g., SearchProvider's anaphora buffer) or verify that the orchestrator routes to the correct deterministic handler before hitting the LLM.
 
 ---
-_Last updated: {revdate} (v{revnumber})_
+_Last updated: 2026-02-16 (v9.0.0)_

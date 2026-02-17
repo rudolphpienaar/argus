@@ -1,0 +1,13 @@
+= ARGUS: SeaGaP Workflow UX Specification (v4.4.0)
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: Recorded the fusion of Search and Gather stages.
+
+**Superseded by**: link:../dag-engine.adoc[DAG Engine Specification] (Manifest-Driven UX)
+
+**Reason for Supersession**: These requirements are now encoded in the **SearchProvider** and manifest-driven stage definitions.
+====
+
+[... original content ...]

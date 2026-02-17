@@ -62,6 +62,8 @@ export interface SkipWarning {
  * @property parameters - Default parameter values for this stage
  * @property instruction - What to tell the user at this stage
  * @property commands - Exact commands available to the user
+ * @property handler - The logic handler to invoke for these commands
+ * @property completes_with - Optional alias stage whose completion marks this stage complete
  * @property skip_warning - Warning config if user tries to skip (null if not optional)
  */
 export interface DAGNode {
@@ -74,6 +76,8 @@ export interface DAGNode {
     parameters: StageParameters;
     instruction: string;
     commands: string[];
+    handler: string | null;
+    completes_with?: string | null;
     skip_warning: SkipWarning | null;
 }
 

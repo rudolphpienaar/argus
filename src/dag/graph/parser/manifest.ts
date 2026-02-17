@@ -127,6 +127,8 @@ function node_parse(raw: Record<string, unknown>): DAGNode {
         parameters: parameters_parse(raw['parameters']),
         instruction: String(raw['instruction'] ?? ''),
         commands: Array.isArray(raw['commands']) ? raw['commands'].map(String) : [],
+        handler: raw['handler'] != null ? String(raw['handler']) : null,
+        completes_with: raw['completes_with'] === null ? null : (raw['completes_with'] != null ? String(raw['completes_with']) : undefined),
         skip_warning: skipWarning_parse(raw['skip_warning']),
     };
 }

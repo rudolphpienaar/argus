@@ -15,20 +15,7 @@
 
 import type { VirtualFileSystem } from './VirtualFileSystem.js';
 import type { ShellResult } from './types.js';
-import type { FileNode } from './types.js';
-
-/**
- * A builtin command definition.
- *
- * @property name - Command name (lowercase).
- * @property description - Human-readable description for help output.
- * @property execute - Handler that returns a ShellResult.
- */
-interface BuiltinCommand {
-    name: string;
-    description: string;
-    execute: (args: string[]) => ShellResult | Promise<ShellResult>;
-}
+import { ShellBuiltins } from './ShellBuiltins.js';
 
 /**
  * Callback for commands that need async or side-effect behavior
@@ -46,18 +33,10 @@ type ExternalHandler = (command: string, args: string[]) => ShellResult | null;
  * Owns environment variables, prompt generation, command history,
  * and all filesystem builtin commands. Returns ShellResult objects
  * for the Terminal to render.
- *
- * @example
- * ```typescript
- * const shell = new Shell(vfs, 'developer');
- * const result: ShellResult = await shell.command_execute('ls ~/src');
- * // result.stdout contains colorized directory listing
- * ```
  */
 export class Shell {
-    private vfs: VirtualFileSystem;
     private env: Map<string, string>;
-    private builtins: Map<string, BuiltinCommand>;
+    private builtins: ShellBuiltins;
     private commandHistory: string[];
     private externalHandler: ExternalHandler | null = null;
     private cwdChangeHandler: ((newCwd: string) => void) | null = null;
@@ -69,12 +48,14 @@ export class Shell {
      * @param vfs - The Virtual File System instance.
      * @param username - The current user (defaults to 'user').
      */
-    constructor(vfs: VirtualFileSystem, username: string = 'user') {
-        this.vfs = vfs;
+    constructor(
+        public readonly vfs: VirtualFileSystem, // Public for Builtins access
+        username: string = 'user'
+    ) {
         this.username = username;
         this.commandHistory = [];
-        this.builtins = new Map<string, BuiltinCommand>();
         this.env = new Map<string, string>();
+        this.builtins = new ShellBuiltins(vfs);
         
         // Initialize environment variables
         this.env.set('USER', username);
@@ -87,18 +68,16 @@ export class Shell {
         this.env.set('PS1', '$USER@argus:$PWD $ ');
         this.env.set('STAGE', 'search'); // Default stage
         
-        // Register builtins
-        this.builtins_register();
+        // Ensure HOME exists
+        try { this.vfs.dir_create(this.env.get('HOME')!); } catch { /* ignore */ }
+        this.vfs.cwd_set(this.env.get('HOME')!);
     }
 
     // ─── External Handler ───────────────────────────────────────
 
     /**
      * Sets a callback for commands not handled by builtins.
-     * Used by the ARGUS Terminal to handle domain-specific commands
-     * (federate, search, add, review, mount, clear).
-     *
-     * @param handler - Callback that receives command name and args.
+     * Used by the ARGUS Terminal to handle domain-specific commands.
      */
     public externalHandler_set(handler: ExternalHandler): void {
         this.externalHandler = handler;
@@ -106,9 +85,6 @@ export class Shell {
 
     /**
      * Sets a callback invoked whenever `cd` changes the working directory.
-     *
-     * @param handler - Callback receiving the new absolute cwd path,
-     *                  or null to clear.
      */
     public onCwdChange_set(handler: ((newCwd: string) => void) | null): void {
         this.cwdChangeHandler = handler;
@@ -118,27 +94,26 @@ export class Shell {
 
     /**
      * Parses and executes a raw command line string.
-     * Returns a ShellResult with stdout, stderr, and exit code.
-     *
-     * @param line - Raw input from the terminal.
-     * @returns The result of command execution.
      */
     public async command_execute(line: string): Promise<ShellResult> {
         const trimmed: string = line.trim();
-        if (!trimmed) return result_ok('');
+        if (!trimmed) return { stdout: '', stderr: '', exitCode: 0 };
 
         // Record in history
         this.commandHistory.push(trimmed);
 
+        // Expand variables
+        const expanded = this.vars_expand(trimmed);
+
         // Parse command and arguments
-        const parts: string[] = trimmed.split(/\s+/);
+        const parts: string[] = expanded.split(/\s+/);
         const command: string = parts[0].toLowerCase();
         const args: string[] = parts.slice(1);
 
         // Try builtin first
-        const builtin: BuiltinCommand | undefined = this.builtins.get(command);
-        if (builtin) {
-            return await builtin.execute(args);
+        const builtinHandler = this.builtins.REGISTRY[command];
+        if (builtinHandler) {
+            return await builtinHandler(args, this);
         }
 
         // Try external handler
@@ -149,16 +124,33 @@ export class Shell {
             }
         }
 
-        return result_err(`${command}: command not found`, 127);
+        return { stdout: '', stderr: `${command}: command not found`, exitCode: 127 };
+    }
+
+    /**
+     * Trigger the CWD change callback.
+     * Called by 'cd' builtin.
+     */
+    public cwd_didChange(newCwd: string): void {
+        if (this.cwdChangeHandler) {
+            this.cwdChangeHandler(newCwd);
+        }
+    }
+
+    /**
+     * Expands $VARIABLE references in a string.
+     */
+    private vars_expand(input: string): string {
+        return input.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match: string, varName: string): string => {
+            if (varName === 'PWD') return this.vfs.cwd_get();
+            return this.env.get(varName) ?? `$${varName}`;
+        });
     }
 
     // ─── Environment Variables ──────────────────────────────────
 
     /**
      * Returns the value of an environment variable.
-     *
-     * @param key - Variable name (without $).
-     * @returns The value, or undefined if not set.
      */
     public env_get(key: string): string | undefined {
         // $PWD is always synced with VFS
@@ -170,9 +162,6 @@ export class Shell {
 
     /**
      * Sets an environment variable.
-     *
-     * @param key - Variable name (without $).
-     * @param value - Variable value.
      */
     public env_set(key: string, value: string): void {
         this.env.set(key, value);
@@ -180,8 +169,6 @@ export class Shell {
 
     /**
      * Returns all environment variables as a Map.
-     *
-     * @returns A copy of the environment map (with $PWD synced).
      */
     public env_all(): Map<string, string> {
         const copy: Map<string, string> = new Map(this.env);
@@ -189,14 +176,19 @@ export class Shell {
         return copy;
     }
 
+    public env_snapshot(): Record<string, string> {
+        const snap: Record<string, string> = {};
+        for (const [k, v] of this.env) {
+            snap[k] = v;
+        }
+        snap['PWD'] = this.vfs.cwd_get();
+        return snap;
+    }
+
     // ─── Prompt Generation ──────────────────────────────────────
 
     /**
      * Evaluates the $PS1 format string to produce the terminal prompt.
-     * Replaces $VARIABLE references with their values.
-     * Applies ~ substitution for $HOME prefix in $PWD.
-     *
-     * @returns The rendered prompt string.
      */
     public prompt_render(): string {
         const ps1: string = this.env.get('PS1') || '$ ';
@@ -225,9 +217,6 @@ export class Shell {
 
     /**
      * Called when the application transitions between SeaGaP stages.
-     * Updates $STAGE and cd's to the persona's landing directory.
-     *
-     * @param stage - The new SeaGaP stage name.
      */
     public stage_enter(stage: string): void {
         this.env.set('STAGE', stage);
@@ -246,499 +235,15 @@ export class Shell {
 
     /**
      * Returns the command history array.
-     *
-     * @returns Array of previously executed command strings.
      */
     public history_get(): string[] {
         return [...this.commandHistory];
     }
 
-    // ─── Builtin Registration ───────────────────────────────────
-
-    /**
-     * Registers all builtin commands.
-     */
-    private builtins_register(): void {
-        this.builtin_add('cd', 'Change directory', (args: string[]): ShellResult => {
-            const target: string = args[0] || '~';
-            try {
-                this.vfs.cwd_set(target);
-                const newCwd: string = this.vfs.cwd_get();
-                this.env.set('PWD', newCwd);
-                if (this.cwdChangeHandler) {
-                    this.cwdChangeHandler(newCwd);
-                }
-                return result_ok('');
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('pwd', 'Print working directory', (_args: string[]): ShellResult => {
-            return result_ok(this.vfs.cwd_get());
-        });
-
-        this.builtin_add('ls', 'List directory contents', (args: string[]): ShellResult => {
-            const target: string = args[0] || '.';
-            try {
-                const resolvedPath: string = this.vfs.path_resolve(target);
-                const targetNode: FileNode | null = this.vfs.node_stat(resolvedPath);
-                if (!targetNode) {
-                    return result_err(`ls: cannot access '${target}': No such file or directory`, 1);
-                }
-
-                const entry_render = (entry: FileNode): string => {
-                    let resolvedEntry: FileNode = entry;
-                    let colorClass: string = 'file';
-                    if (resolvedEntry.type === 'folder') {
-                        colorClass = 'dir';
-                    } else if (resolvedEntry.name.endsWith('.py') || resolvedEntry.name.endsWith('.sh')) {
-                        colorClass = 'exec';
-                    }
-
-                    // Trigger lazy generation for accurate size before rendering.
-                    if (resolvedEntry.type === 'file' && resolvedEntry.content === null && resolvedEntry.contentGenerator) {
-                        this.vfs.node_read(resolvedEntry.path);
-                        const refreshed: FileNode | null = this.vfs.node_stat(resolvedEntry.path);
-                        if (refreshed) {
-                            resolvedEntry = refreshed;
-                        }
-                    }
-
-                    const size: string = resolvedEntry.size || '0 B';
-                    const name: string = resolvedEntry.type === 'folder' ? `${resolvedEntry.name}/` : resolvedEntry.name;
-                    return `<span class="${colorClass}">${name.padEnd(24)}</span> <span class="size-highlight">${size}</span>`;
-                };
-
-                if (targetNode.type === 'file') {
-                    return result_ok(entry_render(targetNode));
-                }
-
-                const children: FileNode[] = this.vfs.dir_list(resolvedPath);
-                const lines: string[] = children.map((child: FileNode): string => entry_render(child));
-                return result_ok(lines.join('\n'));
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('tree', 'Display directory tree', (args: string[]): ShellResult => {
-            const target: string = args[0] || '.';
-            try {
-                const resolved: string = this.vfs.path_resolve(target);
-                const root: FileNode | null = this.vfs.node_stat(resolved);
-                if (!root) {
-                    return result_err(`tree: '${target}': No such file or directory`, 1);
-                }
-                if (root.type !== 'folder') {
-                    return result_ok(root.name);
-                }
-
-                const lines: string[] = [];
-                let dirCount: number = 0;
-                let fileCount: number = 0;
-
-                const subtree_render = (node: FileNode, prefix: string, nodePath: string): void => {
-                    const children: FileNode[] = (node.children || []).slice().sort(
-                        (a: FileNode, b: FileNode): number => a.name.localeCompare(b.name)
-                    );
-                    for (let i: number = 0; i < children.length; i++) {
-                        const child: FileNode = children[i];
-                        const isLast: boolean = i === children.length - 1;
-                        const connector: string = isLast ? '└── ' : '├── ';
-                        const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
-                        const childPath: string = `${nodePath}/${child.name}`;
-
-                        // Initialize lazy files
-                        if (child.type === 'file' && child.content === null && child.contentGenerator) {
-                            this.vfs.node_read(childPath);
-                        }
-
-                        lines.push(`${prefix}${connector}${name}`);
-
-                        if (child.type === 'folder') {
-                            dirCount++;
-                            const nextPrefix: string = prefix + (isLast ? '    ' : '│   ');
-                            subtree_render(child, nextPrefix, childPath);
-                        } else {
-                            fileCount++;
-                        }
-                    }
-                };
-
-                lines.push(`${root.name}/`);
-                dirCount++; // count root
-                subtree_render(root, '', resolved);
-                lines.push('');
-                lines.push(`${dirCount} director${dirCount === 1 ? 'y' : 'ies'}, ${fileCount} file${fileCount === 1 ? '' : 's'}`);
-
-                return result_ok(lines.join('\n'));
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('cat', 'Print file contents', (args: string[]): ShellResult => {
-            if (args.length === 0) {
-                return result_err('cat: missing operand', 1);
-            }
-            try {
-                const content: string | null = this.vfs.node_read(args[0]);
-                if (content === null) {
-                    return result_err(`cat: ${args[0]}: Is a directory or has no content`, 1);
-                }
-                return result_ok(content);
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('python', 'Execute a Python script locally', async (args: string[]): Promise<ShellResult> => {
-            if (args.length === 0) {
-                return result_err('python: missing file operand', 1);
-            }
-            const scriptPath: string = args[0];
-            try {
-                const resolved: string = this.vfs.path_resolve(scriptPath);
-                if (!this.vfs.node_stat(resolved)) {
-                    return result_err(`python: can't open file '${scriptPath}': [Errno 2] No such file or directory`, 2);
-                }
-                
-                // Ensure readable (triggers lazy content if needed)
-                this.vfs.node_read(resolved);
-
-                const runRootPath: string = this.projectRoot_resolve(resolved) ?? this.vfs.path_resolve('.');
-                const outputDirPath: string = `${runRootPath}/output`;
-                const modelPath: string = `${outputDirPath}/model.pth`;
-                const statsPath: string = `${outputDirPath}/stats.json`;
-                const inputDirPath: string = `${runRootPath}/input`;
-                const inputDisplayPath: string = `${this.path_relativeToCwd(inputDirPath)}/`;
-                const resolvedLower: string = resolved.toLowerCase();
-                const isChrisValidation: boolean =
-                    resolvedLower.endsWith('/src/main.py') ||
-                    resolvedLower.endsWith('/src/app/main.py');
-
-                if (isChrisValidation) {
-                    let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
-                    output += `○ Validating ChRIS plugin entrypoint...\n`;
-                    output += `○ Parsing argument contract and runtime hooks...\n`;
-                    output += `○ Checking input/output filesystem compliance...\n\n`;
-                    output += `--- TEST LOG ---\n`;
-                    output += `[PASS] plugin metadata loaded\n`;
-                    output += `[PASS] argument parser initialized\n`;
-                    output += `[PASS] input/output bindings valid\n\n`;
-
-                    try {
-                        this.vfs.file_create(`${runRootPath}/.test_pass`, new Date().toISOString());
-                    } catch { /* ignore */ }
-
-                    output += `<span class="success">>> LOCAL PLUGIN TEST COMPLETE.</span>\n`;
-                    output += `<span class="dim">   Plugin validation marker saved to: ${runRootPath}/.test_pass</span>`;
-                    return result_ok(output);
-                }
-
-                // Mock Local Training Execution
-                let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
-                output += `○ Loading torch and meridian.data...\n`;
-                output += `○ Found 1,240 images in ${inputDisplayPath}\n`;
-                output += `○ Model: ResNet50 (Pretrained=True)\n`;
-                output += `○ Device: NVIDIA A100-SXM4 (Simulated)\n\n`;
-                
-                output += `--- TRAINING LOG ---\n`;
-                output += `Epoch 1/5 [#####---------------] 25% | Loss: 0.8234 | Acc: 0.64\n`;
-                await new Promise(r => setTimeout(r, 200)); // Brief pause
-                output += `Epoch 2/5 [##########----------] 50% | Loss: 0.5121 | Acc: 0.78\n`;
-                output += `Epoch 3/5 [###############-----] 75% | Loss: 0.3245 | Acc: 0.88\n`;
-                output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;
-                output += `Epoch 5/5 [####################] 100% | Loss: 0.1542 | Acc: 0.95\n\n`;
-
-                // Materialize artifacts in VFS so CLI output matches filesystem state.
-                try {
-                    this.vfs.dir_create(outputDirPath);
-                    this.vfs.file_create(modelPath, 'SIMULATED_PYTORCH_WEIGHTS_BLOB');
-                    this.vfs.file_create(statsPath, JSON.stringify({
-                        epoch: 5,
-                        loss: 0.1542,
-                        accuracy: 0.95,
-                        status: 'PASS'
-                    }, null, 2));
-                    this.vfs.file_create(`${runRootPath}/.local_pass`, new Date().toISOString());
-                } catch { /* ignore */ }
-
-                output += `<span class="success">>> LOCAL TRAINING COMPLETE.</span>\n`;
-                output += `<span class="dim">   Model weights saved to: ${modelPath}</span>\n`;
-                output += `<span class="dim">   Validation metrics saved to: ${statsPath}</span>`;
-
-                return result_ok(output);
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('mkdir', 'Create directory', (args: string[]): ShellResult => {
-            if (args.length === 0) {
-                return result_err('mkdir: missing operand', 1);
-            }
-            try {
-                this.vfs.dir_create(args[0]);
-                return result_ok('');
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('touch', 'Create empty file or update timestamp', (args: string[]): ShellResult => {
-            if (args.length === 0) {
-                return result_err('touch: missing operand', 1);
-            }
-            try {
-                this.vfs.file_create(args[0]);
-                return result_ok('');
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('rm', 'Remove file or directory', (args: string[]): ShellResult => {
-            const recursive: boolean = args.includes('-r') || args.includes('-rf');
-            const paths: string[] = args.filter((a: string): boolean => !a.startsWith('-'));
-            if (paths.length === 0) {
-                return result_err('rm: missing operand', 1);
-            }
-            try {
-                for (const p of paths) {
-                    this.vfs.node_remove(p, recursive);
-                }
-                return result_ok('');
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('cp', 'Copy file or directory', (args: string[]): ShellResult => {
-            if (args.length < 2) {
-                return result_err('cp: missing operand', 1);
-            }
-            try {
-                this.vfs.node_copy(args[0], args[1]);
-                return result_ok('');
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('mv', 'Move or rename file or directory', (args: string[]): ShellResult => {
-            if (args.length < 2) {
-                return result_err('mv: missing operand', 1);
-            }
-            try {
-                this.vfs.node_move(args[0], args[1]);
-                return result_ok('');
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('echo', 'Display text with variable expansion', (args: string[]): ShellResult => {
-            const expanded: string = this.vars_expand(args.join(' '));
-            return result_ok(expanded);
-        });
-
-        this.builtin_add('env', 'Print all environment variables', (_args: string[]): ShellResult => {
-            const envMap: Map<string, string> = this.env_all();
-            const lines: string[] = [];
-            envMap.forEach((value: string, key: string) => {
-                lines.push(`${key}=${value}`);
-            });
-            lines.sort();
-            return result_ok(lines.join('\n'));
-        });
-
-        this.builtin_add('export', 'Set an environment variable', (args: string[]): ShellResult => {
-            if (args.length === 0) {
-                return result_err('export: missing KEY=VALUE', 1);
-            }
-            const eqIndex: number = args[0].indexOf('=');
-            if (eqIndex <= 0) {
-                return result_err('export: invalid format. Use: export KEY=VALUE', 1);
-            }
-            const key: string = args[0].substring(0, eqIndex);
-            const value: string = args[0].substring(eqIndex + 1);
-            this.env.set(key, value);
-            return result_ok('');
-        });
-
-        this.builtin_add('whoami', 'Print current user', (_args: string[]): ShellResult => {
-            return result_ok(this.env.get('USER') || 'unknown');
-        });
-
-        this.builtin_add('date', 'Print current date and time', (_args: string[]): ShellResult => {
-            return result_ok(new Date().toString());
-        });
-
-        this.builtin_add('history', 'Show command history', (_args: string[]): ShellResult => {
-            const lines: string[] = this.commandHistory.map(
-                (cmd: string, i: number): string => `  ${String(i + 1).padStart(4)}  ${cmd}`
-            );
-            return result_ok(lines.join('\n'));
-        });
-
-        this.builtin_add('help', 'List available commands', (_args: string[]): ShellResult => {
-            const lines: string[] = ['<span class="success">AVAILABLE COMMANDS:</span>'];
-            const sorted: BuiltinCommand[] = [...this.builtins.values()].sort(
-                (a: BuiltinCommand, b: BuiltinCommand) => a.name.localeCompare(b.name)
-            );
-            for (const cmd of sorted) {
-                lines.push(`  <span class="highlight">${cmd.name.padEnd(12)}</span> ${cmd.description}`);
-            }
-            return result_ok(lines.join('\n'));
-        });
-
-        this.builtin_add('upload', 'Upload local files to current directory', async (args: string[]): Promise<ShellResult> => {
-            try {
-                // Check if running in browser environment
-                if (typeof document === 'undefined') {
-                    return result_err('upload: Command only available in browser mode. Use "cp" for server-local files.', 1);
-                }
-
-                // Dynamically import to avoid circular dependencies/browser-only code at top level
-                const { files_prompt, files_ingest } = await import('../core/logic/FileUploader.js');
-                
-                // Determine destination (default to CWD)
-                let destination: string = this.vfs.cwd_get();
-                if (args.length > 0) {
-                    destination = this.vfs.path_resolve(args[0]);
-                }
-
-                const files: File[] = await files_prompt();
-                if (files.length === 0) {
-                    return result_ok('<span class="dim">Upload cancelled.</span>');
-                }
-
-                const count: number = await files_ingest(files, destination);
-                return result_ok(`<span class="success">Successfully uploaded ${count} file(s) to ${destination}</span>`);
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('analyze', 'Perform statistical analysis on cohort', async (args: string[]): Promise<ShellResult> => {
-            if (args[0] !== 'cohort') {
-                return result_err('Usage: analyze cohort', 1);
-            }
-            
-            const project: string | undefined = this.env.get('PROJECT');
-            if (!project) {
-                return result_err('analyze: No active project context ($PROJECT not set)', 1);
-            }
-
-            try {
-                const { cohort_analyze } = await import('../core/analysis/CohortProfiler.js');
-                const report: string = cohort_analyze(this.vfs, `/home/${this.username}/projects/${project}/input`);
-                return result_ok(report);
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('simulate', 'Run a local federation simulation', async (args: string[]): Promise<ShellResult> => {
-            if (args[0] !== 'federation') {
-                return result_err('Usage: simulate federation', 1);
-            }
-            
-            const project: string | undefined = this.env.get('PROJECT');
-            if (!project) {
-                return result_err('simulate: No active project context ($PROJECT not set)', 1);
-            }
-
-            try {
-                const { federation_simulate } = await import('../core/simulation/PhantomFederation.js');
-                const projectPath = `/home/${this.username}/projects/${project}`;
-                
-                // GATING: Ensure local training has run
-                if (!this.vfs.node_stat(`${projectPath}/.local_pass`)) {
-                    return result_err(`simulate: Local validation required. Run "python train.py" first.`, 1);
-                }
-
-                const result = await federation_simulate(this.vfs, projectPath);
-                
-                const output = result.logs.map((l: string): string => {
-                    if (l.startsWith('ERROR')) return `<span class="error">${l}</span>`;
-                    if (l.startsWith('>>')) return `<span class="highlight">${l}</span>`;
-                    return `<span class="dim">${l}</span>`;
-                }).join('\n');
-
-                if (result.success) {
-                    return result_ok(output + '\n<span class="success">SIMULATION COMPLETE. FEDERALIZATION UNLOCKED.</span>');
-                } else {
-                    return result_err(output, 1);
-                }
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-
-        this.builtin_add('harmonize', 'Standardize and normalize cohort datasets', async (args: string[]): Promise<ShellResult> => {
-            if (args[0] !== 'cohort') {
-                return result_err('Usage: harmonize cohort', 1);
-            }
-
-            const project: string | undefined = this.env.get('PROJECT');
-            if (!project) {
-                return result_err('harmonize: No active project context ($PROJECT not set)', 1);
-            }
-
-            try {
-                const { MOCK_PROJECTS } = await import('../core/data/projects.js');
-                const { project_harmonize } = await import('../core/logic/ProjectManager.js');
-                
-                const model = MOCK_PROJECTS.find(p => p.name === project);
-                if (!model) return result_err('harmonize: Project model not found', 1);
-
-                project_harmonize(model);
-                return result_ok('');
-            } catch (e: unknown) {
-                return result_err(e instanceof Error ? e.message : String(e), 1);
-            }
-        });
-    }
-
     // ─── Internal Helpers ───────────────────────────────────────
 
     /**
-     * Registers a single builtin command.
-     *
-     * @param name - Command name.
-     * @param description - Human-readable description.
-     * @param execute - Handler function.
-     */
-    private builtin_add(
-        name: string,
-        description: string,
-        execute: (args: string[]) => ShellResult | Promise<ShellResult>
-    ): void {
-        this.builtins.set(name, { name, description, execute });
-    }
-
-    /**
-     * Expands $VARIABLE references in a string.
-     * Supports $HOME, $USER, $PWD, $STAGE, $PERSONA, and any custom vars.
-     *
-     * @param input - String containing $VARIABLE references.
-     * @returns String with variables expanded.
-     */
-    private vars_expand(input: string): string {
-        return input.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match: string, varName: string): string => {
-            if (varName === 'PWD') return this.vfs.cwd_get();
-            return this.env.get(varName) ?? `$${varName}`;
-        });
-    }
-
-    /**
      * Resolves the landing directory for a given SeaGaP stage.
-     *
-     * @param stage - SeaGaP stage name.
-     * @returns Absolute path of the landing directory.
      */
     private stageLanding_resolve(stage: string): string {
         const home: string = this.env.get('HOME') || '/home/user';
@@ -761,96 +266,4 @@ export class Shell {
             default:         return home;
         }
     }
-
-    /**
-     * Resolves the project root from shell context or a known path.
-     *
-     * Prefers `$PROJECT` when available, then falls back to parsing paths
-     * that contain `/projects/<name>/...`.
-     *
-     * @param pathHint - Optional absolute path hint (e.g., resolved script path).
-     * @returns Absolute project root path, or null if not inferable.
-     */
-    private projectRoot_resolve(pathHint?: string): string | null {
-        const home: string = this.env.get('HOME') || `/home/${this.username}`;
-        const projectFromEnv: string | undefined = this.env.get('PROJECT');
-        if (projectFromEnv) {
-            return `${home}/projects/${projectFromEnv}`;
-        }
-
-        const candidates: string[] = [this.vfs.cwd_get()];
-        if (pathHint) candidates.push(pathHint);
-        const marker: string = '/projects/';
-
-        for (const candidate of candidates) {
-            const markerIndex: number = candidate.indexOf(marker);
-            if (markerIndex === -1) continue;
-
-            const afterMarker: string = candidate.substring(markerIndex + marker.length);
-            const projectName: string = afterMarker.split('/')[0];
-            if (!projectName) continue;
-
-            const prefix: string = candidate.substring(0, markerIndex + marker.length);
-            return `${prefix}${projectName}`;
-        }
-
-        return null;
-    }
-
-    /**
-     * Convert an absolute path to a cwd-relative display path.
-     *
-     * @param absolutePath - Absolute filesystem path.
-     * @returns Relative path display (e.g., ./input, ../input).
-     */
-    private path_relativeToCwd(absolutePath: string): string {
-        const cwdParts: string[] = this.vfs.cwd_get().split('/').filter(Boolean);
-        const targetParts: string[] = absolutePath.split('/').filter(Boolean);
-
-        let commonIndex: number = 0;
-        while (
-            commonIndex < cwdParts.length &&
-            commonIndex < targetParts.length &&
-            cwdParts[commonIndex] === targetParts[commonIndex]
-        ) {
-            commonIndex++;
-        }
-
-        const upMoves: string[] = Array(cwdParts.length - commonIndex).fill('..');
-        const downMoves: string[] = targetParts.slice(commonIndex);
-        const relativeParts: string[] = [...upMoves, ...downMoves];
-
-        if (relativeParts.length === 0) {
-            return '.';
-        }
-
-        const relativePath: string = relativeParts.join('/');
-        if (relativePath.startsWith('.')) {
-            return relativePath;
-        }
-        return `./${relativePath}`;
-    }
-}
-
-// ─── Result Constructors ────────────────────────────────────────
-
-/**
- * Creates a successful ShellResult.
- *
- * @param stdout - Output text.
- * @returns ShellResult with exitCode 0.
- */
-function result_ok(stdout: string): ShellResult {
-    return { stdout, stderr: '', exitCode: 0 };
-}
-
-/**
- * Creates an error ShellResult.
- *
- * @param stderr - Error message.
- * @param exitCode - Non-zero exit code.
- * @returns ShellResult with the given error and exit code.
- */
-function result_err(stderr: string, exitCode: number = 1): ShellResult {
-    return { stdout: '', stderr, exitCode };
 }

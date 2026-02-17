@@ -38,6 +38,8 @@ stages:
       appends to the discovery log — you can search as many times as needed.
     commands:
       - search <keywords>
+    handler: search
+    completes_with: gather
 
   - id: gather
     name: Cohort Assembly
@@ -57,6 +59,8 @@ stages:
       - remove <dataset>
       - show cohort
       - gather
+      - mount
+    handler: gather
 
   - id: rename
     name: Project Rename
@@ -73,6 +77,8 @@ stages:
       step — the auto-generated name works fine.
     commands:
       - rename <new-name>
+    handler: rename
+    completes_with: gather
 
   # ─── Phase 2: Harmonize ──────────────────────────────────────
 
@@ -94,6 +100,7 @@ stages:
       for federated training — heterogeneous data causes silent failures.
     commands:
       - harmonize
+    handler: harmonize
     skip_warning:
       short: Cohort not harmonized.
       reason: >
@@ -122,6 +129,7 @@ stages:
     commands:
       - proceed
       - code
+    handler: scaffold
     skip_warning:
       short: Project structure not scaffolded.
       reason: >
@@ -148,6 +156,7 @@ stages:
     commands:
       - python train.py
       - train
+    handler: train
     skip_warning:
       short: Local training not validated.
       reason: >
@@ -174,6 +183,7 @@ stages:
       dispatched to the federation network. Confirm to proceed.
     commands:
       - federate
+    handler: federation
 
   - id: federate-transcompile
     name: Flower Transcompilation
@@ -193,6 +203,8 @@ stages:
     commands:
       - show transcompile
       - approve
+    handler: federation
+    completes_with: federate-brief
 
   - id: federate-containerize
     name: Container Build
@@ -212,6 +224,8 @@ stages:
     commands:
       - show container
       - approve
+    handler: federation
+    completes_with: federate-brief
 
   - id: federate-publish-config
     name: Publication Configuration
@@ -234,6 +248,8 @@ stages:
       - config org <organization>
       - config visibility <public|private>
       - approve
+    handler: federation
+    completes_with: federate-brief
 
   - id: federate-publish-execute
     name: Registry Publication
@@ -250,6 +266,8 @@ stages:
     commands:
       - show publish
       - approve
+    handler: federation
+    completes_with: federate-brief
 
   - id: federate-dispatch
     name: Federation Dispatch
@@ -270,6 +288,8 @@ stages:
     commands:
       - dispatch
       - dispatch --sites <site1,site2>
+    handler: federation
+    completes_with: federate-brief
 
   - id: federate-execute
     name: Federated Training Execution
@@ -290,6 +310,8 @@ stages:
       - status
       - show metrics
       - show rounds
+    handler: federation
+    completes_with: federate-brief
 
   - id: federate-model-publish
     name: Model Publication
@@ -312,3 +334,5 @@ stages:
     commands:
       - publish model
       - show provenance
+    handler: federation
+    completes_with: federate-brief

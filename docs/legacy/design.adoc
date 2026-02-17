@@ -1,0 +1,13 @@
+= ARGUS Design Specification (v3.5.0)
+:status: LEGACY
+
+[IMPORTANT]
+====
+**Historical Grounding**: Primary design spec for the v3.x era. Introduced the "Factory Concept" and initial VCS.
+
+**Superseded by**: link:../architecture.adoc[ARGUS Architecture] (v9.0.0)
+
+**Reason for Supersession**: v9.0.0 modularized the Federalization Sequence and VCS into specialized providers and content registries.
+====
+
+[... original content ...]
