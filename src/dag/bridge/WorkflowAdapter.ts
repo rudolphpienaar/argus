@@ -17,18 +17,29 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import type { DAGDefinition, DAGNode, WorkflowPosition, ManifestHeader } from '../graph/types.js';
-import type { CompletionMapper } from './CompletionMapper.js';
+import type { DAGDefinition, DAGNode, WorkflowPosition, ManifestHeader, NodeReadiness } from '../graph/types.js';
 import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
-import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
-
+import type { FileNode } from '../../vfs/types.js';
 import { manifest_parse } from '../graph/parser/manifest.js';
 import { dag_resolve, position_resolve } from '../graph/resolver.js';
 import { manifestMapper_create } from './CompletionMapper.js';
 import { chain_validate } from '../fingerprint/chain.js';
-import type { FingerprintRecord } from '../fingerprint/types.js';
+import type { FingerprintRecord, ChainValidationResult, StalenessResult } from '../fingerprint/types.js';
+import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
+import type { CompletionMapper } from './CompletionMapper.js';
+import type { ArtifactEnvelope } from '../store/types.js';
 
 // ─── Protocol-Facing Types ─────────────────────────────────────
+
+/**
+ * Result of a recursive artifact search.
+ */
+interface ArtifactSearchResult {
+    timestamp: string;
+    fingerprint: string;
+    parentFingerprints: Record<string, string>;
+    stageId: string;
+}
 
 /**
  * Workflow summary for selection UI and APIs.
@@ -188,24 +199,26 @@ export class WorkflowAdapter {
      * @returns WorkflowPosition describing "where are we?"
      */
     position_resolve(vfs: VirtualFileSystem, sessionPath: string): WorkflowPosition {
-        const completedIds = this.mapper.completedIds_resolve(vfs, sessionPath);
+        const completedIds: Set<string> = this.mapper.completedIds_resolve(vfs, sessionPath);
 
         // Perform staleness detection across the DAG.
         // We need to find the LATEST materialized version of each stage
         // to determine if the workflow has drifted.
         const artifactReader = (stageId: string): FingerprintRecord | null => {
-            const node = this.definition.nodes.get(stageId);
-            const targetId = (node?.completes_with !== undefined && node.completes_with !== null)
+            const node: DAGNode | undefined = this.definition.nodes.get(stageId);
+            const targetId: string = (node?.completes_with !== undefined && node.completes_with !== null)
                 ? node.completes_with
                 : stageId;
 
             // Deep search for all artifacts matching this stage ID
-            const all = this.artifacts_find(vfs, sessionPath, targetId);
-            if (all.length === 0) return null;
+            const all: ArtifactSearchResult[] = this.artifacts_find(vfs, sessionPath, targetId);
+            if (all.length === 0) {
+                return null;
+            }
 
             // Sort by timestamp descending to find the latest
-            all.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-            const latest = all[0];
+            all.sort((a: ArtifactSearchResult, b: ArtifactSearchResult): number => b.timestamp.localeCompare(a.timestamp));
+            const latest: ArtifactSearchResult = all[0];
 
             return {
                 fingerprint: latest.fingerprint,
@@ -213,8 +226,8 @@ export class WorkflowAdapter {
             };
         };
 
-        const validation = chain_validate(this.definition, artifactReader);
-        const staleIds = new Set(validation.staleStages.map(s => s.stageId));
+        const validation: ChainValidationResult = chain_validate(this.definition, artifactReader);
+        const staleIds: Set<string> = new Set(validation.staleStages.map((s: StalenessResult): string => s.stageId));
 
         return position_resolve(this.definition, completedIds, staleIds);
     }
@@ -222,21 +235,17 @@ export class WorkflowAdapter {
     /**
      * Search the VFS session tree recursively for artifacts matching a stage ID.
      */
-    private artifacts_find(vfs: VirtualFileSystem, path: string, stageId: string): any[] {
-        const results: any[] = [];
+    private artifacts_find(vfs: VirtualFileSystem, path: string, stageId: string): ArtifactSearchResult[] {
+        const results: ArtifactSearchResult[] = [];
         try {
-            const nodes = vfs.dir_list(path);
+            const nodes: FileNode[] = vfs.dir_list(path);
             for (const node of nodes) {
                 if (node.type === 'folder') {
                     results.push(...this.artifacts_find(vfs, node.path, stageId));
                 } else if (node.name.endsWith('.json')) {
-                    const rec = this.fingerprintRecord_read(vfs, node.path);
+                    const rec: ArtifactSearchResult | null = this.fingerprintRecord_read(vfs, node.path);
                     if (rec && rec.stageId === stageId) {
-                        results.push({
-                            timestamp: rec.timestamp,
-                            fingerprint: rec.fingerprint,
-                            parentFingerprints: rec.parentFingerprints
-                        });
+                        results.push(rec);
                     }
                 }
             }
@@ -244,12 +253,19 @@ export class WorkflowAdapter {
         return results;
     }
 
-    private fingerprintRecord_read(vfs: VirtualFileSystem, path: string): any | null {
+    /**
+     * Read a fingerprint record from a materialized artifact.
+     */
+    private fingerprintRecord_read(vfs: VirtualFileSystem, path: string): ArtifactSearchResult | null {
         try {
-            const raw = vfs.node_read(path);
-            if (!raw) return null;
-            const envelope = JSON.parse(raw);
-            if (!envelope._fingerprint || !envelope._parent_fingerprints) return null;
+            const raw: string | null = vfs.node_read(path);
+            if (!raw) {
+                return null;
+            }
+            const envelope: ArtifactEnvelope = JSON.parse(raw);
+            if (!envelope._fingerprint || !envelope._parent_fingerprints) {
+                return null;
+            }
             return {
                 stageId: envelope.stage,
                 timestamp: envelope.timestamp,
@@ -276,15 +292,15 @@ export class WorkflowAdapter {
         vfs: VirtualFileSystem,
         sessionPath: string,
     ): TransitionResult {
-        const baseCmd = command.split(/\s+/)[0].toLowerCase();
-        const targetNode = this.commandIndex.get(baseCmd);
+        const baseCmd: string = command.split(/\s+/)[0].toLowerCase();
+        const targetNode: DAGNode | undefined = this.commandIndex.get(baseCmd);
 
         // If command doesn't map to any stage, allow it (not workflow-controlled)
         if (!targetNode) {
             return WorkflowAdapter.result_allowed();
         }
 
-        const completedIds = this.mapper.completedIds_resolve(vfs, sessionPath);
+        const completedIds: Set<string> = this.mapper.completedIds_resolve(vfs, sessionPath);
 
         // If target stage is already completed, allow
         if (completedIds.has(targetNode.id)) {
@@ -292,8 +308,8 @@ export class WorkflowAdapter {
         }
 
         // Check if all parents are complete
-        const readiness = dag_resolve(this.definition, completedIds);
-        const nodeReadiness = readiness.find(r => r.nodeId === targetNode.id);
+        const readiness: NodeReadiness[] = dag_resolve(this.definition, completedIds);
+        const nodeReadiness: NodeReadiness | undefined = readiness.find(r => r.nodeId === targetNode.id);
 
         // console.log(`[TRANSITION] CMD: ${baseCmd}, NODE: ${targetNode.id}, READY: ${nodeReadiness?.ready}`);
 
@@ -303,9 +319,11 @@ export class WorkflowAdapter {
 
         // Check each blocking parent
         for (const parentId of nodeReadiness.pendingParents) {
-            const parentNode = this.definition.nodes.get(parentId);
+            const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
             
-            if (!parentNode) continue;
+            if (!parentNode) {
+                continue;
+            }
 
             // If the parent is NOT optional and has NO skip warning, HARD BLOCK.
             // This prevents silent skipping of critical stages like Search and Gather.
@@ -325,16 +343,16 @@ export class WorkflowAdapter {
 
             // If it has a skip warning, handle the soft-warning sequence
             if (parentNode.skip_warning) {
-                const skipCount = this.skipCounts[parentNode.id] || 0;
-                const maxWarnings = parentNode.skip_warning.max_warnings;
+                const skipCount: number = this.skipCounts[parentNode.id] || 0;
+                const maxWarnings: number = parentNode.skip_warning.max_warnings;
 
                 // If warned enough times, allow
                 if (skipCount >= maxWarnings) {
                     continue; // Check next parent
                 }
 
-                const isSecondWarning = skipCount >= 1;
-                const suggestion = parentNode.commands.length > 0
+                const isSecondWarning: boolean = skipCount >= 1;
+                const suggestion: string | null = parentNode.commands.length > 0
                     ? `Run '${parentNode.commands[0]}' to complete this step.`
                     : null;
 

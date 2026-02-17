@@ -13,7 +13,7 @@ const verbose = process.argv.includes('--verbose');
  * @param {string} str
  * @returns {string}
  */
-function stripAnsi(str) {
+function ansi_strip(str) {
     // eslint-disable-next-line no-control-regex
     return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
 }
@@ -25,7 +25,7 @@ function stripAnsi(str) {
  * @param {{ user: string, project: string|null, session: string|null }} vars
  * @returns {string}
  */
-function interpolate(value, vars) {
+function template_interpolate(value, vars) {
     return value
         .replaceAll('${user}', vars.user)
         .replaceAll('${project}', vars.project || '')
@@ -131,6 +131,7 @@ function runtime_create(modules, username) {
     modules.store.stage_set('search');
 
     const storeAdapter = {
+        sessionPath: null,
         state_get() {
             return {
                 currentStage: modules.store.state.currentStage,
@@ -159,6 +160,12 @@ function runtime_create(modules, username) {
         },
         stage_set(stage) {
             modules.store.stage_set(stage);
+        },
+        session_getPath() {
+            return this.sessionPath;
+        },
+        session_setPath(path) {
+            this.sessionPath = path;
         }
     };
 
@@ -171,6 +178,8 @@ function runtime_create(modules, username) {
         },
         knowledge: {} // Ensure knowledge base is initialized
     });
+
+    storeAdapter.sessionPath = core.session_getPath();
 
     return { core, store: modules.store };
 }
@@ -197,7 +206,7 @@ async function scenario_run(modules, scenario) {
         const label = `[STEP ${i + 1}/${steps.length}]`;
 
         if (step.send) {
-            const command = interpolate(step.send, vars);
+            const command = template_interpolate(step.send, vars);
             const response = await runtime.core.command_execute(command);
             
             // Re-fetch session path in case of /reset
@@ -221,9 +230,10 @@ async function scenario_run(modules, scenario) {
                 const required = Array.isArray(step.output_contains)
                     ? step.output_contains
                     : [step.output_contains];
-                const msg = stripAnsi(String(response.message || '')).toLowerCase();
+                const msg = ansi_strip(String(response.message || '')).toLowerCase();
                 for (const token of required) {
-                    if (!msg.toLowerCase().includes(token.toLowerCase())) {
+                    if (!msg.includes(token.toLowerCase())) {
+                        console.log(`\n[TOKEN FAILURE] Missing "${token}" in message:\n${msg}\n`);
                         throw new Error(`${label} Missing output token: "${token}"`);
                     }
                 }
@@ -240,7 +250,7 @@ async function scenario_run(modules, scenario) {
         }
 
         if (step.vfs_exists) {
-            const target = interpolate(step.vfs_exists, vars);
+            const target = template_interpolate(step.vfs_exists, vars);
             const exists = runtime.core.vfs_exists(target);
             if (!exists) {
                 throw new Error(`${label} Expected VFS path missing: ${target}`);
@@ -251,13 +261,9 @@ async function scenario_run(modules, scenario) {
         }
 
         if (step.vfs_stale) {
-            const state = runtime.core.store_snapshot();
-            const sessionPath = runtime.core.session_getPath();
-            // We need to call position_resolve indirectly or check the state
             // CalypsoCore doesn't expose stale stages directly in state,
             // but WorkflowAdapter does in position_resolve.
-            // Let's use the status command which should show staleness if we add it.
-            const pos = runtime.core.workflow_getPosition(); // I'll add this to CalypsoCore
+            const pos = runtime.core.workflow_getPosition();
             const isStale = pos.staleStages.includes(step.vfs_stale);
             
             if (!isStale) {

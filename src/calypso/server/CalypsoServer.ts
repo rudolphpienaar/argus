@@ -51,6 +51,12 @@ function env_load(): void {
 // ─── Global Store Adapter ───────────────────────────────────────────────────
 
 class GlobalStoreAdapter implements CalypsoStoreActions {
+    private sessionPath: string | null = null;
+
+    public session_setPath(path: string): void {
+        this.sessionPath = path;
+    }
+
     public state_get(): Partial<AppState> {
         return {
             currentStage: store.state.currentStage,
@@ -85,6 +91,10 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 
     public stage_set(stage: AppState['currentStage']): void {
         store.stage_set(stage);
+    }
+
+    public session_getPath(): string | null {
+        return this.sessionPath;
     }
 }
 
@@ -133,7 +143,7 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
         console.log('  Set OPENAI_API_KEY or GEMINI_API_KEY via environment or .env file');
     }
 
-    return new CalypsoCore(vfs, shell, storeAdapter, {
+    const core = new CalypsoCore(vfs, shell, storeAdapter, {
         simulationMode: !hasApiKey,
         llmConfig: hasApiKey ? {
             provider: openaiKey ? 'openai' : 'gemini',
@@ -141,6 +151,9 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
             model: openaiKey ? 'gpt-4o-mini' : 'gemini-flash-latest'
         } : undefined
     });
+
+    storeAdapter.session_setPath(core.session_getPath());
+    return core;
 }
 
 // ─── Server ─────────────────────────────────────────────────────────────────

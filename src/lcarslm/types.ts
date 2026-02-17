@@ -144,4 +144,10 @@ export interface CalypsoStoreActions {
 
     /** Set current stage */
     stage_set(stage: AppState['currentStage']): void;
+
+    /** Get the current session path */
+    session_getPath(): string | null;
+
+    /** Update the current session path */
+    session_setPath(path: string | null): void;
 }

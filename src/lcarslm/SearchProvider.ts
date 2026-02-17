@@ -13,6 +13,31 @@ import type { Dataset } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 
 /**
+ * Domain-specific content for a search stage artifact.
+ */
+export interface SearchContent extends Record<string, unknown> {
+    query: string;
+    generatedAt: string;
+    count: number;
+    results: Array<{
+        id: string;
+        name: string;
+        modality: string;
+        annotationType: string;
+        provider: string;
+        imageCount: number;
+    }>;
+}
+
+/**
+ * Response from snapshot materialization.
+ */
+export interface SearchMaterialization {
+    content: SearchContent | null;
+    path: string | null;
+}
+
+/**
  * Handles dataset discovery and conversation context (anaphora).
  */
 export class SearchProvider {
@@ -110,14 +135,14 @@ export class SearchProvider {
         query: string, 
         results: Dataset[], 
         sessionPath?: string
-    ): { content: any, path: string | null } {
+    ): SearchMaterialization {
         const username: string = this.shell.env_get('USER') || 'user';
         const now: Date = new Date();
         const timestamp: string = now.toISOString().replace(/[:.]/g, '-');
         const nonce: string = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
         
         let targetPath: string;
-        let isTopological = false;
+        let isTopological: boolean = false;
 
         if (sessionPath) {
             targetPath = `${sessionPath}/search.json`;
@@ -128,7 +153,7 @@ export class SearchProvider {
         }
 
         try {
-            const content = {
+            const content: SearchContent = {
                 query, // CRITICAL: Inclusion of query ensures different search intents yield different fingerprints
                 generatedAt: now.toISOString(),
                 count: results.length,

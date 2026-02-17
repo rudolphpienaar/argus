@@ -8,9 +8,14 @@
 
 import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import type { CalypsoStoreActions } from './types.js';
-import type { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
+import { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
 import { VERSION } from '../generated/version.js';
+import type { Dataset, Project } from '../core/models/types.js';
+import type { WorkflowPosition } from '../dag/graph/types.js';
 
+/**
+ * Provider for system status and workflow context.
+ */
 export class StatusProvider {
     constructor(
         private readonly vfs: VirtualFileSystem,
@@ -29,7 +34,7 @@ export class StatusProvider {
             ''
         ];
 
-        const coreStatus = simulationMode ? '○ AI CORE: SIMULATION MODE' : '● AI CORE: ONLINE';
+        const coreStatus: string = simulationMode ? '○ AI CORE: SIMULATION MODE' : '● AI CORE: ONLINE';
         lines.push(coreStatus);
         if (!simulationMode) {
             lines.push(`  Provider: ${provider?.toUpperCase() || 'UNKNOWN'}`);
@@ -40,10 +45,17 @@ export class StatusProvider {
 
         lines.push('');
         lines.push(`○ VFS: ${this.vfs.cwd_get()}`);
-        const datasets = this.store.datasets_getSelected();
+        const datasets: Dataset[] = this.store.datasets_getSelected();
         lines.push(`○ DATASETS SELECTED: ${datasets.length}`);
-        const project = this.store.project_getActive();
+        const project: { id: string; name: string } | null = this.store.project_getActive();
         lines.push(`○ ACTIVE PROJECT: ${project ? project.name : 'none'}`);
+
+        // Include workflow progress
+        const sessionPath: string | null = this.store.session_getPath();
+        if (sessionPath) {
+            lines.push('');
+            lines.push(this.adapter.progress_summarize(this.vfs, sessionPath));
+        }
 
         return lines.join('\n');
     }
@@ -59,15 +71,15 @@ export class StatusProvider {
      * Build system context for LLM awareness.
      */
     public workflowContext_generate(sessionPath: string): string {
-        const pos = this.adapter.position_resolve(this.vfs, sessionPath);
-        const datasets = this.store.datasets_getSelected();
-        const activeProject = this.store.project_getActive();
+        const pos: WorkflowPosition = this.adapter.position_resolve(this.vfs, sessionPath);
+        const datasets: Dataset[] = this.store.datasets_getSelected();
+        const activeProject: { id: string; name: string } | null = this.store.project_getActive();
 
-        let context = `--- SYSTEM CONTEXT ---\n`;
+        let context: string = `--- SYSTEM CONTEXT ---\n`;
         context += `Current User: ${this.vfs.username_get()}\n`;
         context += `Working Directory: ${this.vfs.cwd_get()}\n`;
         context += `Active Project: ${activeProject ? activeProject.name : 'None'}\n`;
-        context += `Selected Datasets: ${datasets.length} (${datasets.map(d => d.id).join(', ')})\n`;
+        context += `Selected Datasets: ${datasets.length} (${datasets.map((d: Dataset) => d.id).join(', ')})\n`;
         context += `\n--- WORKFLOW POSITION ---\n`;
         context += `Workflow: ${this.adapter.workflowId}\n`;
         context += `Completed Stages: ${pos.completedStages.join(', ') || 'None'}\n`;

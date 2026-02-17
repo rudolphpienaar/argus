@@ -28,7 +28,7 @@ import type {
 import type { Dataset, AppState, Project } from '../core/models/types.js';
 import { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 import { ScriptRuntime } from './scripts/ScriptRuntime.js';
-import { SearchProvider } from './SearchProvider.js';
+import { SearchProvider, type SearchMaterialization } from './SearchProvider.js';
 import { StatusProvider } from './StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
 import { actionIntent_resolve } from './routing/ActionRouter.js';
@@ -42,7 +42,9 @@ import { scripts_list, type CalypsoScript } from './scripts/Catalog.js';
 import { controlPlaneIntent_resolve, type ControlPlaneIntent } from './routing/ControlPlaneRouter.js';
 import { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
 import type { TransitionResult, WorkflowSummary } from '../dag/bridge/WorkflowAdapter.js';
-import type { WorkflowPosition } from '../dag/graph/types.js';
+import type { WorkflowPosition, DAGNode, StageParameters } from '../dag/graph/types.js';
+import type { ArtifactEnvelope } from '../dag/store/types.js';
+import type { StagePath } from '../dag/bridge/SessionPaths.js';
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -67,32 +69,47 @@ export class CalypsoCore {
 
     /** Registry of workflow handlers (shared capabilities). */
     private readonly HANDLER_REGISTRY: Record<string, (cmd: string, args: string[]) => Promise<CalypsoResponse | null> | CalypsoResponse | null> = {
-        'search': async (_, args) => {
-            const query = args.join(' ');
-            // console.log(`[HANDLER] SEARCH QUERY: "${query}"`);
+        'search': async (_: string, args: string[]): Promise<CalypsoResponse | null> => {
+            const query: string = args.join(' ');
             return await this.workflow_search(query);
         },
-        'gather': async (cmd, args) => {
-            if (cmd === 'add') return await this.workflow_add(args[0]);
-            if (cmd === 'remove' || cmd === 'deselect') return this.workflow_remove(args[0]);
-            if (cmd === 'gather' || cmd === 'review') return this.workflow_gather(args[0]);
-            if (cmd === 'mount') return this.workflow_mount();
+        'gather': async (cmd: string, args: string[]): Promise<CalypsoResponse | null> => {
+            if (cmd === 'add') {
+                return await this.workflow_add(args[0]);
+            }
+            if (cmd === 'remove' || cmd === 'deselect') {
+                return this.workflow_remove(args[0]);
+            }
+            if (cmd === 'gather' || cmd === 'review') {
+                return this.workflow_gather(args[0]);
+            }
+            if (cmd === 'mount') {
+                return this.workflow_mount();
+            }
             return null;
         },
-        'rename': async (_, args) => {
+        'rename': async (_: string, args: string[]): Promise<CalypsoResponse | null> => {
             let nameArg: string = args.join(' ');
             if (nameArg.toLowerCase().startsWith('to ')) {
                 nameArg = nameArg.substring(3).trim();
             }
             return await this.workflow_rename(nameArg);
         },
-        'harmonize': async () => await this.workflow_harmonize(),
-        'scaffold': async (_, args) => await this.workflow_proceed(args[0]),
-        'train': () => null, 
-        'publish': () => null, 
-        'federation': (cmd, args) => {
-            if (cmd === 'federate') return this.workflow_federate(args);
-            if (this.federation.active) return this.workflow_federationCommand(cmd, args);
+        'harmonize': async (): Promise<CalypsoResponse | null> => {
+            return await this.workflow_harmonize();
+        },
+        'scaffold': async (_: string, args: string[]): Promise<CalypsoResponse | null> => {
+            return await this.workflow_proceed(args[0]);
+        },
+        'train': (): CalypsoResponse | null => null, 
+        'publish': (): CalypsoResponse | null => null, 
+        'federation': (cmd: string, args: string[]): Promise<CalypsoResponse | null> | CalypsoResponse | null => {
+            if (cmd === 'federate') {
+                return this.workflow_federate(args);
+            }
+            if (this.federation.active) {
+                return this.workflow_federationCommand(cmd, args);
+            }
             return null;
         }
     };
@@ -159,13 +176,14 @@ export class CalypsoCore {
         const scriptPrompt = await this.scripts.maybeConsumeInput(trimmed);
         if (scriptPrompt) return scriptPrompt;
 
-        if (trimmed.startsWith('/')) {
-            const parts = trimmed.slice(1).split(/\s+/);
-            const cmd = parts[0].toLowerCase();
+        if (trimmed.startsWith('/') || primary === 'status' || primary === 'reset' || primary === 'help') {
+            const normalized: string = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+            const parts: string[] = normalized.slice(1).split(/\s+/);
+            const cmd: string = parts[0].toLowerCase();
             if (cmd === 'run' || cmd === 'scripts') {
                 // fall through to primary command check below
             } else {
-                return this.special_handle(trimmed);
+                return this.special_handle(normalized);
             }
         }
 
@@ -365,14 +383,14 @@ export class CalypsoCore {
     // ─── Workflow Handlers ──────────────────────────────────────────────────
 
     private async workflow_dispatch(input: string): Promise<CalypsoResponse | null> {
-        const parts = input.split(/\s+/);
-        const cmd = parts[0].toLowerCase();
-        const args = parts.slice(1);
+        const parts: string[] = input.split(/\s+/);
+        const cmd: string = parts[0].toLowerCase();
+        const args: string[] = parts.slice(1);
 
-        const transition = this.workflow_checkTransition(cmd);
+        const transition: TransitionResult = this.workflow_checkTransition(cmd);
         if (!transition.allowed && transition.skippedStageId) {
             this.workflowAdapter.skip_increment(transition.skippedStageId);
-            const warning = CalypsoPresenter.workflowWarning_format(transition);
+            const warning: string = CalypsoPresenter.workflowWarning_format(transition);
             
             // If it's a soft warning, we DO NOT execute. We just return the warning.
             // The next time the user tries, skip_increment will eventually allow it.
@@ -383,16 +401,18 @@ export class CalypsoCore {
             return this.response_create(CalypsoPresenter.error_format(transition.warning!), [], false);
         }
 
-        const res = await this.workflow_execute(cmd, args);
+        const res: CalypsoResponse | null = await this.workflow_execute(cmd, args);
         return res;
     }
 
     private async workflow_execute(cmd: string, args: string[]): Promise<CalypsoResponse | null> {
-        const stage = this.workflowAdapter.stage_forCommand(cmd);
-        if (!stage || !stage.handler) return null;
+        const stage: DAGNode | null = this.workflowAdapter.stage_forCommand(cmd);
+        if (!stage || !stage.handler) {
+            return null;
+        }
 
-        const handler = this.HANDLER_REGISTRY[stage.handler];
-        const response = await handler(cmd, args);
+        const handler: (cmd: string, args: string[]) => Promise<CalypsoResponse | null> | CalypsoResponse | null = this.HANDLER_REGISTRY[stage.handler];
+        const response: CalypsoResponse | null = await handler(cmd, args);
 
         if (response?.success) {
             this.workflowStage_complete(cmd);
@@ -409,25 +429,25 @@ export class CalypsoCore {
     }
 
     private async workflow_search(query: string): Promise<CalypsoResponse> {
-        const results = this.searchProvider.search(query);
+        const results: Dataset[] = this.searchProvider.search(query);
         
         // Resolve topological path if search is part of current workflow
-        const stage = this.workflowAdapter.stage_forCommand('search');
-        const sp = stage ? this.workflowAdapter.stagePaths.get(stage.id) : null;
-        const topologicalPath = sp ? `${this.sessionPath}/${sp.dataDir}` : undefined;
+        const stage: DAGNode | null = this.workflowAdapter.stage_forCommand('search');
+        const sp: StagePath | undefined = stage ? this.workflowAdapter.stagePaths.get(stage.id) : undefined;
+        const topologicalPath: string | undefined = sp ? `${this.sessionPath}/${sp.dataDir}` : undefined;
 
         // Provider generates content block
-        const snap = this.searchProvider.snapshot_materialize(query, results, topologicalPath);
+        const snap: SearchMaterialization = this.searchProvider.snapshot_materialize(query, results, topologicalPath);
         
         if (stage && snap.content) {
             // Include query in content for fingerprinting
-            const content = { ...snap.content, query };
+            const content: Record<string, unknown> = { ...snap.content, query };
             // Centralized materialization with fingerprints
             this.sessionArtifact_write(stage.id, content);
         }
 
-        const display = this.searchProvider.displayPath_resolve(snap.path);
-        const snapLine = display ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${display}`)}` : '';
+        const display: string | null = this.searchProvider.displayPath_resolve(snap.path);
+        const snapLine: string = display ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${display}`)}` : '';
 
         return results.length === 0 
             ? this.response_create(CalypsoPresenter.info_format(`NO MATCHING DATASETS FOUND FOR "${query}".`), [], false)
@@ -544,10 +564,15 @@ export class CalypsoCore {
         const workflowId: string = this.workflowAdapter.workflowId;
         const sessionId: string = `session-${Date.now()}`;
         this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
-        try { this.vfs.dir_create(`${this.sessionPath}/data`); } catch { /* exists */ }
+        try {
+            this.vfs.dir_create(`${this.sessionPath}/data`);
+        } catch { /* exists */ }
+
+        // Notify store adapter if it supports session path tracking
+        this.storeActions.session_setPath(this.sessionPath);
 
         // Re-sync federation with new session path
-        const fedPath = this.workflowAdapter.stagePaths.get('federate-brief');
+        const fedPath: StagePath | undefined = this.workflowAdapter.stagePaths.get('federate-brief');
         if (fedPath) {
             this.federation.session_set(`${this.sessionPath}/${fedPath.artifactFile}`);
         }
@@ -574,41 +599,41 @@ export class CalypsoCore {
         return this.workflowAdapter.transition_check(cmd, this.vfs, this.sessionPath);
     }
 
+    /**
+     * Mark a workflow stage as complete in the adapter.
+     */
     private workflowStage_complete(cmd: string): void {
-        const stage = this.workflowAdapter.stage_forCommand(cmd);
-        if (stage) this.workflowAdapter.stage_complete(stage.id);
+        const stage: DAGNode | null = this.workflowAdapter.stage_forCommand(cmd);
+        if (stage) {
+            this.workflowAdapter.stage_complete(stage.id);
+        }
     }
 
-    private sessionArtifact_write(stageId: string, content: any): void {
-        const stage = this.workflowAdapter.dag.nodes.get(stageId);
-        const stagePath = this.workflowAdapter.stagePaths.get(stageId);
-        if (!stage || !stagePath) return;
-
-        // 1. Resolve parent fingerprints
-        const parentFingerprints: Record<string, string> = {};
-        if (stage.previous) {
-            for (const parentId of stage.previous) {
-                const fp = this.fingerprint_get(parentId);
-                if (fp) parentFingerprints[parentId] = fp;
-            }
+    /**
+     * Materialize a workflow stage artifact with Merkle fingerprinting.
+     *
+     * @param stageId - The ID of the stage being materialized
+     * @param content - Domain-specific content block
+     */
+    private sessionArtifact_write(stageId: string, content: Record<string, unknown>): void {
+        const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
+        const stagePath: StagePath | undefined = this.workflowAdapter.stagePaths.get(stageId);
+        if (!stage || !stagePath) {
+            return;
         }
 
-        // 2. Resolve parameters
-        // For simplicity in this prototype, we record the raw args if present, 
-        // or the default manifest parameters.
-        const parameters_used = content.args ? { args: content.args } : stage.parameters;
-
-        // 3. Compute fingerprint over content + parent fingerprints
-        // Canonicalize content string for stable hashing
-        const contentStr = JSON.stringify(content);
-        const _fingerprint = fingerprint_compute(contentStr, parentFingerprints);
-
-        // 4. Materialize full envelope
-        // Use a random suffix to ensure unique timestamps for sorting in rapid tests
-        const tsNow = new Date();
-        const timestamp = tsNow.toISOString() + '-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        const parentFingerprints: Record<string, string> = this.parentFingerprints_resolve(stage);
+        const parameters_used: StageParameters = (content.args !== undefined)
+            ? { args: content.args } as StageParameters
+            : stage.parameters;
         
-        const envelope: any = {
+        const contentStr: string = JSON.stringify(content);
+        const _fingerprint: string = fingerprint_compute(contentStr, parentFingerprints);
+
+        const tsNow: Date = new Date();
+        const timestamp: string = tsNow.toISOString() + '-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+        
+        const envelope: ArtifactEnvelope = {
             stage: stageId,
             timestamp,
             parameters_used,
@@ -617,29 +642,57 @@ export class CalypsoCore {
             _parent_fingerprints: parentFingerprints
         };
 
-        // BRANCHING: If artifact already exists, materialize in a branch folder 
-        // to preserve history and enable staleness detection.
-        let finalPath = `${this.sessionPath}/${stagePath.artifactFile}`;
+        const finalPath: string = this.artifactPath_resolve(stageId, stagePath, tsNow);
+        this.vfs.file_create(finalPath, JSON.stringify(envelope, null, 2));
+    }
+
+    /**
+     * Resolve the fingerprints of all parent stages.
+     */
+    private parentFingerprints_resolve(node: DAGNode): Record<string, string> {
+        const parentFingerprints: Record<string, string> = {};
+        if (node.previous) {
+            for (const parentId of node.previous) {
+                const fp: string | null = this.fingerprint_get(parentId);
+                if (fp) {
+                    parentFingerprints[parentId] = fp;
+                }
+            }
+        }
+        return parentFingerprints;
+    }
+
+    /**
+     * Resolve the physical path for an artifact, creating a branch if needed.
+     */
+    private artifactPath_resolve(stageId: string, stagePath: StagePath, tsNow: Date): string {
+        let finalPath: string = `${this.sessionPath}/${stagePath.artifactFile}`;
         if (this.vfs_exists(finalPath)) {
-            const branchSuffix = tsNow.getTime().toString();
-            const branchPath = stagePath.artifactFile.replace(`${stageId}/data/`, `${stageId}_BRANCH_${branchSuffix}/data/`);
+            const branchSuffix: string = tsNow.getTime().toString();
+            const branchPath: string = stagePath.artifactFile.replace(
+                `${stageId}/data/`, 
+                `${stageId}_BRANCH_${branchSuffix}/data/`
+            );
             finalPath = `${this.sessionPath}/${branchPath}`;
         }
-
-        this.vfs.file_create(finalPath, JSON.stringify(envelope, null, 2));
+        return finalPath;
     }
 
     /**
      * Read the fingerprint from a materialized artifact in the current session.
      */
     private fingerprint_get(stageId: string): string | null {
-        const path = this.workflowAdapter.stagePaths.get(stageId);
-        if (!path) return null;
+        const path: StagePath | undefined = this.workflowAdapter.stagePaths.get(stageId);
+        if (!path) {
+            return null;
+        }
 
         try {
-            const raw = this.vfs.node_read(`${this.sessionPath}/${path.artifactFile}`);
-            if (!raw) return null;
-            const envelope = JSON.parse(raw);
+            const raw: string | null = this.vfs.node_read(`${this.sessionPath}/${path.artifactFile}`);
+            if (!raw) {
+                return null;
+            }
+            const envelope: ArtifactEnvelope = JSON.parse(raw);
             return envelope._fingerprint || null;
         } catch {
             return null;

@@ -15,6 +15,8 @@ import { store, state } from '../../core/state/store.js';
  * Adapter that exposes Store functionality to CalypsoCore.
  */
 export class StoreAdapter implements CalypsoStoreActions {
+    private sessionPath: string | null = null;
+
     /**
      * Get current state snapshot.
      */
@@ -78,6 +80,20 @@ export class StoreAdapter implements CalypsoStoreActions {
      */
     public stage_set(stage: AppState['currentStage']): void {
         store.stage_set(stage);
+    }
+
+    /**
+     * Get the current session path.
+     */
+    public session_getPath(): string | null {
+        return this.sessionPath;
+    }
+
+    /**
+     * Update the current session path.
+     */
+    public session_setPath(path: string | null): void {
+        this.sessionPath = path;
     }
 }
 
