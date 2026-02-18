@@ -1,15 +1,16 @@
 {
     "name": "argus",
-    "version": "10.0.1",
+    "version": "10.0.2",
     "description": "ATLAS Resource Guided User System - LCARS Prototype",
     "type": "module",
     "scripts": {
+        "check:boundaries": "node scripts/check-plugin-boundaries.mjs",
         "version:generate": "bash scripts/generate-version.sh",
-        "build": "npm run version:generate && node scripts/bundle-docs.cjs && tsc && mkdir -p dist/js/dag/manifests && cp -r src/dag/manifests/* dist/js/dag/manifests/",
+        "build": "npm run version:generate && node scripts/bundle-docs.cjs && npm run check:boundaries && tsc && mkdir -p dist/js/dag/manifests && cp -r src/dag/manifests/* dist/js/dag/manifests/",
         "watch": "npm run version:generate && tsc --watch",
         "serve": "npx http-server dist -p 8080 -c-1",
         "dev": "npm run build && npm run serve",
-        "test": "vitest run"
+        "test": "npm run check:boundaries && vitest run"
     },
     "keywords": [
         "atlas",
