@@ -20,6 +20,27 @@ In early iterations of ARGUS (v1.0 through v8.0), workflow progress was managed 
 === The Resolution: Topological Grounding
 We learned that a scientific workflow must be modeled as a graph, not a list. The resolution was the implementation of a **Manifest-Driven DAG Engine**. In the v10.0 architecture, this engine has been enhanced with **Merkle-Proven Fingerprinting**. Every node in the graph is now grounded in a physical VFS artifact, and every transition is verified against a cryptographic chain of parentage. This ensures that the system's logical position is always a direct reflection of the physical evidence on the virtual disk.
 
+== DAG Topology Figure
+
+[source,text]
+----
+manifest DAG (example):
+
+┌────────┐     ┌────────┐     ┌───────────┐     ┌─────────┐
+│ search │────▶│ gather │────▶│ harmonize │────▶│ proceed │
+└────────┘     └────────┘     └───────────┘     └─────────┘
+
+re-execution branch:
+┌────────┐
+│ search │  (new fingerprint)
+└────┬───┘
+     │
+     └──────────────▶ downstream lineage marked stale until re-materialized
+                      ┌────────┐     ┌───────────┐     ┌─────────┐
+                      │ gather │────▶│ harmonize │────▶│ proceed │
+                      └────────┘     └───────────┘     └─────────┘
+----
+
 == The Workflow Manifest: Declarative Process Specification
 
 Workflows in ARGUS are defined externally in YAML manifests (`src/dag/manifests/`). These files serve as the "Scientific Schema" for the system.

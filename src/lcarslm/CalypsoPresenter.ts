@@ -26,7 +26,7 @@ export const MARKERS = {
 /**
  * Detects if the current execution context is a web browser.
  */
-function isBrowser(): boolean {
+function env_isBrowser(): boolean {
     return typeof window !== 'undefined' && typeof document !== 'undefined';
 }
 
@@ -78,7 +78,7 @@ export class CalypsoPresenter {
      * In Headless: ANSI colored text (or plain text).
      */
     private static wrap_muthur(text: string, type: 'success' | 'info' | 'error' | 'warning'): string {
-        if (!isBrowser()) {
+        if (!env_isBrowser()) {
             // Headless: Apply ANSI colors via chalk
             switch (type) {
                 case 'success': return chalk.cyan(text);
@@ -131,7 +131,7 @@ export class CalypsoPresenter {
         });
 
         const table: string = `\n${header}\n${separator}\n${rows.join('\n')}`;
-        return isBrowser() ? `<pre class="lcars-table">${table}</pre>` : chalk.bold(table);
+        return env_isBrowser() ? `<pre class="lcars-table">${table}</pre>` : chalk.bold(table);
     }
 
     /**
@@ -144,7 +144,7 @@ export class CalypsoPresenter {
     static progressBar_format(label: string, percent: number, duration: number = 2): string {
         const cleanLabel: string = label.toUpperCase();
         
-        if (!isBrowser()) {
+        if (!env_isBrowser()) {
             // Headless: ASCII Bar [#####-----] 50%
             const width: number = 20;
             const filled: number = Math.round((percent / 100) * width);

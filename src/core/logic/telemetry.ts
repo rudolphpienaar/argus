@@ -6,7 +6,7 @@
  * @module
  */
 
-import { state } from '../state/store.js';
+import { store } from '../state/store.js';
 import { events, Events } from '../state/events.js';
 import type { AppState, Dataset } from '../models/types.js';
 
@@ -33,7 +33,7 @@ function cascade_update(): void {
     const label5: HTMLElement | null = document.getElementById('cascade-label-5');
     const label6: HTMLElement | null = document.getElementById('cascade-label-6');
 
-    if (state.currentStage === 'login' || state.currentStage === 'role-selection') {
+    if (store.state.currentStage === 'login' || store.state.currentStage === 'role-selection') {
         // Telemetry Mode
         if (label1) label1.textContent = 'NODES';
         if (label2) label2.textContent = 'JOBS';
@@ -48,10 +48,10 @@ function cascade_update(): void {
         if (label3) label3.textContent = 'COST';
         if (label4) label4.textContent = 'STATUS';
 
-        const totalImages: number = state.selectedDatasets.reduce((sum: number, ds: Dataset) => sum + ds.imageCount, 0);
-        const totalCost: number = state.costEstimate.total;
+        const totalImages: number = store.state.selectedDatasets.reduce((sum: number, ds: Dataset) => sum + ds.imageCount, 0);
+        const totalCost: number = store.state.costEstimate.total;
 
-        if (datasetsEl) datasetsEl.textContent = state.selectedDatasets.length.toString();
+        if (datasetsEl) datasetsEl.textContent = store.state.selectedDatasets.length.toString();
         if (imagesEl) imagesEl.textContent = totalImages.toLocaleString();
         if (costEl) costEl.textContent = `$${totalCost.toFixed(0)}`;
 
@@ -65,7 +65,7 @@ function cascade_update(): void {
                 monitor: 'TRAINING',
                 post: 'COMPLETE'
             };
-            statusEl.textContent = statusMap[state.currentStage] || 'READY';
+            statusEl.textContent = statusMap[store.state.currentStage] || 'READY';
         }
     }
 }
@@ -83,7 +83,7 @@ let telemetryCycle: number = 0;
  * Updates real-time system telemetry numbers (btop effect).
  */
 export function telemetry_update(): void {
-    if (state.currentStage !== 'login' && state.currentStage !== 'role-selection') return;
+    if (store.state.currentStage !== 'login' && store.state.currentStage !== 'role-selection') return;
 
     telemetryCycle++;
 

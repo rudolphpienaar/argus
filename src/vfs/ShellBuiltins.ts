@@ -12,6 +12,17 @@ import type { ShellResult, FileNode } from './types.js';
 
 export type BuiltinHandler = (args: string[], shell: Shell) => Promise<ShellResult>;
 
+interface PythonRunContext {
+    scriptPath: string;
+    resolvedPath: string;
+    runRootPath: string;
+    outputDirPath: string;
+    modelPath: string;
+    statsPath: string;
+    inputDisplayPath: string;
+    isChrisValidation: boolean;
+}
+
 export class ShellBuiltins {
     constructor(private vfs: VirtualFileSystem) {}
 
@@ -45,8 +56,8 @@ export class ShellBuiltins {
             shell.env_set('PWD', newCwd);
             shell.cwd_didChange(newCwd);
             return { stdout: '', stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `cd: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `cd: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -86,8 +97,8 @@ export class ShellBuiltins {
             const children = this.vfs.dir_list(resolvedPath);
             const lines = children.map(child => entry_render(child));
             return { stdout: lines.join('\n'), stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `ls: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `ls: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -103,8 +114,8 @@ export class ShellBuiltins {
                 return { stdout: '', stderr: `cat: ${args[0]}: Is a directory or has no content`, exitCode: 1 };
             }
             return { stdout: content, stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `cat: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `cat: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -117,8 +128,8 @@ export class ShellBuiltins {
         try {
             this.vfs.dir_create(args[0]);
             return { stdout: '', stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `mkdir: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `mkdir: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -127,8 +138,8 @@ export class ShellBuiltins {
         try {
             this.vfs.file_create(args[0]);
             return { stdout: '', stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `touch: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `touch: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -139,8 +150,8 @@ export class ShellBuiltins {
         try {
             for (const p of paths) this.vfs.node_remove(p, recursive);
             return { stdout: '', stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `rm: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `rm: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -149,8 +160,8 @@ export class ShellBuiltins {
         try {
             this.vfs.node_copy(args[0], args[1]);
             return { stdout: '', stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `cp: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `cp: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -159,8 +170,8 @@ export class ShellBuiltins {
         try {
             this.vfs.node_move(args[0], args[1]);
             return { stdout: '', stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `mv: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `mv: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -208,8 +219,8 @@ export class ShellBuiltins {
             lines.push(`${dirCount} director${dirCount === 1 ? 'y' : 'ies'}, ${fileCount} file${fileCount === 1 ? '' : 's'}`);
 
             return { stdout: lines.join('\n'), stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: `tree: ${e.message}`, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: `tree: ${this.errorMessage_get(error)}`, exitCode: 1 };
         }
     }
 
@@ -250,55 +261,19 @@ export class ShellBuiltins {
     private async python(args: string[], shell: Shell): Promise<ShellResult> {
         if (args.length === 0) return { stdout: '', stderr: 'python: missing file operand', exitCode: 1 };
         const scriptPath: string = args[0];
+        const resolvedPath: string = this.vfs.path_resolve(scriptPath);
+        if (!this.vfs.node_stat(resolvedPath)) {
+            return { stdout: '', stderr: `python: can't open file '${scriptPath}': [Errno 2] No such file or directory`, exitCode: 2 };
+        }
+
         try {
-            const resolved: string = this.vfs.path_resolve(scriptPath);
-            if (!this.vfs.node_stat(resolved)) {
-                return { stdout: '', stderr: `python: can't open file '${scriptPath}': [Errno 2] No such file or directory`, exitCode: 2 };
+            const context: PythonRunContext = this.pythonContext_build(scriptPath, resolvedPath, shell);
+            if (context.isChrisValidation) {
+                return this.pythonValidation_simulate(context);
             }
-            this.vfs.node_read(resolved);
-
-            const runRootPath: string = this.projectRoot_resolve(resolved, shell) ?? this.vfs.path_resolve('.');
-            const outputDirPath: string = `${runRootPath}/output`;
-            const modelPath: string = `${outputDirPath}/model.pth`;
-            const statsPath: string = `${outputDirPath}/stats.json`;
-            const inputDirPath: string = `${runRootPath}/input`;
-            const inputDisplayPath: string = `${this.path_relativeToCwd(inputDirPath, shell)}/`;
-            const resolvedLower: string = resolved.toLowerCase();
-            const isChrisValidation: boolean = resolvedLower.endsWith('/src/main.py') || resolvedLower.endsWith('/src/app/main.py');
-
-            if (isChrisValidation) {
-                let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
-                output += `○ Validating ChRIS plugin entrypoint...\n○ Parsing argument contract and runtime hooks...\n○ Checking input/output filesystem compliance...\n\n--- TEST LOG ---\n[PASS] plugin metadata loaded\n[PASS] argument parser initialized\n[PASS] input/output bindings valid\n\n`;
-                try {
-                    this.vfs.file_create(`${runRootPath}/.test_pass`, new Date().toISOString());
-                } catch { /* ignore */ }
-                output += `<span class="success">>> LOCAL PLUGIN TEST COMPLETE.</span>\n<span class="dim">   Plugin validation marker saved to: ${runRootPath}/.test_pass</span>`;
-                return { stdout: output, stderr: '', exitCode: 0 };
-            }
-
-            let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
-            output += `○ Loading torch and meridian.data...\n○ Found 1,240 images in ${inputDisplayPath}\n○ Model: ResNet50 (Pretrained=True)\n○ Device: NVIDIA A100-SXM4 (Simulated)\n\n--- TRAINING LOG ---\n`;
-            output += `Epoch 1/5 [#####---------------] 25% | Loss: 0.8234 | Acc: 0.64\n`;
-            await new Promise((r: (value: unknown) => void): void => { setTimeout(r, 200); });
-            output += `Epoch 2/5 [##########----------] 50% | Loss: 0.5121 | Acc: 0.78\n`;
-            output += `Epoch 3/5 [###############-----] 75% | Loss: 0.3245 | Acc: 0.88\n`;
-            output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;
-            output += `Epoch 5/5 [####################] 100% | Loss: 0.1542 | Acc: 0.95\n\n`;
-
-            // Materialize artifacts in VFS so CLI output matches filesystem state.
-            try {
-                this.vfs.dir_create(outputDirPath);
-                this.vfs.file_create(modelPath, 'SIMULATED_PYTORCH_WEIGHTS_BLOB');
-                this.vfs.file_create(statsPath, JSON.stringify({ epoch: 5, loss: 0.1542, accuracy: 0.95, status: 'PASS' }, null, 2));
-                
-                // CRITICAL: Materialize .local_pass marker at project root
-                this.vfs.file_create(`${runRootPath}/.local_pass`, new Date().toISOString());
-            } catch { /* ignore */ }
-
-            output += `<span class="success">>> LOCAL TRAINING COMPLETE.</span>\n<span class="dim">   Model weights saved to: ${modelPath}</span>\n<span class="dim">   Validation metrics saved to: ${statsPath}</span>`;
-            return { stdout: output, stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: e.message, exitCode: 1 };
+            return await this.pythonTraining_simulate(context);
+        } catch (error: unknown) {
+            return { stdout: '', stderr: this.errorMessage_get(error), exitCode: 1 };
         }
     }
 
@@ -316,12 +291,103 @@ export class ShellBuiltins {
 
             const count: number = await files_ingest(files, destination);
             return { stdout: `<span class="success">Successfully uploaded ${count} file(s) to ${destination}</span>`, stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: e.message, exitCode: 1 };
+        } catch (error: unknown) {
+            return { stdout: '', stderr: this.errorMessage_get(error), exitCode: 1 };
         }
     }
 
     // ─── Helpers ────────────────────────────────────────────────
+
+    /**
+     * Build python execution context from shell/VFS state.
+     */
+    private pythonContext_build(scriptPath: string, resolvedPath: string, shell: Shell): PythonRunContext {
+        this.vfs.node_read(resolvedPath);
+
+        const runRootPath: string = this.projectRoot_resolve(resolvedPath, shell) ?? this.vfs.path_resolve('.');
+        const outputDirPath: string = `${runRootPath}/output`;
+        const modelPath: string = `${outputDirPath}/model.pth`;
+        const statsPath: string = `${outputDirPath}/stats.json`;
+        const inputDirPath: string = `${runRootPath}/input`;
+        const inputDisplayPath: string = `${this.path_relativeToCwd(inputDirPath, shell)}/`;
+        const resolvedLower: string = resolvedPath.toLowerCase();
+        const isChrisValidation: boolean = resolvedLower.endsWith('/src/main.py') || resolvedLower.endsWith('/src/app/main.py');
+
+        return {
+            scriptPath,
+            resolvedPath,
+            runRootPath,
+            outputDirPath,
+            modelPath,
+            statsPath,
+            inputDisplayPath,
+            isChrisValidation
+        };
+    }
+
+    /**
+     * Simulate local ChRIS plugin validation execution.
+     */
+    private pythonValidation_simulate(context: PythonRunContext): ShellResult {
+        let output: string = `<span class="highlight">[LOCAL EXECUTION: ${context.scriptPath}]</span>\n`;
+        output += `○ Validating ChRIS plugin entrypoint...\n○ Parsing argument contract and runtime hooks...\n○ Checking input/output filesystem compliance...\n\n--- TEST LOG ---\n[PASS] plugin metadata loaded\n[PASS] argument parser initialized\n[PASS] input/output bindings valid\n\n`;
+        this.marker_writeSafe(`${context.runRootPath}/.test_pass`);
+        output += `<span class="success">>> LOCAL PLUGIN TEST COMPLETE.</span>\n<span class="dim">   Plugin validation marker saved to: ${context.runRootPath}/.test_pass</span>`;
+        return { stdout: output, stderr: '', exitCode: 0 };
+    }
+
+    /**
+     * Simulate local model training execution and artifact materialization.
+     */
+    private async pythonTraining_simulate(context: PythonRunContext): Promise<ShellResult> {
+        let output: string = `<span class="highlight">[LOCAL EXECUTION: ${context.scriptPath}]</span>\n`;
+        output += `○ Loading torch and meridian.data...\n○ Found 1,240 images in ${context.inputDisplayPath}\n○ Model: ResNet50 (Pretrained=True)\n○ Device: NVIDIA A100-SXM4 (Simulated)\n\n--- TRAINING LOG ---\n`;
+        output += `Epoch 1/5 [#####---------------] 25% | Loss: 0.8234 | Acc: 0.64\n`;
+        await this.delay_wait(200);
+        output += `Epoch 2/5 [##########----------] 50% | Loss: 0.5121 | Acc: 0.78\n`;
+        output += `Epoch 3/5 [###############-----] 75% | Loss: 0.3245 | Acc: 0.88\n`;
+        output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;
+        output += `Epoch 5/5 [####################] 100% | Loss: 0.1542 | Acc: 0.95\n\n`;
+
+        this.trainingArtifacts_materialize(context);
+        output += `<span class="success">>> LOCAL TRAINING COMPLETE.</span>\n<span class="dim">   Model weights saved to: ${context.modelPath}</span>\n<span class="dim">   Validation metrics saved to: ${context.statsPath}</span>`;
+        return { stdout: output, stderr: '', exitCode: 0 };
+    }
+
+    /**
+     * Materialize simulated training artifacts into the project output tree.
+     */
+    private trainingArtifacts_materialize(context: PythonRunContext): void {
+        try {
+            this.vfs.dir_create(context.outputDirPath);
+            this.vfs.file_create(context.modelPath, 'SIMULATED_PYTORCH_WEIGHTS_BLOB');
+            this.vfs.file_create(
+                context.statsPath,
+                JSON.stringify({ epoch: 5, loss: 0.1542, accuracy: 0.95, status: 'PASS' }, null, 2)
+            );
+            this.marker_writeSafe(`${context.runRootPath}/.local_pass`);
+        } catch {
+            // best-effort artifact materialization for simulation mode
+        }
+    }
+
+    /**
+     * Best-effort marker write helper used by simulated python execution.
+     */
+    private marker_writeSafe(path: string): void {
+        try {
+            this.vfs.file_create(path, new Date().toISOString());
+        } catch {
+            // ignore marker write failures in simulation mode
+        }
+    }
+
+    /**
+     * Sleep utility for simulated progress output.
+     */
+    private async delay_wait(ms: number): Promise<void> {
+        await new Promise((resolve: (value: unknown) => void): void => { setTimeout(resolve, ms); });
+    }
 
     /**
      * Resolves the root directory of the current project.
@@ -361,5 +427,12 @@ export class ShellBuiltins {
         if (relativeParts.length === 0) return '.';
         const relativePath: string = relativeParts.join('/');
         return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+    }
+
+    /**
+     * Convert unknown thrown values into display-safe messages.
+     */
+    private errorMessage_get(error: unknown): string {
+        return error instanceof Error ? error.message : String(error);
     }
 }

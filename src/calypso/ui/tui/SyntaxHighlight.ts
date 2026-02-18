@@ -9,68 +9,25 @@
  */
 
 import { COLORS } from './TuiRenderer.js';
+import {
+    language_fromPath,
+    language_fromCatCommand,
+    language_normalize,
+    type LanguageId
+} from '../../../core/syntax/languageRegistry.js';
 
 /**
  * Infer syntax language from a filename/path extension.
  */
 export function syntaxLanguage_fromPath(filePath: string): string | null {
-    const basename: string = filePath.split('/').pop()?.toLowerCase() || '';
-    if (basename === 'dockerfile') return 'dockerfile';
-    if (basename === 'makefile') return 'makefile';
-
-    const dotIdx = basename.lastIndexOf('.');
-    if (dotIdx < 0) return null;
-    const ext: string = basename.slice(dotIdx + 1);
-
-    switch (ext) {
-        case 'py':
-            return 'python';
-        case 'json':
-            return 'json';
-        case 'yaml':
-        case 'yml':
-            return 'yaml';
-        case 'md':
-        case 'markdown':
-        case 'adoc':
-            return 'markdown';
-        case 'sh':
-        case 'bash':
-        case 'zsh':
-            return 'bash';
-        case 'ts':
-        case 'tsx':
-            return 'typescript';
-        case 'js':
-        case 'mjs':
-        case 'cjs':
-            return 'javascript';
-        case 'toml':
-            return 'toml';
-        case 'ini':
-        case 'cfg':
-        case 'conf':
-            return 'ini';
-        case 'txt':
-            return 'text';
-        default:
-            return null;
-    }
+    return language_fromPath(filePath);
 }
 
 /**
  * Detect `cat <path>` command language for direct file output highlighting.
  */
 export function catLanguage_detect(input?: string): string | null {
-    if (!input) return null;
-    const tokens: RegExpMatchArray | null = input.match(/(?:[^\s"'`]+|"[^"]*"|'[^']*')+/g);
-    if (!tokens || tokens.length === 0) return null;
-    if (tokens[0].toLowerCase() !== 'cat') return null;
-
-    const fileToken: string | undefined = tokens.slice(1).find((token: string): boolean => !token.startsWith('-'));
-    if (!fileToken) return null;
-    const normalized: string = fileToken.replace(/^['"]|['"]$/g, '');
-    return syntaxLanguage_fromPath(normalized);
+    return language_fromCatCommand(input);
 }
 
 /**
@@ -78,7 +35,7 @@ export function catLanguage_detect(input?: string): string | null {
  */
 export function syntaxHighlight_renderAnsi(code: string, language: string): string {
     let text: string = code;
-    const lang: string = language.toLowerCase();
+    const lang: LanguageId = language_normalize(language) ?? 'text';
     const masks: Map<string, string> = new Map();
     let maskIdx: number = 0;
 
@@ -118,7 +75,7 @@ export function syntaxHighlight_renderAnsi(code: string, language: string): stri
         return text;
     }
 
-    if (lang === 'yaml' || lang === 'yml') {
+    if (lang === 'yaml') {
         maskWithColor(/#[^\n]*/g, COLORS.dim);
         maskWithColor(/(".*?"|'.*?')/g, COLORS.green);
         text = text.replace(/^(\s*[\w.-]+)(\s*:)/gm, `${COLORS.cyan}$1${COLORS.reset}$2`);
@@ -128,7 +85,7 @@ export function syntaxHighlight_renderAnsi(code: string, language: string): stri
         return text;
     }
 
-    if (lang === 'bash' || lang === 'shell' || lang === 'zsh') {
+    if (lang === 'bash') {
         maskWithColor(/#[^\n]*/g, COLORS.dim);
         maskWithColor(/(".*?"|'.*?')/g, COLORS.green);
         text = text.replace(/\$(\w+|\{[^}]+\})/g, (match: string): string => `${COLORS.magenta}${match}${COLORS.reset}`);
@@ -147,7 +104,7 @@ export function syntaxHighlight_renderAnsi(code: string, language: string): stri
         return text;
     }
 
-    if (lang === 'markdown' || lang === 'md') {
+    if (lang === 'markdown') {
         text = text.replace(/^(#{1,6}\s+.+)$/gm, `${COLORS.cyan}$1${COLORS.reset}`);
         text = text.replace(/(\*\*[^*]+\*\*)/g, `${COLORS.bright}$1${COLORS.reset}`);
         text = text.replace(/(`[^`]+`)/g, `${COLORS.yellow}$1${COLORS.reset}`);

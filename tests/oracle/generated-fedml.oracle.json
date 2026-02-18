@@ -42,7 +42,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json"
     },
     {
       "send": "proceed",
@@ -50,7 +50,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json"
     },
     {
       "send": "python train.py",
@@ -58,7 +58,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/data/train.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/data/train.json"
     },
     {
       "send": "federate",
@@ -66,7 +66,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/data/briefing.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/data/briefing.json"
     },
     {
       "send": "show transcompile",
@@ -79,7 +79,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/data/transcompile.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/data/transcompile.json"
     },
     {
       "send": "show container",
@@ -92,7 +92,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/data/containerize.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/data/containerize.json"
     },
     {
       "send": "config name oracle-app",
@@ -105,7 +105,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/data/publish-config.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/data/publish-config.json"
     },
     {
       "send": "show publish",
@@ -118,7 +118,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/data/publish-execute.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/data/publish-execute.json"
     },
     {
       "send": "dispatch",
@@ -126,7 +126,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/data/dispatch.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/data/dispatch.json"
     },
     {
       "send": "status",
@@ -134,7 +134,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
     },
     {
       "send": "publish model",
@@ -142,7 +142,7 @@
       "capture_project": false
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/federate-model-publish/data/model-publish.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/federate-model-publish/data/model-publish.json"
     }
   ]
 }

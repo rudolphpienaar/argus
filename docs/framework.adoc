@@ -1,6 +1,6 @@
 = ARGUS Framework Patterns: The Architecture of Deterministic UI
 :author: ATLAS Project Team
-:revdate: 2026-02-17
+:revdate: 2026-02-18
 :revnumber: 10.0.0
 :toc: macro
 :toclevels: 3
@@ -17,6 +17,26 @@ The ARGUS Framework is a specialized UI architecture built on Vanilla TypeScript
 The decision to build ARGUS without a traditional frontend framework (e.g., React, Vue, or Svelte) was a deliberate engineering choice to ensure architectural purity and environment-agnosticism. Early development efforts encountered significant challenges with "DOM Pollution" and "State Drift," where different UI components would interfere with each other's DOM subtrees, leading to fragile and non-deterministic behavior. We learned that for a system grounded in data-state truth, the UI must be a deterministic projection of that state, not a source of truth itself.
 
 The resolution was the development of a suite of project-specific patterns designed to provide the same benefits as modern frameworks—isolation, reactivity, and modularity—but without the runtime overhead. Most notably, the **Slot Pattern** was introduced to solve visual isolation, and **RPN Naming** was mandated to provide functional clarity. These patterns ensure that the ARGUS LCARS interface remains scalable and verifiable through the ORACLE methodology, providing a robust interface for both human and AI operators.
+
+== Framework Pattern Figure
+
+[source,text]
+----
+┌──────────────┐     ┌──────────────┐     ┌────────────────┐
+│ RPN naming   │────▶│ Stage hooks  │────▶│ predictable UI │
+└──────────────┘     │ enter/exit   │     │ transitions    │
+                     └──────┬───────┘     └────────────────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │ Slot pattern │────▶ DOM isolation
+                     └──────┬───────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │ Providers    │────▶ VFS materialization bridge
+                     └──────────────┘
+----
 
 == RPN Naming Convention: Functional Clarity
 
@@ -44,6 +64,18 @@ Workflow progression in ARGUS is managed through **Stage Lifecycle Hooks**. Each
 *   **Decoupled Orchestration:** The main entry point (`argus.ts`) does not contain stage-specific logic. It simply dispatches to the appropriate hooks when the application state changes.
 *   **Automated Cleanup:** The `stage_exit` hook is responsible for tearing down environment-specific state, such as active FileBrowser instances or terminal resize handles. This ensures that the system always starts from a clean slate when entering a new phase of the scientific process.
 
+=== Search/Gather Adapter Boundary
+
+Search and Gather share adjacent UI surfaces, but they remain distinct stage responsibilities:
+
+*   **Search-stage adapters** (`src/core/stages/search.ts`) own discovery interactions and search-result projection.
+*   **Gather-stage adapters** (`src/core/stages/gather/*`) own project selection, dataset detail workflows, and gather workspace interactions.
+*   **Shared render helpers** are allowed when they are presentation-only and stage-agnostic.
+
+If logic mutates cohort membership, project gather-target state, or gather workspace context, it belongs under Gather modules. If logic resolves or filters catalog discovery, it belongs under Search modules.
+
+This boundary keeps UI adapters aligned with SeaGaP semantics and avoids accidental cross-stage coupling.
+
 == The Provider Pattern: Domain-to-VFS Translation
 
 Providers are the "Translators" of the ARGUS system. They are pure functions located in `src/vfs/providers/` that transform high-level domain objects (e.g., a `Project` model) into low-level VCS filesystem trees.
@@ -56,4 +88,4 @@ Providers are the "Translators" of the ARGUS system. They are pure functions loc
 The ARGUS Framework patterns provide the structural discipline required to build a sophisticated, agent-mediated interface without the fragility of traditional state-heavy UI models. By grounding the UI in deterministic projections and isolating component state through slots and providers, we ensure that the ARGUS console remains a robust and reliable tool for federated medical research. These conventions are the foundation upon which the v10.0 architecture stands, enabling perfect synchronization between the visual interface and the materialized ground truth.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-18 (v10.0.0)_

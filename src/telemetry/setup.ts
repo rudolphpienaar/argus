@@ -11,7 +11,7 @@ import { ListRenderer } from '../lcars-framework/telemetry/renderers/ListRendere
 import { LogRenderer } from '../lcars-framework/telemetry/renderers/LogRenderer.js';
 import { HTMLRenderer } from '../lcars-framework/telemetry/renderers/HTMLRenderer.js';
 import { StationTelemetryGenerator, StationContentProvider } from '../lcars-framework/telemetry/generators/StationTelemetryGenerator.js';
-import { state } from '../core/state/store.js';
+import { store } from '../core/state/store.js';
 import type { AppState } from '../core/models/types.js';
 
 /**
@@ -84,13 +84,13 @@ function stationProvider_get(stage: string): StationContentProvider {
             };
         case 'gather':
             return (isActive: boolean, t: number, timeStr: string) => {
-                const imgCount = state.selectedDatasets.reduce((sum, d) => sum + d.imageCount, 0);
+                const imgCount = store.state.selectedDatasets.reduce((sum, d) => sum + d.imageCount, 0);
                 if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">GATHERED</span><br>IMG: ${imgCount}<br>STATUS: SYNCED`;
                 const ops = ['INDEXING', 'HASHING', 'VALIDATING', 'CACHING', 'SYNCING'];
                 return `<span class="dim">[${timeStr}]</span> <span class="warn">${ops[t % ops.length]}</span><br>` +
-                       `DATASETS: <span class="highlight">${state.selectedDatasets.length}</span><br>` +
+                       `DATASETS: <span class="highlight">${store.state.selectedDatasets.length}</span><br>` +
                        `IMAGES: ${imgCount.toLocaleString()}<br>` +
-                       `COST: <span class="highlight">$${state.costEstimate.total.toFixed(2)}</span>`;
+                       `COST: <span class="highlight">$${store.state.costEstimate.total.toFixed(2)}</span>`;
             };
         case 'process':
             return (isActive: boolean, t: number, timeStr: string) => {
@@ -103,8 +103,8 @@ function stationProvider_get(stage: string): StationContentProvider {
             };
         case 'monitor':
             return (isActive: boolean, t: number, timeStr: string) => {
-                const epoch = state.trainingJob?.currentEpoch ?? 0;
-                const loss = state.trainingJob?.loss?.toFixed(4) ?? (2.5 - (t % 100) * 0.02).toFixed(4);
+                const epoch = store.state.trainingJob?.currentEpoch ?? 0;
+                const loss = store.state.trainingJob?.loss?.toFixed(4) ?? (2.5 - (t % 100) * 0.02).toFixed(4);
                 if (!isActive) return `<span class="dim">[${timeStr}]</span> <span class="highlight">FINISHED</span><br>EPOCH: 50/50<br>LOSS: 0.0231`;
                 return `<span class="dim">[${timeStr}]</span> <span class="warn">TRAINING</span><br>` +
                        `EPOCH: <span class="highlight">${Math.floor(epoch)}/50</span><br>` +

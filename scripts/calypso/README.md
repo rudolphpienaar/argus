@@ -1,6 +1,6 @@
 # Calypso Scripts (`.clpso`)
 
-`calypso-cli` supports script-driven execution so repeatable workflows can be invoked as named operational units instead of retyped command sequences. In practice, the script system gives advanced users a fast path while preserving deterministic behavior and observable state transitions.
+The Calypso WebSocket CLI (`make calypso-ws`) supports script-driven execution so repeatable workflows can be invoked as named operational units instead of retyped command sequences. In practice, the script system gives advanced users a fast path while preserving deterministic behavior and observable state transitions.
 
 A script is invoked through `/run <script>`, and discovery is available through `/scripts`. When CALYPSO resolves a script reference, it first checks direct paths, then tries the same reference with `.clpso` appended, and finally searches under `scripts/calypso/` using both bare and extension-qualified forms.
 

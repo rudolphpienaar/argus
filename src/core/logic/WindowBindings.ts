@@ -9,8 +9,8 @@
 
 import { store } from '../state/store.js';
 import { stage_advanceTo, station_click, stage_next } from './navigation.js';
-import { catalog_search, dataset_toggle, lcarslm_auth, lcarslm_reset, lcarslm_simulate, project_activate, projectDetail_open, datasetDetail_open, proceedToCode_handle, template_select, dataset_add } from '../stages/search.js';
-import { filePreview_show } from '../stages/gather.js';
+import { catalog_search, dataset_toggle, lcarslm_auth, lcarslm_reset, lcarslm_simulate } from '../stages/search.js';
+import { filePreview_show, project_activate, projectDetail_open, datasetDetail_open, proceedToCode_handle, template_select, dataset_add } from '../stages/gather.js';
 import { training_launch, terminal_toggle, ide_openFile } from '../stages/process.js';
 import { training_abort } from '../stages/monitor.js';
 import { model_publish } from '../stages/post.js';

@@ -16,6 +16,7 @@ import { events, Events } from '../core/state/events.js';
  * Callback signature for content generators used by the ContentRegistry.
  */
 type ContentResolver = (generatorKey: string, filePath: string) => string | null;
+type FolderNode = FileNode & { type: 'folder'; children: FileNode[] };
 
 /**
  * In-memory POSIX-like virtual filesystem.
@@ -35,7 +36,7 @@ export class VirtualFileSystem {
     }
 
     public reset(): void {
-        const username = this.username_get();
+        const username: string = this.username_get();
         this.root = node_create('', 'folder', '/');
         this.homePath = `/home/${username}`;
         this.cwd = this.homePath;
@@ -43,7 +44,7 @@ export class VirtualFileSystem {
     }
 
     public username_get(): string {
-        const segments = this.homePath.split('/').filter(Boolean);
+        const segments: string[] = this.homePath.split('/').filter(Boolean);
         return segments[segments.length - 1] || 'user';
     }
 
@@ -122,18 +123,14 @@ export class VirtualFileSystem {
     public node_write(path: string, content: string): void {
         const resolved: string = this.path_resolve(path);
         const parentPath: string = path_parent(resolved);
-        const parent = this.node_at(parentPath);
-        if (!parent || parent.type !== 'folder') {
-            throw new Error('Parent directory does not exist');
-        }
+        const parent: FolderNode = this.node_folderRequire(parentPath, 'Parent directory does not exist');
 
         let node: FileNode | null = this.node_at(resolved);
         if (node && node.type === 'folder') throw new Error(`write: ${path}: Is a directory`);
 
         if (!node) {
-            const parent = this.node_at(parentPath)!;
             node = node_create(path_basename(resolved), 'file', resolved);
-            parent.children!.push(node);
+            parent.children.push(node);
         }
 
         node.content = content;
@@ -151,8 +148,8 @@ export class VirtualFileSystem {
         if (node.type === 'folder' && node.children && node.children.length > 0 && !recursive) {
             throw new Error(`rm: ${path}: Directory not empty`);
         }
-        const parent = this.node_at(path_parent(resolved))!;
-        parent.children = parent.children!.filter(c => c.path !== resolved);
+        const parent: FolderNode = this.node_folderRequire(path_parent(resolved), `rm: ${path}: Parent directory not found`);
+        parent.children = parent.children.filter((c: FileNode): boolean => c.path !== resolved);
         this.event_emit(resolved, 'remove');
     }
 
@@ -162,8 +159,8 @@ export class VirtualFileSystem {
         const srcNode: FileNode | null = this.node_at(srcResolved);
         if (!srcNode) throw new Error(`cp: ${src}: No such file or directory`);
         this.dir_create(path_parent(destResolved));
-        const parent = this.node_at(path_parent(destResolved))!;
-        parent.children!.push(node_cloneDeep(srcNode, destResolved));
+        const parent: FolderNode = this.node_folderRequire(path_parent(destResolved), `cp: ${dest}: Parent directory not found`);
+        parent.children.push(node_cloneDeep(srcNode, destResolved));
         this.event_emit(destResolved, 'copy');
     }
 
@@ -173,14 +170,14 @@ export class VirtualFileSystem {
         const srcNode: FileNode | null = this.node_at(srcResolved);
         if (!srcNode) throw new Error(`mv: ${src}: No such file or directory`);
         
-        const oldParent = this.node_at(path_parent(srcResolved))!;
-        oldParent.children = oldParent.children!.filter(c => c.path !== srcResolved);
+        const oldParent: FolderNode = this.node_folderRequire(path_parent(srcResolved), `mv: ${src}: Parent directory not found`);
+        oldParent.children = oldParent.children.filter((c: FileNode): boolean => c.path !== srcResolved);
 
         this.dir_create(path_parent(destResolved));
-        const newParent = this.node_at(path_parent(destResolved))!;
+        const newParent: FolderNode = this.node_folderRequire(path_parent(destResolved), `mv: ${dest}: Parent directory not found`);
         srcNode.name = path_basename(destResolved);
         node_repath(srcNode, destResolved);
-        newParent.children!.push(srcNode);
+        newParent.children.push(srcNode);
         this.event_emit(destResolved, 'move');
     }
 
@@ -232,33 +229,33 @@ export class VirtualFileSystem {
             return;
         }
 
-        const parent: FileNode = this.node_at(path_parent(resolved))!;
+        const parent: FolderNode = this.node_folderRequire(path_parent(resolved), `touch: ${path}: Parent directory not found`);
         const node: FileNode = node_create(path_basename(resolved), 'file', resolved);
         if (content !== undefined) {
             node.content = content;
             node.size = size_format(content.length);
         }
         if (generatorKey) node.contentGenerator = generatorKey;
-        parent.children!.push(node);
+        parent.children.push(node);
         this.event_emit(resolved, 'touch');
     }
 
     public tree_mount(path: string, subtree: FileNode): void {
         const resolved: string = this.path_resolve(path);
         this.dir_create(path_parent(resolved));
-        const parent = this.node_at(path_parent(resolved))!;
-        if (parent.children) parent.children = parent.children.filter(c => c.name !== subtree.name);
+        const parent: FolderNode = this.node_folderRequire(path_parent(resolved), `mount: ${path}: Parent directory not found`);
+        parent.children = parent.children.filter((c: FileNode): boolean => c.name !== subtree.name);
         node_repath(subtree, resolved);
         subtree.name = path_basename(resolved);
-        parent.children!.push(subtree);
+        parent.children.push(subtree);
         this.event_emit(resolved, 'mount');
     }
 
     public tree_unmount(path: string): void {
         const resolved: string = this.path_resolve(path);
-        const parent = this.node_at(path_parent(resolved));
-        const name = path_basename(resolved);
-        if (parent?.children) parent.children = parent.children.filter(c => c.name !== name);
+        const parent: FileNode | null = this.node_at(path_parent(resolved));
+        const name: string = path_basename(resolved);
+        if (parent?.children) parent.children = parent.children.filter((c: FileNode): boolean => c.name !== name);
         this.event_emit(resolved, 'unmount');
     }
 
@@ -279,6 +276,39 @@ export class VirtualFileSystem {
         return current;
     }
 
+    /**
+     * Resolve a node by absolute path, throwing if missing.
+     *
+     * @param absolutePath - Fully resolved path.
+     * @param errorMessage - Error to throw if path is missing.
+     * @returns Existing VFS node.
+     */
+    private node_require(absolutePath: string, errorMessage: string): FileNode {
+        const node: FileNode | null = this.node_at(absolutePath);
+        if (!node) {
+            throw new Error(errorMessage);
+        }
+        return node;
+    }
+
+    /**
+     * Resolve a folder node by absolute path and ensure children array exists.
+     *
+     * @param absolutePath - Fully resolved folder path.
+     * @param errorMessage - Error to throw if path is missing or non-folder.
+     * @returns Existing folder node.
+     */
+    private node_folderRequire(absolutePath: string, errorMessage: string): FolderNode {
+        const node: FileNode = this.node_require(absolutePath, errorMessage);
+        if (node.type !== 'folder') {
+            throw new Error(errorMessage);
+        }
+        if (!node.children) {
+            node.children = [];
+        }
+        return node as FolderNode;
+    }
+
     private event_emit(path: string, operation: VfsChangeEvent['operation']): void {
         events.emit(Events.VFS_CHANGED, { path, operation });
     }
@@ -290,7 +320,7 @@ function node_create(name: string, type: 'file' | 'folder', path: string): FileN
 
 function node_cloneDeep(node: FileNode, newPath: string): FileNode {
     const clone: FileNode = { ...node, path: newPath, name: path_basename(newPath), modified: new Date(), metadata: { ...node.metadata }, children: null };
-    if (node.children) clone.children = node.children.map(child => node_cloneDeep(child, newPath + '/' + child.name));
+    if (node.children) clone.children = node.children.map((child: FileNode): FileNode => node_cloneDeep(child, newPath + '/' + child.name));
     return clone;
 }
 

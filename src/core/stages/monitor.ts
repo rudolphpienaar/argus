@@ -1,12 +1,22 @@
 /**
  * @file Monitor Stage Logic
  *
- * Handles the federated training simulation, progress tracking, and visualization.
+ * SeaGaP Monitor-stage runtime and telemetry simulation.
+ *
+ * Responsibilities:
+ * - Initialize and advance simulated federated job store.state.
+ * - Render node-level progress, cost, and convergence signals.
+ * - Manage monitor-specific timers and teardown boundaries.
+ *
+ * Non-responsibilities:
+ * - Search/gather workspace orchestration.
+ * - Project scaffold mutation and source editing.
+ * - Post-stage publication semantics.
  *
  * @module
  */
 
-import { state, globals, store } from '../state/store.js';
+import { store } from '../state/store.js';
 import { MOCK_NODES } from '../data/nodes.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
@@ -22,7 +32,7 @@ import type { TrainingJob, TrustedDomainNode } from '../models/types.js';
  * renders initial node status, and starts the training simulation interval.
  */
 export function stage_enter(): void {
-    if (!state.trainingJob) {
+    if (!store.state.trainingJob) {
         store.trainingJob_set({
             id: `job-${Date.now()}`,
             status: 'running',
@@ -45,14 +55,14 @@ export function stage_enter(): void {
         if (ctx) {
             canvas.width = canvas.offsetWidth;
             canvas.height = canvas.offsetHeight;
-            globals.lossChart = { ctx, data: [] };
+            store.globalLossChart_set({ ctx, data: [] });
         }
     }
 
     nodeStatus_render();
 
-    if (globals.trainingInterval) clearInterval(globals.trainingInterval);
-    globals.trainingInterval = window.setInterval(trainingStep_simulate, 500);
+    if (store.globals.trainingInterval) clearInterval(store.globals.trainingInterval);
+    store.globalTrainingInterval_set(window.setInterval(trainingStep_simulate, 500));
 }
 
 /**
@@ -72,12 +82,12 @@ export function stage_exit(): void {
  * loss/accuracy/AUC, updates node statuses, and refreshes the UI.
  */
 export function trainingStep_simulate(): void {
-    if (!state.trainingJob || state.trainingJob.status !== 'running') return;
+    if (!store.state.trainingJob || store.state.trainingJob.status !== 'running') return;
 
     // Create a copy of the job and the lossHistory array to avoid direct state mutation
     const job: TrainingJob = { 
-        ...state.trainingJob,
-        lossHistory: [...state.trainingJob.lossHistory]
+        ...store.state.trainingJob,
+        lossHistory: [...store.state.trainingJob.lossHistory]
     };
 
     job.currentEpoch += 0.5;
@@ -93,7 +103,7 @@ export function trainingStep_simulate(): void {
     job.accuracy = Math.min(98, 50 + (job.currentEpoch / job.totalEpochs) * 48 + (Math.random() - 0.5) * 2);
     job.auc = Math.min(0.99, 0.5 + (job.currentEpoch / job.totalEpochs) * 0.49);
 
-    job.runningCost = (job.currentEpoch / job.totalEpochs) * state.costEstimate.total;
+    job.runningCost = (job.currentEpoch / job.totalEpochs) * store.state.costEstimate.total;
 
     job.nodes.forEach((node: TrustedDomainNode, i: number): void => {
         if (i === job.nodes.length - 1) {
@@ -115,7 +125,7 @@ export function trainingStep_simulate(): void {
 
     store.trainingJob_update(job);
 
-    if (Math.random() > 0.6 && globals.terminal) {
+    if (Math.random() > 0.6 && store.globals.terminal) {
         const telemetryEvents: readonly string[] = [
             `[NET] Syncing gradients with node-${Math.floor(Math.random() * 4) + 1}...`,
             `[SEC] Verifying homomorphic encryption keys...`,
@@ -125,7 +135,7 @@ export function trainingStep_simulate(): void {
             `[MEM] VRAM Allocation: ${(Math.random() * 10 + 4).toFixed(1)} GB`,
             `[ERR] Backward pass delta within tolerance.`
         ];
-        globals.terminal.println(`<span class="dim">${telemetryEvents[Math.floor(Math.random() * telemetryEvents.length)]}</span>`);
+        store.globals.terminal.println(`<span class="dim">${telemetryEvents[Math.floor(Math.random() * telemetryEvents.length)]}</span>`);
     }
 
     const gutterIndex: number = Math.floor(job.currentEpoch) % 5 + 1;
@@ -147,8 +157,8 @@ export function trainingStep_simulate(): void {
  * progress bar, epoch display, metrics, cost tracker, loss chart, and node status.
  */
 function monitorUI_update(): void {
-    if (!state.trainingJob) return;
-    const job: TrainingJob = state.trainingJob;
+    if (!store.state.trainingJob) return;
+    const job: TrainingJob = store.state.trainingJob;
 
     const progressFill: HTMLElement | null = document.getElementById('progress-fill');
     if (progressFill) {
@@ -185,9 +195,9 @@ function monitorUI_update(): void {
  * Renders a grid and the loss history as a line plot.
  */
 function lossChart_draw(): void {
-    if (!globals.lossChart || !state.trainingJob) return;
-    const { ctx } = globals.lossChart;
-    const history: number[] = state.trainingJob.lossHistory;
+    if (!store.globals.lossChart || !store.state.trainingJob) return;
+    const { ctx } = store.globals.lossChart;
+    const history: number[] = store.state.trainingJob.lossHistory;
 
     const canvas: HTMLCanvasElement = ctx.canvas;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -233,11 +243,11 @@ function lossChart_draw(): void {
  * progress and sample counts.
  */
 function nodeStatus_render(): void {
-    if (!state.trainingJob) return;
+    if (!store.state.trainingJob) return;
     const container: HTMLElement | null = document.getElementById('node-status');
     if (!container) return;
 
-    container.innerHTML = state.trainingJob.nodes.map((node: TrustedDomainNode): string => `
+    container.innerHTML = store.state.trainingJob.nodes.map((node: TrustedDomainNode): string => `
         <div class="node-card">
             <div class="name">${node.name}</div>
             <div class="status ${node.status}">${node.status}</div>
@@ -258,16 +268,16 @@ function nodeStatus_render(): void {
  * and auto-advances to the Post stage.
  */
 export function training_complete(): void {
-    if (!state.trainingJob) return;
+    if (!store.state.trainingJob) return;
 
-    const nodes: TrustedDomainNode[] = state.trainingJob.nodes.map(
+    const nodes: TrustedDomainNode[] = store.state.trainingJob.nodes.map(
         (n: TrustedDomainNode): TrustedDomainNode => ({ ...n, status: 'complete' as const })
     );
     store.trainingJob_update({ status: 'complete', nodes });
 
-    if (globals.trainingInterval) {
-        clearInterval(globals.trainingInterval);
-        globals.trainingInterval = null;
+    if (store.globals.trainingInterval) {
+        clearInterval(store.globals.trainingInterval);
+        store.globalTrainingInterval_set(null);
     }
 
     for (let i: number = 1; i <= 5; i++) {
@@ -292,13 +302,13 @@ export function training_complete(): void {
  * sets the gutter to error, and resets the cost display.
  */
 export function training_abort(): void {
-    if (!state.trainingJob) return;
+    if (!store.state.trainingJob) return;
 
     store.trainingJob_update({ status: 'aborted' });
 
-    if (globals.trainingInterval) {
-        clearInterval(globals.trainingInterval);
-        globals.trainingInterval = null;
+    if (store.globals.trainingInterval) {
+        clearInterval(store.globals.trainingInterval);
+        store.globalTrainingInterval_set(null);
     }
 
     gutter_setStatus(4, 'error');

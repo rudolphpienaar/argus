@@ -11,19 +11,22 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { WebSocketServer } from 'ws';
+import { URL } from 'url';
+import type { Socket } from 'net';
+import { WebSocketServer, type WebSocket } from 'ws';
 import { CalypsoCore } from '../../lcarslm/CalypsoCore.js';
 import type { CalypsoStoreActions } from '../../lcarslm/types.js';
-import type { Dataset, AppState, FederationState } from '../../core/models/types.js';
+import type { Dataset, AppState, FederationState, Project } from '../../core/models/types.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import { ContentRegistry } from '../../vfs/content/ContentRegistry.js';
 import { ALL_GENERATORS } from '../../vfs/content/templates/index.js';
 import { homeDir_scaffold } from '../../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../../generated/version.js';
-import { store, globals } from '../../core/state/store.js';
+import { store } from '../../core/state/store.js';
 import { restRequest_handle } from './RestHandler.js';
 import { wsConnection_handle } from './WebSocketHandler.js';
+import type { RestHandlerDeps } from './rest/types.js';
 
 // ─── Environment Loading ────────────────────────────────────────────────────
 
@@ -31,21 +34,79 @@ import { wsConnection_handle } from './WebSocketHandler.js';
  * Simple .env loader to avoid dependencies.
  */
 function env_load(): void {
-    const envPath = path.join(process.cwd(), '.env');
+    const envPath: string = path.join(process.cwd(), '.env');
     if (fs.existsSync(envPath)) {
         console.log('Loading configuration from .env');
-        const content = fs.readFileSync(envPath, 'utf-8');
+        const content: string = fs.readFileSync(envPath, 'utf-8');
         content.split('\n').forEach((line: string): void => {
             const trimmed: string = line.trim();
             if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
-                const [key, ...valParts] = trimmed.split('=');
-                const val = valParts.join('=').trim().replace(/^["']|["']$/g, '');
+                const splitLine: string[] = trimmed.split('=');
+                const key: string = splitLine[0];
+                const valParts: string[] = splitLine.slice(1);
+                const val: string = valParts.join('=').trim().replace(/^["']|["']$/g, '');
                 if (!process.env[key.trim()]) {
                     process.env[key.trim()] = val;
                 }
             }
         });
     }
+}
+
+interface ServerRuntimeConfig {
+    host: string;
+    port: number;
+}
+
+/**
+ * Resolve runtime server configuration after environment hydration.
+ *
+ * @param options - User-supplied server options.
+ * @returns Resolved host/port config.
+ */
+function serverConfig_resolve(options: CalypsoServerOptions): ServerRuntimeConfig {
+    env_load();
+
+    const host: string = options.host || process.env.CALYPSO_HOST || 'localhost';
+    const port: number = port_resolve(options.port, process.env.CALYPSO_PORT);
+    return { host, port };
+}
+
+/**
+ * Resolve and validate server port.
+ *
+ * @param optionPort - Explicit option override.
+ * @param envPort - Environment provided port string.
+ * @returns Safe port number.
+ */
+function port_resolve(optionPort: number | undefined, envPort: string | undefined): number {
+    if (optionPort !== undefined) {
+        if (port_isValid(optionPort)) {
+            return optionPort;
+        }
+        console.warn(`Invalid CALYPSO port option "${optionPort}". Falling back to 8081.`);
+        return 8081;
+    }
+
+    const parsedPort: number = Number.parseInt(envPort || '8081', 10);
+    if (port_isValid(parsedPort)) {
+        return parsedPort;
+    }
+
+    if (envPort) {
+        console.warn(`Invalid CALYPSO_PORT value "${envPort}". Falling back to 8081.`);
+    }
+    return 8081;
+}
+
+/**
+ * Validate TCP port range.
+ *
+ * @param port - Port number to validate.
+ * @returns True if port is valid.
+ */
+function port_isValid(port: number): boolean {
+    return Number.isInteger(port) && port > 0 && port <= 65535;
 }
 
 // ─── Global Store Adapter ───────────────────────────────────────────────────
@@ -69,7 +130,7 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
     }
 
     public state_set(state: Partial<AppState>): void {
-        Object.assign(store.state, state);
+        store.state_patch(state);
     }
 
     public reset(): void {
@@ -94,6 +155,14 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
         return store.state.activeProject;
     }
 
+    public project_getActiveFull(): Project | null {
+        return store.state.activeProject;
+    }
+
+    public project_setActive(project: Project): void {
+        store.project_load(project);
+    }
+
     public stage_set(stage: AppState['currentStage']): void {
         store.stage_set(stage);
     }
@@ -107,7 +176,7 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
     }
 
     public federation_setState(state: FederationState | null): void {
-        store.state.federationState = state;
+        store.federationState_set(state);
     }
 }
 
@@ -117,17 +186,17 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
  * Initialize CalypsoCore with headless dependencies.
  */
 function calypso_initialize(username: string = 'developer'): CalypsoCore {
-    const vfs = new VirtualFileSystem(username);
-    globals.vcs = vfs;
+    const vfs: VirtualFileSystem = new VirtualFileSystem(username);
+    store.globalVcs_set(vfs);
 
-    const registry = new ContentRegistry();
+    const registry: ContentRegistry = new ContentRegistry();
     registry.generators_registerAll(ALL_GENERATORS);
     registry.vfs_connect(vfs);
 
-    const shell = new Shell(vfs, username);
-    globals.shell = shell;
+    const shell: Shell = new Shell(vfs, username);
+    store.globalShell_set(shell);
 
-    const storeAdapter = new GlobalStoreAdapter();
+    const storeAdapter: GlobalStoreAdapter = new GlobalStoreAdapter();
     homeDir_scaffold(vfs, username);
 
     shell.env_set('USER', username);
@@ -136,8 +205,8 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
     shell.env_set('PERSONA', 'fedml');
     shell.env_set('PS1', '$USER@CALYPSO:[$PWD]> ');
 
-    let openaiKey = process.env.OPENAI_API_KEY;
-    let geminiKey = process.env.GEMINI_API_KEY;
+    let openaiKey: string | undefined = process.env.OPENAI_API_KEY;
+    let geminiKey: string | undefined = process.env.GEMINI_API_KEY;
 
     if (openaiKey && openaiKey === geminiKey) {
         if (openaiKey.startsWith('sk-')) {
@@ -147,7 +216,7 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
         }
     }
 
-    const hasApiKey = !!(openaiKey || geminiKey);
+    const hasApiKey: boolean = Boolean(openaiKey || geminiKey);
 
     if (hasApiKey) {
         console.log(`AI Core: ${openaiKey ? 'OpenAI' : 'Gemini'} API key detected`);
@@ -156,7 +225,7 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
         console.log('  Set OPENAI_API_KEY or GEMINI_API_KEY via environment or .env file');
     }
 
-    const core = new CalypsoCore(vfs, shell, storeAdapter, {
+    const core: CalypsoCore = new CalypsoCore(vfs, shell, storeAdapter, {
         simulationMode: !hasApiKey,
         llmConfig: hasApiKey ? {
             provider: openaiKey ? 'openai' : 'gemini',
@@ -180,14 +249,13 @@ export interface CalypsoServerOptions {
  * Create and start a Calypso server with REST + WebSocket support.
  */
 export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Server {
-    const host: string = options.host || process.env.CALYPSO_HOST || 'localhost';
-    const port: number = options.port || parseInt(process.env.CALYPSO_PORT || '8081', 10);
-
-    env_load();
+    const config: ServerRuntimeConfig = serverConfig_resolve(options);
+    const host: string = config.host;
+    const port: number = config.port;
 
     let calypso: CalypsoCore = calypso_initialize();
 
-    const deps = {
+    const deps: RestHandlerDeps = {
         calypso_get: () => calypso,
         calypso_reinitialize: (username?: string): CalypsoCore => {
             calypso = calypso_initialize(username);
@@ -198,8 +266,8 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
     };
 
     // HTTP server with REST handler
-    const server = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse) => {
-        const handled = await restRequest_handle(req, res, deps);
+    const server: http.Server = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+        const handled: boolean = await restRequest_handle(req, res, deps);
         if (!handled) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Not found', path: req.url }));
@@ -207,12 +275,12 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
     });
 
     // WebSocket server on /calypso/ws path
-    const wss = new WebSocketServer({ noServer: true });
+    const wss: WebSocketServer = new WebSocketServer({ noServer: true });
 
-    server.on('upgrade', (req, socket, head) => {
-        const url = new URL(req.url || '/', `http://${host}:${port}`);
+    server.on('upgrade', (req: http.IncomingMessage, socket: Socket, head: Buffer): void => {
+        const url: URL = new URL(req.url || '/', `http://${host}:${port}`);
         if (url.pathname === '/calypso/ws') {
-            wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.handleUpgrade(req, socket, head, (ws: WebSocket): void => {
                 wss.emit('connection', ws, req);
             });
         } else {
@@ -220,7 +288,7 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
         }
     });
 
-    wss.on('connection', (ws) => {
+    wss.on('connection', (ws: WebSocket): void => {
         console.log(`WebSocket client connected (total: ${wss.clients.size})`);
         wsConnection_handle(ws, deps);
 
@@ -230,13 +298,13 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
     });
 
     // Start listening
-    server.listen(port, host, () => {
-        const vString = `V${VERSION}`;
-        const innerWidth = 64;
+    server.listen(port, host, (): void => {
+        const vString: string = `V${VERSION}`;
+        const innerWidth: number = 64;
 
-        const line_format = (text: string): string => {
-            const label = `  ${text}`;
-            const padding = ' '.repeat(Math.max(0, innerWidth - label.length));
+        const line_format: (text: string) => string = (text: string): string => {
+            const label: string = `  ${text}`;
+            const padding: string = ' '.repeat(Math.max(0, innerWidth - label.length));
             return `║${label}${padding}║`;
         };
 

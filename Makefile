@@ -2,7 +2,7 @@
 #
 # Build and manage the ARGUS UI prototype
 
-.PHONY: help install build serve dev clean watch argus calypso calypso-cli calypso-ws test-oracle test-oracle-verbose
+.PHONY: help install build serve dev clean watch argus calypso calypso-ws test-oracle test-oracle-verbose
 
 help:
 	@echo "ARGUS Makefile"
@@ -19,7 +19,6 @@ help:
 	@echo ""
 	@echo "Calypso (Headless AI Core):"
 	@echo "  make calypso      - Start headless Calypso server (port 8081)"
-	@echo "  make calypso-cli  - Start interactive CLI client (HTTP)"
 	@echo "  make calypso-ws   - Start interactive CLI client (WebSocket)"
 	@echo "  make test-oracle  - Run ORACLE integration tests"
 	@echo "  make test-oracle-verbose - Run ORACLE tests with verbose output"
@@ -61,11 +60,6 @@ calypso:
 	bash scripts/generate-version.sh
 	@echo "Starting Calypso headless server..."
 	GEMINI_API_KEY=$(KEY) OPENAI_API_KEY=$(KEY) npx tsx src/cli/calypso-server.ts
-
-calypso-cli:
-	bash scripts/generate-version.sh
-	@echo "Starting Calypso CLI client (HTTP)..."
-	npx tsx src/cli/calypso-cli.ts
 
 calypso-ws:
 	bash scripts/generate-version.sh

@@ -14,9 +14,11 @@ import {
     workspace_render,
     dataset_select,
     dataset_deselect,
-    datasetDetail_open,
-    project_activate
 } from '../../core/stages/search.js';
+import {
+    datasetDetail_open,
+    project_activate,
+} from '../../core/stages/gather.js';
 import { training_launch } from '../../core/stages/process.js';
 
 /**
@@ -89,4 +91,3 @@ export class BrowserAdapter {
 
 /** Singleton browser adapter. */
 export const browserAdapter: BrowserAdapter = new BrowserAdapter();
-

@@ -8,7 +8,7 @@
 
 import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import type { Shell } from '../vfs/Shell.js';
-import type { Dataset, AppState, FederationState } from '../core/models/types.js';
+import type { Dataset, AppState, FederationState, Project } from '../core/models/types.js';
 import type { FileNode } from '../vfs/types.js';
 import type { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 
@@ -214,6 +214,12 @@ export interface CalypsoCoreConfig {
 
     /** Workflow ID to use (default: 'fedml') */
     workflowId?: string;
+
+    /** Runtime materialization mode (default: 'store'). */
+    runtimeMaterialization?: 'legacy' | 'store';
+
+    /** Enable runtime join-node writes (default: true). */
+    runtimeJoinMaterialization?: boolean;
 }
 
 // ─── Store Actions Interface ───────────────────────────────────────────────
@@ -243,6 +249,12 @@ export interface CalypsoStoreActions {
 
     /** Get active project */
     project_getActive(): { id: string; name: string } | null;
+
+    /** Get full active project record */
+    project_getActiveFull(): Project | null;
+
+    /** Set active project and synchronize store-selected datasets */
+    project_setActive(project: Project): void;
 
     /** Set current stage */
     stage_set(stage: AppState['currentStage']): void;

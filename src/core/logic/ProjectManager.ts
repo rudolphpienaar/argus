@@ -7,7 +7,7 @@
  * @module
  */
 
-import { store, globals } from '../state/store.js';
+import { store } from '../state/store.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
 import { projectContext_get } from './ProjectContext.js';
 import type { Project, Dataset } from '../models/types.js';
@@ -45,8 +45,8 @@ export function project_createDraft(): Project {
 export function project_initialize(project: Project): void {
     const paths = projectContext_get(project);
     try {
-        if (!globals.vcs.node_stat(paths.root)) {
-            globals.vcs.dir_create(paths.root);
+        if (!store.globals.vcs.node_stat(paths.root)) {
+            store.globals.vcs.dir_create(paths.root);
         }
     } catch (e: unknown) {
         console.error('Failed to initialize project VFS:', e);
@@ -86,12 +86,12 @@ export function project_gather(
         store.project_load(project);
         
         // Sync Shell Context
-        if (globals.shell) {
+        if (store.globals.shell) {
             const paths = projectContext_get(project);
             try {
-                globals.shell.command_execute(`cd ${paths.root}`);
-                globals.shell.env_set('PROJECT', project.name);
-                if (globals.terminal) globals.terminal.prompt_sync();
+                store.globals.shell.command_execute(`cd ${paths.root}`);
+                store.globals.shell.env_set('PROJECT', project.name);
+                if (store.globals.terminal) store.globals.terminal.prompt_sync();
             } catch (e: unknown) {
                 console.error('Shell sync failed:', e);
             }
@@ -113,8 +113,8 @@ export function project_gather(
     
     // Ensure parent dir exists
     try { 
-        if (!globals.vcs.node_stat(paths.root)) {
-            globals.vcs.dir_create(paths.root); 
+        if (!store.globals.vcs.node_stat(paths.root)) {
+            store.globals.vcs.dir_create(paths.root); 
         }
     } catch { /* ignore */ }
 
@@ -124,11 +124,11 @@ export function project_gather(
         const dsDir = dataset.name.replace(/\s+/g, '_');
         try {
             // Ensure input dir exists
-            if (!globals.vcs.node_stat(paths.input)) {
-                globals.vcs.dir_create(paths.input);
+            if (!store.globals.vcs.node_stat(paths.input)) {
+                store.globals.vcs.dir_create(paths.input);
             }
-            globals.vcs.tree_unmount(`${paths.input}/${dsDir}`);
-            globals.vcs.tree_mount(`${paths.input}/${dsDir}`, subtree);
+            store.globals.vcs.tree_unmount(`${paths.input}/${dsDir}`);
+            store.globals.vcs.tree_mount(`${paths.input}/${dsDir}`, subtree);
         } catch (e: unknown) {
             console.error('VFS Partial Mount failed:', e);
         }
@@ -138,8 +138,8 @@ export function project_gather(
         const unifiedTree = cohortTree_build(project.datasets);
         try {
             // Mount at input/ (replacing 'data' root name with 'input')
-            globals.vcs.tree_unmount(paths.input);
-            globals.vcs.tree_mount(paths.input, unifiedTree);
+            store.globals.vcs.tree_unmount(paths.input);
+            store.globals.vcs.tree_mount(paths.input, unifiedTree);
         } catch (e: unknown) {
             console.error('VFS Unified Mount failed:', e);
         }
@@ -148,7 +148,7 @@ export function project_gather(
     // 5. Write cohort marker — materializes gather completion as VFS artifact
     try {
         const markerPath = `${paths.input}/.cohort`;
-        globals.vcs.file_create(markerPath, JSON.stringify({
+        store.globals.vcs.file_create(markerPath, JSON.stringify({
             timestamp: new Date().toISOString(),
             datasets: project.datasets.map((ds: Dataset) => ds.id),
             count: project.datasets.length
@@ -169,33 +169,33 @@ export function project_gather(
  */
 export function project_rename(project: Project, newName: string): void {
     const oldName = project.name;
-    const username = globals.shell?.env_get('USER') || 'user';
+    const username = store.globals.shell?.env_get('USER') || 'user';
     const oldPath = `/home/${username}/projects/${oldName}`;
     const newPath = `/home/${username}/projects/${newName}`;
 
     try {
         // 1. Move VFS directory
-        if (globals.vcs.node_stat(oldPath)) {
-            globals.vcs.node_move(oldPath, newPath);
+        if (store.globals.vcs.node_stat(oldPath)) {
+            store.globals.vcs.node_move(oldPath, newPath);
         } else {
-            globals.vcs.dir_create(newPath);
-            try { globals.vcs.dir_create(`${newPath}/src`); } catch {}
-            try { globals.vcs.dir_create(`${newPath}/input`); } catch {}
-            try { globals.vcs.dir_create(`${newPath}/output`); } catch {}
+            store.globals.vcs.dir_create(newPath);
+            try { store.globals.vcs.dir_create(`${newPath}/src`); } catch {}
+            try { store.globals.vcs.dir_create(`${newPath}/input`); } catch {}
+            try { store.globals.vcs.dir_create(`${newPath}/output`); } catch {}
         }
 
         // 2. Update Project Model
         project.name = newName;
 
         // 3. Update Shell Context if active
-        const shellProject = globals.shell?.env_get('PROJECT');
+        const shellProject = store.globals.shell?.env_get('PROJECT');
         if (shellProject === oldName) {
-            globals.shell?.env_set('PROJECT', newName);
-            const currentCwd = globals.vcs.cwd_get();
+            store.globals.shell?.env_set('PROJECT', newName);
+            const currentCwd = store.globals.vcs.cwd_get();
             if (currentCwd.startsWith(oldPath)) {
                 const newCwd = currentCwd.replace(oldPath, newPath);
                 try {
-                    globals.vcs.cwd_set(newCwd);
+                    store.globals.vcs.cwd_set(newCwd);
                 } catch (e: unknown) {
                     console.error('Failed to update CWD after rename:', e);
                 }

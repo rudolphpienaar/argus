@@ -1,6 +1,6 @@
 = ARGUS Philosophy: The Doctrine of Data-State Grounding
 :author: ATLAS Project Team
-:revdate: 2026-02-17
+:revdate: 2026-02-18
 :revnumber: 10.0.0
 :toc: macro
 :toclevels: 3
@@ -18,6 +18,18 @@ The development of ARGUS emerged from the unique challenge of building national-
 
 We learned that for high-stakes medical research, "Truth" cannot be an assertion; it must be evidence. The resolution was the adoption of the **SeaGaP-MP** framework (Search, Gather, Process, Monitor, Post) combined with a data-state-centric compute model inherited from the ChRIS platform. In ARGUS, progress is not tracked by internal counters, but by the physical materialization of artifacts within a Virtual File System (VFS). This philosophy ensures that the system's logic is always anchored to the physical reality of the project tree.
 
+== SeaGaP-MP Figure
+
+[source,text]
+----
+┌────────┐     ┌────────┐     ┌─────────┐     ┌─────────┐     ┌──────┐
+│ SEARCH │────▶│ GATHER │────▶│ PROCESS │────▶│ MONITOR │────▶│ POST │
+└────────┘     └────────┘     └─────────┘     └─────────┘     └──────┘
+     │              │              │               │              │
+     └──────────────┴──────────────┴───────────────┴──────────────┘
+          progress is recognized via materialized evidence, not assertions
+----
+
 == The SeaGaP-MP Workflow Framework: The Structural Spine
 
 To manage the inherent complexity of federated medical imaging, ARGUS enforces a unifying interaction pattern called SeaGaP-MP. This framework provides a consistent "spine" across all user personas, from researchers to clinicians.
@@ -29,6 +41,17 @@ To manage the inherent complexity of federated medical imaging, ARGUS enforces a
 5.  **Post:** The finalization phase where results are validated and published back to the community.
 
 By standardizing on this sequence, ARGUS makes diverse research tasks tractable and ensures that the provenance of every scientific result is captured through a predictable chain of custody.
+
+=== Search and Gather Are Not the Same Stage
+
+A recurring source of architectural drift is treating Search and Gather as a single "discovery-and-commit" step. ARGUS explicitly forbids that collapse.
+
+*   **Search answers:** "What exists?"
+*   **Gather answers:** "What are we committing into this project?"
+
+The distinction matters because the first question is informational, while the second mutates project-scoped workflow state. Conflating them weakens provenance and obscures scientific intent.
+
+For implementation boundaries, see link:architecture.adoc[System Architecture], link:plugins.adoc[Plugin System], and link:framework.adoc[Framework Patterns].
 
 == User Personas: Diverse Goals, Unified Pattern
 
@@ -51,4 +74,4 @@ In ARGUS, we extend this principle to the UI layer. The system reasons about wor
 The ARGUS philosophy ensures that the system remains a "Guardian of Process." By grounding all interactions in a standardized workflow and a persistent filesystem substrate, we create a bridge between human intent and federated complexity that is both intuitive and scientifically rigorous. The move to v10.0 completes this vision, providing an environment where every claim made by the AI is backed by a cryptographically anchored artifact.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-18 (v10.0.0)_

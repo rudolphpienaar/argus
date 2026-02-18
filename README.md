@@ -51,7 +51,7 @@ LLM-only state tracking drifts in long, asynchronous workflows. ARGUS prevents t
 This design is not a stylistic preference — it is a consequence of the mathematical limits of probabilistic systems. The formal argument is developed in [Agentic Safety Foundations](docs/agentic-safety.adoc); a plain-language summary is in [Why ARGUS Doesn't Let the AI Drive](docs/why-not-agentic.adoc).
 
 See also:
-- `docs/intents.adoc` (intent-action switchboard)
+- `docs/legacy/intents.adoc` (legacy intent-action switchboard; superseded by manifest handlers)
 - `docs/legacy/persona-workflows.adoc` (artifact-grounded workflow semantics)
 - `docs/vcs.adoc` (filesystem and shell as state substrate)
 - `docs/oracle.adoc` (agentic self-testing methodology)
@@ -107,7 +107,7 @@ For terminal-only interaction without a browser, CALYPSO can run as a standalone
 ```bash
 make calypso KEY=your-key    # Start headless Calypso server with LLM (port 8081)
 make calypso                 # Start in simulation mode (no LLM)
-make calypso-cli             # Connect an interactive CLI client to the server
+make calypso-ws              # Connect an interactive CLI client to the server
 ```
 
 ### Other targets
@@ -128,7 +128,7 @@ The `src/vfs/` layer provides an in-memory POSIX-like filesystem with shell sema
 
 ## Calypso CLI
 
-`calypso-cli` connects to the headless CALYPSO server and supports shell commands, workflow commands, transcript replay, script discovery through `/scripts`, and script execution through `/run <script>`. Detailed usage patterns are documented in [The ARGUS Story](backstory/story.md#power-user-workflows) and [Calypso Scripts (`.clpso`)](scripts/calypso/README.md).
+`calypso-ws` connects to the headless CALYPSO server and supports shell commands, workflow commands, transcript replay, script discovery through `/scripts`, and script execution through `/run <script>`. Detailed usage patterns are documented in [The ARGUS Story](backstory/story.md#power-user-workflows) and [Calypso Scripts (`.clpso`)](scripts/calypso/README.md).
 
 ## Documentation Map
 
@@ -143,7 +143,7 @@ New to the project? Read these in sequence. They build on each other — startin
 5. [Architecture](docs/architecture.adoc): system topology, event/state flow, and the layer model.
 6. [VCS Specification](docs/vcs.adoc): the filesystem and shell substrate that grounds all workflow state.
 7. [Calypso AI Core](docs/calypso.adoc): the shared browser/CLI intent layer — identity, architecture, and routing chain.
-8. [Calypso Service Architecture](docs/calypso-architecture.adoc): the WebSocket service layer — protocol, transport, modules, and shared sessions.
+8. [Calypso Service Architecture (Legacy)](docs/legacy/calypso-architecture.adoc): historical WebSocket service decomposition (v7.2.0).
 9. [Persona Workflows](docs/legacy/persona-workflows.adoc): declarative workflow contracts, validation conditions, and artifact semantics.
 10. [Developer Onboarding](docs/onboarding.adoc): practical setup, coding patterns, and contribution guidelines.
 11. [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): naming conventions, typing rules, and code standards.
@@ -155,10 +155,10 @@ New to the project? Read these in sequence. They build on each other — startin
 - [Framework Patterns](docs/framework.adoc): canonical implementation patterns.
 - [VCS Specification](docs/vcs.adoc): filesystem/shell substrate and provider model.
 - [Calypso AI Core](docs/calypso.adoc): shared browser/CLI core and runtime modes.
-- [Calypso Service Architecture](docs/calypso-architecture.adoc): WebSocket service layer and module reference.
+- [Calypso Service Architecture (Legacy)](docs/legacy/calypso-architecture.adoc): historical WebSocket service layer reference.
 - [SeaGaP Workflow](docs/legacy/seagap-workflow.adoc): UX behavior by stage.
 - [Persona Workflows](docs/legacy/persona-workflows.adoc): declarative workflow contracts.
-- [Intents and Routing](docs/intents.adoc): intent-action switchboard.
+- [Intents and Routing (Legacy)](docs/legacy/intents.adoc): historical switchboard before manifest `handler` routing.
 - [ORACLE Testing](docs/oracle.adoc): assistant-driven verification model.
 - [Why Not Agentic](docs/why-not-agentic.adoc): plain-language case for deterministic orchestration.
 - [Agentic Safety Foundations](docs/agentic-safety.adoc): formal mathematical argument and IAS proof.
@@ -179,7 +179,7 @@ New to the project? Read these in sequence. They build on each other — startin
 
 ### Historical / Point-in-Time Records
 
-- [Framework Formalization Plan](docs/framework.md): historical v4.5.1 extraction record.
+- [Framework Formalization Plan](docs/legacy/framework.md): historical v4.5.1 extraction record.
 - [Session State (2026-02-05)](SESSION-STATE.md): archived checkpoint log.
 
 ## Script Documentation

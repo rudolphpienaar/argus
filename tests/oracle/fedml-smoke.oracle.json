@@ -26,7 +26,7 @@
       "send": "harmonize",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/data/harmonize.json",
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json",
         "/home/${user}/projects/${project}/input/.harmonized"
       ]
     },
@@ -34,7 +34,7 @@
       "send": "proceed",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/data/code.json",
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json",
         "/home/${user}/projects/${project}/src/train.py"
       ]
     },
@@ -42,7 +42,7 @@
       "send": "train",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/data/train.json",
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/data/train.json",
         "/home/${user}/projects/${project}/.local_pass"
       ]
     },
@@ -50,28 +50,28 @@
       "send": "federate",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/data/briefing.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/data/briefing.json"
       ]
     },
     {
       "send": "approve",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/data/transcompile.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/data/transcompile.json"
       ]
     },
     {
       "send": "approve",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/data/containerize.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/data/containerize.json"
       ]
     },
     {
       "send": "config name oracle-app",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/data/publish-config.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/data/publish-config.json"
       ]
     },
     {
@@ -82,28 +82,28 @@
       "send": "approve",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/data/publish-execute.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/data/publish-execute.json"
       ]
     },
     {
       "send": "dispatch",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/data/dispatch.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/data/dispatch.json"
       ]
     },
     {
       "send": "status",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
       ]
     },
     {
       "send": "publish model",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/federate-model-publish/data/model-publish.json"
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/federate-model-publish/data/model-publish.json"
       ]
     }
   ]

@@ -397,3 +397,9 @@ This project uses ES modules (`"type": "module"` in `package.json`). **NEVER** u
     const { project_harmonize } = require('../core/logic/ProjectManager.js');
     ```
 *   **Lint Rule:** Consider enabling `@typescript-eslint/no-require-imports` to catch this automatically.
+
+### 5. Plugin Boundary: No Stage Imports from `src/plugins/*`
+Plugins are runtime/domain modules and must remain UI-surface agnostic.
+*   **The Risk:** Importing `src/core/stages/*` or `src/core/logic/*` from plugins couples runtime logic to browser adapters/app orchestration and collapses SeaGaP boundaries.
+*   **The Rule:** Files under `src/plugins/` **MUST NOT** import from `src/core/stages/*` or `src/core/logic/*`.
+*   **Enforcement:** `npm run check:boundaries` (automatically run by `npm run build` and `npm test`) fails if a plugin imports forbidden core modules.

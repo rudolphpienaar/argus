@@ -1,7 +1,7 @@
 = VCS Shell: The Contextual Execution Environment
 :author: ATLAS Project Team
-:revdate: 2026-02-17
-:revnumber: 10.0.0
+:revdate: 2026-02-18
+:revnumber: 10.0.1
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -19,6 +19,38 @@ The development of the VCS Shell was driven by the "Context-Drift" failure mode 
 
 === The Resolution: The Virtual Shell
 The resolution was the implementation of the `Shell` class (located in `src/vfs/Shell.ts`). The Shell introduces a formal "Process Environment" to the ARGUS architecture. Every command execution is scoped to a specific instance of the Shell, which maintains its own environment variables and CWD. This isolation ensures that scientific plugins remain stateless; they do not need to "know" where they are, as they inherit their context from the active Shell. This shift from "Global State" to "Process Environment" is critical for the v10.0 mandate of procedural integrity.
+
+== Shell Execution Figure
+
+[source,text]
+----
+┌───────────────┐
+│ command input │
+└──────┬────────┘
+       ▼
+┌───────────────┐
+│ resolution    │
+│ 1) env assign │
+│ 2) builtin    │
+│ 3) external   │
+└──────┬────────┘
+       ▼
+┌───────────────┐
+│ ShellResult   │
+│ stdout/stderr │
+│ exitCode      │
+└──────┬────────┘
+       ▼
+┌──────────────────────────┐
+│ languageRegistry (shared)│
+└──────────┬───────────────┘
+           │
+     ┌─────┴─────┐
+     ▼           ▼
+┌──────────┐ ┌──────────┐
+│ WUI HTML │ │ TUI ANSI │
+└──────────┘ └──────────┘
+----
 
 == Environment Isolation and Variable Management
 
@@ -50,6 +82,45 @@ Every command execution returns a `ShellResult` object. This protocol ensures th
 *   **`stderr`**: The error stream (rendered in red in the LCARS terminal).
 *   **`exitCode`**: A numeric code indicating success (`0`) or failure (e.g., `127` for command not found).
 
+== Shell Output and Syntax Rendering Boundary
+
+=== The Shell Is Render-Neutral
+
+The Shell owns execution semantics, not presentation semantics. It returns plain command streams (`stdout`, `stderr`) and exit codes. It does not emit HTML spans, ANSI palette decisions, or UI-specific syntax classes.
+
+This boundary is intentional: a single command must remain valid across browser, TUI, and headless ORACLE execution without changing Shell behavior.
+
+=== Single Source of Truth: Language Registry
+
+Language detection and language-to-filename mapping are centralized in `src/core/syntax/languageRegistry.ts`.
+
+The registry is the canonical source for:
+
+*   Path-based language detection (`language_fromPath`).
+*   `cat <path>` command language detection (`language_fromCatCommand`).
+*   Alias normalization (`language_normalize`).
+*   Pseudo-filename mapping for highlighters (`filename_forLanguage`).
+
+Any new syntax mapping must be added here first. Browser and TUI rendering paths consume this registry; they do not maintain independent extension maps.
+
+=== WUI Syntax Highlighting Path
+
+The browser pipeline is:
+
+1.  `src/core/logic/commands.ts` identifies fenced blocks and direct `cat` output.
+2.  It resolves language through `languageRegistry`.
+3.  `src/ui/syntaxHighlight.ts` applies HTML-token highlighting for the detected canonical language.
+
+=== TUI Syntax Highlighting Path
+
+The terminal/CLI pipeline is:
+
+1.  `src/calypso/ui/tui/TuiRenderer.ts` decides when a response should be syntax-highlighted.
+2.  `src/calypso/ui/tui/SyntaxHighlight.ts` performs ANSI highlighting.
+3.  That module delegates language detection/normalization to `src/core/syntax/languageRegistry.ts`.
+
+The result is a shared detection contract with surface-specific rendering (HTML in WUI, ANSI in TUI).
+
 == The Python Simulator: High-Fidelity Logic Emulation
 
 The most critical component of the Shell is the `python` builtin. This simulator mimics the behavior of a real Python interpreter, enabling the "Simulation Loop" required by the SeaGaP-MP workflow.
@@ -69,4 +140,4 @@ This simulator allows researchers to verify the *behavioral integrity* of their 
 The VCS Shell is the "User Space" of the ARGUS environment. By providing a formal, POSIX-compliant interface for process execution and environment management, it ensures that every user interaction is governed by the same deterministic rules. The Shell transforms the virtual filesystem from a static data structure into a dynamic, interactive research environment, providing the contextual grounding required for high-integrity scientific discovery.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-18 (v10.0.1)_

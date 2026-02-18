@@ -24,6 +24,34 @@ In the early development of ARGUS (v1.0 through v9.0), verification relied on "C
 === The Resolution: The Truth of State
 We learned that for high-integrity scientific workflows, what an AI *says* is less important than what it *does*. The resolution was the implementation of **State-First Verification** in ORACLE v2.0. The methodology shifts the focus of testing from the "Surface Form" (the text) to the "Ground Truth" (the filesystem). In v2.0, a test is only considered successful if the system transitions to the correct logical state and materializes the required Merkle-proven artifacts in the VFS. This ensures that the system's logical state machine is verified independently of its linguistic posture.
 
+== ORACLE Walk Figure
+
+[source,text]
+----
+┌─────────────────────┐
+│ send command        │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ receive response    │
+│ (statusCode/actions)│
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ assert statusCode   │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ assert materialized │
+│ artifact paths      │
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ next step in walk   │
+└──────────┬──────────┘
+           └─────────────── loop until scenario complete
+----
+
 == The Methodology: The Contractual Walk
 
 A "Contractual Walk" is a formal verification scenario that exercises a specific topological path through a workflow DAG. Unlike unit tests, a Walk is an end-to-end integration of the 4-stage pipeline.

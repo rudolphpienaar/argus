@@ -6,7 +6,7 @@
  * @module
  */
 
-import { state, globals, store } from '../state/store.js';
+import { store } from '../state/store.js';
 import { events, Events } from '../state/events.js';
 import { gutter_setStatus } from '../../ui/gutters.js';
 import type { AppState } from '../models/types.js';
@@ -28,7 +28,7 @@ events.on(Events.STAGE_CHANGED, (newStage: AppState['currentStage']): void => {
     stations_update(newStage);
 
     document.dispatchEvent(new CustomEvent('argus:stage-change', { detail: { stage: newStage } }));
-    if (globals.terminal) globals.terminal.prompt_sync();
+    if (store.globals.terminal) store.globals.terminal.prompt_sync();
 
     if (newStage === 'gather') {
         gutter_setStatus(2, 'active');
@@ -155,7 +155,7 @@ export function station_click(stageName: string): void {
  * Advances to the next stage in the SeaGaP workflow.
  */
 export function stage_next(): void {
-    const currentIndex: number = STAGE_ORDER.indexOf(state.currentStage);
+    const currentIndex: number = STAGE_ORDER.indexOf(store.state.currentStage);
     if (currentIndex === -1 || currentIndex >= STAGE_ORDER.length - 1) return;
 
     const nextStage: string = STAGE_ORDER[currentIndex + 1];

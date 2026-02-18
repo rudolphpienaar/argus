@@ -168,13 +168,12 @@ export class WorkflowSession {
         // If root, always valid
         if (!node.previous || node.previous.length === 0) return true;
 
-        // Check if all parents have artifacts
+        // Check if all parents have materialized artifacts.
+        // Uses adapter fingerprint discovery so both legacy and join layouts
+        // are treated as valid for fast verification.
         for (const parentId of node.previous) {
-            const parentPath = this.adapter.stagePaths.get(parentId);
-            if (!parentPath) continue;
-            
-            const artifactFile = `${this.sessionPath}/${parentPath.artifactFile}`;
-            if (!this.vfs.node_stat(artifactFile)) {
+            const record = this.adapter.latestFingerprint_get(this.vfs, this.sessionPath, parentId);
+            if (!record) {
                 return false; // Parent artifact missing, trigger crawl
             }
         }

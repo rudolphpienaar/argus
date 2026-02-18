@@ -8,6 +8,7 @@
 
 import type { PluginContext, PluginResult } from '../lcarslm/types.js';
 import { CalypsoStatusCode } from '../lcarslm/types.js';
+import type { ShellResult } from '../vfs/types.js';
 
 /**
  * Execute the training logic via shell.
@@ -24,7 +25,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
     
     // Delegate to the shell capability
     const input: string = executable + (executableArgs.length > 0 ? ' ' + executableArgs.join(' ') : '');
-    const result: any = await shell.command_execute(input);
+    const result: ShellResult = await shell.command_execute(input);
 
     return {
         message: result.stderr ? `${result.stdout}

@@ -12,16 +12,36 @@ import type { Shell } from '../vfs/Shell.js';
 import type { CalypsoStoreActions, PluginContext, PluginResult } from './types.js';
 import { CalypsoStatusCode } from './types.js';
 import type { FederationOrchestrator } from './federation/FederationOrchestrator.js';
+import type { PluginHandlerName } from '../plugins/registry.js';
+import { pluginHandler_isKnown } from '../plugins/registry.js';
+
+/**
+ * Contract for plugin modules dynamically loaded by the host.
+ */
+interface PluginModule {
+    plugin_execute(context: PluginContext): Promise<PluginResult>;
+}
+
+const PLUGIN_MODULE_LOADERS: Record<PluginHandlerName, () => Promise<PluginModule>> = {
+    search: async (): Promise<PluginModule> => import('../plugins/search.js'),
+    gather: async (): Promise<PluginModule> => import('../plugins/gather.js'),
+    rename: async (): Promise<PluginModule> => import('../plugins/rename.js'),
+    harmonize: async (): Promise<PluginModule> => import('../plugins/harmonize.js'),
+    scaffold: async (): Promise<PluginModule> => import('../plugins/scaffold.js'),
+    train: async (): Promise<PluginModule> => import('../plugins/train.js'),
+    federation: async (): Promise<PluginModule> => import('../plugins/federation.js'),
+    publish: async (): Promise<PluginModule> => import('../plugins/publish.js'),
+};
 
 /**
  * Host environment for executing Argus plugins.
  */
 export class PluginHost {
     constructor(
-        private vfs: VirtualFileSystem,
-        private shell: Shell,
-        private storeActions: CalypsoStoreActions,
-        private federation: FederationOrchestrator
+        private readonly vfs: VirtualFileSystem,
+        private readonly shell: Shell,
+        private readonly storeActions: CalypsoStoreActions,
+        private readonly federation: FederationOrchestrator
     ) {}
 
     /**
@@ -40,29 +60,9 @@ export class PluginHost {
         args: string[]
     ): Promise<PluginResult> {
         try {
-            // 1. Resolve module path (relative to this file's compiled location)
-            // Note: In ESM, we use relative paths for dynamic imports.
-            const modulePath: string = `../plugins/${handlerName}.js`;
-            
-            // 2. Dynamic import
-            const module: any = await import(modulePath);
-            
-            if (!module || typeof module.plugin_execute !== 'function') {
-                throw new Error(`Module '${handlerName}' does not export plugin_execute()`);
-            }
-
-            // 3. Construct context (The Standard Library)
-            const context: PluginContext = {
-                vfs: this.vfs,
-                shell: this.shell,
-                store: this.storeActions,
-                federation: this.federation,
-                parameters,
-                command,
-                args
-            };
-
-            // 4. Execute
+            const knownHandler: PluginHandlerName = this.handler_requireKnown(handlerName);
+            const module: PluginModule = await this.module_load(knownHandler);
+            const context: PluginContext = this.context_create(parameters, command, args);
             return await module.plugin_execute(context);
 
         } catch (e: unknown) {
@@ -72,5 +72,43 @@ export class PluginHost {
                 statusCode: CalypsoStatusCode.ERROR
             };
         }
+    }
+
+    /**
+     * Validate and normalize handler names before module load.
+     */
+    private handler_requireKnown(handlerName: string): PluginHandlerName {
+        const normalizedHandler: string = handlerName.trim();
+        if (!pluginHandler_isKnown(normalizedHandler)) {
+            throw new Error(`Unknown plugin handler '${handlerName}'`);
+        }
+        return normalizedHandler;
+    }
+
+    /**
+     * Load a plugin module from the static registry.
+     */
+    private async module_load(handlerName: PluginHandlerName): Promise<PluginModule> {
+        const loader: () => Promise<PluginModule> = PLUGIN_MODULE_LOADERS[handlerName];
+        return loader();
+    }
+
+    /**
+     * Construct the standard plugin execution context.
+     */
+    private context_create(
+        parameters: Record<string, unknown>,
+        command: string,
+        args: string[],
+    ): PluginContext {
+        return {
+            vfs: this.vfs,
+            shell: this.shell,
+            store: this.storeActions,
+            federation: this.federation,
+            parameters,
+            command,
+            args,
+        };
     }
 }

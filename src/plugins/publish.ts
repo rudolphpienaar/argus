@@ -8,6 +8,7 @@
 
 import type { PluginContext, PluginResult } from '../lcarslm/types.js';
 import { CalypsoStatusCode } from '../lcarslm/types.js';
+import type { ShellResult } from '../vfs/types.js';
 
 /**
  * Execute the publication logic via shell.
@@ -20,7 +21,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
     
     // Delegate to the shell capability
     const input: string = command + (args.length > 0 ? ' ' + args.join(' ') : '');
-    const result: any = await shell.command_execute(input);
+    const result: ShellResult = await shell.command_execute(input);
 
     // If shell command not found but it's the 'publish' verb, simulate success
     if (result.exitCode === 127 && command === 'publish') {

@@ -12,7 +12,7 @@
  */
 
 import type { ContentContext, ContentGenerator } from '../types.js';
-import { state, globals } from '../../core/state/store.js';
+import { store } from '../../core/state/store.js';
 
 /**
  * Central registry for lazy content generators.
@@ -28,7 +28,7 @@ import { state, globals } from '../../core/state/store.js';
  *     pattern: 'train',
  *     generate: (ctx) => `# Training script for ${ctx.persona}`
  * });
- * registry.vfs_connect(globals.vcs);
+ * registry.vfs_connect(store.globals.vcs);
  * ```
  */
 export class ContentRegistry {
@@ -108,7 +108,7 @@ export class ContentRegistry {
     // ─── Internal Helpers ───────────────────────────────────────
 
     /**
-     * Builds a ContentContext from current application state.
+     * Builds a ContentContext from current application store.state.
      *
      * @param filePath - The absolute path of the file being generated.
      * @returns A populated ContentContext for template evaluation.
@@ -116,10 +116,10 @@ export class ContentRegistry {
     private context_build(filePath: string): ContentContext {
         return {
             filePath,
-            persona: state.currentPersona || 'fedml',
-            selectedDatasets: state.selectedDatasets || [],
-            activeProject: state.activeProject || null,
-            installedAssets: state.installedAssets || []
+            persona: store.state.currentPersona || 'fedml',
+            selectedDatasets: store.state.selectedDatasets || [],
+            activeProject: store.state.activeProject || null,
+            installedAssets: store.state.installedAssets || []
         };
     }
 }

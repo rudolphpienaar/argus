@@ -6,7 +6,7 @@
  * @module
  */
 
-import { store, state, globals } from '../core/state/store.js';
+import { store } from '../core/state/store.js';
 import { events, Events } from '../core/state/events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../core/data/marketplace.js';
 import type { AppState } from '../core/models/types.js';
@@ -176,7 +176,7 @@ function marketGrid_render(): void {
 
     let filtered: MarketplaceAsset[] = MARKETPLACE_ASSETS.filter((a: MarketplaceAsset): boolean => {
         if (currentFilter === 'all') return true;
-        if (currentFilter === 'installed') return state.installedAssets.includes(a.id);
+        if (currentFilter === 'installed') return store.state.installedAssets.includes(a.id);
         return a.type === currentFilter;
     });
 
@@ -191,7 +191,7 @@ function marketGrid_render(): void {
     filtered = marketAssets_sort(filtered, currentSort);
 
     container.innerHTML = filtered.map((asset: MarketplaceAsset): string => {
-        const isInstalled: boolean = state.installedAssets.includes(asset.id);
+        const isInstalled: boolean = store.state.installedAssets.includes(asset.id);
         
         const opts: AssetCardOptions = {
             id: asset.id,
@@ -234,8 +234,8 @@ window.asset_install = (id: string, btnElement: HTMLButtonElement): void => {
     const asset: MarketplaceAsset | undefined = MARKETPLACE_ASSETS.find((a: MarketplaceAsset): boolean => a.id === id);
     if (!asset) return;
 
-    if (state.installedAssets.includes(id)) {
-        globals.terminal?.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
+    if (store.state.installedAssets.includes(id)) {
+        store.globals.terminal?.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
         return;
     }
 
@@ -245,8 +245,8 @@ window.asset_install = (id: string, btnElement: HTMLButtonElement): void => {
     const textEl: Element | null = btnElement.querySelector('.btn-text');
     if (textEl) textEl.textContent = 'INSTALLING...';
 
-    globals.terminal?.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
-    globals.terminal?.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
+    store.globals.terminal?.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
+    store.globals.terminal?.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
 
     setTimeout((): void => {
         store.asset_install(id);
@@ -255,10 +255,10 @@ window.asset_install = (id: string, btnElement: HTMLButtonElement): void => {
         btnElement.classList.add('installed');
         if (textEl) textEl.textContent = 'INSTALLED';
 
-        globals.terminal?.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
+        store.globals.terminal?.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
 
         if (asset.type === 'plugin') {
-            globals.terminal?.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
+            store.globals.terminal?.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
         }
 
         const card: Element | null = btnElement.closest('.market-card');
@@ -337,7 +337,7 @@ function detailHeader_populate(
     const btnText: Element | null | undefined = installBtn?.querySelector('.btn-text');
 
     if (installBtn && btnText) {
-        const isInstalled: boolean = state.installedAssets.includes(id);
+        const isInstalled: boolean = store.state.installedAssets.includes(id);
         installBtn.classList.toggle('installed', isInstalled);
         btnText.textContent = isInstalled ? 'INSTALLED' : 'INSTALL';
     }
@@ -440,8 +440,8 @@ export function assetDetail_install(): void {
     const asset: MarketplaceAsset | undefined = MARKETPLACE_ASSETS.find((a: MarketplaceAsset): boolean => a.id === currentDetailAssetId);
     if (!asset) return;
 
-    if (state.installedAssets.includes(currentDetailAssetId)) {
-        globals.terminal?.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
+    if (store.state.installedAssets.includes(currentDetailAssetId)) {
+        store.globals.terminal?.println(`\u25CB INFO: ${asset.name} IS ALREADY INSTALLED.`);
         return;
     }
 
@@ -455,8 +455,8 @@ export function assetDetail_install(): void {
 
     if (textEl) textEl.textContent = 'INSTALLING...';
 
-    globals.terminal?.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
-    globals.terminal?.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
+    store.globals.terminal?.println(`\u25CF INITIATING SECURE INSTALL: [${asset.name.toUpperCase()}]`);
+    store.globals.terminal?.println(`\u25CB DOWNLOADING PAYLOAD (${asset.size})...`);
 
     setTimeout((): void => {
         store.asset_install(currentDetailAssetId!);
@@ -465,10 +465,10 @@ export function assetDetail_install(): void {
         installBtn.classList.add('installed');
         if (textEl) textEl.textContent = 'INSTALLED';
 
-        globals.terminal?.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
+        store.globals.terminal?.println(`<span class="success">>> SUCCESS: ${asset.name} INSTALLED TO VFS.</span>`);
 
         if (asset.type === 'plugin') {
-            globals.terminal?.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
+            store.globals.terminal?.println(`<span class="dim">   Usage: /usr/local/bin/${asset.name} --help</span>`);
         }
 
         const card: Element | null = document.querySelector(`.market-card[data-id="${currentDetailAssetId}"]`);

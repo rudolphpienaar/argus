@@ -1,6 +1,7 @@
 = ARGUS Developer Onboarding Guide
 :author: ATLAS Project Team
-:revdate: 2026-01-30
+:revdate: 2026-02-18
+:revnumber: 10.0.1
 :toc:
 :sectnums:
 
@@ -34,11 +35,21 @@ ARGUS isn't just a website; it simulates a computer.
 
 === The Stage Lifecycle
 
-The app moves through stages (Search -> Process -> Monitor).
+The app moves through stages (Search -> Gather -> Process -> Monitor -> Post).
 
 *   **Entry Point:** `src/argus.ts` is the orchestrator.
 *   **Lifecycle:** Each stage module (e.g., `src/core/stages/process.ts`) exports `stage_enter()` and `stage_exit()` hooks.
 *   **Control Flow:** The orchestrator calls `currentStage.stage_exit()` -> `nextStage.stage_enter()`.
+
+=== SeaGaP Boundary Model (Search vs Gather)
+
+Keep these boundaries strict when implementing features:
+
+*   **Search (Discovery):** Query/filter catalog data and publish discovery results.
+*   **Gather (Assembly):** Select datasets, mount cohort inputs, and manage gather workspace/detail flows.
+*   **Rule of thumb:** Search finds candidates; Gather commits cohort intent.
+
+If a change touches project/dataset detail overlays, gather workspace transitions, or cohort selection state, it is Gather work even if initiated from a Search-stage click.
 
 == Codebase Tour
 
@@ -58,8 +69,11 @@ The app moves through stages (Search -> Process -> Monitor).
 | `src/core/logic/`
 | **The Logic Layer.** Specialized services like `commands.ts` (routing), `WindowBindings.ts` (DOM glue), and `Lifecycle.ts`.
 
+| `src/core/syntax/`
+| **Language Registry.** Canonical syntax-language detection/mapping shared by browser and TUI highlighting.
+
 | `src/core/stages/`
-| **The Scenes.** One file per stage (search, gather, process...). Logic for that specific screen lives here.
+| **The Scenes.** Stage entry modules (`search.ts`, `gather.ts`, `process.ts`, ...) plus stage-scoped subdirectories for controllers/actions/ui/runtime.
 
 | `src/vfs/`
 | **The Computer.** The virtual filesystem, shell, and content generators.
@@ -92,6 +106,28 @@ HTML `onclick="myFunc()"` requires `myFunc` to be on `window`.
 
 *   **Don't** just say `(window as any).myFunc = ...`
 *   **Do** register it in `src/core/logic/WindowBindings.ts`.
+
+=== Plugin/Stage Boundary
+
+Plugins must remain surface-agnostic.
+
+*   **Do:** Return typed `PluginResult` payloads (`statusCode`, `message`, `actions`, `artifactData`).
+*   **Do:** Keep browser/TUI-specific rendering in stage/controller/view modules.
+*   **Don't:** Import `src/core/stages/*` or `src/core/logic/*` from `src/plugins/*`.
+*   **Enforcement:** Run `npm run check:boundaries` before merge.
+
+See `docs/plugins.adoc` for the runtime contract and `docs/architecture.adoc` for ownership rationale.
+
+=== Shell/Rendering Boundary
+
+Keep this responsibility split explicit:
+
+*   **Shell owns execution** (`src/vfs/Shell.ts`): command semantics, stdout/stderr, exit codes.
+*   **Registry owns language mapping** (`src/core/syntax/languageRegistry.ts`): file/`cat` detection and alias normalization.
+*   **WUI owns HTML rendering** (`src/core/logic/commands.ts`, `src/ui/syntaxHighlight.ts`).
+*   **TUI owns ANSI rendering** (`src/calypso/ui/tui/TuiRenderer.ts`, `src/calypso/ui/tui/SyntaxHighlight.ts`).
+
+Do not add independent extension/language maps in renderer modules. Add mappings once in the registry and reuse everywhere.
 
 == "Hello World": Adding a Command
 
@@ -130,4 +166,7 @@ The terminal router delegates to CalypsoCore first, then falls back to the LLM w
 
 *   **`docs/framework.adoc`**: Detailed guide to the patterns mentioned above.
 *   **`docs/vcs.adoc`**: Deep dive into how the Virtual Filesystem works.
+*   **`docs/shell.adoc`**: Shell execution model and cross-surface syntax-rendering contract.
 *   **`docs/architecture.adoc`**: High-level system design.
+*   **`docs/plugins.adoc`**: Host/Guest plugin contract and boundary rules.
+*   **`docs/philosophy.adoc`**: SeaGaP conceptual model and stage semantics.

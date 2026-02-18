@@ -9,8 +9,6 @@
 import type { PluginContext, PluginResult } from '../lcarslm/types.js';
 import { CalypsoStatusCode } from '../lcarslm/types.js';
 import type { Project } from '../core/models/types.js';
-import { MOCK_PROJECTS } from '../core/data/projects.js';
-import { project_rename } from '../core/logic/ProjectManager.js';
 import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
 
 /**
@@ -20,7 +18,7 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { args, store } = context;
+    const { args, store, shell, vfs } = context;
     
     let newName: string = args.join(' ');
     if (newName.toLowerCase().startsWith('to ')) {
@@ -34,7 +32,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         };
     }
 
-    const active: { id: string; name: string; } | null = store.project_getActive();
+    const active: Project | null = store.project_getActiveFull();
     if (!active) {
         return {
             message: CalypsoPresenter.error_format('NO ACTIVE PROJECT.'),
@@ -42,24 +40,39 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         };
     }
 
-    const project: Project | undefined = MOCK_PROJECTS.find((p: Project): boolean => p.id === active.id);
-    if (!project) {
-        return {
-            message: CalypsoPresenter.error_format('PROJECT NOT FOUND.'),
-            statusCode: CalypsoStatusCode.ERROR
-        };
+    const username: string = shell.env_get('USER') || 'user';
+    const oldPath: string = `/home/${username}/projects/${active.name}`;
+    const newPath: string = `/home/${username}/projects/${newName}`;
+
+    if (vfs.node_stat(oldPath)) {
+        vfs.node_move(oldPath, newPath);
+    } else {
+        vfs.dir_create(newPath);
+        vfs.dir_create(`${newPath}/src`);
+        vfs.dir_create(`${newPath}/input`);
+        vfs.dir_create(`${newPath}/output`);
     }
 
-    // Side effect: update VFS/Internal mapping
-    const username: string = context.shell.env_get('USER') || 'user';
-    const newPath: string = `/home/${username}/projects/${newName}`;
-    project_rename(project, newName);
+    shell.env_set('PROJECT', newName);
+
+    const cwd: string = vfs.cwd_get();
+    if (cwd.startsWith(oldPath)) {
+        const nextCwd: string = cwd.replace(oldPath, newPath);
+        vfs.cwd_set(nextCwd);
+    }
+
+    const updatedProject: Project = {
+        ...active,
+        name: newName,
+        lastModified: new Date(),
+    };
+    store.project_setActive(updatedProject);
 
     return {
         message: `${CalypsoPresenter.success_format(`RENAMED TO [${newName}]`)}\n` +
                  `${CalypsoPresenter.info_format(`VFS PATH MOVED TO ${newPath}`)}`,
         statusCode: CalypsoStatusCode.OK,
-        actions: [{ type: 'project_rename', id: project.id, newName }],
+        actions: [{ type: 'project_rename', id: active.id, newName }],
         artifactData: { oldName: active.name, newName, path: newPath }
     };
 }

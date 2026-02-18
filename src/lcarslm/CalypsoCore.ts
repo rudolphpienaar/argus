@@ -31,12 +31,12 @@ import { CalypsoStatusCode } from './types.js';
 import type { Dataset, AppState, Project } from '../core/models/types.js';
 import { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 import { ScriptRuntime } from './scripts/ScriptRuntime.js';
-import { SearchProvider, type SearchMaterialization } from './SearchProvider.js';
+import { SearchProvider } from './SearchProvider.js';
 import { StatusProvider } from './StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
 import { IntentParser } from './routing/IntentParser.js';
 import { PluginHost } from './PluginHost.js';
-import { MerkleEngine } from './MerkleEngine.js';
+import { MerkleEngine, type RuntimeMaterializationMode } from './MerkleEngine.js';
 import { vfs_snapshot } from './utils/VfsUtils.js';
 import { fingerprint_compute } from '../dag/fingerprint/hasher.js';
 import type { FingerprintRecord } from '../dag/fingerprint/types.js';
@@ -52,6 +52,12 @@ import type { WorkflowPosition, DAGNode, StageParameters } from '../dag/graph/ty
 import type { ArtifactEnvelope } from '../dag/store/types.js';
 import type { StagePath } from '../dag/bridge/SessionPaths.js';
 import { WorkflowSession, type CommandResolution } from '../dag/bridge/WorkflowSession.js';
+
+interface ParsedCommandInput {
+    trimmed: string;
+    parts: string[];
+    primary: string;
+}
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -103,14 +109,7 @@ export class CalypsoCore {
             this.engine = null;
         }
 
-        this.llmProvider = new LLMProvider(
-            this.engine,
-            this.statusProvider,
-            this.searchProvider,
-            storeActions,
-            (msg, actions, success) => this.response_create(msg, actions, success, success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR),
-            (cmd) => this.command_execute(cmd)
-        );
+        this.llmProvider = this.llmProvider_create();
 
         const username: string = shell.env_get('USER') || 'user';
         const sessionId: string = `session-${Date.now()}`;
@@ -119,7 +118,15 @@ export class CalypsoCore {
         this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
         this.federation = new FederationOrchestrator(vfs, storeActions);
         this.pluginHost = new PluginHost(vfs, shell, storeActions, this.federation);
-        this.merkleEngine = new MerkleEngine(vfs, this.workflowAdapter, this.sessionPath);
+        this.merkleEngine = new MerkleEngine(
+            vfs,
+            this.workflowAdapter,
+            this.sessionPath,
+            {
+                runtimeMode: this.runtimeMaterialization_resolve(config),
+                joinMaterializationEnabled: this.runtimeJoinMaterialization_resolve(config),
+            },
+        );
 
         const fedPath: StagePath | undefined = this.workflowAdapter.stagePaths.get('federate-brief');
         if (fedPath) {
@@ -128,8 +135,8 @@ export class CalypsoCore {
 
         this.scripts = new ScriptRuntime(
             storeActions,
-            (cmd: string) => this.command_execute(cmd),
-            () => this.searchProvider.lastMentioned_get()
+            (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd),
+            (): Dataset[] => this.searchProvider.lastMentioned_get(),
         );
     }
 
@@ -145,67 +152,31 @@ export class CalypsoCore {
      * @returns Structured response for adapters.
      */
     public async command_execute(input: string): Promise<CalypsoResponse> {
-        const trimmed: string = input.trim();
-        const parts: string[] = trimmed.split(/\s+/);
-        const primary: string = parts[0]?.toLowerCase() || '';
+        const parsed: ParsedCommandInput = this.commandInput_parse(input);
+        if (!parsed.trimmed) {
+            return this.response_create('', [], true, CalypsoStatusCode.OK);
+        }
 
-        if (!trimmed) return this.response_create('', [], true, CalypsoStatusCode.OK);
-
-        // ─── 1. FAST-PATH (Zero-Latency) ───────────────────────────────────
-
-        // Synchronize workflow session state before any command
         await this.workflowSession.sync();
+        const resolution: CommandResolution = this.workflowSession.resolveCommand(parsed.trimmed);
 
-        // Script consumption (modal prompts)
-        const scriptPrompt: CalypsoResponse | null = await this.scripts.maybeConsumeInput(trimmed);
-        if (scriptPrompt) return scriptPrompt;
-
-        // Special system commands (prefixed with / or common verbs)
-        const resolution: CommandResolution = this.workflowSession.resolveCommand(trimmed);
-        const isWorkflowCommand: boolean = !!resolution.stage && !resolution.isJump;
-
-        if (trimmed.startsWith('/') || primary === 'reset' || primary === 'help' || (primary === 'status' && !isWorkflowCommand)) {
-            const normalized: string = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-            const parts: string[] = normalized.slice(1).split(/\s+/);
-            const cmd: string = parts[0].toLowerCase();
-            if (cmd !== 'run' && cmd !== 'scripts') {
-                return this.special_handle(normalized);
-            }
+        const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
+        if (fastPathResult) {
+            return fastPathResult;
         }
-
-        // Script lifecycle commands
-        if (primary === 'scripts' || primary === '/scripts') {
-            const args: string[] = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
-            return this.scripts.scripts_response(args);
-        }
-        if (primary === 'run' || primary === '/run') {
-            const args: string[] = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
-            return this.scripts.script_execute(args);
-        }
-
-        // Control plane intents (automation control)
-        const controlResult: CalypsoResponse | null = await this.control_handle(trimmed);
-        if (controlResult) return controlResult;
-
-        // Confirmations (gate approvals)
-        const confirmation: CalypsoResponse | null = await this.confirmation_dispatch(trimmed);
-        if (confirmation) return confirmation;
-
-        // Shell builtins (Direct match POSIX-style)
-        const shellResult: CalypsoResponse | null = await this.shell_handle(trimmed, primary);
-        if (shellResult) return shellResult;
 
         // ─── 2. INTENT RESOLUTION (The Compiler) ───────────────────────────
 
-        const intent: CalypsoIntent = await this.intentParser.intent_resolve(trimmed, this.engine);
+        const intent: CalypsoIntent = await this.intentParser.intent_resolve(parsed.trimmed, this.engine);
 
         // ─── 3. ACTION EXECUTION (The Runtime) ─────────────────────────────
 
         if (intent.type === 'workflow' && intent.command) {
-            // Re-resolve using the canonical command if it differs from the raw input tokens
-            const finalResolution: CommandResolution = (intent.command === primary) 
-                ? resolution 
-                : this.workflowSession.resolveCommand(intent.command);
+            const finalResolution: CommandResolution = this.workflowResolution_resolve(
+                intent.command,
+                parsed.primary,
+                resolution,
+            );
 
             if (finalResolution.stage) {
                 const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
@@ -217,11 +188,11 @@ export class CalypsoCore {
         // ─── 4. LLM FALLBACK (The Communicator) ────────────────────────────
 
         // Interrogative guidance (what's next?)
-        const guidance: CalypsoResponse | null = this.guidance_handle(trimmed);
+        const guidance: CalypsoResponse | null = this.guidance_handle(parsed.trimmed);
         if (guidance) return guidance;
 
         // Conversational query
-        const response: CalypsoResponse = await this.llmProvider.query(trimmed, this.sessionPath);
+        const response: CalypsoResponse = await this.llmProvider.query(parsed.trimmed, this.sessionPath);
         response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
         return response;
     }
@@ -297,8 +268,8 @@ export class CalypsoCore {
             const children = this.vfs.dir_list(resolvedDir);
             
             return children
-                .filter(c => c.name.toLowerCase().startsWith(prefix.toLowerCase()))
-                .map(c => {
+                .filter((c: FileNode): boolean => c.name.toLowerCase().startsWith(prefix.toLowerCase()))
+                .map((c: FileNode): string => {
                     const base = dir === '.' ? '' : (dir.endsWith('/') ? dir : dir + '/');
                     const suffix = c.type === 'folder' ? '/' : '';
                     return base + c.name + suffix;
@@ -309,6 +280,71 @@ export class CalypsoCore {
     }
 
     // ─── Pipeline Handlers ──────────────────────────────────────────────────
+
+    private commandInput_parse(input: string): ParsedCommandInput {
+        const trimmed: string = input.trim();
+        const parts: string[] = trimmed.split(/\s+/);
+        const primary: string = parts[0]?.toLowerCase() || '';
+        return { trimmed, parts, primary };
+    }
+
+    private workflowResolution_resolve(
+        intentCommand: string,
+        primary: string,
+        currentResolution: CommandResolution,
+    ): CommandResolution {
+        if (intentCommand === primary) {
+            return currentResolution;
+        }
+        return this.workflowSession.resolveCommand(intentCommand);
+    }
+
+    private async commandFastPath_handle(
+        parsed: ParsedCommandInput,
+        resolution: CommandResolution,
+    ): Promise<CalypsoResponse | null> {
+        const { trimmed, parts, primary } = parsed;
+        const scriptPrompt: CalypsoResponse | null = await this.scripts.maybeConsumeInput(trimmed);
+        if (scriptPrompt) {
+            return scriptPrompt;
+        }
+
+        const isWorkflowCommand: boolean = resolution.stage !== null && !resolution.isJump;
+        if (trimmed.startsWith('/') || primary === 'reset' || primary === 'help' || (primary === 'status' && !isWorkflowCommand)) {
+            const normalized: string = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+            const normalizedParts: string[] = normalized.slice(1).split(/\s+/);
+            const commandName: string = normalizedParts[0].toLowerCase();
+            if (commandName !== 'run' && commandName !== 'scripts') {
+                return this.special_handle(normalized);
+            }
+        }
+
+        if (primary === 'scripts' || primary === '/scripts') {
+            const args: string[] = trimmed.startsWith('/')
+                ? trimmed.split(/\s+/).slice(1)
+                : parts.slice(1);
+            return this.scripts.scripts_response(args);
+        }
+        if (primary === 'run' || primary === '/run') {
+            const args: string[] = trimmed.startsWith('/')
+                ? trimmed.split(/\s+/).slice(1)
+                : parts.slice(1);
+            return this.scripts.script_execute(args);
+        }
+
+        const controlResult: CalypsoResponse | null = await this.control_handle(trimmed);
+        if (controlResult) {
+            return controlResult;
+        }
+
+        const confirmation: CalypsoResponse | null = await this.confirmation_dispatch(trimmed);
+        if (confirmation) {
+            return confirmation;
+        }
+
+        const shellResult: CalypsoResponse | null = await this.shell_handle(trimmed, primary);
+        return shellResult;
+    }
 
     private async special_handle(input: string): Promise<CalypsoResponse> {
         const result = await this.special_dispatch(input);
@@ -358,7 +394,10 @@ export class CalypsoCore {
     }
 
     private async control_handle(input: string): Promise<CalypsoResponse | null> {
-        const intent = controlPlaneIntent_resolve(input, scripts_list().map(s => ({ id: s.id, aliases: s.aliases })));
+        const scriptRefs: Array<{ id: string; aliases: string[] }> = scripts_list().map(
+            (s: CalypsoScript): { id: string; aliases: string[] } => ({ id: s.id, aliases: s.aliases }),
+        );
+        const intent: ControlPlaneIntent = controlPlaneIntent_resolve(input, scriptRefs);
         return await this.controlIntent_dispatch(intent);
     }
 
@@ -371,7 +410,7 @@ export class CalypsoCore {
             const resolution: CommandResolution = this.workflowSession.resolveCommand(trimmedInput);
             if (resolution.stage) {
                 this.workflowAdapter.stage_complete(resolution.stage.id);
-                this.merkleEngine.artifact_materialize(resolution.stage.id, {
+                await this.merkleEngine.artifact_materialize(resolution.stage.id, {
                     command: trimmedInput,
                     args: trimmedInput.split(/\s+/).slice(1),
                     timestamp: new Date().toISOString(),
@@ -413,6 +452,14 @@ export class CalypsoCore {
         // We always check transition readiness first.
         const transition: TransitionResult = this.workflow_checkTransition(cmd);
         if (!transition.allowed) {
+            if (transition.staleBlock) {
+                return this.response_create(
+                    CalypsoPresenter.workflowWarning_format(transition),
+                    [],
+                    false,
+                    CalypsoStatusCode.BLOCKED_STALE,
+                );
+            }
             if (transition.skippedStageId) {
                 this.workflowAdapter.skip_increment(transition.skippedStageId);
                 return this.response_create(CalypsoPresenter.workflowWarning_format(transition), [], false, CalypsoStatusCode.BLOCKED);
@@ -426,7 +473,8 @@ export class CalypsoCore {
             const expectedIntent: string = `CONFIRM_JUMP:${resolution.stage!.id}|${input}`;
             
             if (state.lastIntent !== expectedIntent) {
-                this.storeActions.state_set({ lastIntent: expectedIntent } as any);
+                const jumpIntentState: Partial<AppState> = { lastIntent: expectedIntent };
+                this.storeActions.state_set(jumpIntentState);
                 return this.response_create(`${CalypsoPresenter.info_format('PHASE JUMP DETECTED')}\n${resolution.warning}\n\nType 'confirm' to proceed.`, [], false, CalypsoStatusCode.BLOCKED);
             }
         }
@@ -467,7 +515,7 @@ export class CalypsoCore {
                 timestamp: new Date().toISOString(),
                 result: true 
             };
-            this.merkleEngine.artifact_materialize(stage.id, content);
+            await this.merkleEngine.artifact_materialize(stage.id, content);
 
             // Advance the session context to the NEXT logical stage
             const pos: WorkflowPosition = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
@@ -538,6 +586,31 @@ export class CalypsoCore {
         return this.workflowAdapter.transition_check(cmd, this.vfs, this.sessionPath);
     }
 
+    private runtimeMaterialization_resolve(config: CalypsoCoreConfig): RuntimeMaterializationMode {
+        if (config.runtimeMaterialization) {
+            return config.runtimeMaterialization;
+        }
+        const env: string = (this.shell.env_get('ARGUS_RUNTIME_MODEL') || '').toLowerCase();
+        if (env === 'legacy') {
+            return 'legacy';
+        }
+        return 'store';
+    }
+
+    private runtimeJoinMaterialization_resolve(config: CalypsoCoreConfig): boolean {
+        if (config.runtimeJoinMaterialization !== undefined) {
+            return config.runtimeJoinMaterialization;
+        }
+        const env: string = (this.shell.env_get('ARGUS_RUNTIME_JOIN_MATERIALIZE') || '').toLowerCase();
+        if (env === '0' || env === 'false' || env === 'off' || env === 'no') {
+            return false;
+        }
+        if (env === '1' || env === 'true' || env === 'on' || env === 'yes') {
+            return true;
+        }
+        return true;
+    }
+
     private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {
         if (intent.plane !== 'control') return null;
         
@@ -566,7 +639,8 @@ export class CalypsoCore {
             const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
             if (stage) {
                 // Clear the intent before executing to avoid recursion
-                this.storeActions.state_set({ lastIntent: null } as any);
+                const clearIntentState: Partial<AppState> = { lastIntent: null };
+                this.storeActions.state_set(clearIntentState);
                 const res: CommandResolution = this.workflowSession.resolveCommand(originalInput);
                 return await this.workflow_dispatch(originalInput, res, true);
             }
@@ -584,12 +658,53 @@ export class CalypsoCore {
     }
 
     private key_register(provider: string, key: string): CalypsoResponse {
-        if (!provider || !key) return this.response_create('Usage: /key <provider> <key>', [], false, CalypsoStatusCode.ERROR);
-        this.activeProvider = provider as any;
+        if (!provider || !key) {
+            return this.response_create('Usage: /key <provider> <key>', [], false, CalypsoStatusCode.ERROR);
+        }
+        const normalizedProvider: 'openai' | 'gemini' | null = this.provider_resolve(provider);
+        if (!normalizedProvider) {
+            return this.response_create(`Unsupported provider: ${provider}`, [], false, CalypsoStatusCode.ERROR);
+        }
+        this.activeProvider = normalizedProvider;
         this.simulationMode = false;
-        this.engine = new LCARSEngine({ apiKey: key, model: provider === 'openai' ? 'gpt-4o' : 'gemini-1.5-flash', provider: this.activeProvider! }, this.knowledge);
-        this.llmProvider = new LLMProvider(this.engine, this.statusProvider, this.searchProvider, this.storeActions, (m: string, a: CalypsoAction[], s: boolean): CalypsoResponse => this.response_create(m, a, s, s ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR), (c: string): Promise<CalypsoResponse> => this.command_execute(c));
+        this.engine = new LCARSEngine(
+            {
+                apiKey: key,
+                model: normalizedProvider === 'openai' ? 'gpt-4o' : 'gemini-1.5-flash',
+                provider: normalizedProvider,
+            },
+            this.knowledge,
+        );
+        this.llmProvider = this.llmProvider_create();
         return this.response_create(`● AI CORE ONLINE [${provider.toUpperCase()}]`, [], true, CalypsoStatusCode.OK);
+    }
+
+    private provider_resolve(provider: string): 'openai' | 'gemini' | null {
+        const normalized: string = provider.toLowerCase();
+        if (normalized === 'openai' || normalized === 'gemini') {
+            return normalized;
+        }
+        return null;
+    }
+
+    private llmProvider_create(): LLMProvider {
+        return new LLMProvider(
+            this.engine,
+            this.statusProvider,
+            this.searchProvider,
+            this.storeActions,
+            (
+                message: string,
+                actions: CalypsoAction[],
+                success: boolean,
+            ): CalypsoResponse => this.response_create(
+                message,
+                actions,
+                success,
+                success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR,
+            ),
+            (command: string): Promise<CalypsoResponse> => this.command_execute(command),
+        );
     }
 
     private help_format(): string {

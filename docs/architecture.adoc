@@ -1,7 +1,7 @@
 = ARGUS System Architecture: A Formal Specification for State-Grounded Orchestration
 :author: ATLAS Project Team
-:revdate: 2026-02-17
-:revnumber: 10.0.0
+:revdate: 2026-02-18
+:revnumber: 10.0.1
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -27,6 +27,209 @@ The core problem addressed by v10.0 is the "Irreducible Hallucination" inherent 
 === The Resolution: The Operating System Metaphor
 The v10.0 architecture resolves this by adopting an "Operating System Metaphor." The system is refactored into a high-integrity Kernel (the Host) and a set of unprivileged Applications (the Plugins). The AI's role is strictly limited to that of a "Compiler"—it translates user intent into a structured protocol, but it is never allowed to execute that protocol itself. The Host kernel performs all state mutations, enforces all workflow constraints, and materializes all artifacts. This separation ensures that the system's "Intelligence" and its "Integrity" are governed by two distinct, non-overlapping architectural layers.
 
+== Architectural Overview (ASCII)
+
+The following figure summarizes the major runtime components and data/control flow described in this specification.
+
+[source,text]
+----
+                         user commands / responses
+┌───────────────────────────────────────────────────────────────────┐
+│ Surface Adapters                                                  │
+│ - Browser (WUI)                                                   │
+│ - TUI / CLI                                                       │
+│ - ORACLE Runner (headless walk driver)                            │
+└──────────────────────────────────────┬────────────────────────────┘
+                                       │
+                                       ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ CALYPSO HOST (`src/lcarslm/CalypsoCore.ts`)                       │
+│ Fast-path dispatch -> Intent compilation -> Gatekeeping -> Dispatch│
+└──────────────────────────┬────────────────────────────────────────┘
+                           │
+                           ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ WorkflowSession + WorkflowAdapter                                 │
+│ - DAG prerequisite validation                                     │
+│ - phase-jump confirmation                                         │
+│ - stale/missing parent detection                                  │
+└──────────────────────────┬────────────────────────────────────────┘
+                           │
+                           ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ PluginHost (`src/lcarslm/PluginHost.ts`)                          │
+│ - dynamic plugin load (`src/plugins/*.ts`)                        │
+│ - typed PluginContext injection                                   │
+└──────────────────────────┬────────────────────────────────────────┘
+                           │ PluginContext
+                           ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ Deterministic Substrate                                            │
+│ - Store (`src/core/state/store.ts`)                               │
+│ - VFS (`src/vfs/VirtualFileSystem.ts`)                            │
+│ - Shell (`src/vfs/Shell.ts`)                                      │
+└──────────────────────────┬────────────────────────────────────────┘
+                           │ artifactData
+                           ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ MerkleEngine (`src/lcarslm/MerkleEngine.ts`)                      │
+│ - SHA-256 provenance fingerprinting                               │
+│ - topological artifact materialization                             │
+└──────────────────────────┬────────────────────────────────────────┘
+                           │
+                           ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ Session Tree (materialized truth in VFS)                           │
+│ `/sessions/<workflow>/<session>/<topology>/data/*.json`           │
+└───────────────────────────────────────────────────────────────────┘
+
+Fallback path:
+Surface -> Calypso -> LLM conversational response only (no state mutation)
+----
+
+== Figure Roadmap (Recommended)
+
+All figures in this architecture set should use ASCII box/line art only.
+
+=== 1) Command Lifecycle Sequence (ASCII)
+
+[source,text]
+----
+┌─────────┐   ┌─────────────┐   ┌──────────────┐   ┌────────────┐   ┌────────────┐
+│ Surface │──▶│ CalypsoCore │──▶│ IntentParser │──▶│ Workflow   │──▶│ PluginHost │
+└─────────┘   └─────────────┘   └──────────────┘   │ Adapter    │   └────────────┘
+                                                   └────────────┘          │
+                                                          │                │
+                                                          ▼                ▼
+                                                    ┌──────────┐      ┌────────────┐
+                                                    │ Gatekeep │─────▶│ Plugin     │
+                                                    └──────────┘      │ (execute)  │
+                                                                      └────────────┘
+                                                                              │
+                                                                              ▼
+                                                                       ┌───────────────┐
+                                                                       │ MerkleEngine  │
+                                                                       └───────┬───────┘
+                                                                               │
+                                                                               ▼
+                                                                       ┌───────────────┐
+                                                                       │ VFS Session   │
+                                                                       │ Tree Artifact │
+                                                                       └───────────────┘
+
+result/status path:
+┌───────────────┐        ┌─────────────┐        ┌─────────┐
+│ MerkleEngine  │───────▶│ CalypsoCore │───────▶│ Surface │
+└───────────────┘        └─────────────┘        └─────────┘
+----
+
+=== 2) SeaGaP State Machine (ASCII)
+
+[source,text]
+----
+┌────────┐     ┌────────┐     ┌─────────┐     ┌─────────┐     ┌──────┐
+│ SEARCH │────▶│ GATHER │────▶│ PROCESS │────▶│ MONITOR │────▶│ POST │
+└────────┘     └────────┘     └─────────┘     └─────────┘     └──────┘
+     │              │              │               │              │
+     └──────────────┴──────────────┴───────────────┴──────────────┘
+                    phase jump requires explicit confirmation
+
+blocked paths:
+  - missing parent artifact  -> BLOCKED_MISSING
+  - stale upstream artifact  -> BLOCKED_STALE
+----
+
+=== 3) Plugin Boundary Diagram (ASCII)
+
+[source,text]
+----
+                  allowed via PluginContext
+         ┌──────────────────────────────────────┐
+         │ vfs │ shell │ store │ federation(opt)│
+         └──────────────────┬───────────────────┘
+                            │
+                            ▼
+                     ┌─────────────┐
+                     │ Plugin Code │
+                     └─────────────┘
+                            │
+        ┌───────────────────┴───────────────────┐
+        │                                       │
+        ▼                                       ▼
+  ┌─────────────┐                        ┌───────────────┐
+  │ allowed:    │                        │ forbidden:    │
+  │ src/plugins │                        │ src/core/*    │
+  │ returns     │                        │ orchestration │
+  │ PluginResult│                        │ stage modules │
+  └─────────────┘                        └───────────────┘
+----
+
+=== 4) Provenance Topology (ASCII)
+
+[source,text]
+----
+/sessions/fedml/session-001/
+│
+├── search/
+│   ├── data/search.json
+│   └── meta/fingerprint.json
+│
+├── search/gather/
+│   ├── data/gather.json
+│   └── meta/fingerprint.json
+│
+├── search/gather/harmonize/
+│   ├── data/harmonize.json
+│   └── meta/fingerprint.json
+│
+└── search/gather/harmonize/proceed/
+    ├── data/proceed.json
+    └── meta/fingerprint.json
+
+re-run branch example:
+search/gather@2026-02-18T16-00-00Z/
+----
+
+=== 5) Deployment View (ASCII)
+
+[source,text]
+----
+          ┌───────────────────────────┐
+          │ Shared Core Runtime       │
+          │ Calypso + Store + VFS     │
+          └─────────────┬─────────────┘
+                        │
+      ┌─────────────────┼───────────────────┐
+      │                 │                   │
+      ▼                 ▼                   ▼
+┌───────────┐    ┌─────────────┐    ┌───────────────┐
+│ Browser   │    │ TUI / CLI   │    │ ORACLE Runner │
+│ Adapter   │    │ Adapter     │    │ (headless)    │
+└───────────┘    └─────────────┘    └───────────────┘
+----
+
+=== 6) Cross-Surface Rendering Contract (ASCII)
+
+[source,text]
+----
+                   ┌──────────────────┐
+                   │ Shell stdout/err │
+                   └─────────┬────────┘
+                             │
+                             ▼
+                 ┌───────────────────────────┐
+                 │ languageRegistry (shared) │
+                 └─────────────┬─────────────┘
+                               │
+                 ┌─────────────┴─────────────┐
+                 │                           │
+                 ▼                           ▼
+      ┌───────────────────────┐    ┌─────────────────────────┐
+      │ WUI: HTML highlighter │    │ TUI: ANSI highlighter   │
+      │ src/ui/syntax...      │    │ src/calypso/ui/tui/...  │
+      └───────────────────────┘    └─────────────────────────┘
+----
+
 == The Host/Guest Architecture: The VM Formalism
 
 The fundamental design of ARGUS v10.0 is a Host Virtual Machine that provides a sandboxed environment for the execution of scientific protocols. This bifurcation is implemented through the `CalypsoCore` and `PluginHost` classes.
@@ -47,6 +250,34 @@ Every Guest plugin interacts with the system through a strictly-typed "Standard 
 *   **`federation` (Orchestrator Access):** A specialized interface to the multi-phase `FederationOrchestrator` for site-local handshake management.
 
 This context-based approach ensures that plugins are stateless transformations. They do not "own" their data; they perform work upon the substrate provided by the Host and return the result for materialization.
+
+=== SeaGaP Ownership Boundaries (Search vs Gather)
+To keep the SeaGaP spine coherent, ARGUS enforces strict stage ownership:
+
+*   **Search:** Discovery only. Query catalog data and materialize search evidence.
+*   **Gather:** Assembly only. Select/mount cohort inputs and materialize gather evidence.
+*   **Surface Adapters:** Render and interaction mechanics for browser/TUI clients.
+
+This division is critical because Search and Gather are often triggered in the same user flow. Without explicit ownership, UI concerns leak into runtime plugins and mutation concerns leak into discovery logic.
+
+[cols="1,2,2"]
+|===
+| Layer | Owns | Must Not Own
+
+| `src/plugins/search.ts`
+| Query parsing, dataset discovery, search snapshot payload.
+| Gather mutations, overlay behavior, DOM-centric rendering.
+
+| `src/plugins/gather.ts`
+| Cohort selection/mount semantics, gather artifact payloads.
+| Search query semantics, web-only presentation concerns.
+
+| `src/core/stages/*`
+| Surface projection (cards, overlays, stage transitions, event wiring).
+| Merkle/session materialization policy, plugin-level business rules.
+|===
+
+For implementation constraints and enforcement, see link:plugins.adoc[Plugin System] and `npm run check:boundaries`.
 
 == The Interpretation-First Pipeline: The Logic of Intent
 
@@ -94,6 +325,19 @@ The `VirtualFileSystem` class manages a recursive tree of `FileNode` objects.
 === The Shell and Environment Isolation
 The `Shell` class provides the process-level context for all execution. It maintains the environment variables ($USER, $PWD, $PROJECT) that define the "persona" of the current session. When a plugin is executed, it inherits the Shell's environment, ensuring that all VFS mutations occur within the correct project context. The Shell also provides the `python` simulator, which allows researchers to verify the behavior of their training scripts against "Phantom" data before committing to a real-world federation.
 
+=== Cross-Surface Syntax Highlighting Contract
+
+ARGUS enforces a strict separation between command execution and rendering:
+
+*   **Shell (`src/vfs/Shell.ts`)**: Produces deterministic output streams only.
+*   **Language Registry (`src/core/syntax/languageRegistry.ts`)**: Canonical language detection and alias/filename mapping.
+*   **WUI Adapter Path**: `src/core/logic/commands.ts` + `src/ui/syntaxHighlight.ts` (HTML rendering).
+*   **TUI Adapter Path**: `src/calypso/ui/tui/TuiRenderer.ts` + `src/calypso/ui/tui/SyntaxHighlight.ts` (ANSI rendering).
+
+This design prevents drift where browser and TUI would otherwise disagree on how the same `cat` output or fenced code block should be interpreted.
+
+For implementation details, see link:shell.adoc[VCS Shell] and link:plugins.adoc[Plugin System].
+
 == Security and Integrity Analysis
 
 The ARGUS architecture is designed to meet the rigorous security requirements of medical data handling.
@@ -109,4 +353,4 @@ The combination of the DAG Engine and the Merkle Engine ensures that no user can
 The ARGUS v10.0 architecture represents a fundamental departure from conversational AI interfaces. By refactoring the system into a Host Virtual Machine and a deterministic Plugin Runtime, ARGUS effectively grounds the probabilistic "Intelligence" of the LLM in the "Ground Truth" of a persistent filesystem. The resulting system is not merely an assistant, but a robust Operating System for federated medical imaging. The architecture's commitment to state-first verification ensures that every scientific result produced by ARGUS is backed by a verifiable chain of evidence, providing the trust and security required for national-scale medical research.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-18 (v10.0.1)_

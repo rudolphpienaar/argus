@@ -25,10 +25,15 @@ import type {
  * `session.json` metadata file.
  */
 export class SessionStore implements SessionStoreInterface {
+    private readonly rootStageInOwnDirectory: boolean;
+
     constructor(
         private readonly backend: StorageBackend,
         private readonly basePath: string = '/home/user/sessions',
-    ) {}
+        options: { rootStageInOwnDirectory?: boolean } = {},
+    ) {
+        this.rootStageInOwnDirectory = options.rootStageInOwnDirectory ?? false;
+    }
 
     async session_create(persona: string, manifestVersion: string): Promise<Session> {
         const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -92,7 +97,7 @@ export class SessionStore implements SessionStoreInterface {
         }
 
         // Sort by lastActive descending
-        sessions.sort((a, b) => b.lastActive.localeCompare(a.lastActive));
+        sessions.sort((a: Session, b: Session): number => b.lastActive.localeCompare(a.lastActive));
         return sessions;
     }
 
@@ -100,12 +105,22 @@ export class SessionStore implements SessionStoreInterface {
         if (stagePath.length === 0) {
             return `${session.rootPath}/data`;
         }
-        // Root stage: rootPath/data
-        // Nested: rootPath/{path[1]}/{path[2]}/.../{path[N]}/data
+        // Default layout:
+        //   Root stage: rootPath/data
+        //   Nested: rootPath/{path[1]}/{path[2]}/.../{path[N]}/data
+        // Compatibility layout:
+        //   Root stage: rootPath/{path[0]}/data
+        //   Nested: rootPath/{path[0]}/{path[1]}/.../{path[N]}/data
+        // This is used by runtime scaffolding to preserve bridge SessionPaths.
         if (stagePath.length === 1) {
+            if (this.rootStageInOwnDirectory) {
+                return `${session.rootPath}/${stagePath[0]}/data`;
+            }
             return `${session.rootPath}/data`;
         }
-        const nested = stagePath.slice(1).join('/');
+        const nested = this.rootStageInOwnDirectory
+            ? stagePath.join('/')
+            : stagePath.slice(1).join('/');
         return `${session.rootPath}/${nested}/data`;
     }
 

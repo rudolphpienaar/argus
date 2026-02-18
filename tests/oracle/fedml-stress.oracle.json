@@ -41,7 +41,7 @@
       "output_contains": "PROCEEDING WITH FEDML WORKFLOW"
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
+      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json"
     }
   ]
 }

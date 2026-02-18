@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { project_createDraft, project_gather } from './ProjectManager.js';
-import { store, globals } from '../state/store.js';
+import { store } from '../state/store.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
@@ -17,15 +17,15 @@ describe('ProjectManager', () => {
 
     beforeEach(() => {
         // Setup fresh VFS/Shell for each test
-        globals.vcs = new VirtualFileSystem();
-        globals.shell = new Shell(globals.vcs, 'fedml');
+        store.globalVcs_set(new VirtualFileSystem());
+        store.globalShell_set(new Shell(store.globals.vcs, 'fedml'));
         
         // Mock terminal to avoid console noise
-        globals.terminal = {
+        store.globalTerminal_set({
             println: vi.fn(),
             prompt_sync: vi.fn(),
             // ... other methods irrelevant for this test
-        } as any;
+        } as any);
 
         // Reset store
         store.project_unload();
@@ -69,10 +69,10 @@ describe('ProjectManager', () => {
             expect(store.state.selectedDatasets).toContain(dataset);
             
             // 5. VFS should be mounted (cohort tree structure: input/training/{dsDir}/...)
-            const username = globals.shell?.env_get('USER') || 'user';
+            const username = store.globals.shell?.env_get('USER') || 'user';
             const dsDir = dataset.name.replace(/\s+/g, '_');
             const path = `/home/${username}/projects/${project.name}/input/training/${dsDir}/manifest.json`;
-            expect(globals.vcs.node_stat(path)).not.toBeNull();
+            expect(store.globals.vcs.node_stat(path)).not.toBeNull();
         });
 
         it('should use existing active project', () => {
@@ -90,11 +90,11 @@ describe('ProjectManager', () => {
             project_gather(dataset);
             
             const active = store.state.activeProject!;
-            const username = globals.shell?.env_get('USER');
+            const username = store.globals.shell?.env_get('USER');
             const expectedCwd = `/home/${username}/projects/${active.name}`;
             
-            expect(globals.vcs.cwd_get()).toBe(expectedCwd);
-            expect(globals.shell?.env_get('PROJECT')).toBe(active.name);
+            expect(store.globals.vcs.cwd_get()).toBe(expectedCwd);
+            expect(store.globals.shell?.env_get('PROJECT')).toBe(active.name);
         });
     });
 });

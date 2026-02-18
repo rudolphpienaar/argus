@@ -38,7 +38,7 @@ export function sleep_ms(ms: number): Promise<void> {
 }
 
 /** Strip ANSI codes from string for length calculation. */
-export function stripAnsi(str: string): string {
+export function ansi_strip(str: string): string {
     return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
@@ -279,7 +279,7 @@ export async function harmonization_animate(): Promise<void> {
     const METRIC_WIDTH: number = 28;
 
     const boxRow_render = (content: string): string => {
-        const visibleLength: number = Array.from(stripAnsi(content)).length;
+        const visibleLength: number = Array.from(ansi_strip(content)).length;
         const paddingLength: number = Math.max(0, WIDTH - visibleLength);
         return `${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`;
     };

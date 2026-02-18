@@ -19,7 +19,7 @@
 
 import type { Dataset } from './core/models/types.js';
 
-import { state, globals, store } from './core/state/store.js';
+import { store } from './core/state/store.js';
 import { Shell } from './vfs/Shell.js';
 import { ContentRegistry } from './vfs/content/ContentRegistry.js';
 import { ALL_GENERATORS } from './vfs/content/templates/index.js';
@@ -37,7 +37,7 @@ import { training_abort } from './core/stages/monitor.js';
 import { model_publish } from './core/stages/post.js';
 import { user_authenticate, user_logout, role_select, persona_switch, personaButtons_initialize } from './core/stages/login.js';
 import { marketplace_initialize } from './marketplace/view.js';
-import { catalog_search, dataset_toggle, dataset_select, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize, project_activate, projectDetail_open, datasetDetail_open } from './core/stages/search.js';
+import { catalog_search, dataset_toggle, dataset_select, workspace_render, lcarslm_simulate, lcarslm_auth, lcarslm_reset, lcarslm_initialize } from './core/stages/search.js';
 import { telemetry_start } from './telemetry/manager.js';
 import { WorkflowTracker } from './lcars-framework/ui/WorkflowTracker.js';
 import { LCARSTerminal } from './ui/components/Terminal.js';
@@ -106,15 +106,15 @@ function workflow_initialize(): void {
 function vcs_initialize(): void {
     const contentRegistry: ContentRegistry = new ContentRegistry();
     contentRegistry.generators_registerAll(ALL_GENERATORS);
-    contentRegistry.vfs_connect(globals.vcs);
+    contentRegistry.vfs_connect(store.globals.vcs);
 
-    homeDir_scaffold(globals.vcs, 'user');
+    homeDir_scaffold(store.globals.vcs, 'user');
 
     MOCK_PROJECTS.forEach((project: Project): void => {
         const projectBase: string = `/home/user/projects/${project.name}`;
-        globals.vcs.dir_create(`${projectBase}/src`);
+        store.globals.vcs.dir_create(`${projectBase}/src`);
         const cohortRoot: VcsFileNode = cohortTree_build(project.datasets);
-        globals.vcs.tree_mount(`${projectBase}/data`, cohortRoot);
+        store.globals.vcs.tree_mount(`${projectBase}/data`, cohortRoot);
     });
 }
 
@@ -123,10 +123,10 @@ function vcs_initialize(): void {
  */
 function terminal_initialize(): void {
     terminal = new LCARSTerminal('intelligence-console');
-    globals.terminal = terminal;
+    store.globalTerminal_set(terminal);
 
-    const shell: Shell = new Shell(globals.vcs, 'user');
-    globals.shell = shell;
+    const shell: Shell = new Shell(store.globals.vcs, 'user');
+    store.globalShell_set(shell);
     terminal.shell_connect(shell);
     terminal.fallback_set(command_dispatch);
 
@@ -142,7 +142,7 @@ function frameSlot_initialize(): void {
     const bar10El: HTMLElement | null = document.querySelector('.bar-10');
 
     if (consoleBootEl && terminalWrapper) {
-        globals.frameSlot = new FrameSlot({
+        store.globalFrameSlot_set(new FrameSlot({
             frameElement: consoleBootEl,
             contentElement: terminalWrapper,
             frameDuration: 600,
@@ -154,7 +154,7 @@ function frameSlot_initialize(): void {
             onClose: (): void => {
                 if (bar10El) bar10El.classList.add('lcars-beckon');
             },
-        });
+        }));
 
         if (bar10El) bar10El.classList.add('lcars-beckon');
     }
@@ -265,8 +265,8 @@ function terminalDraggable_initialize(): void {
         document.body.style.cursor = 'default';
         consoleEl.style.transition = '';
 
-        if (globals.frameSlot) {
-            globals.frameSlot.state_syncAfterDrag();
+        if (store.globals.frameSlot) {
+            store.globals.frameSlot.state_syncAfterDrag();
         }
     });
 }
@@ -298,8 +298,8 @@ function stageChange_handle(event: CustomEvent): void {
         const isEntryStage: boolean = stageName === 'login' || stageName === 'role-selection';
         consoleEl.style.display = isEntryStage ? 'none' : 'block';
 
-        if (globals.shell) {
-            globals.shell.stage_enter(stageName);
+        if (store.globals.shell) {
+            store.globals.shell.stage_enter(stageName);
         }
 
         // 3. Initialize new stage
@@ -358,7 +358,7 @@ function app_initialize(): void {
     lcarslm_initialize();
 
     // Initial stage
-    stage_advanceTo(state.currentStage);
+    stage_advanceTo(store.state.currentStage);
 
     // Window bindings for HTML onclick handlers
     windowBindings_initialize({ ui_toggleTopFrame });

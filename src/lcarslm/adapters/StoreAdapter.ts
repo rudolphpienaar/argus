@@ -8,8 +8,8 @@
  */
 
 import type { CalypsoStoreActions } from '../types.js';
-import type { Dataset, AppState, FederationState } from '../../core/models/types.js';
-import { store, state } from '../../core/state/store.js';
+import type { Dataset, AppState, FederationState, Project } from '../../core/models/types.js';
+import { store } from '../../core/state/store.js';
 
 /**
  * Adapter that exposes Store functionality to CalypsoCore.
@@ -22,26 +22,26 @@ export class StoreAdapter implements CalypsoStoreActions {
      */
     public state_get(): Partial<AppState> {
         return {
-            currentStage: state.currentStage,
-            selectedDatasets: [...state.selectedDatasets],
-            activeProject: state.activeProject ? { ...state.activeProject } : null,
-            marketplaceOpen: state.marketplaceOpen,
-            installedAssets: [...state.installedAssets],
-            costEstimate: { ...state.costEstimate },
-            trainingJob: state.trainingJob ? { ...state.trainingJob } : null,
-            lastIntent: state.lastIntent
+            currentStage: store.state.currentStage,
+            selectedDatasets: [...store.state.selectedDatasets],
+            activeProject: store.state.activeProject ? { ...store.state.activeProject } : null,
+            marketplaceOpen: store.state.marketplaceOpen,
+            installedAssets: [...store.state.installedAssets],
+            costEstimate: { ...store.state.costEstimate },
+            trainingJob: store.state.trainingJob ? { ...store.state.trainingJob } : null,
+            lastIntent: store.state.lastIntent
         };
     }
 
     /**
-     * Update partial state.
+     * Update partial store.state.
      */
     public state_set(newState: Partial<AppState>): void {
-        Object.assign(state, newState);
+        store.state_patch(newState);
     }
 
     /**
-     * Reset to initial state.
+     * Reset to initial store.state.
      */
     public reset(): void {
         store.selection_clear();
@@ -67,20 +67,34 @@ export class StoreAdapter implements CalypsoStoreActions {
      * Get selected datasets.
      */
     public datasets_getSelected(): Dataset[] {
-        return state.selectedDatasets;
+        return store.state.selectedDatasets;
     }
 
     /**
      * Get active project.
      */
     public project_getActive(): { id: string; name: string } | null {
-        if (state.activeProject) {
+        if (store.state.activeProject) {
             return {
-                id: state.activeProject.id,
-                name: state.activeProject.name
+                id: store.state.activeProject.id,
+                name: store.state.activeProject.name
             };
         }
         return null;
+    }
+
+    /**
+     * Get active project with complete metadata.
+     */
+    public project_getActiveFull(): Project | null {
+        return store.state.activeProject ? { ...store.state.activeProject } : null;
+    }
+
+    /**
+     * Set active project and synchronize selected datasets.
+     */
+    public project_setActive(project: Project): void {
+        store.project_load(project);
     }
 
     /**
@@ -108,14 +122,14 @@ export class StoreAdapter implements CalypsoStoreActions {
      * Get current federation handshake state from global store.
      */
     public federation_getState(): FederationState | null {
-        return state.federationState;
+        return store.state.federationState;
     }
 
     /**
      * Update federation handshake state in global store.
      */
     public federation_setState(fedState: FederationState | null): void {
-        state.federationState = fedState;
+        store.federationState_set(fedState);
     }
 }
 

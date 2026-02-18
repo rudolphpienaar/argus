@@ -83,7 +83,7 @@ function scriptPath_resolve(scriptRef: string): string | null {
 /**
  * Detect whether a script file uses structured format.
  */
-function scriptIsStructured(content: string): boolean {
+function script_isStructured(content: string): boolean {
     return content.split(/\r?\n/).some((line: string): boolean => {
         const trimmed: string = line.trimStart();
         return trimmed === 'steps:' || trimmed.startsWith('steps:');
@@ -118,7 +118,7 @@ async function script_run(
 
     const content: string = fs.readFileSync(resolvedPath, 'utf-8');
 
-    if (scriptIsStructured(content)) {
+    if (script_isStructured(content)) {
         console.log(`${COLORS.dim}○ Structured script detected, delegating to server...${COLORS.reset}`);
         return commandExecute(`/run ${scriptRef}`);
     }

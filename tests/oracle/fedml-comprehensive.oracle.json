@@ -16,7 +16,7 @@
       "send": "harmonize",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/data/harmonize.json",
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json",
         "/home/${user}/projects/${project}/input/.harmonized"
       ]
     },
@@ -24,7 +24,7 @@
       "send": "proceed",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/data/code.json",
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json",
         "/home/${user}/projects/${project}/src/train.py"
       ]
     },
@@ -51,7 +51,7 @@
       "send": "harmonize",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/data/harmonize.json",
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json",
         "/home/${user}/projects/branched-project/input/.harmonized"
       ]
     },
@@ -59,7 +59,7 @@
       "send": "proceed",
       "expect": "OK",
       "materialized": [
-        "${session}/search/gather/harmonize/code/data/code.json",
+        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json",
         "/home/${user}/projects/branched-project/src/train.py"
       ]
     }

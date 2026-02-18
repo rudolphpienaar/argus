@@ -59,7 +59,7 @@ export function completionMapper_create(
 // ─── VFS Helper ────────────────────────────────────────────────
 
 /** Check if a VFS path exists. */
-function vfsExists(vfs: VirtualFileSystem, path: string): boolean {
+function vfs_pathExists(vfs: VirtualFileSystem, path: string): boolean {
     return vfs.node_stat(path) !== null;
 }
 
@@ -94,7 +94,7 @@ export function topologyMapper_create(
             const targetPath = pathMap.get(finalTargetId);
             if (targetPath) {
                 checks[stageId] = (vfs, sessionPath) =>
-                    vfsExists(vfs, `${sessionPath}/${targetPath.artifactFile}`);
+                    vfs_pathExists(vfs, `${sessionPath}/${targetPath.artifactFile}`);
             }
         }
     }

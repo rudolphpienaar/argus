@@ -78,7 +78,7 @@ export function chain_validate(
     const staleIds = new Set<string>();
 
     // Topological order via Kahn's algorithm
-    const topoOrder = topologicalSort(definition);
+    const topoOrder = dag_topologicalSort(definition);
 
     for (const stageId of topoOrder) {
         const record = artifactReader(stageId);
@@ -135,7 +135,7 @@ export function chain_validate(
 }
 
 /** Compute topological order using Kahn's algorithm. */
-function topologicalSort(definition: DAGDefinition): string[] {
+function dag_topologicalSort(definition: DAGDefinition): string[] {
     const inDegree = new Map<string, number>();
     for (const id of definition.nodes.keys()) {
         inDegree.set(id, 0);

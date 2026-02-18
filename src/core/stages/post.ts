@@ -1,7 +1,15 @@
 /**
  * @file Post Stage Logic
  *
- * Handles model publishing and finalization of the workflow.
+ * SeaGaP Post-stage completion and publication surface.
+ *
+ * Responsibilities:
+ * - Expose publication/finalization actions once training converges.
+ * - Act as terminal stage boundary for completed workflow runs.
+ *
+ * Non-responsibilities:
+ * - Upstream search/gather/process/monitor orchestration.
+ * - Runtime session bootstrap or authentication.
  *
  * @module
  */

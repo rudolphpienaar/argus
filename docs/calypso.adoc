@@ -26,6 +26,31 @@ The v10.0 refactor redefined Calypso as a **System Host**. It moved from a decis
 
 This Host/Guest separation ensures that the system's "Intelligence" is an interface layer, while its "Integrity" is an architectural property of the Kernel.
 
+== Kernel Flow Figure
+
+[source,text]
+----
+┌─────────┐    ┌─────────────┐    ┌──────────────┐    ┌──────────────┐
+│ Surface │───▶│ Fast-Path   │───▶│ IntentParser │───▶│ Workflow     │
+└─────────┘    │ (/ + shell) │    └──────────────┘    │ Gatekeeping  │
+               └─────────────┘                         └──────┬───────┘
+                                                               │
+                                                               ▼
+                                                        ┌─────────────┐
+                                                        │ PluginHost  │
+                                                        └──────┬──────┘
+                                                               │
+                                                               ▼
+                                                        ┌─────────────┐
+                                                        │ MerkleEngine│
+                                                        └──────┬──────┘
+                                                               │
+                                                               ▼
+┌─────────┐    ◀──────────── status / actions / message ─────┌─────────────┐
+│ Surface │                                                   │ CalypsoCore │
+└─────────┘                                                   └─────────────┘
+----
+
 == The Interpretation-First Pipeline: The Logic of Execution
 
 To ensure absolute procedural safety, `CalypsoCore` enforces a rigid 4-stage execution pipeline. Every user input must traverse these stages in sequence, with no possibility of bypassing the deterministic gates.

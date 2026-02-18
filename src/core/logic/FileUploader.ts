@@ -7,7 +7,7 @@
  * @module
  */
 
-import { globals } from '../state/store.js';
+import { store } from '../state/store.js';
 
 /**
  * Prompts the user to select files from their local device.
@@ -76,7 +76,7 @@ function file_read(file: File): Promise<string> {
  * @returns Promise<number> - Number of files successfully written.
  */
 export async function files_ingest(files: File[], destination: string): Promise<number> {
-    const vcs = globals.vcs;
+    const vcs = store.globals.vcs;
     if (!vcs) return 0;
 
     // Ensure destination exists

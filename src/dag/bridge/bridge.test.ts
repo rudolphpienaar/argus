@@ -23,6 +23,30 @@ import type { StagePath } from './SessionPaths.js';
 const SESSION = '/home/test/sessions/fedml/session-test';
 
 /**
+ * Create a minimal valid artifact envelope for adapter completion checks.
+ *
+ * WorkflowAdapter now requires truthy `_fingerprint` and `_parent_fingerprints`
+ * fields when reading materialized artifacts.
+ */
+function envelope_create(
+    stageId: string,
+    options: {
+        fingerprint?: string;
+        parentFingerprints?: Record<string, string>;
+        timestamp?: string;
+    } = {},
+): string {
+    return JSON.stringify({
+        stage: stageId,
+        timestamp: options.timestamp ?? new Date().toISOString(),
+        parameters_used: {},
+        content: {},
+        _fingerprint: options.fingerprint ?? `fp-${stageId}`,
+        _parent_fingerprints: options.parentFingerprints ?? {},
+    });
+}
+
+/**
  * Write a session artifact at the topology-aware path for a stage.
  * Uses the WorkflowAdapter's stagePaths to resolve the correct location.
  */
@@ -37,14 +61,26 @@ function artifact_write(
     const dataDir = `${SESSION}/${sp.dataDir}`;
     const filePath = `${SESSION}/${sp.artifactFile}`;
     vfs.dir_create(dataDir);
-    vfs.file_create(filePath, JSON.stringify({
-        stage: stageId,
-        timestamp: new Date().toISOString(),
-        parameters_used: {},
-        content: {},
-        _fingerprint: '',
-        _parent_fingerprints: {},
-    }));
+    vfs.file_create(filePath, envelope_create(stageId));
+}
+
+/**
+ * Write a custom artifact envelope at an explicit session-relative path.
+ */
+function artifact_writeAt(
+    vfs: VirtualFileSystem,
+    relativePath: string,
+    stageId: string,
+    options: {
+        fingerprint?: string;
+        parentFingerprints?: Record<string, string>;
+        timestamp?: string;
+    } = {},
+): void {
+    const fullPath = `${SESSION}/${relativePath}`;
+    const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
+    vfs.dir_create(dir);
+    vfs.file_create(fullPath, envelope_create(stageId, options));
 }
 
 /**
@@ -109,19 +145,21 @@ describe('dag/bridge/CompletionMapper — fedml', () => {
         expect(pos.completedStages).toContain('train');
     });
 
-    it('should detect federation completion from session artifact', () => {
+    it('should detect only the completed federation stage from session artifact', () => {
         const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
-        // All federation sub-stages alias to federate-brief
+        // Federation stages are distinct in the manifest; only federate-brief
+        // is complete here.
         expect(pos.completedStages).toContain('federate-brief');
-        expect(pos.completedStages).toContain('federate-transcompile');
-        expect(pos.completedStages).toContain('federate-model-publish');
+        expect(pos.completedStages).not.toContain('federate-transcompile');
+        expect(pos.completedStages).not.toContain('federate-model-publish');
     });
 
-    it('should report all 14 stages complete when core artifacts exist', () => {
+    it('should report 7 stages complete for the seeded artifact set', () => {
         const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
-        expect(pos.completedStages.length).toBe(14);
+        // search, gather, rename(alias), harmonize, code, train, federate-brief
+        expect(pos.completedStages.length).toBe(7);
     });
 });
 
@@ -139,7 +177,7 @@ describe('dag/bridge/CompletionMapper — chris', () => {
                 const dataDir = `${CHRIS_SESSION}/${path.dataDir}`;
                 const filePath = `${CHRIS_SESSION}/${path.artifactFile}`;
                 vfs.dir_create(dataDir);
-                vfs.file_create(filePath, JSON.stringify({}));
+                vfs.file_create(filePath, envelope_create(id));
             }
         }
         return vfs;
@@ -159,11 +197,11 @@ describe('dag/bridge/CompletionMapper — chris', () => {
         expect(pos.completedStages).not.toContain('test');
     });
 
-    it('should never auto-complete publish (action stage)', () => {
+    it('should mark publish complete when publish artifact exists', () => {
         const vfs = chris_vfs_create(['gather', 'code', 'test', 'publish']);
         const pos = adapter.position_resolve(vfs, CHRIS_SESSION);
         expect(pos.completedStages).toContain('test');
-        expect(pos.completedStages).not.toContain('publish');
+        expect(pos.completedStages).toContain('publish');
     });
 });
 
@@ -206,11 +244,11 @@ describe('dag/bridge/WorkflowAdapter — position', () => {
         expect(pos.currentStage?.id).toBe('federate-brief');
     });
 
-    it('should report isComplete when all stages done', () => {
+    it('should remain incomplete when only federate-brief is complete', () => {
         const vfs = vfs_create(['search', 'gather', 'harmonize', 'code', 'train', 'federate-brief'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
-        expect(pos.isComplete).toBe(true);
-        expect(pos.currentStage).toBeNull();
+        expect(pos.isComplete).toBe(false);
+        expect(pos.currentStage?.id).toBe('federate-transcompile');
     });
 
     it('should provide instruction and commands from manifest', () => {
@@ -258,6 +296,60 @@ describe('dag/bridge/WorkflowAdapter — transitions', () => {
         const vfs = vfs_create(['search', 'gather'], sp);
         const result = adapter.transition_check('gather', vfs, SESSION);
         expect(result.allowed).toBe(true);
+    });
+
+    it('should allow transitions when prerequisites exist only in join-materialized paths', () => {
+        const vfs = new VirtualFileSystem('test');
+        artifact_write(vfs, 'search', sp);
+        artifact_write(vfs, 'gather', sp);
+        artifact_write(vfs, 'rename', sp);
+        artifact_writeAt(
+            vfs,
+            'search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json',
+            'harmonize',
+        );
+
+        const result = adapter.transition_check('proceed', vfs, SESSION);
+        expect(result.allowed).toBe(true);
+    });
+
+    it('should allow transitions from legacy primary-parent layout (read compatibility)', () => {
+        const vfs = new VirtualFileSystem('test');
+        artifact_writeAt(vfs, 'search/data/search.json', 'search');
+        artifact_writeAt(vfs, 'search/gather/data/gather.json', 'gather');
+        artifact_writeAt(vfs, 'search/gather/harmonize/data/harmonize.json', 'harmonize');
+
+        const result = adapter.transition_check('proceed', vfs, SESSION);
+        expect(result.allowed).toBe(true);
+    });
+
+    it('should hard-block with stale flag when parent prerequisites are stale', () => {
+        const vfs = new VirtualFileSystem('test');
+        artifact_writeAt(vfs, 'search/data/search.json', 'search', {
+            fingerprint: 'fp-search-v1',
+            timestamp: '2026-02-18T10:00:00.000Z',
+        });
+        artifact_writeAt(vfs, 'search/gather/data/gather.json', 'gather', {
+            fingerprint: 'fp-gather-v1',
+            parentFingerprints: { search: 'fp-search-v1' },
+            timestamp: '2026-02-18T10:01:00.000Z',
+        });
+        artifact_writeAt(vfs, 'search/gather/harmonize/data/harmonize.json', 'harmonize', {
+            fingerprint: 'fp-harmonize-v1',
+            parentFingerprints: { gather: 'fp-gather-v1' },
+            timestamp: '2026-02-18T10:02:00.000Z',
+        });
+        // Re-execute search with a new fingerprint; gather and downstream become stale.
+        artifact_writeAt(vfs, 'search/data/search_BRANCH_2/data/search.json', 'search', {
+            fingerprint: 'fp-search-v2',
+            timestamp: '2026-02-18T10:03:00.000Z',
+        });
+
+        const result = adapter.transition_check('proceed', vfs, SESSION);
+        expect(result.allowed).toBe(false);
+        expect(result.hardBlock).toBe(true);
+        expect(result.staleBlock).toBe(true);
+        expect(result.warning).toContain('STALE PREREQUISITE');
     });
 });
 

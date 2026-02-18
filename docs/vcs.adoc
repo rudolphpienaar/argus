@@ -20,6 +20,31 @@ The development of the VCS was a direct response to the "Truth Gap"—the struct
 === The Resolution: POSIX-Compliant Grounding
 We learned that for an AI agent to operate safely in a high-stakes environment like medical imaging, it must be embedded in an environment that behaves according to known, immutable rules. The resolution was the implementation of a full-stack virtualized computer system. The VCS provides a "Physical Grounding" for every action. If a plugin claims to have harmonized a cohort, that success is only recognized if a physical `.harmonized` marker is materialized on the virtual disk. This shift from "Assertion-Based State" to "Materialized-File State" is the fundamental engineering move that enables ARGUS to achieve v10.0 integrity levels.
 
+== VCS Stack Figure
+
+[source,text]
+----
+┌─────────────────────────────────────────┐
+│ Calypso Host / Plugin Runtime           │
+└──────────────────────┬──────────────────┘
+                       ▼
+┌─────────────────────────────────────────┐
+│ VCS                                     │
+│ ┌─────────────────────────────────────┐ │
+│ │ VFS (nodes, metadata, mutations)    │ │
+│ ├─────────────────────────────────────┤ │
+│ │ Shell (context, builtins, process)  │ │
+│ ├─────────────────────────────────────┤ │
+│ │ ContentRegistry (lazy generators)   │ │
+│ └─────────────────────────────────────┘ │
+└──────────────────────┬──────────────────┘
+                       ▼
+┌─────────────────────────────────────────┐
+│ Materialized artifacts + deterministic  │
+│ state evidence in project/session trees │
+└─────────────────────────────────────────┘
+----
+
 == The Virtual File System (VFS): The Ledger of State
 
 The `VirtualFileSystem` class is the primary ledger of the ARGUS system. It implements a tree-based node model that strictly enforces POSIX-like semantics for all data-state transformations.

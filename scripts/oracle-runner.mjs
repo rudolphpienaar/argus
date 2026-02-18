@@ -60,8 +60,7 @@ function scenarios_load() {
  *   ContentRegistry: any,
  *   ALL_GENERATORS: Array<[string, any]>,
  *   homeDir_scaffold: Function,
- *   store: any,
- *   globals: any
+ *   store: any
  * }>}
  */
 async function modules_load() {
@@ -96,8 +95,7 @@ async function modules_load() {
         ContentRegistry: registryMod.ContentRegistry,
         ALL_GENERATORS: templatesMod.ALL_GENERATORS,
         homeDir_scaffold: providerMod.homeDir_scaffold,
-        store: storeMod.store,
-        globals: storeMod.globals
+        store: storeMod.store
     };
 }
 
@@ -111,14 +109,14 @@ async function modules_load() {
  */
 function runtime_create(modules, username, persona = 'fedml') {
     const vfs = new modules.VirtualFileSystem(username);
-    modules.globals.vcs = vfs;
+    modules.store.globalVcs_set(vfs);
 
     const registry = new modules.ContentRegistry();
     registry.generators_registerAll(modules.ALL_GENERATORS);
     registry.vfs_connect(vfs);
 
     const shell = new modules.Shell(vfs, username);
-    modules.globals.shell = shell;
+    modules.store.globalShell_set(shell);
     modules.homeDir_scaffold(vfs, username);
 
     shell.env_set('USER', username);
@@ -144,7 +142,7 @@ function runtime_create(modules, username, persona = 'fedml') {
             };
         },
         state_set(newState) {
-            Object.assign(modules.store.state, newState);
+            modules.store.state_patch(newState);
         },
         reset() {
             modules.store.selection_clear();
@@ -163,6 +161,12 @@ function runtime_create(modules, username, persona = 'fedml') {
         project_getActive() {
             return modules.store.state.activeProject;
         },
+        project_getActiveFull() {
+            return modules.store.state.activeProject;
+        },
+        project_setActive(project) {
+            modules.store.project_load(project);
+        },
         stage_set(stage) {
             modules.store.stage_set(stage);
         },
@@ -176,13 +180,15 @@ function runtime_create(modules, username, persona = 'fedml') {
             return modules.store.state.federationState;
         },
         federation_setState(state) {
-            modules.store.state.federationState = state;
+            modules.store.federationState_set(state);
         }
     };
 
     const core = new modules.CalypsoCore(vfs, shell, storeAdapter, {
         simulationMode: true,
         workflowId: persona === 'appdev' ? 'chris' : persona,
+        runtimeMaterialization: 'store',
+        runtimeJoinMaterialization: true,
         llmConfig: {
             apiKey: 'simulated',
             provider: 'openai',

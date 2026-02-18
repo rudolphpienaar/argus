@@ -10,6 +10,24 @@ ARGUS draws its visual identity from Star Trek's LCARS (Library Computer Access/
 
 The visual language is built on a central metaphor: ARGUS is a physical console. Frames are structural members that separate and rejoin. Content panels are equipment trays that slide into exposed bays. Nothing simply appears or disappears -- everything moves with deliberate, mechanical purpose.
 
+== Visual Pattern Figure
+
+[source,text]
+----
+open sequence (double whammy):
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│ closed frame     │ ───▶ │ frame separation │ ───▶ │ panel slide-in   │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+
+close sequence (overlapped):
+┌──────────────────┐
+│ panel visible    │
+└────────┬─────────┘
+         ├──────────────▶ slide-out
+         └──────────────▶ frame collapse
+                        (parallel)
+----
+
 == Core Structural Elements
 
 === The LCARS Frame

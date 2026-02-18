@@ -14,7 +14,7 @@
  */
 
 import { LCARSTerminal as BaseTerminal } from '../../lcars-framework/ui/Terminal.js';
-import { globals } from '../../core/state/store.js';
+import { store } from '../../core/state/store.js';
 import { Typewriter } from '../anim/Typewriter.js';
 import type { Shell } from '../../vfs/Shell.js';
 import type { ShellResult, FileNode } from '../../vfs/types.js';
@@ -315,8 +315,8 @@ export class LCARSTerminal extends BaseTerminal {
             const lastPart: string = parts[parts.length - 1];
             if (!lastPart && parts.length > 1) return null;
 
-            const cwdPath: string = globals.vcs.cwd_get();
-            const targetNode: FileNode | null = globals.vcs.node_stat(cwdPath);
+            const cwdPath: string = store.globals.vcs.cwd_get();
+            const targetNode: FileNode | null = store.globals.vcs.node_stat(cwdPath);
             if (!targetNode || !targetNode.children) return null;
 
             const matches: FileNode[] = targetNode.children.filter(

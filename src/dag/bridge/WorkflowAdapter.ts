@@ -65,6 +65,7 @@ export interface TransitionResult {
     skipCount: number;
     hardBlock: boolean;
     skippedStageId: string | null;
+    staleBlock: boolean;
 }
 
 // ─── Manifest Registry ─────────────────────────────────────────
@@ -141,7 +142,9 @@ export class WorkflowAdapter {
         this.commandIndex = new Map();
         
         // Use orderedNodeIds to ensure we process stages in manifest order
-        const nodes = definition.orderedNodeIds.map(id => definition.nodes.get(id)!);
+        const nodes: DAGNode[] = definition.orderedNodeIds.map(
+            (id: string): DAGNode => definition.nodes.get(id)!,
+        );
 
         // 1. First pass: Index EXACT multi-word specific commands.
         // These are highly specific and should always take precedence.
@@ -180,8 +183,8 @@ export class WorkflowAdapter {
                 const baseCmd = cmd.split(/\s+/)[0].toLowerCase();
                 if (baseCmd && !this.commandIndex.has(baseCmd)) {
                     // Check if this verb is a prefix of any OTHER stage's specific command
-                    const isShadowed = Array.from(this.commandIndex.keys()).some(fullCmd => {
-                        const parts = fullCmd.split(/\s+/);
+                    const isShadowed: boolean = Array.from(this.commandIndex.keys()).some((fullCmd: string): boolean => {
+                        const parts: string[] = fullCmd.split(/\s+/);
                         return parts.length > 1 && parts[0] === baseCmd && this.commandIndex.get(fullCmd)!.id !== node.id;
                     });
 
@@ -265,22 +268,8 @@ export class WorkflowAdapter {
      * @returns WorkflowPosition describing "where are we?"
      */
     position_resolve(vfs: VirtualFileSystem, sessionPath: string): WorkflowPosition {
-        const completedIds: Set<string> = new Set<string>();
-        
-        // Use branch-aware latestFingerprint_get for ALL stages to determine completion
-        for (const stageId of this.definition.nodes.keys()) {
-            if (this.latestFingerprint_get(vfs, sessionPath, stageId)) {
-                completedIds.add(stageId);
-            }
-        }
-
-        // Perform staleness detection across the DAG.
-        const artifactReader: (stageId: string) => FingerprintRecord | null = (stageId: string): FingerprintRecord | null => {
-            return this.latestFingerprint_get(vfs, sessionPath, stageId);
-        };
-
-        const validation: ChainValidationResult = chain_validate(this.definition, artifactReader);
-        const staleIds: Set<string> = new Set(validation.staleStages.map((s: StalenessResult): string => s.stageId));
+        const completedIds: Set<string> = this.completedIds_resolve(vfs, sessionPath);
+        const staleIds: Set<string> = this.staleIds_resolve(vfs, sessionPath);
 
         return position_resolve(this.definition, completedIds, staleIds);
     }
@@ -380,82 +369,147 @@ export class WorkflowAdapter {
         vfs: VirtualFileSystem,
         sessionPath: string,
     ): TransitionResult {
-        const baseCmd: string = command.split(/\s+/)[0].toLowerCase();
-        const targetNode: DAGNode | undefined = this.commandIndex.get(baseCmd);
-
-        // If command doesn't map to any stage, allow it (not workflow-controlled)
+        const targetNode: DAGNode | undefined = this.transitionTarget_resolve(command);
         if (!targetNode) {
             return WorkflowAdapter.result_allowed();
         }
 
-        const completedIds: Set<string> = this.mapper.completedIds_resolve(vfs, sessionPath);
+        const completedIds: Set<string> = this.completedIds_resolve(vfs, sessionPath);
+        const staleIds: Set<string> = this.staleIds_resolve(vfs, sessionPath);
 
-        // If target stage is already completed, allow
-        if (completedIds.has(targetNode.id)) {
+        if (this.transition_isFreshComplete(targetNode, completedIds, staleIds)) {
             return WorkflowAdapter.result_allowed();
         }
 
-        // Check if all parents are complete
-        const readiness: NodeReadiness[] = dag_resolve(this.definition, completedIds);
-        const nodeReadiness: NodeReadiness | undefined = readiness.find(r => r.nodeId === targetNode.id);
+        const staleBlock: TransitionResult | null = this.transitionStaleBlock_resolve(targetNode, staleIds);
+        if (staleBlock) {
+            return staleBlock;
+        }
 
+        const nodeReadiness: NodeReadiness | null = this.transitionReadiness_resolve(targetNode, completedIds);
         if (!nodeReadiness || nodeReadiness.pendingParents.length === 0) {
             return WorkflowAdapter.result_allowed();
         }
 
-        // Check each blocking parent
+        const parentBlock: TransitionResult | null = this.transitionPendingParentBlock_resolve(nodeReadiness);
+        if (parentBlock) {
+            return parentBlock;
+        }
+
+        return WorkflowAdapter.result_allowed();
+    }
+
+    private transitionTarget_resolve(command: string): DAGNode | undefined {
+        const baseCmd: string = command.split(/\s+/)[0].toLowerCase();
+        return this.commandIndex.get(baseCmd);
+    }
+
+    private transition_isFreshComplete(
+        targetNode: DAGNode,
+        completedIds: Set<string>,
+        staleIds: Set<string>,
+    ): boolean {
+        return completedIds.has(targetNode.id) && !staleIds.has(targetNode.id);
+    }
+
+    private transitionStaleBlock_resolve(
+        targetNode: DAGNode,
+        staleIds: Set<string>,
+    ): TransitionResult | null {
+        const staleParents: string[] = (targetNode.previous ?? []).filter(
+            (parentId: string): boolean => staleIds.has(parentId),
+        );
+        if (staleParents.length === 0) {
+            return null;
+        }
+
+        const staleParentId: string = staleParents[0];
+        const staleParentNode: DAGNode | undefined = this.definition.nodes.get(staleParentId);
+        const staleParentName: string = staleParentNode?.name ?? staleParentId;
+        const staleParentCmd: string = staleParentNode?.commands?.[0] ?? staleParentId;
+
+        return {
+            allowed: false,
+            warning: `STALE PREREQUISITE: ${staleParentName.toUpperCase()}`,
+            reason: `The '${staleParentName}' stage changed after this path was previously executed.`,
+            suggestion: `Re-run '${staleParentCmd}' before continuing.`,
+            skipCount: 0,
+            hardBlock: true,
+            skippedStageId: null,
+            staleBlock: true,
+        };
+    }
+
+    private transitionReadiness_resolve(
+        targetNode: DAGNode,
+        completedIds: Set<string>,
+    ): NodeReadiness | null {
+        const readiness: NodeReadiness[] = dag_resolve(this.definition, completedIds);
+        const nodeReadiness: NodeReadiness | undefined = readiness.find(
+            (r: NodeReadiness): boolean => r.nodeId === targetNode.id,
+        );
+        return nodeReadiness ?? null;
+    }
+
+    private transitionPendingParentBlock_resolve(
+        nodeReadiness: NodeReadiness,
+    ): TransitionResult | null {
         for (const parentId of nodeReadiness.pendingParents) {
             const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
-            
             if (!parentNode) {
                 continue;
             }
-
-            // If the parent is NOT optional and has NO skip warning, HARD BLOCK.
-            // This prevents silent skipping of critical stages like Search and Gather.
             if (!parentNode.optional && !parentNode.skip_warning) {
-                return {
-                    allowed: false,
-                    warning: `PREREQUISITE NOT MET: ${parentNode.name.toUpperCase()}`,
-                    reason: `This action requires completion of the '${parentNode.name}' stage.`,
-                    suggestion: parentNode.commands.length > 0 
-                        ? `Run '${parentNode.commands[0]}' to proceed.` 
-                        : 'Complete the previous stage first.',
-                    skipCount: 0,
-                    hardBlock: true,
-                    skippedStageId: parentNode.id
-                };
+                return this.transitionHardBlock_create(parentNode);
             }
-
-            // If it has a skip warning, handle the soft-warning sequence
             if (parentNode.skip_warning) {
-                const skipCount: number = this.skipCounts[parentNode.id] || 0;
-                const maxWarnings: number = parentNode.skip_warning.max_warnings;
-
-                // If warned enough times, allow
-                if (skipCount >= maxWarnings) {
-                    continue; // Check next parent
+                const warningBlock: TransitionResult | null = this.transitionSkipWarningBlock_resolve(parentNode);
+                if (warningBlock) {
+                    return warningBlock;
                 }
-
-                const isSecondWarning: boolean = skipCount >= 1;
-                const suggestion: string | null = parentNode.commands.length > 0
-                    ? `Run '${parentNode.commands[0]}' to complete this step.`
-                    : null;
-
-                return {
-                    allowed: false,
-                    warning: parentNode.skip_warning.short,
-                    reason: isSecondWarning ? parentNode.skip_warning.reason : null,
-                    suggestion,
-                    skipCount,
-                    hardBlock: false,
-                    skippedStageId: parentNode.id,
-                };
             }
         }
+        return null;
+    }
 
-        // All blocking parents were either optional or max-warned
-        return WorkflowAdapter.result_allowed();
+    private transitionHardBlock_create(parentNode: DAGNode): TransitionResult {
+        return {
+            allowed: false,
+            warning: `PREREQUISITE NOT MET: ${parentNode.name.toUpperCase()}`,
+            reason: `This action requires completion of the '${parentNode.name}' stage.`,
+            suggestion: parentNode.commands.length > 0
+                ? `Run '${parentNode.commands[0]}' to proceed.`
+                : 'Complete the previous stage first.',
+            skipCount: 0,
+            hardBlock: true,
+            skippedStageId: parentNode.id,
+            staleBlock: false,
+        };
+    }
+
+    private transitionSkipWarningBlock_resolve(parentNode: DAGNode): TransitionResult | null {
+        if (!parentNode.skip_warning) {
+            return null;
+        }
+        const skipCount: number = this.skipCounts[parentNode.id] || 0;
+        const maxWarnings: number = parentNode.skip_warning.max_warnings;
+        if (skipCount >= maxWarnings) {
+            return null;
+        }
+        const isSecondWarning: boolean = skipCount >= 1;
+        const suggestion: string | null = parentNode.commands.length > 0
+            ? `Run '${parentNode.commands[0]}' to complete this step.`
+            : null;
+        return {
+            allowed: false,
+            warning: parentNode.skip_warning.short,
+            reason: isSecondWarning ? parentNode.skip_warning.reason : null,
+            suggestion,
+            skipCount,
+            hardBlock: false,
+            skippedStageId: parentNode.id,
+            staleBlock: false,
+        };
     }
 
     // ─── Command → Stage Lookup ────────────────────────────────
@@ -549,6 +603,36 @@ export class WorkflowAdapter {
             skipCount: 0,
             hardBlock: false,
             skippedStageId: null,
+            staleBlock: false,
         };
+    }
+
+    private completedIds_resolve(
+        vfs: VirtualFileSystem,
+        sessionPath: string,
+    ): Set<string> {
+        const completedIds: Set<string> = new Set<string>();
+
+        // Use latestFingerprint_get so completion works across
+        // legacy and join-materialized layouts.
+        for (const stageId of this.definition.nodes.keys()) {
+            if (this.latestFingerprint_get(vfs, sessionPath, stageId)) {
+                completedIds.add(stageId);
+            }
+        }
+
+        return completedIds;
+    }
+
+    private staleIds_resolve(
+        vfs: VirtualFileSystem,
+        sessionPath: string,
+    ): Set<string> {
+        const artifactReader: (stageId: string) => FingerprintRecord | null = (stageId: string): FingerprintRecord | null => {
+            return this.latestFingerprint_get(vfs, sessionPath, stageId);
+        };
+
+        const validation: ChainValidationResult = chain_validate(this.definition, artifactReader);
+        return new Set(validation.staleStages.map((s: StalenessResult): string => s.stageId));
     }
 }

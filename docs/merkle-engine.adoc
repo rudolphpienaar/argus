@@ -1,6 +1,6 @@
 = Merkle Engine: The Cryptographic Conscience of State
 :author: ATLAS Project Team
-:revdate: 2026-02-17
+:revdate: 2026-02-18
 :revnumber: 10.0.0
 :toc: macro
 :toclevels: 4
@@ -41,15 +41,18 @@ Every piece of work produced by an ARGUS plugin is wrapped in an `ArtifactEnvelo
 [source,json]
 ----
 {
-  "stageId": "harmonize",
+  "stage": "harmonize",
   "timestamp": "2026-02-17T14:30:00Z",
-  "fingerprint": "850daa6...",
-  "parents": [
-    { "stageId": "gather", "fingerprint": "2baca4d..." }
-  ],
-  "data": {
+  "parameters_used": {
+    "resolution": [1.0, 1.0, 1.0]
+  },
+  "content": {
     "modality": "histology",
     "steps": ["scan", "standardize"]
+  },
+  "_fingerprint": "850daa6...",
+  "_parent_fingerprints": {
+    "gather": "2baca4d..."
   }
 }
 ----
@@ -61,7 +64,7 @@ The Merkle Engine enables the system to support non-linear "Branching" without l
 === The Detection Algorithm
 When the `WorkflowAdapter` (see `docs/dag-engine.adoc`) queries the state of a stage, it invokes the Merkle Engine to perform a **Staleness Check**:
 1.  **Load Local Envelope**: Read the artifact from the current VFS path.
-2.  **Verify Parentage**: Compare the `fingerprint` values stored in the envelope's `parents` array against the *current* latest fingerprints of those parent stages in the session tree.
+2.  **Verify Parentage**: Compare the values stored in `_parent_fingerprints` against the *current* latest fingerprints of parent stages in the session tree.
 3.  **Flag Drift**: If any parent fingerprint mismatch is detected, the stage is flagged as `[STALE]`.
 
 === The User Experience of Staleness
@@ -72,4 +75,4 @@ In the LCARS UI, stale stages are marked with an asterisk (`*`). This provides t
 The Merkle Engine is the fundamental mechanism that transforms ARGUS from a conversational interface into a scientifically rigorous operating system. By grounding every state transition in a recursive cryptographic proof, the engine ensures that the provenance of every federated model is immutable and auditable. It provides the "Substrate of Integrity" that allows researchers to trust that their results are a direct and valid consequence of their documented scientific process.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-18 (v10.0.0)_

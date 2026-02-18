@@ -329,6 +329,30 @@ stages:
 `;
         expect(() => manifest_parse(emptyProduces)).toThrow(/produces/i);
     });
+
+    it('should reject stages with unknown handlers', () => {
+        const unknownHandler = `
+name: Test
+persona: test
+stages:
+  - id: a
+    produces: [a.json]
+    handler: unknown_handler
+`;
+        expect(() => manifest_parse(unknownHandler)).toThrow(/unknown handler/i);
+    });
+
+    it('should reject stages with unsafe handler format', () => {
+        const unsafeHandler = `
+name: Test
+persona: test
+stages:
+  - id: a
+    produces: [a.json]
+    handler: ../search
+`;
+        expect(() => manifest_parse(unsafeHandler)).toThrow(/invalid format/i);
+    });
 });
 
 describe('dag/graph/parser/script', () => {

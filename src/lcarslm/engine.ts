@@ -40,10 +40,10 @@ export class LCARSEngine {
         this.client = config ? (config.provider === 'gemini' ? new GeminiClient(config) : new OpenAIClient(config)) : null;
         this.isSimulated = simulationMode || !config;
         
-        let knowledgeContext = "";
+        let knowledgeContext: string = '';
         if (knowledge) {
-            knowledgeContext = "\n\n### SYSTEM KNOWLEDGE BASE (INTERNAL DOCUMENTATION):\n" + 
-                Object.entries(knowledge).map(([file, content]) => 
+            knowledgeContext = '\n\n### SYSTEM KNOWLEDGE BASE (INTERNAL DOCUMENTATION):\n' +
+                Object.entries(knowledge).map(([file, content]: [string, string]): string =>
                     `--- BEGIN FILE: ${file} ---\n${content}\n--- END FILE: ${file} ---`
                 ).join('\n\n');
         }
@@ -203,7 +203,7 @@ The context provided to you contains a JSON list of available datasets. Use this
         ];
 
         // 3. Generation
-        const answer: string = await this.client!.chat(messages);
+        const answer: string = await this.client_require().chat(messages);
 
         // Add assistant response to history
         this.history.push({ role: 'assistant', content: answer });
@@ -231,5 +231,17 @@ The context provided to you contains a JSON list of available datasets. Use this
             q.includes('all') || // return all if query is generic
             q.includes('dataset')
         );
+    }
+
+    /**
+     * Returns an initialized LLM client for non-simulated requests.
+     *
+     * @returns Active OpenAI or Gemini client.
+     */
+    private client_require(): OpenAIClient | GeminiClient {
+        if (!this.client) {
+            throw new Error('LLM client is not configured in non-simulated mode.');
+        }
+        return this.client;
     }
 }

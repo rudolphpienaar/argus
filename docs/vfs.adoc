@@ -18,6 +18,35 @@ The development of the VFS was driven by the "State-Drift" failure mode identifi
 
 The resolution was the implementation of a full-stack Virtual File System. The VFS moves state management from "Assertions in Memory" to "Artifacts on Disk." In the v10.0 architecture, every significant procedural transition must be materialized as a physical file mutation. This "Filesystem-First" philosophy ensures that the system's conscience—the Merkle Engine—has a physical ledger upon which to anchor the scientific provenance chain. The VFS is not merely a storage layer; it is the fundamental mechanism of truth in the ARGUS operating model.
 
+== VFS Mutation Figure
+
+[source,text]
+----
+┌────────────────────┐
+│ path + operation   │
+│ (read/write/move)  │
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│ path resolution    │
+│ absolute/home/rel  │
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│ node mutation      │
+│ POSIX metadata     │
+└─────────┬──────────┘
+          ▼
+┌────────────────────┐
+│ VFS_CHANGED event  │
+└──────┬───────┬─────┘
+       │       │
+       ▼       ▼
+┌──────────┐ ┌──────────────┐
+│ UI sync  │ │ Merkle checks│
+└──────────┘ └──────────────┘
+----
+
 == The Node Model: POSIX-Compliant Integrity
 
 The VFS is architected as a recursive tree of `FileNode` objects, located in `src/vfs/VirtualFileSystem.ts`. This model strictly enforces POSIX metadata standards to ensure high-fidelity simulation.

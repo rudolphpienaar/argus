@@ -20,7 +20,7 @@
     {
       "send": "harmonize",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
+      "materialized": ["${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json"]
     }
   ]
 }

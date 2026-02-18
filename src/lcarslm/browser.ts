@@ -10,7 +10,7 @@
 import { CalypsoCore } from './CalypsoCore.js';
 import type { CalypsoCoreConfig } from './types.js';
 import { storeAdapter } from './adapters/StoreAdapter.js';
-import { globals } from '../core/state/store.js';
+import { store } from '../core/state/store.js';
 import { SYSTEM_KNOWLEDGE } from '../core/data/knowledge.js';
 
 let coreInstance: CalypsoCore | null = null;
@@ -33,13 +33,13 @@ export function core_get(): CalypsoCore | null {
  * @returns Reinitialized CalypsoCore instance, or null if shell is not ready.
  */
 export function core_reinitialize(): CalypsoCore | null {
-    if (!globals.shell) {
+    if (!store.globals.shell) {
         coreInstance = null;
         return null;
     }
 
     const config: CalypsoCoreConfig = config_resolveFromBrowser();
-    coreInstance = new CalypsoCore(globals.vcs, globals.shell, storeAdapter, config);
+    coreInstance = new CalypsoCore(store.globals.vcs, store.globals.shell, storeAdapter, config);
     return coreInstance;
 }
 

@@ -8,12 +8,19 @@
  */
 
 import type { CalypsoAction, CalypsoIntent, CalypsoStoreActions } from '../types.js';
-import { CalypsoStatusCode } from '../types.js';
 import type { SearchProvider } from '../SearchProvider.js';
-import type { Project, Dataset } from '../../core/models/types.js';
-import { MOCK_PROJECTS } from '../../core/data/projects.js';
-import { project_rename } from '../../core/logic/ProjectManager.js';
+import type { Dataset } from '../../core/models/types.js';
 import { LCARSEngine } from '../engine.js';
+
+interface ModelIntentPayload {
+    type?: unknown;
+    command?: unknown;
+    args?: unknown;
+}
+
+const MODEL_WORKFLOW_COMMANDS: ReadonlySet<string> = new Set<string>([
+    'search', 'add', 'gather', 'harmonize', 'federate', 'dispatch', 'status', 'publish', 'proceed', 'rename'
+]);
 
 export class IntentParser {
     constructor(
@@ -119,17 +126,13 @@ export class IntentParser {
 
         try {
             const response = await model.query(prompt);
-            const json: any = JSON.parse(response.answer.match(/\{.*?\}/s)?.[0] || '{}');
-            
-            return {
-                type: json.type || 'llm',
-                command: json.command,
-                args: json.args,
-                raw: input,
-                isModelResolved: true
-            };
+            const payload: ModelIntentPayload | null = this.payload_parseFromModelText(response.answer);
+            if (!payload) {
+                return this.intent_modelFallback(input);
+            }
+            return this.intent_fromModelPayload(input, payload);
         } catch {
-            return { type: 'llm', raw: input, isModelResolved: true };
+            return this.intent_modelFallback(input);
         }
     }
 
@@ -154,10 +157,11 @@ export class IntentParser {
         // 3. Extract [ACTION: PROCEED]
         const proceedMatch: RegExpMatchArray | null = text.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
         if (proceedMatch) {
+            const workflow: string | undefined = this.workflow_parseFromProceedMatch(proceedMatch);
             actions.push({
                 type: 'stage_advance',
                 stage: 'process',
-                workflow: proceedMatch[1] as any
+                workflow
             });
         }
 
@@ -202,5 +206,125 @@ export class IntentParser {
             .trim();
 
         return { actions, cleanText };
+    }
+
+    /**
+     * Parse model text and extract the first JSON object payload.
+     *
+     * @param text - Raw model output text.
+     * @returns Parsed payload or null when parsing fails.
+     */
+    private payload_parseFromModelText(text: string): ModelIntentPayload | null {
+        const jsonMatch: RegExpMatchArray | null = text.match(/\{.*?\}/s);
+        if (!jsonMatch || !jsonMatch[0]) {
+            return null;
+        }
+
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+            return null;
+        }
+
+        if (!this.value_isRecord(parsed)) {
+            return null;
+        }
+        return parsed as ModelIntentPayload;
+    }
+
+    /**
+     * Convert parsed model payload into a validated Calypso intent.
+     *
+     * @param input - Original user input.
+     * @param payload - Parsed model payload.
+     * @returns Validated compiled intent.
+     */
+    private intent_fromModelPayload(input: string, payload: ModelIntentPayload): CalypsoIntent {
+        const type: CalypsoIntent['type'] = this.intentType_fromUnknown(payload.type);
+        if (type !== 'workflow') {
+            return this.intent_modelFallback(input);
+        }
+
+        const command: string | undefined = this.command_fromUnknown(payload.command);
+        if (!command || !MODEL_WORKFLOW_COMMANDS.has(command)) {
+            return this.intent_modelFallback(input);
+        }
+
+        const args: string[] | undefined = this.args_fromUnknown(payload.args);
+        return {
+            type: 'workflow',
+            command,
+            args,
+            raw: input,
+            isModelResolved: true
+        };
+    }
+
+    /**
+     * Build model-resolved conversational fallback intent.
+     *
+     * @param input - Original user input.
+     * @returns Fallback LLM intent.
+     */
+    private intent_modelFallback(input: string): CalypsoIntent {
+        return { type: 'llm', raw: input, isModelResolved: true };
+    }
+
+    /**
+     * Resolve a Calypso intent type from unknown model payload value.
+     *
+     * @param value - Unknown payload value.
+     * @returns Validated intent type.
+     */
+    private intentType_fromUnknown(value: unknown): CalypsoIntent['type'] {
+        if (value === 'workflow' || value === 'llm' || value === 'shell' || value === 'special') {
+            return value;
+        }
+        return 'llm';
+    }
+
+    /**
+     * Resolve workflow command from unknown payload value.
+     *
+     * @param value - Unknown payload value.
+     * @returns Command string if valid.
+     */
+    private command_fromUnknown(value: unknown): string | undefined {
+        return typeof value === 'string' && value.length > 0 ? value : undefined;
+    }
+
+    /**
+     * Resolve argument list from unknown payload value.
+     *
+     * @param value - Unknown payload value.
+     * @returns String arguments if valid.
+     */
+    private args_fromUnknown(value: unknown): string[] | undefined {
+        if (!Array.isArray(value)) {
+            return undefined;
+        }
+        return value.filter((entry: unknown): entry is string => typeof entry === 'string');
+    }
+
+    /**
+     * Runtime object guard for unknown parsed JSON.
+     *
+     * @param value - Unknown value.
+     * @returns True if value is a plain record.
+     */
+    private value_isRecord(value: unknown): value is Record<string, unknown> {
+        return typeof value === 'object' && value !== null && !Array.isArray(value);
+    }
+
+    /**
+     * Parse optional workflow marker from proceed action match.
+     *
+     * @param match - Proceed regex match.
+     * @returns Workflow identifier when present.
+     */
+    private workflow_parseFromProceedMatch(match: RegExpMatchArray): string | undefined {
+        const workflowRaw: string | undefined = match[1];
+        return workflowRaw ? workflowRaw.toLowerCase() : undefined;
     }
 }

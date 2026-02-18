@@ -1,12 +1,22 @@
 /**
  * @file Login and Persona Logic
  *
- * Manages user authentication, session state, and persona switching.
+ * Login-stage and persona-selection orchestration.
+ *
+ * Responsibilities:
+ * - Validate login identity input and bootstrap a clean user shell context.
+ * - Drive persona selection and stage transition into Search.
+ * - Reset visible UI state that must not leak across user sessions.
+ *
+ * Non-responsibilities:
+ * - Dataset/project lifecycle mutation.
+ * - AI workflow command execution.
+ * - Monitor/post training lifecycle behavior.
  *
  * @module
  */
 
-import { store, globals } from '../state/store.js';
+import { store } from '../state/store.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import { homeDir_scaffold } from '../../vfs/providers/ProjectProvider.js';
@@ -41,21 +51,21 @@ export function user_authenticate(): void {
     const username: string = userInput?.value.trim() || 'user';
 
     // Update Shell Identity
-    if (globals.shell) {
+    if (store.globals.shell) {
         const homeDir = `/home/${username}`;
-        globals.shell.env_set('USER', username);
-        globals.shell.env_set('HOME', homeDir);
-        globals.shell.env_set('PWD', homeDir);
+        store.globals.shell.env_set('USER', username);
+        store.globals.shell.env_set('HOME', homeDir);
+        store.globals.shell.env_set('PWD', homeDir);
         
         // Ensure VFS home exists
-        homeDir_scaffold(globals.vcs, username);
+        homeDir_scaffold(store.globals.vcs, username);
         
         // Move shell to new home
         try {
-            globals.vcs.cwd_set(homeDir);
+            store.globals.vcs.cwd_set(homeDir);
         } catch { /* scaffolding ensures this exists */ }
         
-        if (globals.terminal) globals.terminal.prompt_sync();
+        if (store.globals.terminal) store.globals.terminal.prompt_sync();
     }
 
     const btn: HTMLButtonElement | null = document.querySelector('.login-form button') as HTMLButtonElement;
@@ -75,7 +85,7 @@ export function user_authenticate(): void {
 }
 
 /**
- * Logs the user out and resets the application state.
+ * Logs the user out and resets the application store.state.
  * Clears form inputs, resets gutters, and navigates to login.
  */
 export function user_logout(): void {

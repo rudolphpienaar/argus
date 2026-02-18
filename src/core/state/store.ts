@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { AppState, Project, Dataset, CostEstimate, TrainingJob } from '../models/types.js';
+import type { AppState, Project, Dataset, CostEstimate, TrainingJob, FederationState } from '../models/types.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { events, Events } from './events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../data/marketplace.js';
@@ -75,7 +75,7 @@ class Store {
      *
      * @returns The current extended application state.
      */
-    get state(): ExtendedState {
+    get state(): Readonly<ExtendedState> {
         return this._state;
     }
 
@@ -249,10 +249,104 @@ class Store {
             events.emit(Events.STATE_CHANGED, this._state);
         }
     }
+
+    /**
+     * Applies a partial state patch through a single, explicit mutation API.
+     * Emits the appropriate domain events for touched state domains.
+     *
+     * @param patch - Partial state updates.
+     */
+    public state_patch(patch: Partial<AppState>): void {
+        const previousStage: AppState['currentStage'] = this._state.currentStage;
+        const touchesSelection: boolean = Object.prototype.hasOwnProperty.call(patch, 'selectedDatasets');
+        const touchesProject: boolean = Object.prototype.hasOwnProperty.call(patch, 'activeProject');
+
+        Object.assign(this._state, patch);
+
+        if (patch.currentStage && patch.currentStage !== previousStage) {
+            events.emit(Events.STAGE_CHANGED, patch.currentStage);
+        }
+        if (touchesSelection) {
+            events.emit(Events.DATASET_SELECTION_CHANGED, this._state.selectedDatasets);
+        }
+        if (touchesProject) {
+            events.emit(Events.PROJECT_LOADED, this._state.activeProject);
+        }
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    /**
+     * Sets federation handshake state through a dedicated store action.
+     *
+     * @param federationState - New federation state.
+     */
+    public federationState_set(federationState: FederationState | null): void {
+        this._state.federationState = federationState;
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    /**
+     * Sets the shared terminal singleton.
+     *
+     * @param terminal - Terminal instance, or null to clear.
+     */
+    public globalTerminal_set(terminal: LCARSTerminal | null): void {
+        this.globals.terminal = terminal;
+    }
+
+    /**
+     * Sets the shared LCARS engine singleton.
+     *
+     * @param engine - Engine instance, or null to clear.
+     */
+    public globalLcarsEngine_set(engine: LCARSEngine | null): void {
+        this.globals.lcarsEngine = engine;
+    }
+
+    /**
+     * Sets the shared VirtualFileSystem singleton.
+     *
+     * @param vfs - Virtual filesystem instance.
+     */
+    public globalVcs_set(vfs: VirtualFileSystem): void {
+        this.globals.vcs = vfs;
+    }
+
+    /**
+     * Sets the shared shell singleton.
+     *
+     * @param shell - Shell instance, or null to clear.
+     */
+    public globalShell_set(shell: Shell | null): void {
+        this.globals.shell = shell;
+    }
+
+    /**
+     * Sets the monitor training interval handle.
+     *
+     * @param interval - Interval ID, or null to clear.
+     */
+    public globalTrainingInterval_set(interval: number | null): void {
+        this.globals.trainingInterval = interval;
+    }
+
+    /**
+     * Sets the monitor loss chart context.
+     *
+     * @param chart - Chart context + series, or null to clear.
+     */
+    public globalLossChart_set(chart: { ctx: CanvasRenderingContext2D; data: number[] } | null): void {
+        this.globals.lossChart = chart;
+    }
+
+    /**
+     * Sets the shared frame slot controller.
+     *
+     * @param frameSlot - Frame slot instance, or null to clear.
+     */
+    public globalFrameSlot_set(frameSlot: FrameSlot | null): void {
+        this.globals.frameSlot = frameSlot;
+    }
 }
 
 export const store: Store = new Store();
-/** Backward compatibility export for direct state access. */
-export const state: ExtendedState = store.state;
-/** Backward compatibility export for global singletons. */
-export const globals: Store['globals'] = store.globals;

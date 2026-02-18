@@ -20,7 +20,7 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
     const { store, vfs, parameters, shell } = context;
-    
+
     const active: { id: string; name: string } | null = store.project_getActive();
     if (!active) {
         return {
@@ -43,7 +43,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
     // 2. Perform actual VFS mutation (Side Effect)
     const username: string = shell.env_get('USER') || 'user';
     const markerPath: string = `/home/${username}/projects/${active.name}/input/.harmonized`;
-    
+
     // Derive modality from first dataset if not in parameters
     const selected: Dataset[] = store.datasets_getSelected();
     const modality: string = (parameters.modality as string) || (selected.length > 0 ? selected[0].modality : 'unknown');

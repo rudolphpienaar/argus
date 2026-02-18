@@ -7,7 +7,7 @@
  * @module
  */
 
-import { globals } from '../state/store.js';
+import { store } from '../state/store.js';
 import type { Project } from '../models/types.js';
 
 export interface ProjectPaths {
@@ -24,7 +24,7 @@ export interface ProjectPaths {
  * @returns Object containing absolute paths for root, src, input, output.
  */
 export function projectContext_get(project: Project): ProjectPaths {
-    const username = globals.shell?.env_get('USER') || 'user';
+    const username = store.globals.shell?.env_get('USER') || 'user';
     const root = `/home/${username}/projects/${project.name}`;
     
     return {
