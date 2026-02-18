@@ -1,246 +1,79 @@
-= CALYPSO: The AI Core
-:revnumber: 9.0.0
-:revdate: 2026-02-16
+= CALYPSO: The Architecture of an Intelligence Kernel
+:author: ATLAS Project Team
+:revnumber: 10.0.0
+:revdate: 2026-02-17
 :toc: macro
-:toclevels: 3
+:toclevels: 4
 :sectnums:
 
 toc::[]
 
-== Identity
+== Abstract
 
-**Name:** CALYPSO
-**Acronym:** **C**ognitive **A**lgorithms & **L**ogic **Y**ielding **P**redictive **S**cientific **O**utcomes
-**Role:** The Intelligence Layer of the ARGUS System.
+CALYPSO (Cognitive Algorithms & Logic Yielding Predictive Scientific Outcomes) is the high-integrity Intelligence Kernel of the ARGUS system. It functions as the authoritative mediation layer between the high-entropy domain of natural language and the deterministic world of scientific plugins and Merkle-proven artifacts. This document specifies the architectural design of Calypso v10.0, detailing the "Interpretation-First" execution pipeline, the strictly-typed communication protocol, and the engineering mechanisms that prevent procedural drift and agentic hallucination.
 
-=== Namesake
+== Introduction: The Evolution of the Kernel
 
-CALYPSO carries a layered homage spanning Greek mythology and _Star Trek: Discovery_:
+=== The Failure of the "Chatbot" Model
+In early iterations of ARGUS (v5.0 through v9.0), Calypso was envisioned as an "AI Assistant"—a conversational wrapper around a collection of API calls. This design proved structurally inadequate for federated medical research. Because the AI was responsible for both interpreting the user and deciding when to execute code, the system suffered from "Instructional Decay." The LLM would often bypass mandatory safety checks or claim that a stage was complete (e.g., "I've harmonized your data") based solely on its own internal reasoning, even if the underlying execution failed.
 
-**The Myth (Homer's Odyssey):** Calypso was a nymph who lived on the island of Ogygia. When the shipwrecked Odysseus washed ashore, she rescued him and kept him on her island for seven years, offering immortality if he would stay. Her name derives from the Greek _kalyptō_ — "to conceal" or "to hide." Where the mythological Calypso concealed Odysseus _from_ the world, our CALYPSO conceals complexity _for_ the user.
+=== The Resolution: The Intelligence Host
+The v10.0 refactor redefined Calypso as a **System Host**. It moved from a decision-making agent to a generic execution kernel. Calypso no longer "knows" how to perform domain-specific work; it only knows how to:
+1.  **Compile** noisy natural language into a strictly-typed Intent.
+2.  **Verify** that Intent against a deterministic workflow manifest.
+3.  **Dispatch** the Intent to a sandboxed Guest Plugin.
+4.  **Materialize** the result into a Merkle-proven provenance chain.
 
-**Daughter of ATLAS:** In the ARGUS system hierarchy, CALYPSO is the _daughter_ of ATLAS — born from the infrastructure. ATLAS (the titan, the platform) bears the weight of the federated learning ecosystem. CALYPSO, his daughter, is the intelligence that emerges from that foundation, guiding users through the complexity her father supports.
+This Host/Guest separation ensures that the system's "Intelligence" is an interface layer, while its "Integrity" is an architectural property of the Kernel.
 
-**Star Trek: Discovery — "Calypso" (Short Treks, 2018):** The name is a direct reference to the _Star Trek: Short Treks_ episode **"Calypso"**, which is part of the _Discovery_ storyline. In this episode, set a thousand years after _Discovery_'s final mission, a wounded soldier named Craft is rescued by **Zora** — the USS _Discovery_'s evolved artificial intelligence. Like the mythological nymph, Zora nurses Craft back to health, forms a bond with him, and ultimately helps him return home to his family. The _Discovery_ series finale (2024) revealed that Zora waited alone for a millennium, maintaining the ship in a nebula, to ensure this encounter would happen.
+== The Interpretation-First Pipeline: The Logic of Execution
 
-**The Double Homage:** ARGUS pays tribute to Star Trek twice over:
+To ensure absolute procedural safety, `CalypsoCore` enforces a rigid 4-stage execution pipeline. Every user input must traverse these stages in sequence, with no possibility of bypassing the deterministic gates.
 
-1. The entire visual language is **LCARS** — the Library Computer Access/Retrieval System designed by Michael Okuda for _The Next Generation_. This is the same interface paradigm that Zora would have used aboard _Discovery_.
+=== Stage 1: Fast-Path Kernel Dispatch
+The pipeline begins with a low-latency check for built-in system commands.
+*   **System Verbs:** Commands prefixed with `/` (e.g., `/reset`, `/status`, `/greet`) are intercepted here.
+*   **Shell Builtins:** Standard POSIX operations (e.g., `ls`, `cat`, `cd`) are dispatched directly to the VCS Shell.
+By handling these "Kernel" operations first, Calypso ensures that basic system control remains responsive and deterministic, regardless of the state of the LLM or the complexity of the current research workflow.
 
-2. The name "Calypso" directly invokes Zora's episode — an AI manifesting through LCARS, patiently guiding users through unfamiliar territory, concealing complexity so they can focus on their mission and eventually reach their destination. Like Zora, our CALYPSO is the daughter of her ship — born from the infrastructure, waiting to help.
+=== Stage 2: Intent Compilation (`IntentParser`)
+If the command is not a fast-path operation, it is passed to the `IntentParser`. This component acts as a compiler that translates natural language into a canonical `CalypsoIntent` object.
+*   **Deterministic Regex Mapping:** High-priority workflow verbs (e.g., `search`, `add`, `harmonize`) are matched against a registry of regex patterns. This ensures zero-latency resolution for common expert-user commands.
+*   **LLM Synthesis Protocol:** If deterministic matching fails, the LLM is invoked with a "Compiler Prompt." The LLM is instructed to map the user's utterance to a specific command and argument list defined in the workflow manifest. The output must be a strictly-typed JSON intent; any natural language "chitchat" is discarded at this stage.
 
-== Lore & Function
+=== Stage 3: Action Execution (The Runtime)
+Once an intent is resolved, it enters the Action Execution phase, managed by the `WorkflowSession` and `PluginHost`.
+1.  **Topological Validation:** The `WorkflowAdapter` verifies the command against the active DAG manifest. If the user attempts to jump to a future stage without meeting prerequisites, the Host blocks the action and returns a `BLOCKED_MISSING` status.
+2.  **Guest Dispatch:** The `PluginHost` dynamically loads the Guest plugin and executes it. The plugin is provided with a strictly-typed `PluginContext`, giving it agency over the VFS and the Project Store, but isolating it from the system Kernel and the session tree.
 
-CALYPSO is the "Ghost in the Machine" — the daughter of ATLAS, the artificial intelligence that bridges the gap between the human user and the massive, federated complexity of her father's network.
+=== Stage 4: LLM Fallback (The Communicator)
+If the input cannot be resolved to a deterministic intent (e.g., "What is federated learning?"), the pipeline falls back to the LLM for conversational guidance. In this stage, the LLM is restricted to providing explanations and suggestions. It is explicitly prohibited from performing any state mutations or asserting that workflow stages are complete.
 
-While ARGUS provides the guided framework (the body), CALYPSO provides the logic and natural language understanding (the mind). Born from the infrastructure, she is responsible for:
+== The CalypsoResponse Protocol: Deterministic Feedback
 
-*   **Cohort Discovery:** Translating vague human intent ("Show me brain scans") into precise database queries.
-*   **Context Management:** Remembering user session state, selected datasets, and project context.
-*   **Workflow Guidance:** Suggesting the next logical steps in the SeaGaP (Search, Gather, Process) pipeline.
-*   **Knowledge Retrieval:** She has read-access to the full system documentation (`docs/*.adoc`) and can explain architecture, file structures, and workflows on demand.
+Calypso communicates with its adapters (Browser, CLI, Oracle) through the `CalypsoResponse` protocol. This protocol ensures that the system's logical state is machine-verifiable.
 
-== Architecture: The Modular Core
+=== The `CalypsoStatusCode` Enum
+The binary `success` boolean is replaced by a categorical status code that defines the logical outcome of the execution:
+*   **`OK`**: The intent was valid, prerequisites were met, and the plugin successfully materialized an artifact.
+*   **`BLOCKED`**: The intent was recognized but prevented by a safety gate (e.g., phase jump).
+*   **`BLOCKED_MISSING`**: A mandatory parent artifact is missing from the VFS.
+*   **`BLOCKED_STALE`**: Upstream data has changed, rendering the current stage's prerequisites invalid.
+*   **`CONVERSATIONAL`**: The input was resolved as a query rather than an action.
 
-As of v9.0.0, Calypso is architected as a **modular orchestrator** that delegates logic to specialized providers. This separation of concerns ensures that the core remains a thin, maintainable pipeline while presentation and heavy logic are isolated.
+=== Data-State Synchronization
+Every response includes a list of `actions` (UI mutations like `project_rename` or `workspace_render`) and an `artifactData` payload. This ensures that the visual interface and the materialized ground truth in the VFS remain perfectly synchronized with the Kernel's logical state.
 
-=== The Layer Model
+== Integrity and Safety: The "Merkle Conscience"
 
-[source]
-----
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           PRESENTATION LAYER                                │
-│   (Environment-specific adapters)                                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   BrowserAdapter          CLIAdapter            NodeAdapter                 │
-│   ┌─────────────┐        ┌─────────────┐       ┌─────────────┐             │
-│   │ Terminal UI │        │   stdout    │       │ Test Harness│             │
-│   │ DOM updates │        │   readline  │       │ Assertions  │             │
-│   └──────┬──────┘        └──────┬──────┘       └──────┬──────┘             │
-│          │                      │                     │                     │
-└──────────┼──────────────────────┼─────────────────────┼─────────────────────┘
-           │                      │                     │
-           └──────────────────────┼─────────────────────┘
-                                  │
-                    CalypsoResponse (actions + message)
-                                  │
-┌─────────────────────────────────┼───────────────────────────────────────────┐
-│                                 ▼                                           │
-│                         CALYPSO CORE (Orchestrator)                         │
-│   (Thin pipeline, logic-free)                                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   CalypsoCore.ts (Pipeline Stages)                                          │
-│   1. Script Capture  4. Control Plane  7. Shell (Builtins)  10. Action Match│
-│   2. Special Cmds    5. Confirmations  8. Workflow Dispatch 11. LLM Query  │
-│   3. Script UX       6. Harmonize      9. Guidance                          │
-│                                                                             │
-├──────────┬──────────────────────┬─────────────────────┬─────────────────────┤
-│          ▼                      ▼                     ▼                     │
-│   LOGIC PROVIDERS        PRESENTATION          ROUTERS               UTILS  │
-│   ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌─────┐ │
-│   │ SearchProv   │      │ CalypsoPres  │      │ ControlPlane │      │ VFS │ │
-│   │ StatusProv   │      │ (ANSI/Trek)  │      │ ActionRouter │      │ Snap│ │
-│   │ LLMProv      │      └──────────────┘      └──────────────┘      └─────┘ │
-│   └──────────────┘                                                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-----
+The ultimate responsibility of Calypso is the cryptographic anchoring of the scientific process.
 
-=== CalypsoCore
+*   **Host-Controlled Materialization:** Guest plugins never write to the session tree. They return their result to the Host, which invokes the `MerkleEngine`. This ensures that the provenance ledger is managed exclusively by the high-integrity Kernel.
+*   **Procedural Evidence:** Calypso ensures that "Truth" is never an assertion. A stage is only marked as complete if its artifact exists in the VFS and its Merkle fingerprint matches its parentage. If an AI or a plugin attempts to claim success without this evidence, the Kernel correctly identifies the stage as incomplete.
 
-The `CalypsoCore` class is the central pipeline orchestrator. It manages the flow of user input through a series of deterministic handlers before falling back to the LLM.
+== Conclusion
 
-**Integration with Providers:**
-Calypso delegates all complex logic to specialized providers:
-1.  **SearchProvider**: Handles dataset discovery, anaphora resolution (`that`, `them`), and search snapshots.
-2.  **StatusProvider**: Generates system status blocks, version info, and LLM context summaries.
-3.  **LLMProvider**: Orchestrates LLM queries and processes responses via the `IntentParser`.
-4.  **CalypsoPresenter**: Centralizes all visual formatting (ANSI decorators, LCARS markers `●/○`).
-
-[source,typescript]
-----
-// src/lcarslm/CalypsoCore.ts
-
-export class CalypsoCore {
-    /** Primary command execution pipeline (11 stages). */
-    public async command_execute(input: string): Promise<CalypsoResponse> {
-        // 1. Check script capture
-        // 2. Check special commands (/, snapshots, reset)
-        // 3. Check script discovery
-        // 4. Check control plane intents
-        // 5. Check confirmation gates
-        // 6. Check first-class harmonize
-        // 7. Check shell builtins (delegated to ShellBuiltins)
-        // 8. Check workflow dispatch (manifest-driven)
-        // 9. Check guidance interrogatives
-        // 10. Check imperative action matches
-        // 11. Fall back to LLMProvider
-    }
-}
-----
-
-=== CalypsoResponse
-
-Instead of directly manipulating the DOM, CalypsoCore returns a structured response. Adapters interpret the response according to their environment.
-
-[source,typescript]
-----
-export interface CalypsoResponse {
-    /** Text message to display */
-    message: string;
-
-    /** Actions for the adapter to execute */
-    actions: CalypsoAction[];
-
-    /** Whether the operation was successful */
-    success: boolean;
-
-    /** Optional state snapshot for verification */
-    state?: {
-        vfs?: VfsSnapshotNode;
-        store?: Partial<AppState>;
-    };
-}
-----
-
-=== Logic Providers Reference
-
-[cols="1,2,2"]
-|===
-| Provider | Responsibilities | Location
-
-| `SearchProvider`
-| Discovery, Anaphora, Snapshots
-| `src/lcarslm/SearchProvider.ts`
-
-| `StatusProvider`
-| Status blocks, Version, Context
-| `src/lcarslm/StatusProvider.ts`
-
-| `LLMProvider`
-| Query orchestration, Intent parsing
-| `src/lcarslm/LLMProvider.ts`
-
-| `CalypsoPresenter`
-| ANSI formatting, Tables, Markers
-| `src/lcarslm/CalypsoPresenter.ts`
-|===
-
-== Operating Modes
-
-Calypso can run in three modes:
-
-=== Browser Mode (Full ARGUS)
-
-The traditional mode where Calypso runs inside the ARGUS web application.
-
-[source,bash]
-----
-$ make serve
-# Open http://localhost:8080
-# Calypso is available in the Intelligence Console
-----
-
-=== Headless Mode (Standalone Server)
-
-Calypso runs as a Node.js server without a browser. Useful for testing, scripting, and CLI interaction.
-
-[source,bash]
-----
-$ make calypso
-Starting Calypso Server on :8081...
-CalypsoCore initialized (VFS: 47 nodes, Store: clean)
-Ready for connections.
-----
-
-=== CLI Mode (Interactive REPL)
-
-A command-line client connects to the headless server. The CLI provides an SSH-style login experience, dynamic prompt with username and working directory, a spinner during async operations, and markdown-to-ANSI rendering of LLM responses.
-
-[source,bash]
-----
-$ make calypso-cli
-╔══════════════════════════════════════════════════════════════╗
-║  CALYPSO CORE V9.0.0                                         ║
-║  Cognitive Algorithms & Logic Yielding Predictive Scientific ║
-║  Outcomes                                                    ║
-╚══════════════════════════════════════════════════════════════╝
-Connected to localhost:8081
-----
-
-== Source Structure
-
-As of v9.0.0, the Calypso service is organized into logic providers and routing modules:
-
-[source]
-----
-src/lcarslm/                        # CalypsoCore — the AI brain
-├── CalypsoCore.ts                  #   The Thin Orchestrator
-├── CalypsoPresenter.ts             #   The Visual Language Layer
-├── SearchProvider.ts               #   Discovery & Anaphora
-├── StatusProvider.ts               #   System & Context Summaries
-├── LLMProvider.ts                  #   LLM Query Orchestrator
-├── engine.ts                       #   LCARSEngine: LLM client wrapper
-├── types.ts                        #   CalypsoResponse, CalypsoAction, Intent
-├── federation/
-│   ├── FederationOrchestrator.ts   #   Workflow Handshake
-│   └── FederationContentProvider.ts#   Artifact Generation
-├── routing/
-│   ├── ActionRouter.ts             #   Imperative Intent Routing
-│   ├── ControlPlaneRouter.ts       #   Automation Intents
-│   └── IntentParser.ts             #   LLM Result Parsing
-├── utils/
-│   └── VfsUtils.ts                 #   VFS Snapshotting & Serialization
-└── scripts/
-    └── ScriptRuntime.ts            #   .clpso script execution
-----
-
-NOTE: For the full service architecture specification, see `docs/calypso-architecture.adoc`.
-
-== Integration with ORACLE
-
-The modular architecture enables precise ORACLE testing. Tests can now assert on specific provider state (e.g., SearchProvider's anaphora buffer) or verify that the orchestrator routes to the correct deterministic handler before hitting the LLM.
+CALYPSO v10.0 represents the formalization of the "Intelligence Kernel." By enforcing an Interpretation-First pipeline and a strict Host/Guest execution model, it provides a safe and auditable environment for federated medical research. Calypso ensures that the "Intelligence" layer remains a flexible interface while the "Integrity" of the scientific workflow is governed by the deterministic, Merkle-proven rules of the Kernel.
 
 ---
-_Last updated: 2026-02-16 (v9.0.0)_
+_Last updated: 2026-02-17 (v10.0.0)_

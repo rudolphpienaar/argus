@@ -6,32 +6,19 @@
  * @module
  */
 
-export type FederationVisibility = 'public' | 'private';
+import type { 
+    FederationVisibility, 
+    FederationStep, 
+    FederationPublishConfig, 
+    FederationState 
+} from '../../core/models/types.js';
 
-/**
- * Federation step IDs — aligned 1:1 with fedml.manifest.yaml stage IDs.
- */
-export type FederationStep =
-    | 'federate-brief'
-    | 'federate-transcompile'
-    | 'federate-containerize'
-    | 'federate-publish-config'
-    | 'federate-publish-execute'
-    | 'federate-dispatch'
-    | 'federate-execute'
-    | 'federate-model-publish';
-
-export interface FederationPublishConfig {
-    appName: string | null;
-    org: string | null;
-    visibility: FederationVisibility;
-}
-
-export interface FederationState {
-    projectId: string;
-    step: FederationStep;
-    publish: FederationPublishConfig;
-}
+export {
+    FederationVisibility,
+    FederationStep,
+    FederationPublishConfig,
+    FederationState
+};
 
 export interface FederationDagPaths {
     crosscompileBase: string;

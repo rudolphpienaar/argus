@@ -19,21 +19,31 @@ stages:
 
   # ─── Phase 1: Data Assembly ─────────────────────────────────
 
+  - id: search
+    name: Dataset Discovery
+    phase: data-assembly
+    previous: ~
+    optional: false
+    produces:
+      - search.json
+    instruction: >
+      Search for test datasets relevant to your plugin.
+    commands:
+      - search <keywords>
+    handler: search
+
   - id: gather
     name: Test Data Assembly
     phase: data-assembly
-    previous: ~
+    previous: search
     optional: false
     produces:
       - gather.json
     parameters:
       auto_select: false
     instruction: >
-      Search for and select test datasets for your plugin. Use 'search'
-      to find relevant data, 'add' to build your test cohort, and 'gather'
-      to assemble the project workspace.
+      Select test datasets for your cohort and assemble the workspace.
     commands:
-      - search <keywords>
       - add <dataset>
       - gather
       - mount

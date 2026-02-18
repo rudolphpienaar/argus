@@ -1,193 +1,69 @@
-= DAG Engine Specification
+= Manifest-Driven DAG Engine: The Core of Workflow Orchestration
 :author: ATLAS Project Team
-:revdate: 2026-02-16
-:revnumber: 9.0.0
+:revdate: 2026-02-17
+:revnumber: 10.0.0
 :toc: macro
-:toclevels: 3
+:toclevels: 4
 :sectnums:
 
 toc::[]
 
-== Overview
+== Abstract
 
-The DAG engine (`src/dag/`) is the foundational layer of ARGUS responsible for defining, materializing, and verifying workflow execution as a directed acyclic graph.
+The ARGUS DAG Engine is the declarative heart of the system's workflow orchestration. It models scientific processes as Directed Acyclic Graphs (DAGs) defined in YAML manifests, ensuring that every user interaction is governed by strict procedural rules and cryptographically anchored by Merkle fingerprints. This document serves as the formal specification for the DAG engine, detailing the mechanics of topological position resolution, the branch-aware Merkle provenance model, and the engineering rationale for grounding graph transitions in physical filesystem artifacts.
 
-=== What It Is
+== Introduction: The Case for a Graph-Based Model
 
-A directed acyclic graph (DAG) is a graph where each node is a workflow stage (search, gather, harmonize, etc.) and each edge represents a dependency. The DAG captures the full topology of a workflow — which stages exist, how they relate, and where they branch or join.
+=== The Failure of Linear State Machines
+In early iterations of ARGUS (v1.0 through v8.0), workflow progress was managed through hardcoded linear state machines. This approach was structurally incapable of supporting the complex realities of federated research. A scientific workflow is rarely a straight line; it involves branching (e.g., renaming a project), re-execution (e.g., changing search parameters), and parallel dependencies (e.g., merging cohorts from multiple sites). Linear models inevitably suffer from "State Drift," where the system's belief about its position diverges from the actual project data.
 
-=== Why It Exists (Data-State Grounding)
+=== The Resolution: Topological Grounding
+We learned that a scientific workflow must be modeled as a graph, not a list. The resolution was the implementation of a **Manifest-Driven DAG Engine**. In the v10.0 architecture, this engine has been enhanced with **Merkle-Proven Fingerprinting**. Every node in the graph is now grounded in a physical VFS artifact, and every transition is verified against a cryptographic chain of parentage. This ensures that the system's logical position is always a direct reflection of the physical evidence on the virtual disk.
 
-ARGUS follows **ChRIS data-state DAG semantics**: progress is proven by materialized artifacts, not asserted by controllers or counters. Before the DAG engine, sequencing was delegated to LLM inference, which drifted. The DAG engine makes sequencing deterministic by reading from YAML manifests.
+== The Workflow Manifest: Declarative Process Specification
 
-== Design Principles
+Workflows in ARGUS are defined externally in YAML manifests (`src/dag/manifests/`). These files serve as the "Scientific Schema" for the system.
 
-1. **Every Stage Produces an Artifact.** Every stage materializes an `ArtifactEnvelope` into its `data/` directory in the session tree. The presence of this JSON file is the *only* proof of completion.
-2. **Backward Pointers.** Each stage declares its `previous` stage(s). This naturally supports linear sequences, branching, and joining (topological joins).
-3. **Logic-Presentation Separation.** Manifests define the *what* (topology, instructions), while the `HANDLER_REGISTRY` in `CalypsoCore` defines the *how* (deterministic logic).
+=== Node Identity and Topological Constraints
+Each node in the DAG defines a discrete stage of the workflow.
+*   **Previous (Prerequisites):** Defines the parent stages that must be completed before the current stage can execute. This creates the "Directed" and "Acyclic" properties of the graph.
+*   **Commands:** Lists the canonical protocol commands (e.g., `harmonize`, `train`) that the stage handles.
+*   **Produces (The Artifact Contract):** This is the most critical field. It defines the specific artifact file (e.g., `harmonize.json`) that must be materialized in the VFS for the stage to be considered complete.
 
-== Manifest Format (v9.0.0)
+=== Polymorphism and Persona Selection
+The DAG Engine supports multiple active manifests. At system boot, the user (or the system persona) selects a manifest (e.g., `fedml.manifest.yaml` or `chris.manifest.yaml`). The DAG Engine then compiles this YAML into a runtime graph of `DAGNode` objects, providing a specialized execution environment tailored to that specific scientific persona.
 
-A manifest is a YAML document living in `src/dag/manifests/` that defines a complete persona workflow.
+== Topological Position Resolution: Determining "Where We Are"
 
-=== Stage Definition
+In a non-linear graph, determining the "current stage" is a non-trivial operation. The `WorkflowAdapter` class implements a "Check-Then-Crawl" algorithm to resolve the system's topological position.
 
-Each stage in the `stages` list has the following fields:
+=== The Check-Then-Crawl Algorithm
+1.  **VFS Inventory:** The engine first performs a deep walk of the VFS session tree, identifying all existing artifact envelopes.
+2.  **Readiness Mapping:** For each node in the DAG, the engine evaluates its "Readiness" based on the inventory. A node is considered "Ready" if and only if:
+    - All of its parent nodes have materialized valid artifacts.
+    - Its own artifact is either missing or marked as stale.
+3.  **Kahn's Leaf Identification:** The engine uses a modified version of Kahn's algorithm to perform a topological sort of the ready nodes. The first node in this order that lacks a completed artifact is identified as the authoritative `currentStage`.
 
-[cols="1,1,3"]
-|===
-| Field | Required | Description
+This process ensures that Calypso's guidance and command routing are always grounded in the physical reality of the project tree, making the system immune to "context drift."
 
-| `id`
-| yes
-| Unique identifier (snake_case, e.g., `federate-brief`). Used as the directory name in the session tree.
+== Merkle Fingerprinting: The Chain of Evidence
 
-| `handler`
-| yes
-| **The Logic Link.** The ID of the capability registered in `CalypsoCore`'s `HANDLER_REGISTRY`. This ties the YAML stage to an entry point in the code.
+To ensure the integrity of the scientific process over time, the DAG Engine utilizes a Merkle Provenance Chain. This mechanism cryptographically anchors every stage's data to its specific lineage.
 
-| `commands`
-| yes
-| List of exact strings the user can type to trigger this stage (e.g., `harmonize`, `add <dataset>`).
+=== The SHA-256 Recursive Fingerprint
+When a stage completes, the `MerkleEngine` calculates a SHA-256 fingerprint for the resulting artifact.
+$$H_{current} = \text{SHA-256}(Content_{current} + \text{ParentFingerprints})$$
+This calculation ensures that an artifact's identity is inextricably linked to the specific versions of the data that preceded it.
 
-| `completes_with`
-| no
-| **Completion Alias.** If set to another stage ID, this stage is considered complete if the *target* stage has an artifact. Used when multiple stages share a single result (e.g., `search` and `rename` both alias to `gather`).
+=== Branch-Aware Staleness Detection
+If a user re-executes an upstream stage (e.g., changing the search query), the `MerkleEngine` creates a new timestamped branch in the session tree.
+*   **Fingerprint Invalidation:** The new upstream artifact receives a new fingerprint.
+*   **Topological Ripple:** The DAG Engine immediately detects that all downstream artifacts (e.g., the gathered cohort) now point to an outdated parent hash.
+*   **State Flagging:** These downstream stages are flagged as `[STALE]`. This informs the user—and the AI Kernel—that the scientific validity of the downstream data has been compromised and requires re-verification.
 
-| `previous`
-| yes
-| Parent stage(s). `~` for root. Single string for linear. Array `[a, b]` for join nodes.
+== Conclusion
 
-| `produces`
-| yes
-| Filename(s) to materialize (usually `[stageId].json`).
-
-| `instruction`
-| yes
-| The guidance text presented to the user. The LLM reads this field to provide deterministic guidance.
-
-| `optional`
-| yes
-| If `true`, the stage can be bypassed without warning (materializes a skip sentinel).
-
-| `parameters`
-| no
-| Default configuration map for the stage logic.
-|===
-
-== Linking YAML to Code: The Handler Registry
-
-The `handler` field in the manifest is the key that unlocks deterministic execution. When a user types a command that matches a stage, `CalypsoCore` looks up the corresponding handler in its registry.
-
-=== `HANDLER_REGISTRY` (`src/lcarslm/CalypsoCore.ts`)
-
-The registry maps `handler` strings from YAML to TypeScript methods or closures:
-
-[source,typescript]
-----
-private readonly HANDLER_REGISTRY: Record<string, WorkflowHandler> = {
-    'search':    (_, args) => this.workflow_search(args.join(' ')),
-    'gather':    async (cmd, args) => { ... },
-    'harmonize': () => this.workflow_harmonize(),
-    'scaffold':  (_, args) => this.workflow_proceed(args[0]),
-    'federation': (cmd, args) => this.workflow_federationCommand(cmd, args),
-};
-----
-
-**How it works:**
-1. User types `harmonize`.
-2. `WorkflowAdapter` identifies that `harmonize` belongs to stage `id: harmonize`.
-3. The stage definition specifies `handler: harmonize`.
-4. `CalypsoCore` invokes `HANDLER_REGISTRY['harmonize']`.
-5. The handler executes logic (VFS mutation, store update).
-6. **Automatic Orchestration:** On success, `CalypsoCore` automatically marks the stage complete and materializes the `ArtifactEnvelope`.
-
-== Completion Aliasing (`completes_with`)
-
-Some stages do not produce their own unique artifact but are "subsumed" by a later stage.
-
-*   **Example**: `search` and `rename` are part of the gathering phase. They are only "complete" once the user has actually run `gather` and created a project.
-*   **YAML Config**:
-[source,yaml]
-----
-- id: search
-  handler: search
-  completes_with: gather  # Checks ~/sessions/.../gather/data/gather.json
-----
-
-This allows the UI to show `search` as complete as soon as the project is created, providing a better user experience without requiring every micro-action to have a unique artifact.
-
-== Session Tree Structure
-
-The session tree materializes the DAG as a physical directory structure under `~/sessions/<persona>/session-<id>/`. Every stage, including the root, is explicitly nested to preserve clear provenance.
-
-[source]
-----
-~/sessions/fedml/session-123/
-  search/                  # Stage: search (Root)
-    data/
-      search.json          # Artifact name from manifest
-    gather/                # Stage: gather (Child of search)
-      data/
-        gather.json
-      rename/              # Stage: rename (Child of gather)
-        data/
-          rename.json
-        harmonize/         # Stage: harmonize (Child of rename)
-          data/
-            harmonize.json
-----
-
-The nesting strictly encodes the DAG path. A stage is considered "Complete" if the artifact filename defined in its manifest `produces` field exists at its topological path.
-
-== Verification and Fingerprinting: Merkle Provenance
-
-Every artifact produced by the DAG engine carries a **Merkle Fingerprint**. This enables high-integrity provenance tracking and deterministic staleness detection without relying on unstable filesystem timestamps.
-
-=== The Merkle Chain
-
-Each `ArtifactEnvelope` contains two critical metadata fields:
-
-*   `_fingerprint`: A SHA-256 hash of the artifact's own `content` block and the fingerprints of all its parent stages.
-*   `_parent_fingerprints`: A map of parent stage IDs to their specific fingerprints at the moment this artifact was created.
-
-**Hashing Formula:**
-`fp(stage) = SHA-256(canonical_json(content) + \0 + sorted_join(parent_id:parent_fp))`
-
-This structure forms a Merkle tree rooted at the terminal stages of the workflow. Because the hash includes the parent fingerprints, any change to an upstream artifact (re-execution with different data) causes a hash mismatch that propagates downstream.
-
-=== Staleness Detection
-
-The DAG engine performs a topological walk of the session tree to validate the Merkle chain. A stage is flagged as **Stale** if:
-
-1.  Its recorded `_parent_fingerprints` do not match the fingerprints of the *latest* materialized versions of those parents.
-2.  Any of its ancestors are themselves stale (Cascading Staleness).
-
-=== Artifact Branching
-
-When a user re-executes a stage (e.g., running `search` again with a different query), ARGUS does not simply overwrite the previous data. Instead, it creates an **Artifact Branch**:
-
-[source]
-----
-~/sessions/fedml/session-123/
-  search/                  # Original execution
-    data/search.json
-  search_BRANCH_177129.../ # Re-execution (Branch)
-    data/search.json       # New fingerprint generated here
-----
-
-Branching ensures that:
-*   **Providence is preserved**: The historical record of the session remains intact.
-*   **Staleness is detectable**: Downstream stages (like `gather`) still point to the fingerprint in the *original* folder, allowing the engine to detect the drift from the *latest* branch.
-
-=== UI Indicators
-
-Staleness is surfaced directly in the Star Trek LCARS interface:
-
-*   **Status Summary**: Stale stages are marked with an asterisk (`*`) and a `[STALE]` tag (e.g., `* Data Harmonization [STALE]`).
-*   **Progress Markers**: The standard affirmative marker (`●`) changes to the stale marker (`◌` or `*`) when the data-state grounding is lost.
-
-To resolve staleness, the user must re-execute the stale stage to "re-ground" it in the updated upstream data.
+The ARGUS DAG Engine transforms scientific processes from abstract ideas into verifiable, graph-based protocols. By grounding all workflow transitions in Merkle-proven materialization and topological resolution, the engine provides the "Scientific Conscience" of the system. It ensures that every step taken by a researcher is documented, auditable, and cryptographically anchored to its provenance, providing the rigorous foundation required for high-stakes federated medical research.
 
 ---
-_Last updated: 2026-02-16 (v9.0.9)_
+_Last updated: 2026-02-17 (v10.0.0)_

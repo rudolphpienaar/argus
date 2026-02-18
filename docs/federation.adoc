@@ -1,0 +1,54 @@
+= Federation Orchestrator: The Multi-Phase State Machine
+:author: ATLAS Project Team
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 4
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+The Federation Orchestrator is the specialized service within ARGUS responsible for the multi-phase "Federalization Handshake." It manages the transition from local training code to distributed network execution, ensuring that all procedural and security gates required for medical data handling are strictly enforced. This specification details the architectural design of the federated state machine, the mechanics of the 4-phase handshake protocol, and the engineering rationale for grounding each phase in persistent, Merkle-proven materialization. By providing a structured "Dispatch Pipeline," the Orchestrator ensures that no model is ever deployed to clinical partners without undergoing formal transcompilation and containerization verification.
+
+== Introduction: The Complexity of Federalization
+
+=== The Failure of Single-Step Dispatch
+In early prototypes of ARGUS, federalization was envisioned as a single "Dispatch" command. This approach proved dangerous for real-world healthcare environments. A single command lacked the granular "Approval Gates" necessary for Institutional Review Board (IRB) and security compliance. There was no opportunity for a human researcher to review the transcompiled code or verify the container security layer before the model reached the distributed trusted domains.
+
+=== The Resolution: The Multi-Phase Handshake
+The resolution was the implementation of the `FederationOrchestrator` (located in `src/lcarslm/federation/`). This service decomposes the federalization process into four discrete, sequential phases. Each phase requires explicit human approval or configuration before the next can begin. This shift from "Automation" to "Orchestration" ensures that the human researcher remains the authoritative pilot while the system handles the complex machinery of the ATLAS network.
+
+== The 4-Phase Handshake Protocol
+
+The federated workflow is implemented as a linear sub-graph within the broader SeaGaP-MP process.
+
+=== Phase 1: The Briefing (`federate-brief`)
+The initial phase initializes the federation context. The system analyzes the current project tree—specifically the gathered cohort and the `train.py` logic—to produce a **Scientific Briefing**. This artifact captures the intended modalities, the site-local participant list, and the expected privacy budget (e.g., Differential Privacy epsilon values).
+
+=== Phase 2: Transcompilation (`federate-transcompile`)
+In this phase, the Orchestrator invokes the ATLAS transcoding engine to convert the researcher's local Python code into a federated-ready protocol. The system materializes the transcompiled logic into the VFS, allowing the user to review the specific modifications made to the gradient aggregation loops before proceeding.
+
+=== Phase 3: Containerization (`federate-containerize`)
+To ensure cross-site reproducibility and security isolation, the transcompiled logic is wrapped in a MERIDIAN-compliant Docker container. The Orchestrator generates the `Dockerfile` and the runtime manifest, materializing these into the `federate-containerize/` directory for final verification.
+
+=== Phase 4: Network Dispatch (`federate-dispatch`)
+The final phase is the formal commitment to the network. Once all previous artifacts are materialized and the "Approval Gates" are cleared, the Orchestrator initiates the multi-round training loop across the federated trusted domains.
+
+== State Persistence and Materialized Gates
+
+A critical requirement of the Orchestrator is its ability to maintain session continuity across system resets or remote re-attachments.
+
+=== Global Store Persistence
+Unlike stateless plugins, the `FederationOrchestrator` utilizes the global `AppState` (via `store.ts`) to persist the active handshake step and its configuration parameters (e.g., the application name). This ensures that if a user disconnects during the containerization phase, the system returns them to the exact logical position upon reconnection.
+
+=== Materialization as Approval
+The Orchestrator is grounded in the **Merkle Engine** (see `docs/merkle-engine.adoc`). Each phase of the handshake produces a physical artifact. The `federate-execute` stage—where the actual training occurs—is topologically blocked until the `dispatch.json` artifact exists in the VFS. This provides a hard deterministic gate: the network cannot be touched until the provenance of the briefing, code, and container is physically recorded on the disk.
+
+== Conclusion
+
+The Federation Orchestrator is the primary engine of procedural integrity for distributed research. By enforcing a multi-phase handshake grounded in physical artifact materialization, the system transforms the high-risk operation of network dispatch into a safe, auditable, and human-led process. This architecture ensures that ARGUS v10.0 meets the rigorous governance standards required for national-scale medical imaging research, providing absolute confidence in the scientific validity of every federated model.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

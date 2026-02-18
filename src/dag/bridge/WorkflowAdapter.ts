@@ -13,7 +13,7 @@
  * @see docs/dag-engine.adoc
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -80,15 +80,34 @@ function modulePath_resolve(relativePath: string): string {
     return resolve(__dirname, relativePath);
 }
 
-/** Registry of available workflow manifests. */
-const MANIFEST_REGISTRY: Record<string, ManifestEntry> = {
-    fedml: {
-        yamlPath: modulePath_resolve('../manifests/fedml.manifest.yaml'),
-    },
-    chris: {
-        yamlPath: modulePath_resolve('../manifests/chris.manifest.yaml'),
-    },
-};
+/** Registry of available workflow manifests (scanned on demand). */
+let MANIFEST_CACHE: Record<string, ManifestEntry> | null = null;
+
+function manifestRegistry_get(): Record<string, ManifestEntry> {
+    if (MANIFEST_CACHE) {
+        return MANIFEST_CACHE;
+    }
+
+    const registry: Record<string, ManifestEntry> = {};
+    const manifestsDir = modulePath_resolve('../manifests');
+    
+    try {
+        const files = readdirSync(manifestsDir);
+        for (const file of files) {
+            if (file.endsWith('.manifest.yaml')) {
+                const id = file.replace('.manifest.yaml', '');
+                registry[id] = {
+                    yamlPath: resolve(manifestsDir, file)
+                };
+            }
+        }
+    } catch {
+        // Fallback or empty if directory not found
+    }
+
+    MANIFEST_CACHE = registry;
+    return registry;
+}
 
 // ─── WorkflowAdapter ───────────────────────────────────────────
 
@@ -120,11 +139,56 @@ export class WorkflowAdapter {
 
         // Build command → stage reverse index
         this.commandIndex = new Map();
-        for (const node of definition.nodes.values()) {
+        
+        // Use orderedNodeIds to ensure we process stages in manifest order
+        const nodes = definition.orderedNodeIds.map(id => definition.nodes.get(id)!);
+
+        // 1. First pass: Index EXACT multi-word specific commands.
+        // These are highly specific and should always take precedence.
+        for (const node of nodes) {
             for (const cmd of node.commands) {
-                // Extract the base command word (e.g. "search <keywords>" → "search")
+                const canonicalFull = cmd.split(/[<\[]/)[0].toLowerCase().trim();
+                if (canonicalFull.split(/\s+/).length > 1) {
+                    if (!this.commandIndex.has(canonicalFull)) {
+                        this.commandIndex.set(canonicalFull, node);
+                    }
+                }
+            }
+        }
+
+        // 2. Second pass: Index single-word commands that match their stage ID.
+        for (const node of nodes) {
+            for (const cmd of node.commands) {
+                const canonicalFull = cmd.split(/[<\[]/)[0].toLowerCase().trim();
+                if (canonicalFull.split(/\s+/).length === 1) {
+                    if (canonicalFull === node.id) {
+                        this.commandIndex.set(canonicalFull, node);
+                    }
+                }
+            }
+        }
+
+        // 3. PRIORITY OVERRIDE: Ensure 'search' always maps to the 'search' stage if it exists.
+        const searchNode = definition.nodes.get('search');
+        if (searchNode) {
+            this.commandIndex.set('search', searchNode);
+        }
+
+        // 4. Fourth pass: Index remaining commands as base-word fallbacks.
+        for (const node of nodes) {
+            for (const cmd of node.commands) {
                 const baseCmd = cmd.split(/\s+/)[0].toLowerCase();
-                this.commandIndex.set(baseCmd, node);
+                if (baseCmd && !this.commandIndex.has(baseCmd)) {
+                    // Check if this verb is a prefix of any OTHER stage's specific command
+                    const isShadowed = Array.from(this.commandIndex.keys()).some(fullCmd => {
+                        const parts = fullCmd.split(/\s+/);
+                        return parts.length > 1 && parts[0] === baseCmd && this.commandIndex.get(fullCmd)!.id !== node.id;
+                    });
+
+                    if (!isShadowed) {
+                        this.commandIndex.set(baseCmd, node);
+                    }
+                }
             }
         }
     }
@@ -139,9 +203,10 @@ export class WorkflowAdapter {
      * @throws If workflow not found in registry
      */
     static definition_load(workflowId: string): WorkflowAdapter {
-        const entry = MANIFEST_REGISTRY[workflowId];
+        const registry = manifestRegistry_get();
+        const entry = registry[workflowId];
         if (!entry) {
-            const available = Object.keys(MANIFEST_REGISTRY).join(', ');
+            const available = Object.keys(registry).join(', ');
             throw new Error(`Workflow '${workflowId}' not found. Available: ${available}`);
         }
 
@@ -158,8 +223,9 @@ export class WorkflowAdapter {
      */
     static workflows_summarize(): WorkflowSummary[] {
         const summaries: WorkflowSummary[] = [];
+        const registry = manifestRegistry_get();
 
-        for (const [id, entry] of Object.entries(MANIFEST_REGISTRY)) {
+        for (const [id, entry] of Object.entries(registry)) {
             try {
                 const yaml = readFileSync(entry.yamlPath, 'utf-8');
                 const def = manifest_parse(yaml);
@@ -183,7 +249,7 @@ export class WorkflowAdapter {
      * Get all available workflow IDs.
      */
     static workflows_list(): string[] {
-        return Object.keys(MANIFEST_REGISTRY);
+        return Object.keys(manifestRegistry_get());
     }
 
     // ─── Position Resolution ───────────────────────────────────
@@ -199,12 +265,17 @@ export class WorkflowAdapter {
      * @returns WorkflowPosition describing "where are we?"
      */
     position_resolve(vfs: VirtualFileSystem, sessionPath: string): WorkflowPosition {
-        const completedIds: Set<string> = this.mapper.completedIds_resolve(vfs, sessionPath);
+        const completedIds: Set<string> = new Set<string>();
+        
+        // Use branch-aware latestFingerprint_get for ALL stages to determine completion
+        for (const stageId of this.definition.nodes.keys()) {
+            if (this.latestFingerprint_get(vfs, sessionPath, stageId)) {
+                completedIds.add(stageId);
+            }
+        }
 
         // Perform staleness detection across the DAG.
-        // We need to find the LATEST materialized version of each stage
-        // to determine if the workflow has drifted.
-        const artifactReader = (stageId: string): FingerprintRecord | null => {
+        const artifactReader: (stageId: string) => FingerprintRecord | null = (stageId: string): FingerprintRecord | null => {
             return this.latestFingerprint_get(vfs, sessionPath, stageId);
         };
 
@@ -282,6 +353,7 @@ export class WorkflowAdapter {
             if (!envelope._fingerprint || !envelope._parent_fingerprints) {
                 return null;
             }
+
             return {
                 stageId: envelope.stage,
                 timestamp: envelope.timestamp,
@@ -298,7 +370,7 @@ export class WorkflowAdapter {
     /**
      * Check if a command transition is allowed based on workflow state.
      *
-     * @param command - Command being attempted (e.g. 'harmonize', 'code')
+     * @param command - Command being attempted (e.g. 'harmonize', 'show container')
      * @param vfs - VirtualFileSystem for completion checks
      * @param sessionPath - Active session path
      * @returns TransitionResult with allowed status and warnings
@@ -326,8 +398,6 @@ export class WorkflowAdapter {
         // Check if all parents are complete
         const readiness: NodeReadiness[] = dag_resolve(this.definition, completedIds);
         const nodeReadiness: NodeReadiness | undefined = readiness.find(r => r.nodeId === targetNode.id);
-
-        // console.log(`[TRANSITION] CMD: ${baseCmd}, NODE: ${targetNode.id}, READY: ${nodeReadiness?.ready}`);
 
         if (!nodeReadiness || nodeReadiness.pendingParents.length === 0) {
             return WorkflowAdapter.result_allowed();
@@ -393,11 +463,18 @@ export class WorkflowAdapter {
     /**
      * Find which stage handles a given command.
      *
-     * @param command - Command string (e.g. 'harmonize', 'proceed')
+     * @param command - Command string (e.g. 'harmonize', 'show container')
      * @returns The DAGNode, or null if no stage handles this command
      */
     stage_forCommand(command: string): DAGNode | null {
-        const baseCmd = command.split(/\s+/)[0].toLowerCase();
+        const trimmed = command.trim().toLowerCase();
+        
+        // 1. Try exact match for the full string (e.g. "show container")
+        const fullMatch = this.commandIndex.get(trimmed);
+        if (fullMatch) return fullMatch;
+
+        // 2. Fallback to base command (first word)
+        const baseCmd = trimmed.split(/\s+/)[0];
         return this.commandIndex.get(baseCmd) ?? null;
     }
 

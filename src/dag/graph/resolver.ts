@@ -75,7 +75,7 @@ export function position_resolve(
     completedIds: Set<string>,
     staleIds?: Set<string>,
 ): WorkflowPosition {
-    const staleFn = staleIds ? (id: string) => staleIds.has(id) : undefined;
+    const staleFn: ((id: string) => boolean) | undefined = staleIds ? (id: string): boolean => staleIds.has(id) : undefined;
     const allReadiness = dag_resolve(definition, completedIds, staleFn);
 
     // Topological order via Kahn's algorithm
@@ -86,7 +86,7 @@ export function position_resolve(
     let currentStage: DAGNode | null = null;
 
     for (const id of topoOrder) {
-        const r = readinessMap.get(id);
+        const r: NodeReadiness | undefined = readinessMap.get(id);
         if (r && r.ready && !r.complete) {
             currentStage = definition.nodes.get(id) ?? null;
             break;
@@ -140,7 +140,7 @@ function topologicalSort_compute(definition: DAGDefinition): string[] {
 
         for (const edge of definition.edges) {
             if (edge.from === current && inDegree.has(edge.to)) {
-                const newDeg = (inDegree.get(edge.to) ?? 1) - 1;
+                const newDeg: number = (inDegree.get(edge.to) ?? 1) - 1;
                 inDegree.set(edge.to, newDeg);
                 if (newDeg === 0) {
                     queue.push(edge.to);

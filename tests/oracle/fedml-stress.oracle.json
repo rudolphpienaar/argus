@@ -17,8 +17,8 @@
     },
     {
       "send": "ok, can you name this stress-project",
-      "success": true,
-      "output_contains": "successfully updated to 'stress-project'"
+      "expect": "OK",
+      "output_contains": "RENAMED TO [stress-project]"
     },
     {
       "vfs_exists": "${session}/search/gather/rename/data/rename.json"

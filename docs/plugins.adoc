@@ -1,0 +1,67 @@
+= ARGUS Plugin System: The VM for Guest Logic
+:author: ATLAS Project Team
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 4
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+The ARGUS Plugin System is a virtualized execution environment for domain-specific workflow logic. By bifurcating the system into a generic Host kernel (`CalypsoCore`) and atomic, stateless Guest modules (Plugins), ARGUS achieves high levels of procedural extensibility and mathematical verifiability. This document specifies the architectural design of the Plugin Virtual Machine (VM), the mechanics of dynamic loading, and the strictly-typed "Standard Library" (the `PluginContext`) provided to Guest programs. By isolating domain-specific logic from the core state management system, ARGUS ensuring that scientific protocols can be extended without compromising the system's structural integrity.
+
+== Introduction: The Evolution of Guest Logic
+
+=== The Case Against Monolithic Dispatch
+In earlier versions of ARGUS (v9.x and below), domain-specific logic was hardcoded directly into the system's core orchestrator. This "Monolithic Dispatch" model suffered from structural fragility; a change in the dataset discovery logic (Search) could inadvertently corrupt the state of the model publication stage (Post), as all stages shared the same in-memory classes and global variables. This coupling made it impossible to verify the system's components in isolation and hindered the rapid adoption of new research personas.
+
+=== The Resolution: The Plugin Virtual Machine
+We learned that for ARGUS to scale as a robust platform for federated research, domain-specific logic must be treated as unprivileged "Guest" code. The resolution was the implementation of the **Plugin Virtual Machine** in v10.0. Logic is no longer a part of the system kernel; it is a discrete transformation that runs inside a sandboxed environment (`src/plugins/`). Plugins are prohibited from managing their own state or touching the Merkle session tree directly. Instead, they consume a strictly defined "Standard Library" and return a `PluginResult` that the Host materializes into the provenance chain.
+
+== The Plugin Host (The VM Kernel)
+
+The `PluginHost` class (located in `src/lcarslm/PluginHost.ts`) implements the runtime environment for Guest logic.
+
+=== Dynamic Module Loading
+ARGUS plugins are stored as individual ECMAScript modules. The `PluginHost` uses dynamic imports (`import()`) to load these modules at runtime, based on the `handler` property defined in the active workflow manifest. This architecture ensures:
+*   **Memory Efficiency:** Only the logic required for the current stage is loaded into memory.
+*   **Hot-Swapping:** New plugins can be added to the `src/plugins/` directory and immediately utilized by the system without requiring a re-compilation of the Host kernel.
+
+=== Atomic Execution Lifecycle
+Every plugin must export a single entry point: `plugin_execute`.
+1.  **Instantiation:** The Host loads the module and verifies the existence of the execution entry point.
+2.  **Context Injection:** The Host assembles a fresh `PluginContext` (the Standard Library) tailored to the current session and project.
+3.  **Execution:** The `plugin_execute` function is invoked. This is a synchronous or asynchronous transformation that performs the required domain logic (e.g., scanning metadata or generating code).
+4.  **Teardown:** Once the plugin returns its result, the VM discards the plugin instance, ensuring that no transient state persists between command executions.
+
+== The Standard Library: `PluginContext`
+
+Guest logic interacts with the ARGUS system exclusively through the `PluginContext`. This interface represents the totality of the plugin's capabilities.
+
+=== VFS Capability (`vfs`)
+Access to the `VirtualFileSystem` allows plugins to perform POSIX-compliant mutations. However, plugins are restricted to the project-scoped directory tree (`~/projects/$PROJECT/`). They are physically prevented from accessing the session ledger or other users' data, ensuring cross-project security.
+
+=== Execution Capability (`shell`)
+The `shell` property provides access to the VCS Shell singleton. This allows plugins to execute POSIX builtins (e.g., `mkdir`, `cp`) and simulators (e.g., `python`). For example, the `Train` plugin uses this capability to run the `python` simulator against the `train.py` scaffold, capturing the resulting logs and validation markers.
+
+=== State Capability (`store`)
+Plugins can read application state (e.g., the currently selected datasets) and emit specific UI actions (e.g., `project_rename`). This ensures that the visual interface remains synchronized with the plugin's internal logic without the plugin needing direct access to the LCARS framework or the DOM.
+
+== The Materialization Contract: `PluginResult`
+
+The interaction between the Host and the Guest is governed by a strict materialization contract. A plugin does not "mark" a stage as complete; it returns the evidence required for the Host to do so.
+
+*   **`message`**: The human-readable string (Markdown or environment-aware ANSI/HTML) to be displayed in the terminal.
+*   **`statusCode`**: The protocol code (e.g., `OK`, `ERROR`) used for machine verification.
+*   **`artifactData`**: The domain-specific payload (e.g., a list of harmonized modalities).
+
+The Host kernel (Calypso) captures this result, wraps it in a SHA-256 fingerprint, and invokes the `MerkleEngine` to materialize the artifact in the VFS session tree. This ensures that the provenance chain is managed exclusively by the high-integrity Kernel, providing an immutable audit trail of the Guest's work.
+
+== Conclusion
+
+The ARGUS Plugin System represents the formalization of "Separated Logic." By treating domain-specific work as sandboxed Guest code, ARGUS achieves the robustness of an operating system. The system remains stable and verifiable at its core while offering researchers an infinitely extensible environment for scientific innovation. This VM-based architecture is the key to ARGUS's scalability, ensuring that as the platform's capabilities grow, its fundamental integrity remains absolute.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

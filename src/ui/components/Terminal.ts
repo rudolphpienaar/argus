@@ -63,8 +63,56 @@ export class LCARSTerminal extends BaseTerminal {
             }
         });
 
+        this.styles_inject();
         this.shellIntegration_setup();
         this.tabCompletion_setup();
+    }
+
+    /**
+     * Injects custom CSS for terminal-specific candy (progress bars, tables).
+     */
+    private styles_inject(): void {
+        const style = document.createElement('style');
+        style.textContent = `
+            .lcars-progress-block {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin: 5px 0;
+                font-family: 'Antonio', sans-serif;
+                letter-spacing: 1px;
+            }
+            .lcars-progress-block .progress-label {
+                width: 150px;
+                color: var(--canary);
+                font-size: 0.8rem;
+            }
+            .lcars-progress-block .progress-track {
+                flex: 1;
+                height: 12px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+                overflow: hidden;
+                position: relative;
+            }
+            .lcars-progress-block .progress-fill {
+                height: 100%;
+                background: var(--sky);
+                width: 0;
+                box-shadow: 0 0 10px var(--sky);
+            }
+            .lcars-progress-block .progress-percent {
+                width: 40px;
+                font-size: 0.8rem;
+                color: var(--font-color);
+                text-align: right;
+            }
+
+            @keyframes lcars-progress-grow {
+                from { width: 0; }
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     /**

@@ -181,6 +181,7 @@ export interface DAGDefinition {
     source: 'manifest' | 'script';
     header: ManifestHeader | ScriptHeader;
     nodes: Map<string, DAGNode>;
+    orderedNodeIds: string[];
     edges: DAGEdge[];
     rootIds: string[];
     terminalIds: string[];

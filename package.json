@@ -1,11 +1,11 @@
 {
     "name": "argus",
-    "version": "9.0.10",
+    "version": "10.0.1",
     "description": "ATLAS Resource Guided User System - LCARS Prototype",
     "type": "module",
     "scripts": {
         "version:generate": "bash scripts/generate-version.sh",
-        "build": "npm run version:generate && node scripts/bundle-docs.cjs && tsc && cp -r src/dag/manifests dist/js/dag/manifests",
+        "build": "npm run version:generate && node scripts/bundle-docs.cjs && tsc && mkdir -p dist/js/dag/manifests && cp -r src/dag/manifests/* dist/js/dag/manifests/",
         "watch": "npm run version:generate && tsc --watch",
         "serve": "npx http-server dist -p 8080 -c-1",
         "dev": "npm run build && npm run serve",

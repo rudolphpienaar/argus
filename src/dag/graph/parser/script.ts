@@ -66,6 +66,7 @@ export function script_parse(yamlStr: string, manifest: DAGDefinition): DAGDefin
         source: 'script',
         header,
         nodes,
+        orderedNodeIds: [...manifest.orderedNodeIds],
         edges: [...manifest.edges],
         rootIds: [...manifest.rootIds],
         terminalIds: [...manifest.terminalIds],

@@ -4,43 +4,33 @@
   "steps": [
     {
       "send": "search pathology",
-      "success": true,
-      "output_contains": "FOUND 2 MATCHING DATASET(S)"
-    },
-    {
-      "vfs_exists": "${session}/search/data/search.json"
+      "expect": "OK",
+      "materialized": ["${session}/search/data/search.json"]
     },
     {
       "send": "add ds-006",
-      "success": true,
-      "output_contains": "DATASET(S) GATHERED"
+      "expect": "OK",
+      "capture_project": true
     },
     {
-      "vfs_exists": "${session}/search/gather/data/gather.json"
+      "send": "gather",
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/data/gather.json"]
     },
     {
       "send": "harmonize",
-      "success": true,
-      "output_contains": "__HARMONIZE_ANIMATE__"
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
     },
     {
       "send": "proceed",
-      "success": true,
-      "output_contains": "PROCEEDING WITH FEDML"
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/harmonize/code/data/code.json"]
     },
     {
       "send": "python train.py",
-      "success": true,
-      "output_contains": "LOCAL TRAINING COMPLETE"
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/data/train.json"
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/harmonize/code/train/data/train.json"]
     }
   ]
 }

@@ -34,10 +34,7 @@ export class ShellBuiltins {
         'history': this.history.bind(this),
         'help': this.help.bind(this),
         'python': this.python.bind(this),
-        'upload': this.upload.bind(this),
-        'analyze': this.analyze.bind(this),
-        'simulate': this.simulate.bind(this),
-        'harmonize': this.harmonize.bind(this)
+        'upload': this.upload.bind(this)
     };
 
     private async cd(args: string[], shell: Shell): Promise<ShellResult> {
@@ -246,31 +243,31 @@ export class ShellBuiltins {
     }
 
     private async help(args: string[], shell: Shell): Promise<ShellResult> {
-        const commands = Object.keys(this.REGISTRY).sort().join(', ');
+        const commands: string = Object.keys(this.REGISTRY).sort().join(', ');
         return { stdout: `Available commands: ${commands}`, stderr: '', exitCode: 0 };
     }
 
     private async python(args: string[], shell: Shell): Promise<ShellResult> {
         if (args.length === 0) return { stdout: '', stderr: 'python: missing file operand', exitCode: 1 };
-        const scriptPath = args[0];
+        const scriptPath: string = args[0];
         try {
-            const resolved = this.vfs.path_resolve(scriptPath);
+            const resolved: string = this.vfs.path_resolve(scriptPath);
             if (!this.vfs.node_stat(resolved)) {
                 return { stdout: '', stderr: `python: can't open file '${scriptPath}': [Errno 2] No such file or directory`, exitCode: 2 };
             }
             this.vfs.node_read(resolved);
 
-            const runRootPath = this.projectRoot_resolve(resolved, shell) ?? this.vfs.path_resolve('.');
-            const outputDirPath = `${runRootPath}/output`;
-            const modelPath = `${outputDirPath}/model.pth`;
-            const statsPath = `${outputDirPath}/stats.json`;
-            const inputDirPath = `${runRootPath}/input`;
-            const inputDisplayPath = `${this.path_relativeToCwd(inputDirPath)}/`;
-            const resolvedLower = resolved.toLowerCase();
-            const isChrisValidation = resolvedLower.endsWith('/src/main.py') || resolvedLower.endsWith('/src/app/main.py');
+            const runRootPath: string = this.projectRoot_resolve(resolved, shell) ?? this.vfs.path_resolve('.');
+            const outputDirPath: string = `${runRootPath}/output`;
+            const modelPath: string = `${outputDirPath}/model.pth`;
+            const statsPath: string = `${outputDirPath}/stats.json`;
+            const inputDirPath: string = `${runRootPath}/input`;
+            const inputDisplayPath: string = `${this.path_relativeToCwd(inputDirPath, shell)}/`;
+            const resolvedLower: string = resolved.toLowerCase();
+            const isChrisValidation: boolean = resolvedLower.endsWith('/src/main.py') || resolvedLower.endsWith('/src/app/main.py');
 
             if (isChrisValidation) {
-                let output = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
+                let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
                 output += `○ Validating ChRIS plugin entrypoint...\n○ Parsing argument contract and runtime hooks...\n○ Checking input/output filesystem compliance...\n\n--- TEST LOG ---\n[PASS] plugin metadata loaded\n[PASS] argument parser initialized\n[PASS] input/output bindings valid\n\n`;
                 try {
                     this.vfs.file_create(`${runRootPath}/.test_pass`, new Date().toISOString());
@@ -279,10 +276,10 @@ export class ShellBuiltins {
                 return { stdout: output, stderr: '', exitCode: 0 };
             }
 
-            let output = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
+            let output: string = `<span class="highlight">[LOCAL EXECUTION: ${scriptPath}]</span>\n`;
             output += `○ Loading torch and meridian.data...\n○ Found 1,240 images in ${inputDisplayPath}\n○ Model: ResNet50 (Pretrained=True)\n○ Device: NVIDIA A100-SXM4 (Simulated)\n\n--- TRAINING LOG ---\n`;
             output += `Epoch 1/5 [#####---------------] 25% | Loss: 0.8234 | Acc: 0.64\n`;
-            await new Promise(r => setTimeout(r, 200));
+            await new Promise((r: (value: unknown) => void): void => { setTimeout(r, 200); });
             output += `Epoch 2/5 [##########----------] 50% | Loss: 0.5121 | Acc: 0.78\n`;
             output += `Epoch 3/5 [###############-----] 75% | Loss: 0.3245 | Acc: 0.88\n`;
             output += `Epoch 4/5 [###################-] 95% | Loss: 0.2102 | Acc: 0.92\n`;
@@ -311,79 +308,14 @@ export class ShellBuiltins {
                 return { stdout: '', stderr: 'upload: Command only available in browser mode.', exitCode: 1 };
             }
             const { files_prompt, files_ingest } = await import('../core/logic/FileUploader.js');
-            let destination = this.vfs.cwd_get();
+            let destination: string = this.vfs.cwd_get();
             if (args.length > 0) destination = this.vfs.path_resolve(args[0]);
 
-            const files = await files_prompt();
+            const files: File[] = await files_prompt();
             if (files.length === 0) return { stdout: '<span class="dim">Upload cancelled.</span>', stderr: '', exitCode: 0 };
 
-            const count = await files_ingest(files, destination);
+            const count: number = await files_ingest(files, destination);
             return { stdout: `<span class="success">Successfully uploaded ${count} file(s) to ${destination}</span>`, stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: e.message, exitCode: 1 };
-        }
-    }
-
-    private async analyze(args: string[], shell: Shell): Promise<ShellResult> {
-        if (args[0] !== 'cohort') return { stdout: '', stderr: 'Usage: analyze cohort', exitCode: 1 };
-        const project = shell.env_get('PROJECT');
-        if (!project) return { stdout: '', stderr: 'analyze: No active project context ($PROJECT not set)', exitCode: 1 };
-
-        try {
-            const { cohort_analyze } = await import('../core/analysis/CohortProfiler.js');
-            // Assuming shell has username logic or we get it from env
-            const user = shell.env_get('USER') || 'user';
-            const report = cohort_analyze(this.vfs, `/home/${user}/projects/${project}/input`);
-            return { stdout: report, stderr: '', exitCode: 0 };
-        } catch (e: any) {
-            return { stdout: '', stderr: e.message, exitCode: 1 };
-        }
-    }
-
-    private async simulate(args: string[], shell: Shell): Promise<ShellResult> {
-        if (args[0] !== 'federation') return { stdout: '', stderr: 'Usage: simulate federation', exitCode: 1 };
-        const project = shell.env_get('PROJECT');
-        if (!project) return { stdout: '', stderr: 'simulate: No active project context ($PROJECT not set)', exitCode: 1 };
-
-        try {
-            const { federation_simulate } = await import('../core/simulation/PhantomFederation.js');
-            const user = shell.env_get('USER') || 'user';
-            const projectPath = `/home/${user}/projects/${project}`;
-            
-            if (!this.vfs.node_stat(`${projectPath}/.local_pass`)) {
-                return { stdout: '', stderr: `simulate: Local validation required. Run "python train.py" first.`, exitCode: 1 };
-            }
-
-            const result = await federation_simulate(this.vfs, projectPath);
-            const output = result.logs.map(l => {
-                if (l.startsWith('ERROR')) return `<span class="error">${l}</span>`;
-                if (l.startsWith('>>')) return `<span class="highlight">${l}</span>`;
-                return `<span class="dim">${l}</span>`;
-            }).join('\n');
-
-            if (result.success) {
-                return { stdout: output + '\n<span class="success">SIMULATION COMPLETE. FEDERALIZATION UNLOCKED.</span>', stderr: '', exitCode: 0 };
-            } else {
-                return { stdout: '', stderr: output, exitCode: 1 };
-            }
-        } catch (e: any) {
-            return { stdout: '', stderr: e.message, exitCode: 1 };
-        }
-    }
-
-    private async harmonize(args: string[], shell: Shell): Promise<ShellResult> {
-        if (args[0] !== 'cohort') return { stdout: '', stderr: 'Usage: harmonize cohort', exitCode: 1 };
-        const project = shell.env_get('PROJECT');
-        if (!project) return { stdout: '', stderr: 'harmonize: No active project context ($PROJECT not set)', exitCode: 1 };
-
-        try {
-            const { MOCK_PROJECTS } = await import('../core/data/projects.js');
-            const { project_harmonize } = await import('../core/logic/ProjectManager.js');
-            const model = MOCK_PROJECTS.find(p => p.name === project);
-            if (!model) return { stdout: '', stderr: 'harmonize: Project model not found', exitCode: 1 };
-
-            project_harmonize(model);
-            return { stdout: '', stderr: '', exitCode: 0 };
         } catch (e: any) {
             return { stdout: '', stderr: e.message, exitCode: 1 };
         }
@@ -391,37 +323,43 @@ export class ShellBuiltins {
 
     // ─── Helpers ────────────────────────────────────────────────
 
+    /**
+     * Resolves the root directory of the current project.
+     */
     private projectRoot_resolve(pathHint: string, shell: Shell): string | null {
-        const home = shell.env_get('HOME') || '/home/user';
-        const projectFromEnv = shell.env_get('PROJECT');
+        const home: string = shell.env_get('HOME') || '/home/user';
+        const projectFromEnv: string | undefined = shell.env_get('PROJECT');
         if (projectFromEnv) return `${home}/projects/${projectFromEnv}`;
 
-        const candidates = [this.vfs.cwd_get(), pathHint];
-        const marker = '/projects/';
+        const candidates: string[] = [this.vfs.cwd_get(), pathHint];
+        const marker: string = '/projects/';
 
         for (const candidate of candidates) {
-            const markerIndex = candidate.indexOf(marker);
+            const markerIndex: number = candidate.indexOf(marker);
             if (markerIndex === -1) continue;
-            const afterMarker = candidate.substring(markerIndex + marker.length);
-            const projectName = afterMarker.split('/')[0];
+            const afterMarker: string = candidate.substring(markerIndex + marker.length);
+            const projectName: string = afterMarker.split('/')[0];
             if (!projectName) continue;
             return `${candidate.substring(0, markerIndex + marker.length)}${projectName}`;
         }
         return null;
     }
 
-    private path_relativeToCwd(absolutePath: string): string {
-        const cwdParts = this.vfs.cwd_get().split('/').filter(Boolean);
-        const targetParts = absolutePath.split('/').filter(Boolean);
-        let commonIndex = 0;
+    /**
+     * Converts an absolute path to a relative path from the CWD.
+     */
+    private path_relativeToCwd(absolutePath: string, shell: Shell): string {
+        const cwdParts: string[] = this.vfs.cwd_get().split('/').filter(Boolean);
+        const targetParts: string[] = absolutePath.split('/').filter(Boolean);
+        let commonIndex: number = 0;
         while (commonIndex < cwdParts.length && commonIndex < targetParts.length && cwdParts[commonIndex] === targetParts[commonIndex]) {
             commonIndex++;
         }
-        const upMoves = Array(cwdParts.length - commonIndex).fill('..');
-        const downMoves = targetParts.slice(commonIndex);
-        const relativeParts = [...upMoves, ...downMoves];
+        const upMoves: string[] = Array(cwdParts.length - commonIndex).fill('..');
+        const downMoves: string[] = targetParts.slice(commonIndex);
+        const relativeParts: string[] = [...upMoves, ...downMoves];
         if (relativeParts.length === 0) return '.';
-        const relativePath = relativeParts.join('/');
+        const relativePath: string = relativeParts.join('/');
         return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
     }
 }

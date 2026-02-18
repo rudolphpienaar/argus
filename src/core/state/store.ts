@@ -35,7 +35,9 @@ const initialState: ExtendedState = {
     costEstimate: { dataAccess: 0, compute: 0, storage: 0, total: 0 },
     trainingJob: null,
     marketplaceOpen: false,
-    installedAssets: []
+    installedAssets: [],
+    lastIntent: null,
+    federationState: null
 };
 
 /**

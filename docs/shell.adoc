@@ -1,0 +1,72 @@
+= VCS Shell: The Contextual Execution Environment
+:author: ATLAS Project Team
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 4
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+The VCS Shell is the process-level execution interface of the ARGUS environment. It provides a high-fidelity simulation of a POSIX-compliant command interpreter, mediating between the Calypso Host kernel and the Virtual File System (VFS). This specification details the architectural design of the Shell, its environment isolation protocols, and the mechanics of the builtin execution loop. By providing a familiar, deterministic command-line substrate, the Shell enables the execution of complex scientific simulations, such as the "Phantom Federation" Python loop, within the safety of a virtualized project tree.
+
+== Introduction: The Need for Process Isolation
+
+=== The Context-Drift Problem
+The development of the VCS Shell was driven by the "Context-Drift" failure mode identified in early iterations of ARGUS. In legacy versions (v9.0 and below), command execution was performed through direct method calls on global singletons. This approach lacked the concept of "Process Context"—variables like the Current Working Directory (CWD) or the active User were maintained as shared global state. During concurrent operations or complex stage transitions, this state would often become corrupted, leading to situations where a plugin would attempt to write data into the wrong project directory.
+
+=== The Resolution: The Virtual Shell
+The resolution was the implementation of the `Shell` class (located in `src/vfs/Shell.ts`). The Shell introduces a formal "Process Environment" to the ARGUS architecture. Every command execution is scoped to a specific instance of the Shell, which maintains its own environment variables and CWD. This isolation ensures that scientific plugins remain stateless; they do not need to "know" where they are, as they inherit their context from the active Shell. This shift from "Global State" to "Process Environment" is critical for the v10.0 mandate of procedural integrity.
+
+== Environment Isolation and Variable Management
+
+The Shell functions as the "Guardian of Context," maintaining the variables that define the persona and location of the current session.
+
+=== The Persistent Environment Bag
+The Shell maintains a persistent set of environment variables, including:
+*   **`$USER`**: Defines the active research persona (e.g., `oracle`, `clinician`).
+*   **`$HOME`**: Defines the root directory for the persona's session state.
+*   **`$PROJECT`**: Anchors all operations to a specific research workspace.
+*   **`$PS1`**: Defines the visual prompt, providing real-time feedback to the operator about their current CWD and project context.
+
+=== Recursive Interpolation
+The Shell implements a sophisticated variable expansion engine. It recursively interpolates environment variables within command strings (e.g., `cd /home/$USER/projects/$PROJECT`). This ensures that complex scripts and plugin calls behave identically across different user sessions, as the absolute paths are resolved dynamically at execution time.
+
+== The Builtin Execution Loop
+
+Command execution in the Shell follows a rigid, deterministic loop that ensures absolute control over the VFS substrate.
+
+=== Resolution Order
+When a command is received, the Shell resolves it through a strictly defined hierarchy:
+1.  **Environment Variables:** Checks if the command is a variable assignment (e.g., `export PROJECT=test`).
+2.  **Builtin Registry:** Searches the library of over 20 POSIX-simulating builtins (e.g., `cd`, `ls`, `mkdir`).
+3.  **External Handler:** If not a builtin, the Shell delegates to an optional external handler (typically the `CalypsoCore` fallback) for AI-mediated workflow commands.
+
+=== The ShellResult Protocol
+Every command execution returns a `ShellResult` object. This protocol ensures that the Shell remains "Dumb" about UI rendering:
+*   **`stdout`**: The standard output stream.
+*   **`stderr`**: The error stream (rendered in red in the LCARS terminal).
+*   **`exitCode`**: A numeric code indicating success (`0`) or failure (e.g., `127` for command not found).
+
+== The Python Simulator: High-Fidelity Logic Emulation
+
+The most critical component of the Shell is the `python` builtin. This simulator mimics the behavior of a real Python interpreter, enabling the "Simulation Loop" required by the SeaGaP-MP workflow.
+
+=== "Phantom" Logic Execution
+When a user runs `python train.py`, the Shell does not execute real Python code. Instead, it:
+1.  **Parses** the `train.py` file from the VFS.
+2.  **Analyzes** the script's intent based on the active workflow stage.
+3.  **Synthesizes** realistic training logs (epoch progress, loss curves) to `stdout`.
+4.  **Materializes** the expected side effects—such as the `.local_pass` marker or trained weight files—into the project's `/output/` directory.
+
+=== Scientific Validation
+This simulator allows researchers to verify the *behavioral integrity* of their training protocols within the safety of the VCS. If a script fails to adhere to the platform's requirements, the simulator produces a detailed `stderr` traceback, allowing for a rapid local development loop without the latency or cost of a real federated dispatch.
+
+== Conclusion
+
+The VCS Shell is the "User Space" of the ARGUS environment. By providing a formal, POSIX-compliant interface for process execution and environment management, it ensures that every user interaction is governed by the same deterministic rules. The Shell transforms the virtual filesystem from a static data structure into a dynamic, interactive research environment, providing the contextual grounding required for high-integrity scientific discovery.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

@@ -11,6 +11,7 @@
  */
 
 import type { CalypsoResponse, CalypsoAction, CalypsoStoreActions } from '../types.js';
+import { CalypsoStatusCode } from '../types.js';
 import type { Dataset } from '../../core/models/types.js';
 import type {
     ScriptRuntimeContext,
@@ -188,7 +189,13 @@ export class ScriptRuntime {
                 );
             }
 
-            const result: CalypsoResponse = await this.commandExecutor(trimmedStep);
+            let result: CalypsoResponse = await this.commandExecutor(trimmedStep);
+            
+            // Handle automatic phase jump confirmation within scripts
+            if (!result.success && /PHASE JUMP/i.test(result.message || '')) {
+                result = await this.commandExecutor('confirm');
+            }
+
             actions.push(...result.actions);
 
             const summary: string | null = this.scriptStep_summary(result.message);
@@ -528,7 +535,7 @@ export class ScriptRuntime {
             if (typeof current === 'object') {
                 if (Array.isArray(current)) {
                     const idx: number = parseInt(segment, 10);
-                    if (!isNaN(idx) && idx >= 0 && idx < current.length) {
+                    if (!isNaN(idx) && idx >= 1 && idx < current.length) {
                         current = current[idx];
                     } else {
                         return undefined;
@@ -560,7 +567,13 @@ export class ScriptRuntime {
         session: ScriptRuntimeSession
     ): Promise<ScriptStepExecutionResult> {
         const runCommand = async (command: string): Promise<ScriptStepExecutionResult> => {
-            const response: CalypsoResponse = await this.commandExecutor(command);
+            let response: CalypsoResponse = await this.commandExecutor(command);
+            
+            // Handle automatic phase jump confirmation within scripts
+            if (!response.success && /PHASE JUMP/i.test(response.message || '')) {
+                response = await this.commandExecutor('confirm');
+            }
+
             if (!response.success) {
                 return {
                     success: false,
@@ -842,6 +855,11 @@ export class ScriptRuntime {
         actions: CalypsoAction[],
         success: boolean
     ): CalypsoResponse {
-        return { message, actions, success };
+        return { 
+            message, 
+            actions, 
+            success, 
+            statusCode: success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR 
+        };
     }
 }

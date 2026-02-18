@@ -23,21 +23,26 @@ import type {
     CalypsoCoreConfig,
     CalypsoStoreActions,
     VfsSnapshotNode,
-    QueryResponse
+    QueryResponse,
+    CalypsoIntent,
+    PluginResult
 } from './types.js';
+import { CalypsoStatusCode } from './types.js';
 import type { Dataset, AppState, Project } from '../core/models/types.js';
 import { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 import { ScriptRuntime } from './scripts/ScriptRuntime.js';
 import { SearchProvider, type SearchMaterialization } from './SearchProvider.js';
 import { StatusProvider } from './StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
-import { actionIntent_resolve } from './routing/ActionRouter.js';
+import { IntentParser } from './routing/IntentParser.js';
+import { PluginHost } from './PluginHost.js';
+import { MerkleEngine } from './MerkleEngine.js';
 import { vfs_snapshot } from './utils/VfsUtils.js';
 import { fingerprint_compute } from '../dag/fingerprint/hasher.js';
 import type { FingerprintRecord } from '../dag/fingerprint/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../core/data/projects.js';
-import { project_gather, project_rename, project_harmonize } from '../core/logic/ProjectManager.js';
+import { project_gather, project_rename } from '../core/logic/ProjectManager.js';
 import { CalypsoPresenter } from './CalypsoPresenter.js';
 import { scripts_list, type CalypsoScript } from './scripts/Catalog.js';
 import { controlPlaneIntent_resolve, type ControlPlaneIntent } from './routing/ControlPlaneRouter.js';
@@ -46,6 +51,7 @@ import type { TransitionResult, WorkflowSummary } from '../dag/bridge/WorkflowAd
 import type { WorkflowPosition, DAGNode, StageParameters } from '../dag/graph/types.js';
 import type { ArtifactEnvelope } from '../dag/store/types.js';
 import type { StagePath } from '../dag/bridge/SessionPaths.js';
+import { WorkflowSession, type CommandResolution } from '../dag/bridge/WorkflowSession.js';
 
 /**
  * DOM-free AI orchestrator for the ARGUS system.
@@ -65,55 +71,12 @@ export class CalypsoCore {
     private storeActions: CalypsoStoreActions;
     private workflowAdapter: WorkflowAdapter;
     private sessionPath: string;
+    private workflowSession: WorkflowSession;
     private federation: FederationOrchestrator;
     private scripts: ScriptRuntime;
-
-    /** Registry of workflow handlers (shared capabilities). */
-    private readonly HANDLER_REGISTRY: Record<string, (cmd: string, args: string[]) => Promise<CalypsoResponse | null> | CalypsoResponse | null> = {
-        'search': async (_: string, args: string[]): Promise<CalypsoResponse | null> => {
-            const query: string = args.join(' ');
-            return await this.workflow_search(query);
-        },
-        'gather': async (cmd: string, args: string[]): Promise<CalypsoResponse | null> => {
-            if (cmd === 'add') {
-                return await this.workflow_add(args[0]);
-            }
-            if (cmd === 'remove' || cmd === 'deselect') {
-                return this.workflow_remove(args[0]);
-            }
-            if (cmd === 'gather' || cmd === 'review') {
-                return this.workflow_gather(args[0]);
-            }
-            if (cmd === 'mount') {
-                return this.workflow_mount();
-            }
-            return null;
-        },
-        'rename': async (_: string, args: string[]): Promise<CalypsoResponse | null> => {
-            let nameArg: string = args.join(' ');
-            if (nameArg.toLowerCase().startsWith('to ')) {
-                nameArg = nameArg.substring(3).trim();
-            }
-            return await this.workflow_rename(nameArg);
-        },
-        'harmonize': async (): Promise<CalypsoResponse | null> => {
-            return await this.workflow_harmonize();
-        },
-        'scaffold': async (_: string, args: string[]): Promise<CalypsoResponse | null> => {
-            return await this.workflow_proceed(args[0]);
-        },
-        'train': (): CalypsoResponse | null => null, 
-        'publish': (): CalypsoResponse | null => null, 
-        'federation': (cmd: string, args: string[]): Promise<CalypsoResponse | null> | CalypsoResponse | null => {
-            if (cmd === 'federate') {
-                return this.workflow_federate(args);
-            }
-            if (this.federation.active) {
-                return this.workflow_federationCommand(cmd, args);
-            }
-            return null;
-        }
-    };
+    private intentParser: IntentParser;
+    private pluginHost: PluginHost;
+    private merkleEngine: MerkleEngine;
 
     constructor(
         private vfs: VirtualFileSystem,
@@ -126,6 +89,7 @@ export class CalypsoCore {
         this.knowledge = config.knowledge;
 
         this.searchProvider = new SearchProvider(vfs, shell);
+        this.intentParser = new IntentParser(this.searchProvider, storeActions);
 
         const workflowId: string = config.workflowId ?? 'fedml';
         this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
@@ -144,17 +108,20 @@ export class CalypsoCore {
             this.statusProvider,
             this.searchProvider,
             storeActions,
-            (msg, actions, success) => this.response_create(msg, actions, success),
+            (msg, actions, success) => this.response_create(msg, actions, success, success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR),
             (cmd) => this.command_execute(cmd)
         );
 
         const username: string = shell.env_get('USER') || 'user';
         const sessionId: string = `session-${Date.now()}`;
         this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
-        // Root stage folders (like search/) are created on-demand by sessionArtifact_write
-
+        
+        this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
         this.federation = new FederationOrchestrator(vfs, storeActions);
-        const fedPath = this.workflowAdapter.stagePaths.get('federate-brief');
+        this.pluginHost = new PluginHost(vfs, shell, storeActions, this.federation);
+        this.merkleEngine = new MerkleEngine(vfs, this.workflowAdapter, this.sessionPath);
+
+        const fedPath: StagePath | undefined = this.workflowAdapter.stagePaths.get('federate-brief');
         if (fedPath) {
             this.federation.session_set(`${this.sessionPath}/${fedPath.artifactFile}`);
         }
@@ -166,64 +133,97 @@ export class CalypsoCore {
         );
     }
 
-    /** Primary command execution pipeline. */
+    /**
+     * Primary command execution pipeline (v10.0 Interpretation-First).
+     *
+     * 1. Fast-Path (Shell/Special): Low-latency UI/System actions.
+     * 2. Intent Resolution: Compile noisy NL into deterministic protocol.
+     * 3. Action Execution: Dispatch protocol command to plugin host.
+     * 4. LLM Fallback: Conversational guidance and explanation.
+     *
+     * @param input - Raw natural language or protocol command.
+     * @returns Structured response for adapters.
+     */
     public async command_execute(input: string): Promise<CalypsoResponse> {
-        const trimmed = input.trim();
-        const parts = trimmed.split(/\s+/);
-        const primary = parts[0]?.toLowerCase() || '';
+        const trimmed: string = input.trim();
+        const parts: string[] = trimmed.split(/\s+/);
+        const primary: string = parts[0]?.toLowerCase() || '';
 
-        if (!trimmed) return this.response_create('', [], true);
+        if (!trimmed) return this.response_create('', [], true, CalypsoStatusCode.OK);
 
-        const scriptPrompt = await this.scripts.maybeConsumeInput(trimmed);
+        // ─── 1. FAST-PATH (Zero-Latency) ───────────────────────────────────
+
+        // Synchronize workflow session state before any command
+        await this.workflowSession.sync();
+
+        // Script consumption (modal prompts)
+        const scriptPrompt: CalypsoResponse | null = await this.scripts.maybeConsumeInput(trimmed);
         if (scriptPrompt) return scriptPrompt;
 
-        if (trimmed.startsWith('/') || primary === 'status' || primary === 'reset' || primary === 'help') {
+        // Special system commands (prefixed with / or common verbs)
+        const resolution: CommandResolution = this.workflowSession.resolveCommand(trimmed);
+        const isWorkflowCommand: boolean = !!resolution.stage && !resolution.isJump;
+
+        if (trimmed.startsWith('/') || primary === 'reset' || primary === 'help' || (primary === 'status' && !isWorkflowCommand)) {
             const normalized: string = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
             const parts: string[] = normalized.slice(1).split(/\s+/);
             const cmd: string = parts[0].toLowerCase();
-            if (cmd === 'run' || cmd === 'scripts') {
-                // fall through to primary command check below
-            } else {
+            if (cmd !== 'run' && cmd !== 'scripts') {
                 return this.special_handle(normalized);
             }
         }
 
-        if (primary === 'scripts' || (trimmed.startsWith('/') && trimmed.toLowerCase().startsWith('/scripts'))) {
-            const args = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
+        // Script lifecycle commands
+        if (primary === 'scripts' || primary === '/scripts') {
+            const args: string[] = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
             return this.scripts.scripts_response(args);
         }
-        if (primary === 'run' || (trimmed.startsWith('/') && trimmed.toLowerCase().startsWith('/run'))) {
-            const args = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
+        if (primary === 'run' || primary === '/run') {
+            const args: string[] = trimmed.startsWith('/') ? trimmed.split(/\s+/).slice(1) : parts.slice(1);
             return this.scripts.script_execute(args);
         }
 
-        const controlResult = await this.control_handle(trimmed);
+        // Control plane intents (automation control)
+        const controlResult: CalypsoResponse | null = await this.control_handle(trimmed);
         if (controlResult) return controlResult;
 
-        const confirmation = this.confirmation_dispatch(trimmed);
+        // Confirmations (gate approvals)
+        const confirmation: CalypsoResponse | null = await this.confirmation_dispatch(trimmed);
         if (confirmation) return confirmation;
 
-        if (primary === 'harmonize') {
-            const result = await this.workflow_dispatch(trimmed);
-            if (result) return result;
-        }
-
-        const shellResult = await this.shell_handle(trimmed, primary);
+        // Shell builtins (Direct match POSIX-style)
+        const shellResult: CalypsoResponse | null = await this.shell_handle(trimmed, primary);
         if (shellResult) return shellResult;
 
-        // Only attempt workflow dispatch if it's a likely command (single word or known command)
-        if (this.workflowAdapter.stage_forCommand(primary)) {
-            const workflowResult = await this.workflow_dispatch(trimmed);
-            if (workflowResult) return workflowResult;
+        // ─── 2. INTENT RESOLUTION (The Compiler) ───────────────────────────
+
+        const intent: CalypsoIntent = await this.intentParser.intent_resolve(trimmed, this.engine);
+
+        // ─── 3. ACTION EXECUTION (The Runtime) ─────────────────────────────
+
+        if (intent.type === 'workflow' && intent.command) {
+            // Re-resolve using the canonical command if it differs from the raw input tokens
+            const finalResolution: CommandResolution = (intent.command === primary) 
+                ? resolution 
+                : this.workflowSession.resolveCommand(intent.command);
+
+            if (finalResolution.stage) {
+                const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
+                const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, finalResolution);
+                if (workflowResult) return workflowResult;
+            }
         }
 
-        const guidance = this.guidance_handle(trimmed);
+        // ─── 4. LLM FALLBACK (The Communicator) ────────────────────────────
+
+        // Interrogative guidance (what's next?)
+        const guidance: CalypsoResponse | null = this.guidance_handle(trimmed);
         if (guidance) return guidance;
 
-        const action = await this.actionIntent_handle(trimmed);
-        if (action) return action;
-
-        return this.llmProvider.query(trimmed, this.sessionPath);
+        // Conversational query
+        const response: CalypsoResponse = await this.llmProvider.query(trimmed, this.sessionPath);
+        response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
+        return response;
     }
 
     // ─── Public API (Restored for Adapters) ───────────────────────────────
@@ -240,6 +240,7 @@ export class CalypsoCore {
         if (!workflowId) return false;
         try {
             this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
+            this.workflowSession = new WorkflowSession(this.vfs, this.workflowAdapter, this.sessionPath);
             return true;
         } catch {
             return false;
@@ -327,32 +328,32 @@ export class CalypsoCore {
 
         switch (cmd) {
             case 'snapshot':
-                const snap = vfs_snapshot(this.vfs, args[0] || '/', true);
-                return snap ? this.response_create(JSON.stringify(snap, null, 2), [], true) 
-                            : this.response_create(`Path not found: ${args[0]}`, [], false);
+                const snap: VfsSnapshotNode | null = vfs_snapshot(this.vfs, args[0] || '/', true);
+                return snap ? this.response_create(JSON.stringify(snap, null, 2), [], true, CalypsoStatusCode.OK) 
+                            : this.response_create(`Path not found: ${args[0]}`, [], false, CalypsoStatusCode.ERROR);
             case 'state':
-                return this.response_create(JSON.stringify(this.store_snapshot(), null, 2), [], true);
+                return this.response_create(JSON.stringify(this.store_snapshot(), null, 2), [], true, CalypsoStatusCode.OK);
             case 'reset':
                 this.reset();
-                return this.response_create('System reset to clean state.', [], true);
+                return this.response_create('System reset to clean state.', [], true, CalypsoStatusCode.OK);
             case 'version':
-                return this.response_create(this.version_get(), [], true);
+                return this.response_create(this.version_get(), [], true, CalypsoStatusCode.OK);
             case 'status':
-                return this.response_create(this.statusProvider.status_generate(this.simulationMode, this.activeProvider, this.activeModel), [], true);
+                return this.response_create(this.statusProvider.status_generate(this.simulationMode, this.activeProvider, this.activeModel), [], true, CalypsoStatusCode.OK);
             case 'key':
                 return this.key_register(args[0], args[1]);
             case 'workflows': {
-                const workflows = this.workflows_available();
-                const progress = workflows.map(w => `○ [${w.id}] ${w.name}: ${w.description}`).join('\n');
-                return this.response_create(progress, [], true);
+                const workflows: WorkflowSummary[] = this.workflows_available();
+                const progress: string = workflows.map((w: WorkflowSummary): string => `○ [${w.id}] ${w.name}: ${w.description}`).join('\n');
+                return this.response_create(progress, [], true, CalypsoStatusCode.OK);
             }
             case 'scripts':
                 return this.scripts.scripts_response(args);
             case 'help':
-                return this.response_create(this.help_format(), [], true);
-            case 'greet': return this.response_create('__GREET_ASYNC__', [], true);
-            case 'standby': return this.response_create('__STANDBY_ASYNC__', [], true);
-            default: return this.response_create(`Unknown command: /${cmd}`, [], false);
+                return this.response_create(this.help_format(), [], true, CalypsoStatusCode.OK);
+            case 'greet': return this.response_create('__GREET_ASYNC__', [], true, CalypsoStatusCode.CONVERSATIONAL);
+            case 'standby': return this.response_create('__STANDBY_ASYNC__', [], true, CalypsoStatusCode.CONVERSATIONAL);
+            default: return this.response_create(`Unknown command: /${cmd}`, [], false, CalypsoStatusCode.ERROR);
         }
     }
 
@@ -365,194 +366,128 @@ export class CalypsoCore {
         const result = await this.shell.command_execute(input);
         if (result.exitCode === 127) return null;
 
-        if (result.exitCode === 0 && primary === 'python' && input.includes('train.py')) {
-            this.sessionArtifact_write('train', { status: 'LOCAL_PASS' });
+        if (result.exitCode === 0 && primary === 'python') {
+            const trimmedInput: string = input.trim();
+            const resolution: CommandResolution = this.workflowSession.resolveCommand(trimmedInput);
+            if (resolution.stage) {
+                this.workflowAdapter.stage_complete(resolution.stage.id);
+                this.merkleEngine.artifact_materialize(resolution.stage.id, {
+                    command: trimmedInput,
+                    args: trimmedInput.split(/\s+/).slice(1),
+                    timestamp: new Date().toISOString(),
+                    result: true
+                });
+                
+                const pos: WorkflowPosition = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+                if (pos.currentStage) {
+                    this.workflowSession.advance_force(pos.currentStage.id);
+                }
+            }
         }
-        return this.response_create(result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout, [], result.exitCode === 0);
+        return this.response_create(result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout, [], result.exitCode === 0, result.exitCode === 0 ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR);
     }
 
     private guidance_handle(input: string): CalypsoResponse | null {
-        const patterns = [/^what('?s| is| should be)?\s*(the\s+)?next/i, /^next\??$/i, /^how\s+do\s+i\s+(proceed|continue|start)/i, /status/i, /progress/i];
-        return patterns.some(p => p.test(input)) ? this.response_create(this.workflow_nextStep(), [], true) : null;
-    }
-
-    private async actionIntent_handle(input: string): Promise<CalypsoResponse | null> {
-        const cmd = actionIntent_resolve(input);
-        return cmd ? await this.workflow_dispatch(cmd) : null;
+        const patterns: RegExp[] = [/^what('?s| is| should be)?\s*(the\s+)?next/i, /^next\??$/i, /^how\s+do\s+i\s+(proceed|continue|start)/i, /status/i, /progress/i];
+        return patterns.some((p: RegExp): boolean => p.test(input)) ? this.response_create(this.workflow_nextStep(), [], true, CalypsoStatusCode.OK) : null;
     }
 
     // ─── Workflow Handlers ──────────────────────────────────────────────────
 
-    private async workflow_dispatch(input: string): Promise<CalypsoResponse | null> {
+    /**
+     * Resolve and dispatch a workflow command.
+     *
+     * Handles phase jump confirmations and DAG transition checks before
+     * delegating to the execution engine.
+     *
+     * @param input - The raw command string.
+     * @param resolution - The contextual command resolution from the session.
+     * @param isConfirmed - Whether this is a post-confirmation execution.
+     * @returns Structured response or null if command not handled.
+     */
+    private async workflow_dispatch(input: string, resolution: CommandResolution, isConfirmed: boolean = false): Promise<CalypsoResponse | null> {
         const parts: string[] = input.split(/\s+/);
         const cmd: string = parts[0].toLowerCase();
+
+        // 1. Gatekeeper Check (Prerequisites & Skip Warnings)
+        // We always check transition readiness first.
+        const transition: TransitionResult = this.workflow_checkTransition(cmd);
+        if (!transition.allowed) {
+            if (transition.skippedStageId) {
+                this.workflowAdapter.skip_increment(transition.skippedStageId);
+                return this.response_create(CalypsoPresenter.workflowWarning_format(transition), [], false, CalypsoStatusCode.BLOCKED);
+            }
+            return this.response_create(CalypsoPresenter.error_format(transition.warning!), [], false, CalypsoStatusCode.BLOCKED);
+        }
+
+        // 2. Phase Jump Confirmation
+        if (!isConfirmed && resolution.requiresConfirmation && resolution.warning) {
+            const state: Partial<AppState> = this.storeActions.state_get();
+            const expectedIntent: string = `CONFIRM_JUMP:${resolution.stage!.id}|${input}`;
+            
+            if (state.lastIntent !== expectedIntent) {
+                this.storeActions.state_set({ lastIntent: expectedIntent } as any);
+                return this.response_create(`${CalypsoPresenter.info_format('PHASE JUMP DETECTED')}\n${resolution.warning}\n\nType 'confirm' to proceed.`, [], false, CalypsoStatusCode.BLOCKED);
+            }
+        }
+
+        // 3. Dispatch to Execution
+        return await this.workflow_execute(input, resolution.stage!);
+    }
+
+    /**
+     * Execute a workflow stage via the Plugin Host.
+     *
+     * Coordinates the execution of idiosyncratic logic, updates session state,
+     * and materializes Merkle-proven artifacts on success.
+     *
+     * @param input - The original command string.
+     * @param stage - The DAG node representing the target stage.
+     * @returns Structured response for the user.
+     */
+    private async workflow_execute(input: string, stage: DAGNode): Promise<CalypsoResponse> {
+        if (!stage.handler) {
+            return this.response_create(`>> ERROR: STAGE [${stage.id}] HAS NO HANDLER DEFINED.`, [], false, CalypsoStatusCode.ERROR);
+        }
+
+        const parts: string[] = input.split(/\s+/);
+        const command: string = parts[0].toLowerCase();
         const args: string[] = parts.slice(1);
 
-        const transition: TransitionResult = this.workflow_checkTransition(cmd);
-        if (!transition.allowed && transition.skippedStageId) {
-            this.workflowAdapter.skip_increment(transition.skippedStageId);
-            const warning: string = CalypsoPresenter.workflowWarning_format(transition);
+        // Invoke the Plugin Host (The VM)
+        const result: PluginResult = await this.pluginHost.plugin_execute(stage.handler, stage.parameters, command, args);
+
+        // If plugin succeeded, handle automated materialization and context advancement
+        if (result.statusCode === CalypsoStatusCode.OK) {
+            this.workflowAdapter.stage_complete(stage.id);
             
-            // If it's a soft warning, we DO NOT execute. We just return the warning.
-            // The next time the user tries, skip_increment will eventually allow it.
-            return this.response_create(warning, [], false);
-        }
-
-        if (!transition.allowed && transition.hardBlock) {
-            return this.response_create(CalypsoPresenter.error_format(transition.warning!), [], false);
-        }
-
-        const res: CalypsoResponse | null = await this.workflow_execute(cmd, args);
-        return res;
-    }
-
-    private async workflow_execute(cmd: string, args: string[]): Promise<CalypsoResponse | null> {
-        const stage: DAGNode | null = this.workflowAdapter.stage_forCommand(cmd);
-        if (!stage || !stage.handler) {
-            return null;
-        }
-
-        const handler: (cmd: string, args: string[]) => Promise<CalypsoResponse | null> | CalypsoResponse | null = this.HANDLER_REGISTRY[stage.handler];
-        const response: CalypsoResponse | null = await handler(cmd, args);
-
-        if (response?.success) {
-            this.workflowStage_complete(cmd);
-            
-            // AUTOMATED MATERIALIZATION: 
-            this.sessionArtifact_write(stage.id, { 
-                command: cmd, 
-                args, 
+            // AUTOMATED MATERIALIZATION (The Merkle Engine)
+            const content: Record<string, unknown> = (result.artifactData as Record<string, unknown>) || { 
+                command: input, 
                 timestamp: new Date().toISOString(),
-                result: response.success
-            });
-        }
-        return response;
-    }
+                result: true 
+            };
+            this.merkleEngine.artifact_materialize(stage.id, content);
 
-    private async workflow_search(query: string): Promise<CalypsoResponse> {
-        const results: Dataset[] = this.searchProvider.search(query);
-        
-        // Resolve topological path if search is part of current workflow
-        const stage: DAGNode | null = this.workflowAdapter.stage_forCommand('search');
-        const sp: StagePath | undefined = stage ? this.workflowAdapter.stagePaths.get(stage.id) : undefined;
-        const topologicalPath: string | undefined = sp ? `${this.sessionPath}/${sp.dataDir}` : undefined;
-
-        // Provider generates content block
-        const snap: SearchMaterialization = this.searchProvider.snapshot_materialize(query, results, topologicalPath);
-        
-        if (stage && snap.content) {
-            // Include query in content for fingerprinting
-            const content: Record<string, unknown> = { ...snap.content, query };
-            // Centralized materialization with fingerprints
-            this.sessionArtifact_write(stage.id, content);
-        }
-
-        const display: string | null = this.searchProvider.displayPath_resolve(snap.path);
-        const snapLine: string = display ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${display}`)}` : '';
-
-        return results.length === 0 
-            ? this.response_create(CalypsoPresenter.info_format(`NO MATCHING DATASETS FOUND FOR "${query}".`), [], false)
-            : this.response_create(CalypsoPresenter.success_format(`FOUND ${results.length} MATCHING DATASET(S):`) + `\n${CalypsoPresenter.searchListing_format(results)}\n\n${CalypsoPresenter.searchDetails_format(results)}${snapLine}`, [{ type: 'workspace_render', datasets: results }], true);
-    }
-
-    private async workflow_add(targetId: string): Promise<CalypsoResponse> {
-        const datasets = this.searchProvider.resolve(targetId);
-        if (datasets.length === 0) return this.response_create(CalypsoPresenter.error_format(`DATASET "${targetId}" NOT FOUND.`), [], false);
-
-        let lastProj: any;
-        for (const ds of datasets) {
-            this.storeActions.dataset_select(ds);
-            lastProj = project_gather(ds);
-        }
-        return this.response_create(CalypsoPresenter.success_format(`DATASET(S) GATHERED: ${datasets.map(d => d.id).join(', ')}`) + `\n${CalypsoPresenter.info_format(`MOUNTED TO [${lastProj.name}]`)}`, datasets.map(d => ({ type: 'dataset_select', id: d.id })), true);
-    }
-
-    private workflow_remove(targetId: string): CalypsoResponse {
-        const datasets = this.searchProvider.resolve(targetId);
-        if (datasets.length === 0) return this.response_create(CalypsoPresenter.error_format(`DATASET "${targetId}" NOT FOUND IN BUFFER.`), [], false);
-        for (const ds of datasets) this.storeActions.dataset_deselect(ds.id);
-        return this.response_create(CalypsoPresenter.success_format(`DATASET(S) REMOVED: ${datasets.map(d => d.id).join(', ')}`), datasets.map(d => ({ type: 'dataset_deselect', id: d.id })), true);
-    }
-
-    private workflow_gather(targetId?: string): CalypsoResponse {
-        if (targetId) for (const ds of this.searchProvider.resolve(targetId)) { this.storeActions.dataset_select(ds); project_gather(ds); }
-        const datasets = this.storeActions.datasets_getSelected();
-        if (datasets.length === 0) return this.response_create(CalypsoPresenter.info_format('NO DATASETS SELECTED.'), [], true);
-        return this.response_create(CalypsoPresenter.success_format(`COHORT REVIEW: ${datasets.length} SELECTED:`) + `\n${datasets.map(d => `  [${d.id}] ${d.name}`).join('\n')}`, [{ type: 'stage_advance', stage: 'gather' }], true);
-    }
-
-    private workflow_harmonize(): CalypsoResponse {
-        const active = this.storeActions.project_getActive();
-        if (!active) return this.response_create(CalypsoPresenter.error_format('NO ACTIVE PROJECT.'), [], false);
-        const project = MOCK_PROJECTS.find(p => p.id === active.id);
-        if (!project) return this.response_create(CalypsoPresenter.error_format('PROJECT NOT FOUND.'), [], false);
-        project_harmonize(project);
-        return this.response_create('__HARMONIZE_ANIMATE__', [], true);
-    }
-
-    private workflow_rename(newName: string): CalypsoResponse {
-        const active = this.storeActions.project_getActive();
-        if (!active) return this.response_create(CalypsoPresenter.error_format('NO ACTIVE PROJECT.'), [], false);
-        const project = MOCK_PROJECTS.find(p => p.id === active.id);
-        if (!project) return this.response_create(CalypsoPresenter.error_format('PROJECT NOT FOUND.'), [], false);
-        project_rename(project, newName);
-        return this.response_create(CalypsoPresenter.success_format(`RENAMED TO [${newName}]`), [{ type: 'project_rename', id: project.id, newName }], true);
-    }
-
-    private async workflow_proceed(type?: string): Promise<CalypsoResponse> {
-        const workflow = this.proceedWorkflow_resolve(type);
-        if (!workflow) return this.response_create(CalypsoPresenter.error_format('INVALID WORKFLOW TYPE.'), [], false);
-
-        const active = this.storeActions.project_getActive();
-        if (active) {
-            const username = this.shell.env_get('USER') || 'user';
-            const projectPath = `/home/${username}/projects/${active.name}/src`;
-            this.shell.env_set('PROJECT', active.name);
-            
-            const { projectDir_populate, chrisProject_populate } = await import('../vfs/providers/ProjectProvider.js');
-            if (workflow === 'chris') {
-                chrisProject_populate(this.vfs, username, active.name);
-            } else {
-                projectDir_populate(this.vfs, username, active.name);
+            // Advance the session context to the NEXT logical stage
+            const pos: WorkflowPosition = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+            if (pos.currentStage) {
+                this.workflowSession.advance_force(pos.currentStage.id);
             }
-            
-            this.vfs.cwd_set(projectPath);
-            this.shell.env_set('PWD', projectPath);
         }
 
-        return this.response_create(CalypsoPresenter.success_format(`PROCEEDING WITH ${workflow.toUpperCase()} WORKFLOW.`), [{ type: 'stage_advance', stage: 'process', workflow }], true);
-    }
-
-    private async workflow_proceedChris(): Promise<CalypsoResponse> {
-        const active = this.storeActions.project_getActive();
-        const username = this.shell.env_get('USER') || 'user';
-        if (active) {
-            const projectPath = `/home/${username}/projects/${active.name}/src`;
-            this.shell.env_set('PROJECT', active.name);
-            const { chrisProject_populate } = await import('../vfs/providers/ProjectProvider.js');
-            chrisProject_populate(this.vfs, username, active.name);
-            this.vfs.cwd_set(projectPath);
-            this.shell.env_set('PWD', projectPath);
-        }
-        return this.response_create(CalypsoPresenter.success_format('PROCEEDING WITH CHRIS WORKFLOW.'), [{ type: 'stage_advance', stage: 'process', workflow: 'chris' }], true);
-    }
-
-    private workflow_mount(): CalypsoResponse {
-        return this.response_create(CalypsoPresenter.success_format('MOUNT COMPLETE.'), [{ type: 'stage_advance', stage: 'process' }], true);
-    }
-
-    private workflow_federate(args: string[] = []): CalypsoResponse {
-        return this.federation.command('federate', args, this.shell.env_get('USER') || 'user');
-    }
-
-    private workflow_federationCommand(verb: string, args: string[]): CalypsoResponse {
-        return this.federation.command(verb, args, this.shell.env_get('USER') || 'user');
+        return this.response_create(
+            result.message, 
+            result.actions || [], 
+            result.statusCode === CalypsoStatusCode.OK, 
+            result.statusCode
+        );
     }
 
     // ─── Internal Utilities ────────────────────────────────────────────────
 
-    private response_create(message: string, actions: CalypsoAction[], success: boolean): CalypsoResponse {
-        return { message, actions, success };
+    private response_create(message: string, actions: CalypsoAction[], success: boolean, statusCode: CalypsoStatusCode): CalypsoResponse {
+        return { message, actions, success, statusCode };
     }
 
     private reset(): void {
@@ -572,6 +507,10 @@ export class CalypsoCore {
         // Notify store adapter if it supports session path tracking
         this.storeActions.session_setPath(this.sessionPath);
 
+        // Re-initialize workflow session
+        this.workflowSession = new WorkflowSession(this.vfs, this.workflowAdapter, this.sessionPath);
+        this.merkleEngine.session_setPath(this.sessionPath);
+
         // Re-sync federation with new session path
         const fedPath: StagePath | undefined = this.workflowAdapter.stagePaths.get('federate-brief');
         if (fedPath) {
@@ -580,16 +519,15 @@ export class CalypsoCore {
     }
 
     private workflow_nextStep(): string {
-        const pos = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+        const pos: WorkflowPosition = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
         if (pos.isComplete) {
             return [
                 '● WORKFLOW COMPLETE.',
                 '',
-                '○ ALL STAGES OF THE FEDERATED ML PIPELINE HAVE BEEN SUCCESSFULLY EXECUTED.',
+                '○ ALL STAGES OF THE PIPELINE HAVE BEEN SUCCESSFULLY EXECUTED.',
                 '○ FINAL ARTIFACTS ARE AVAILABLE IN THE SESSION AND PROJECT TREES.',
                 '',
                 'Next Steps:',
-                '  `federate --rerun` — Explicitly start a new federation run',
                 '  `/reset` — Reset system to clean state'
             ].join('\n');
         }
@@ -598,97 +536,6 @@ export class CalypsoCore {
 
     private workflow_checkTransition(cmd: string): TransitionResult {
         return this.workflowAdapter.transition_check(cmd, this.vfs, this.sessionPath);
-    }
-
-    /**
-     * Mark a workflow stage as complete in the adapter.
-     */
-    private workflowStage_complete(cmd: string): void {
-        const stage: DAGNode | null = this.workflowAdapter.stage_forCommand(cmd);
-        if (stage) {
-            this.workflowAdapter.stage_complete(stage.id);
-        }
-    }
-
-    /**
-     * Materialize a workflow stage artifact with Merkle fingerprinting.
-     *
-     * @param stageId - The ID of the stage being materialized
-     * @param content - Domain-specific content block
-     */
-    private sessionArtifact_write(stageId: string, content: Record<string, unknown>): void {
-        const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
-        const stagePath: StagePath | undefined = this.workflowAdapter.stagePaths.get(stageId);
-        if (!stage || !stagePath) {
-            return;
-        }
-
-        const parentFingerprints: Record<string, string> = this.parentFingerprints_resolve(stage);
-        const parameters_used: StageParameters = (content.args !== undefined)
-            ? { args: content.args } as StageParameters
-            : stage.parameters;
-        
-        const contentStr: string = JSON.stringify(content);
-        const _fingerprint: string = fingerprint_compute(contentStr, parentFingerprints);
-
-        const tsNow: Date = new Date();
-        const timestamp: string = tsNow.toISOString() + '-' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        
-        const envelope: ArtifactEnvelope = {
-            stage: stageId,
-            timestamp,
-            parameters_used,
-            content,
-            _fingerprint,
-            _parent_fingerprints: parentFingerprints
-        };
-
-        const finalPath: string = this.artifactPath_resolve(stageId, stagePath, tsNow);
-        this.vfs.file_create(finalPath, JSON.stringify(envelope, null, 2));
-    }
-
-    /**
-     * Resolve the fingerprints of all parent stages.
-     */
-    private parentFingerprints_resolve(node: DAGNode): Record<string, string> {
-        const parentFingerprints: Record<string, string> = {};
-        if (node.previous) {
-            for (const parentId of node.previous) {
-                const fp: string | null = this.fingerprint_get(parentId);
-                if (fp) {
-                    parentFingerprints[parentId] = fp;
-                }
-            }
-        }
-        return parentFingerprints;
-    }
-
-    /**
-     * Resolve the physical path for an artifact, creating a branch if needed.
-     */
-    private artifactPath_resolve(stageId: string, stagePath: StagePath, tsNow: Date): string {
-        let finalPath: string = `${this.sessionPath}/${stagePath.artifactFile}`;
-        if (this.vfs_exists(finalPath)) {
-            const branchSuffix: string = tsNow.getTime().toString();
-            const branchPath: string = stagePath.artifactFile.replace(
-                `${stageId}/data/`, 
-                `${stageId}_BRANCH_${branchSuffix}/data/`
-            );
-            finalPath = `${this.sessionPath}/${branchPath}`;
-        }
-        return finalPath;
-    }
-
-    /**
-     * Read the fingerprint from the latest materialized artifact for a stage.
-     */
-    private fingerprint_get(stageId: string): string | null {
-        const record: FingerprintRecord | null = this.workflowAdapter.latestFingerprint_get(
-            this.vfs,
-            this.sessionPath,
-            stageId
-        );
-        return record ? record.fingerprint : null;
     }
 
     private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {
@@ -706,29 +553,47 @@ export class CalypsoCore {
         return response;
     }
 
-    private confirmation_dispatch(input: string): CalypsoResponse | null {
-        if (!this.federation.active) return null;
-        if (/^(yes|y|affirmative|confirm|proceed|ok|go\s+ahead)$/i.test(input)) return this.workflow_federationCommand('approve', []);
+    private async confirmation_dispatch(input: string): Promise<CalypsoResponse | null> {
+        if (!/^(yes|y|affirmative|confirm|ok|go\s+ahead)$/i.test(input)) {
+            return null;
+        }
+
+        const state: Partial<AppState> = this.storeActions.state_get();
+        if (state.lastIntent?.startsWith('CONFIRM_JUMP:')) {
+            const intentContent: string = state.lastIntent.substring('CONFIRM_JUMP:'.length);
+            const [stageId, originalInput] = intentContent.split('|');
+            
+            const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
+            if (stage) {
+                // Clear the intent before executing to avoid recursion
+                this.storeActions.state_set({ lastIntent: null } as any);
+                const res: CommandResolution = this.workflowSession.resolveCommand(originalInput);
+                return await this.workflow_dispatch(originalInput, res, true);
+            }
+        }
+
+        // Standard workflow confirmation (e.g. approve)
+        // If we are in a confirmation state, the 'approve' command should be valid in the manifest.
+        // We resolve 'approve' against the current session context.
+        const res: CommandResolution = this.workflowSession.resolveCommand('approve');
+        if (res.stage) {
+            return await this.workflow_dispatch('approve', res, true);
+        }
+
         return null;
     }
 
     private key_register(provider: string, key: string): CalypsoResponse {
-        if (!provider || !key) return this.response_create('Usage: /key <provider> <key>', [], false);
+        if (!provider || !key) return this.response_create('Usage: /key <provider> <key>', [], false, CalypsoStatusCode.ERROR);
         this.activeProvider = provider as any;
         this.simulationMode = false;
         this.engine = new LCARSEngine({ apiKey: key, model: provider === 'openai' ? 'gpt-4o' : 'gemini-1.5-flash', provider: this.activeProvider! }, this.knowledge);
-        this.llmProvider = new LLMProvider(this.engine, this.statusProvider, this.searchProvider, this.storeActions, (m, a, s) => this.response_create(m, a, s), (c) => this.command_execute(c));
-        return this.response_create(`● AI CORE ONLINE [${provider.toUpperCase()}]`, [], true);
+        this.llmProvider = new LLMProvider(this.engine, this.statusProvider, this.searchProvider, this.storeActions, (m: string, a: CalypsoAction[], s: boolean): CalypsoResponse => this.response_create(m, a, s, s ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR), (c: string): Promise<CalypsoResponse> => this.command_execute(c));
+        return this.response_create(`● AI CORE ONLINE [${provider.toUpperCase()}]`, [], true, CalypsoStatusCode.OK);
     }
 
     private help_format(): string {
         return '  /status, /workflows, /next, /version, /key, /reset, /snapshot, /help';
-    }
-
-    private proceedWorkflow_resolve(type?: string): 'fedml' | 'chris' | null {
-        if (type === 'fedml' || type === 'chris') return type;
-        const persona = (this.shell.env_get('PERSONA') || '').toLowerCase();
-        return persona === 'appdev' || persona === 'chris' ? 'chris' : 'fedml';
     }
 
     public vfs_snapshot(path: string = '/', includeContent: boolean = false): VfsSnapshotNode | null {

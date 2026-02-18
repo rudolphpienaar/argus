@@ -1,135 +1,54 @@
-= ARGUS: Design Philosophy and Conceptual Framework
+= ARGUS Philosophy: The Doctrine of Data-State Grounding
 :author: ATLAS Project Team
-:revdate: 2026-01-23
-:toc:
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 3
 :sectnums:
 
-== Introduction
+toc::[]
 
-ARGUS (ATLAS Resource Guided User System) serves as the primary interface through which users interact with the ATLAS federated medical imaging platform. The name draws from Greek mythology, where Argus Panoptes was the hundred-eyed giant whose vigilance made him the perfect guardian. In the context of ATLAS, ARGUS provides comprehensive visibility into distributed resources across federated Trusted Domains, enabling users to search, curate, process, and monitor medical imaging workflows while maintaining the security and governance guarantees that ATLAS provides.
+== Abstract
 
-This document establishes the conceptual foundations that guide ARGUS development, ensuring that implementation decisions remain aligned with user needs and platform capabilities.
+The design philosophy of ARGUS is centered on the principle of **Data-State Grounding**—the architectural mandate that the authoritative state of a scientific workflow must be a verifiable property of the filesystem. This document outlines the conceptual framework of ARGUS, detailing the SeaGaP-MP workflow model and the engineering rationale for grounding AI-mediated interactions in physical, Merkle-proven artifacts.
 
-== The SeaGaP-MP Workflow Framework
+== Introduction: The Historical Context
 
-At the core of ARGUS lies a unifying interaction pattern called SeaGaP-MP, an acronym representing the five stages through which users accomplish their goals: Search, Gather, Process, Monitor, and Post. This framework emerged from analysis of how different user personas interact with federated medical imaging resources, revealing that despite significant differences in ultimate objectives, the underlying workflow structure remains remarkably consistent.
+The development of ARGUS emerged from the unique challenge of building national-scale infrastructure for federated learning in healthcare. Early attempts at agentic interfaces in this domain often suffered from a lack of "environmental grounding." In these legacy systems, AI assistants would frequently lose track of complex, multi-stage processes because the workflow state was maintained only in ephemeral memory or transient database rows. This led to "contextual drift," where the AI would confidently recommend next steps based on incorrect premises about what work had actually been completed.
 
-=== Search
+We learned that for high-stakes medical research, "Truth" cannot be an assertion; it must be evidence. The resolution was the adoption of the **SeaGaP-MP** framework (Search, Gather, Process, Monitor, Post) combined with a data-state-centric compute model inherited from the ChRIS platform. In ARGUS, progress is not tracked by internal counters, but by the physical materialization of artifacts within a Virtual File System (VFS). This philosophy ensures that the system's logic is always anchored to the physical reality of the project tree.
 
-The Search stage represents the user's initial engagement with the ATLAS catalog. Users query metadata to discover resources relevant to their task, whether those resources are annotated training datasets, raw images requiring labels, pre-trained models, or processing applications. The search interface must accommodate both structured queries with specific filter criteria and exploratory browsing for users who may not yet know precisely what they need.
+== The SeaGaP-MP Workflow Framework: The Structural Spine
 
-Critical to the Search stage is transparency regarding resource characteristics that affect downstream decisions. Access costs, expected processing times, cohort sizes, data provenance, and quality metrics must be surfaced during search so that users can make informed selections before committing resources.
+To manage the inherent complexity of federated medical imaging, ARGUS enforces a unifying interaction pattern called SeaGaP-MP. This framework provides a consistent "spine" across all user personas, from researchers to clinicians.
 
-=== Gather
+1.  **Search:** The exploratory phase where users query the ATLAS catalog to discover relevant datasets.
+2.  **Gather:** The assembly phase where selected resources are mounted into a virtual workspace and cost estimates are generated.
+3.  **Process:** The execution phase where domain-specific work—such as code development, annotation, or inference—is performed.
+4.  **Monitor:** The observation phase where users track real-time telemetry from distributed sites.
+5.  **Post:** The finalization phase where results are validated and published back to the community.
 
-Once users have identified relevant resources through search, the Gather stage assembles those resources into a working context. ARGUS presents gathered resources using a virtual filesystem metaphor, consistent with the MERIDIAN architecture's foundational principle that applications interact with data through standard filesystem interfaces rather than custom APIs.
+By standardizing on this sequence, ARGUS makes diverse research tasks tractable and ensures that the provenance of every scientific result is captured through a predictable chain of custody.
 
-This virtual filesystem abstraction serves multiple purposes. It provides a familiar mental model for users accustomed to working with files and directories. It aligns with the ChRIS platform's feed-based provenance model, where workflow state is represented as materialized filesystem trees. And it enables seamless transition to the Process stage, where development environments and applications expect filesystem-based data access.
+== User Personas: Diverse Goals, Unified Pattern
 
-The Gather stage also presents cost estimates for the assembled cohort, giving users an opportunity to refine their selection before committing to processing. Users should understand what they will pay before they proceed, and the platform must provide mechanisms to adjust the gathered set to meet budget constraints.
+While the SeaGaP-MP sequence is universal, the content of each stage is adapted to specific personas.
 
-=== Process
+*   **Federated ML Developer:** Focuses on high-fidelity coding environments and the transformation of local training loops into federated "Phantom" simulations.
+*   **Annotator:** Prioritizes ergonomic image navigation and the consistent application of clinical labels.
+*   **Administrator:** Requires visibility into platform governance, audit logs, and resource allocation.
 
-The Process stage encompasses the actual work users perform on gathered resources. The nature of this work varies significantly by persona. Developers write training code in integrated development environments, which ATLAS then transcodes into federated machine learning workflows distributed across contributing Trusted Domains. Annotators apply labels to images through specialized annotation interfaces. Users execute inference by running pre-trained models against their gathered image sets.
+The architecture ensures that despite these varying needs, the underlying state transformations remain consistent. Every persona's progress is grounded in the same VFS-based materialization pipeline, making the system universally verifiable.
 
-Despite this variation, the Process stage shares common characteristics across personas. Work occurs within the security boundary of appropriate Trusted Domains, ensuring that raw data never leaves institutional control. The MERIDIAN architecture guarantees that processing applications conform to defined security levels, with most applications operating at Level 0 where no external network access is permitted.
+== Data-State Computation: The ChRIS Lineage
 
-For the Developer persona specifically, the Process stage contains significant complexity that the interface must make tractable. Users write standard training code as if working with local data, and ATLAS handles the transformation into federated learning workflows. This transcoding represents substantial value but also substantial machinery.
+ARGUS is the interface to a platform whose compute model is fundamentally data-state-centric. This model, inherited from the ChRIS platform, represents computation as a Directed Acyclic Graph (DAG) where each node is a mortal container that consumes `/input` and produces `/output`.
 
-To bridge the gap between this "local mental model" and the "global execution reality," ARGUS imposes a **Simulation Loop**. Before code can be deployed to partners, it must pass a local "Phantom Federation" check. This ensures that the developer's code can withstand the serialization, aggregation, and privacy noise injection inherent to federation, all within a safe local sandbox. The interface should provide appropriate visibility into this transformation, building user trust without overwhelming them with implementation details.
-
-=== Monitor
-
-After processing begins, users require visibility into execution progress. The Monitor stage provides this visibility through interfaces appropriate to the work being performed. Developers training models see epoch progression, loss curves, and per-node status across participating Trusted Domains. Users running inference see job completion percentages and estimated time remaining. Annotators see progress through their assigned image sets.
-
-The Monitor stage must also surface cost accumulation during execution. Users who authorized a maximum expenditure need confidence that the platform respects that limit, with clear indication of current spend against budget. When costs approach limits, users must have the ability to abort execution. The platform guarantees that aborted jobs incur no charges for incomplete work, though partial results may be available depending on the nature of the processing.
-
-=== Post
-
-The Post stage addresses what happens after processing completes. Results must be retrieved, reviewed, and potentially persisted back into the ATLAS ecosystem for others to discover and use.
-
-For Developers, the Post stage involves publishing trained models to the marketplace. The training process produces weight files in the aggregator's output directory, with full provenance captured as nested filesystem directories showing the complete lineage from input data through processing steps to final output. Publishing makes these models available as MERIDIAN-compliant applications that other users can discover and execute.
-
-For Annotators, the Post stage involves persisting annotations. These may either enrich the original data's metadata in the catalog, making the annotations discoverable alongside the source images, or they may be published as separate annotation products that reference the source data. The choice depends on licensing arrangements, institutional policies, and annotator preferences.
-
-For Users running inference, the Post stage is typically simpler, involving export or download of results to external systems or persistence within the user's ATLAS workspace for future reference.
-
-== User Personas
-
-ARGUS serves multiple distinct user personas, each with different goals, expertise levels, and interaction patterns. While all personas navigate the SeaGaP-MP workflow, the specific content and complexity at each stage varies significantly.
-
-=== Federated ML Developer
-
-The Federated ML Developer persona represents researchers and engineers building new machine learning models using ATLAS resources. They possess technical sophistication and expect powerful tools, including integrated development environments comparable to VSCode or JupyterLab. Their workflow emphasizes iteration and experimentation, with frequent cycles through the SeaGaP-MP stages as they refine their approaches.
-
-The defining characteristic of the Federated ML Developer experience in ATLAS is the platform's ability to transform standard training code into federated learning workflows automatically. They write code as if working with local data, and ATLAS handles distribution across Trusted Domains, aggregation of gradients, and production of final models. This capability represents the platform's core value proposition for this persona.
-
-=== Annotator
-
-The Annotator persona represents individuals who apply labels to medical images, creating the annotated datasets that Developers require for training. Annotators may be clinical experts such as radiologists or pathologists whose domain knowledge gives their annotations particular authority, or they may be trained technicians working under clinical supervision.
-
-The Annotator workflow emphasizes efficiency and ergonomics for repetitive tasks. The interface must minimize friction in moving through images while providing powerful annotation tools appropriate to the imaging modality. Progress tracking and quality metrics help annotators and their supervisors understand throughput and consistency.
-
-=== User
-
-The User persona represents consumers of trained models who wish to run inference on their own images. Users may have limited technical sophistication and expect straightforward interfaces that hide platform complexity. Their primary concern is obtaining results, not understanding the machinery that produces them.
-
-The User workflow is typically the simplest instantiation of SeaGaP-MP. Search focuses on finding appropriate models and uploading or selecting images for processing. Gather is often implicit in the search stage. Process involves execution with minimal configuration. Monitor shows progress toward completion. Post delivers results in usable formats.
-
-=== Data Provider
-
-The Data Provider persona represents institutions contributing data to the ATLAS ecosystem. Unlike other personas who use ATLAS to accomplish external goals, Data Providers are primarily concerned with visibility into how their contributed resources are being used, what revenue those contributions generate, and what governance policies apply.
-
-The Data Provider workflow inverts the typical consumption pattern. Search focuses on their own contributed data and its usage patterns. Gather assembles reports and analytics. Process involves policy management and pricing decisions. Monitor tracks access patterns and revenue accumulation. Post updates catalog listings and governance configurations.
-
-=== App Developer
-
-The App Developer persona represents engineers building MERIDIAN-compliant applications beyond machine learning models. These may include image processing pipelines, quality control tools, format converters, or visualization applications. App Developers require access to platform APIs, testing infrastructure, and publication workflows.
-
-=== Administrator
-
-The Administrator persona represents individuals responsible for platform governance, user management, and compliance. Administrators require visibility into system health, audit logs, access patterns, and policy enforcement. Their workflow centers on oversight and control rather than resource consumption.
-
-== Cost Model Principles
-
-ARGUS implements a cost model designed to give users confidence and control over their expenditures. Three principles guide this implementation.
-
-First, users see cost estimates before committing to processing. The Gather stage presents projected costs based on the assembled resource set and intended processing. Users can adjust their selections to meet budget constraints before any charges accrue.
-
-Second, users see cost accumulation during processing. The Monitor stage displays running totals against authorized budgets, ensuring that users always understand their current expenditure.
-
-Third, users can abort processing without penalty for incomplete work. If a user cancels a job before completion, they receive no results but incur no charges. This guarantee gives users confidence to experiment without fear of runaway costs.
-
-== Provenance and Output Model
-
-ATLAS captures complete provenance for all processing through its filesystem-based workflow model. Each processing step materializes its inputs and outputs as filesystem directories, creating an explicit record of data flow through the workflow graph. This approach, inherited from the ChRIS platform's feed architecture, ensures that users can trace any result back through its complete derivation history.
-
-For machine learning workflows specifically, the aggregator process running on the central hub produces final outputs in its designated output directory. Weight files, training logs, and associated metadata persist with full provenance linking them to the training data, code, and configuration that produced them.
-
-This filesystem-centric approach aligns with the MERIDIAN architecture's core principle: by standardizing on filesystem interfaces rather than custom APIs, the platform achieves integration scalability while maintaining the auditability and reproducibility that regulated medical applications require.
-
-== Data-State Computation: Alignment with ChRIS
-
-ARGUS is the interface to a platform whose compute model is fundamentally **data-state-centric**. ChRIS represents computation as a DAG where each node is a mortal container that consumes `/input`, produces `/output`, and exits. Progress through the graph is determined by the existence of materialized data artifacts, not by controller-internal state. There is no hidden scheduler logic deciding what runs next -- the filesystem is the single source of truth.
-
-This architectural principle, described fully in _ChRIS DAGs and Workflow Semantics: Data-State vs Control-Flow_, has a direct implication for the UI layer: **ARGUS should reason about workflow progress the same way ChRIS reasons about compute progress** -- by inspecting data state, not maintaining control-flow counters.
-
-=== Why This Matters at the UI Layer
-
-The temptation in a UI application is to track workflow progress using in-memory state: arrays of completed stage IDs, boolean flags, counters. This is the control-flow approach. It fails when:
-
-* The tracking state drifts from the actual state of the system (missed increments, resets, race conditions)
-* An AI layer consumes the tracking state and reasons confidently from incorrect premises
-* Fixing one counter's logic creates regressions in another, producing a whack-a-mole cycle
-
-ARGUS experienced all three failure modes. The resolution was to align the UI layer with the compute layer: the Virtual Computer System's filesystem serves as the medium for materialized workflow artifacts, and the `WorkflowEngine` queries these artifacts in real time rather than maintaining a separate record of what has been done.
-
-=== The Provenance Connection
-
-This data-state approach connects directly to the provenance principles described earlier. ChRIS captures complete provenance through its filesystem-based workflow model -- each processing step materializes its inputs and outputs as directories. ARGUS mirrors this at the workflow level: each completed stage is evidenced by a concrete artifact in the VFS (a `.harmonized` marker, a `train.py` file, a `.local_pass` certification). The workflow history is readable from the filesystem, not from controller logs or ephemeral memory.
-
-For AI-mediated interfaces specifically, this grounding is essential. An LLM consuming workflow context derived from filesystem queries is reading ground truth. An LLM consuming counter-derived context is reading assertions that may be stale or wrong. The difference between these two modes of context injection is the difference between a system that drifts and one that stays aligned.
+In ARGUS, we extend this principle to the UI layer. The system reasons about workflow progress by inspecting the physical state of the VFS—checking for the existence of `.harmonized` markers, `train.py` scaffolds, and `.federated` receipts. This eliminates the "whack-a-mole" bug cycle associated with in-memory state tracking and provides the LLM with a "Ground Truth" context derived directly from the filesystem.
 
 == Conclusion
 
-ARGUS provides the window through which users see and interact with the ATLAS platform. The SeaGaP-MP framework ensures consistent workflow structure across diverse personas, while persona-specific adaptations address the varying needs of Developers, Annotators, Users, Data Providers, App Developers, and Administrators. Cost transparency, abort guarantees, and comprehensive provenance build the trust necessary for users to commit valuable resources to federated processing. These philosophical foundations guide implementation decisions as ARGUS development proceeds.
+The ARGUS philosophy ensures that the system remains a "Guardian of Process." By grounding all interactions in a standardized workflow and a persistent filesystem substrate, we create a bridge between human intent and federated complexity that is both intuitive and scientifically rigorous. The move to v10.0 completes this vision, providing an environment where every claim made by the AI is backed by a cryptographically anchored artifact.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

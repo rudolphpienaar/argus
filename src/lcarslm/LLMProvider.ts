@@ -11,7 +11,7 @@ import type { LCARSEngine } from './engine.js';
 import type { StatusProvider } from './StatusProvider.js';
 import type { SearchProvider } from './SearchProvider.js';
 import type { CalypsoStoreActions, CalypsoResponse, CalypsoAction, QueryResponse } from './types.js';
-import { IntentParser } from './utils/IntentParser.js';
+import { IntentParser } from './routing/IntentParser.js';
 
 export class LLMProvider {
     private intentParser: IntentParser;
@@ -53,7 +53,7 @@ export class LLMProvider {
      * Process LLM response and extract intents/actions.
      */
     private async response_process(response: QueryResponse): Promise<CalypsoResponse> {
-        const { actions, cleanText } = this.intentParser.parse(response.answer);
+        const { actions, cleanText } = this.intentParser.actions_extractFromLLM(response.answer);
 
         // TRIGGER MATERIALIZATION: If the AI decided to select a dataset or proceed,
         // we execute the corresponding deterministic command through the orchestrator.
@@ -67,10 +67,12 @@ export class LLMProvider {
         }
 
         // 2. Check for [ACTION: PROCEED]
-        const proceedMatch = response.answer.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
+        const proceedMatch: RegExpMatchArray | null = response.answer.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
         if (proceedMatch) {
-            const type = proceedMatch[1] || '';
-            await this.commandExecutor(`proceed ${type}`.trim());
+            const type: string = proceedMatch[1] || '';
+            const cmd: string = `proceed ${type}`.trim();
+            console.log(`[LLM] Triggering internal command: ${cmd}`);
+            await this.commandExecutor(cmd);
         }
 
         // 3. Check for [ACTION: RENAME]

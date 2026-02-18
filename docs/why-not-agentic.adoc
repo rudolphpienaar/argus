@@ -1,122 +1,55 @@
-= Why ARGUS Doesn't Let the AI Drive
+= Why ARGUS Doesn't Let the AI Drive: The Case for Deterministic Orchestration
 :author: ATLAS Project Team
-:revdate: 2026-02-14
+:revdate: 2026-02-17
+:revnumber: 10.0.0
 :toc: macro
+:toclevels: 3
 :sectnums:
 
 toc::[]
 
-== The One-Sentence Version
+== Abstract
 
-AI models are structurally incapable of assembling clinical workflows with guaranteed correctness, so ARGUS uses them only to understand what you want — never to decide what to do.
+This document presents the architectural rationale for ARGUS's rejection of the "autonomous agent" model in favor of a deterministic, human-in-the-loop framework. It outlines the structural risks of ungrounded agentic orchestration—specifically the Irreducible Hallucination problem—and details how ARGUS utilizes **Intent-First Design** to ensure safety, auditability, and scientific integrity in federated medical imaging workflows.
 
-== The Problem with "Agentic AI"
+== Introduction: The Historical Context
 
-The current trend in AI is to give language models more autonomy: let them pick tools, assemble multi-step procedures, and execute complex workflows. This is called "agentic AI." It works impressively in demos. It is dangerous in clinical settings.
+The prevailing trend in modern artificial intelligence is toward "Agency"—the ability for models to autonomously plan, execute, and iterate through complex tasks. While this paradigm is compelling for general-purpose assistants, it is fundamentally brittle for medical research and clinical operations. Early experiments with "Autonomous Calypso" revealed that unconstrained agents inevitably suffer from "Instructional Decay." In these legacy versions, the AI's internal model of the project would eventually diverge from the physical reality of the data, leading the agent to "hallucinate" progress or skip critical validation steps (e.g., training a model on unharmonized data).
 
-Here is why, without equations.
+We learned that in high-stakes environments, the human operator must remain the authoritative decision-maker. The resolution was the implementation of **Deterministic Orchestration**. ARGUS uses the AI as a mediator and a compiler, but never as an autonomous controller. The system is designed so that the AI interprets what the user wants, but the underlying "Operating System" kernel (the Host) enforces the rules of the scientific process.
 
-=== Generation Is Guessing
+== The Structural Fragility of Probabilistic Loops
 
-When you ask an AI to generate text, code, or a plan, it is not looking up the answer. It is sampling from a cloud of possibilities — all the outputs that are roughly consistent with your prompt. Most of those possibilities are wrong. The model picks one that _seems_ right based on patterns it learned during training.
+The fundamental flaw in autonomous agent systems is their probabilistic nature. Because LLMs operate by predicting the next token, their "reasoning" is a sequence of probabilities. When an agent is placed in an open-ended loop, these probabilities multiply.
 
-This is not a flaw to be fixed. It is how generation works. The same mechanism that lets the model produce creative, fluent, useful responses also means it will sometimes produce confident, fluent, _wrong_ responses. You cannot have one without the other.
+*   **The Math of Failure:** If an agent has a 95% success rate for a single step, the reliability of a 10-step autonomous workflow drops to ~60% (0.95^10). For scientific research, this cumulative error rate is unacceptable.
+*   **The Truth Gap:** Without a deterministic environment like the VCS, an agent has no way to verify its own claims. It can "believe" a file was created because it successfully generated the command, even if the command failed silently in the environment.
 
-=== More Steps, More Risk
+ARGUS solves this by grounding every probability in a deterministic state. The AI may *suggest* a project rename, but the renaming only occurs if the `rename` plugin executes successfully and materializes a physical artifact in the VFS.
 
-Now consider what happens when you ask an AI to assemble a multi-step workflow: "search for brain scans, build a cohort, harmonize the data, train a model, containerize it, and deploy it across three hospitals."
+== Intent-First Design: The IAS Separation
 
-At each step, the model must choose what to do next. Each choice has some small probability of being wrong — picking the wrong tool, skipping a required step, using the wrong parameters. The key insight is that these probabilities _compound_:
+To manage the transition from human language to system mutation, ARGUS implements the **Intent-Action-State (IAS)** separation. This principle, drawn from the ChRIS lineage, ensures that the AI's role is strictly limited to the "Intent" phase.
 
-- If each step has a 2% chance of error and there are 10 steps, the chance of at least one error is roughly 18%.
-- At 20 steps, it is 33%.
-- At 50 steps, it is 64%.
+1.  **Intents (Interpretation):** The user speaks in natural language. Calypso's `IntentParser` compiles this into a structured protocol intent.
+2.  **Actions (Execution):** The Host dispatches the intent to a deterministic plugin. The plugin—not the AI—performs the work.
+3.  **States (Materialization):** The result is recorded as a physical VFS artifact.
 
-The longer the workflow, the more certain it becomes that something will go wrong. This is not pessimism. It is arithmetic.
+By isolating the AI from the "Action" and "State" phases, ARGUS ensures that the "Intelligence" layer can be replaced or updated without affecting the underlying procedural truth of the system.
 
-=== "Show Your Work" Doesn't Help
+== The Soft Enforcement Model: The Educational Gatekeeper
 
-A common response is to require the AI to explain its reasoning — show the chain of thought, output explicit code, make the steps visible. This feels safer because you can see what it is doing.
+Rather than rigidly blocking users, ARGUS uses a "Soft Enforcement" model to guide them through the SeaGaP-MP workflow. When a user attempts to skip a stage (e.g., moving to code without gathering data), the system issues an educational warning.
 
-But each line of reasoning is itself another step sampled from a probability distribution. Requiring more explicit steps does not reduce the error probability; it increases the number of places where errors can occur. Transparency helps _humans detect_ errors after the fact, but it does not prevent the AI from _making_ them.
+*   **Warning 1:** A brief alert indicating the missing prerequisite.
+*   **Warning 2:** A detailed explanation of why the stage is scientifically necessary.
+*   **Override:** The user is eventually allowed to proceed, but only after acknowledging the risk.
 
-=== Safety Checks Are Reactive, Not Preventive
+This approach acknowledges that the human researcher is the expert. The system functions as a "Navigator," providing the map and the evidence, but leaving the steering to the human.
 
-Another response is to add guardrails — filters that catch dangerous outputs, safety interlocks that block invalid actions, self-consistency checks. These help, but they are reactive: they respond to errors after the model has already decided to make them. They reduce the _impact_ of mistakes but not the _probability_ of attempting them.
+== Conclusion
 
-A self-driving car with excellent brakes still crashes if the steering system points it at a wall. You want a steering system that cannot point at walls in the first place.
-
-== What ARGUS Does Instead
-
-ARGUS takes the AI out of the steering seat. The design principle is simple: **the AI interprets what you want; deterministic code decides what to do.**
-
-=== The Routing Chain
-
-When you type something into CALYPSO, your input passes through five levels:
-
-[cols="1,3"]
-|===
-| Level | What Happens
-
-| 1. Shell commands
-| Exact matches like `ls`, `cd`, `tree` execute immediately. No AI involved.
-
-| 2. Workflow commands
-| Known commands like `search`, `gather`, `harmonize` map directly to specific operations. No AI involved.
-
-| 3. Pattern matching
-| Questions like "what stage am I on?" are intercepted and answered from system state. No AI involved.
-
-| 4. Intent resolution
-| Natural language like "ok do the harmonization" is stripped down to the keyword `harmonize` and routed to level 2. No AI involved.
-
-| 5. LLM fallback
-| Only if none of the above match does the AI get consulted — and even then, it provides _guidance and explanation_, not action execution.
-|===
-
-Levels 1 through 4 are deterministic. They produce the same output every time for the same input. The AI at level 5 is a communicator, not a decision-maker.
-
-=== Proof by Artifact, Not Assertion
-
-Most AI systems tell you what happened: "I've completed the task." You have to trust the assertion. ARGUS does not work this way.
-
-In ARGUS, progress is proven by _materialized artifacts_ — files that exist (or don't) in the system:
-
-- Your cohort is assembled when `.cohort` exists
-- Your data is harmonized when `.harmonized` exists
-- Your training passed when `.local_pass` exists
-- Your model is federated when `.federated` exists
-
-Every time the system checks your workflow state, it looks at what actually exists — not at what it remembers or what it told you last time. This is the same model used by ChRIS, the compute platform ARGUS serves: the filesystem _is_ the truth.
-
-=== Manifests: Pinning "What Comes Next"
-
-Even with deterministic routing and artifact-based state, one gap remained: the AI was still responsible for telling you _what to do next_. And it drifted — skipping steps, forgetting options, jumping ahead.
-
-The solution is **persona manifests**: explicit YAML documents that define every stage of a workflow, what it produces, what commands are available, and what the user should be told. The AI reads the manifest instead of guessing. "What comes next" becomes a lookup, not an inference.
-
-== The Analogy
-
-Think of a GPS navigation system:
-
-- **Agentic AI** is like giving the GPS the steering wheel. It usually picks good routes, but sometimes it drives into a lake because its map has a confident-looking road where the lake is. More detailed turn-by-turn instructions don't help if the route itself is wrong.
-
-- **ARGUS** is like a GPS that shows you the route and tells you when to turn, but _you_ drive. The routes are pre-mapped and validated. The GPS interprets your destination ("take me to the hospital") but does not invent new roads.
-
-== When This Matters
-
-For a chatbot that writes marketing copy, agentic AI is fine. A wrong output is mildly annoying.
-
-For a system that assembles medical imaging workflows — choosing which algorithms process patient data, in what order, with what parameters, across multiple hospitals — a wrong output is a patient safety issue. The cost of an incorrect workflow is not a bad paragraph; it is a wrong diagnosis, a missed finding, or a compromised federated learning model trained on improperly harmonized data.
-
-ARGUS is built for the second case. The architecture is not conservative for philosophical reasons. It is conservative because the mathematics of probabilistic systems demands it.
-
-== Further Reading
-
-- `docs/agentic-safety.adoc` — The formal mathematical argument with proofs
-- `docs/agentic.adoc` — How ARGUS compares to other agentic design patterns
-- `docs/CURRENT.md` — Active design work on manifest-driven workflow sequencing
-- `docs/persona-workflows.adoc` — Data-state grounding and workflow definitions
+ARGUS is designed to augment human intelligence, not replace it. By using a deterministic core and an Interpretation-First pipeline, we provide the efficiency of an agentic interface with the safety and auditable truth of a traditional operating system. The system's refusal to "let the AI drive" is its most important safety feature, ensuring that every federated model is the result of a verifiable, human-led scientific process.
 
 ---
-_Last updated: {revdate}_
+_Last updated: 2026-02-17 (v10.0.0)_

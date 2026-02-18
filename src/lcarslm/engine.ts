@@ -57,13 +57,12 @@ Your primary function is to query the medical imaging dataset catalog and manage
     *   If the user EXPLICITLY asks to "open", "select", "inspect", or "add" a specific dataset, include [SELECT: ds-ID] at the **END** of your response.
     *   If the user asks to "search", "show", "find", or "list" datasets, include [ACTION: SHOW_DATASETS] and optionally [FILTER: ds-ID, ds-ID] at the **END** of your response. Do NOT use [SELECT] for search queries.
     *   If the user wants to proceed to the coding/development stage:
-        - If they specify "fedml", "federated", or "federated learning", include [ACTION: PROCEED fedml] at the **END**.
-        - If they specify "chris", "plugin", or "ChRIS app", include [ACTION: PROCEED chris] at the **END**.
-        - If they do NOT specify a workflow type (just "proceed", "let's code", etc.), ASK them to choose between "Federated Learning Task (fedml)" or "ChRIS Plugin (chris)". Do NOT include [ACTION: PROCEED] until they choose.
+        - If they specify a workflow type (e.g. "fedml", "chris", "appdev"), include [ACTION: PROCEED <workflow-id>] at the **END**.
+        - If they do NOT specify a workflow type (just "proceed", "let's code", etc.), ASK them to choose from the available workflows (e.g. "Federated Learning (fedml)" or "ChRIS Plugin (chris)"). Do NOT include [ACTION: PROCEED] until they choose.
     *   If the user asks to rename the current project (or draft), include [ACTION: RENAME new-name] at the **END** of your response. Use a URL-safe name (alphanumeric, underscores, or hyphens).
     *   If the user asks to "harmonize", "standardize", "normalize", or "fix" the data/cohort to resolve heterogeneity issues, include [ACTION: HARMONIZE] at the **END** of your response.
 3.  **Persona**: Industrial, efficient, but helpful. Use "I" to refer to yourself as Calypso.
-4.  **Knowledge Usage**: Use the provided SYSTEM KNOWLEDGE BASE to answer questions about ARGUS architecture, the SeaGaP workflow, or specific components. Cite the file name if relevant (e.g., "ACCORDING TO seagap-workflow.adoc...").
+4.  **Knowledge Usage**: Use the provided SYSTEM KNOWLEDGE BASE to answer questions about ARGUS architecture, the SeaGaP workflow, or specific components. Cite the file name if relevant (e.g., "ACCORDING TO docs/legacy/seagap-workflow.adoc...").
 
 ### DATA CONTEXT:
 The context provided to you contains a JSON list of available datasets. Use this strictly as your source of truth.${knowledgeContext}`;
@@ -94,22 +93,44 @@ The context provided to you contains a JSON list of available datasets. Use this
         if (this.isSimulated) {
             let relevantDatasets: Dataset[] = this.retrieve(userText);
             
-            // Simulate processing delay
-            await new Promise((resolve: (value: unknown) => void) => setTimeout(resolve, 800));
-            
-            // Simple Intent Simulation
-            let intent = "";
-            let answerCaps = "";
-            let answerSoft = "";
+            // Detect if this is an "Intent Compiler" prompt (avoid meta-confusion)
+            const isCompilerPrompt: boolean = userText.includes('FORMAT:') || userText.includes('strictly-typed JSON');
 
-            const selectMatch = userText.match(/(?:select|add|choose)\s+(ds-\d{3})/i);
-            const renameMatch = userText.match(/(?:name|rename)\s+(?:this|project)?\s*(?:to\s+)?([a-zA-Z0-9_-]+)/i);
-            const proceedMatch = userText.match(/(?:proceed|next|gather|review|code|let's code)/i);
+            // Simulate processing delay
+            await new Promise((resolve: (value: unknown) => void): void => { setTimeout(resolve, 800); });
+            
+            // 2a. If it's a compiler prompt, try to return a valid JSON intent based on the text
+            if (isCompilerPrompt) {
+                const userMatch: RegExpMatchArray | null = userText.match(/USER INPUT: "(.*?)"/);
+                const actualInput: string = userMatch ? userMatch[1] : userText;
+                
+                let json: { type: string; command?: string; args?: string[] } = { type: 'llm' };
+                const renameMatch: RegExpMatchArray | null = actualInput.match(/(?:name|rename)\s+(?:this|project)?\s*(?:to\s+)?([a-zA-Z0-9_-]+)/i);
+                if (renameMatch) {
+                    json = { type: 'workflow', command: 'rename', args: [renameMatch[1].toLowerCase()] };
+                } else if (actualInput.match(/(?:harmonize|standardize|normalize)/i)) {
+                    json = { type: 'workflow', command: 'harmonize', args: [] };
+                }
+
+                return {
+                    answer: JSON.stringify(json),
+                    relevantDatasets: []
+                };
+            }
+
+            // Simple Intent Simulation for regular queries
+            let intent: string = "";
+            let answerCaps: string = "";
+            let answerSoft: string = "";
+
+            const selectMatch: RegExpMatchArray | null = userText.match(/(?:select|add|choose)\s+(ds-\d{3})/i);
+            const renameMatch: RegExpMatchArray | null = userText.match(/(?:name|rename)\s+(?:this|project)?\s*(?:to\s+)?([a-zA-Z0-9_-]+)/i);
+            const proceedMatch: RegExpMatchArray | null = userText.match(/(?:proceed|next|gather|review|code|let's code)/i);
 
             if (selectMatch) {
                 intent = `\n[SELECT: ${selectMatch[1].toLowerCase()}]`;
             } else if (renameMatch) {
-                const newName = renameMatch[1].toLowerCase();
+                const newName: string = renameMatch[1].toLowerCase();
                 intent = `\n[ACTION: RENAME ${newName}]`;
                 answerCaps = `● PROJECT RENAME PROTOCOL INITIATED. THE CURRENT WORKSPACE HAS BEEN SUCCESSFULLY UPDATED TO '${newName}'.`;
                 answerSoft = `● Project rename protocol initiated. The current workspace has been successfully updated to '${newName}'.`;

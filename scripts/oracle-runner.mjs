@@ -106,9 +106,10 @@ async function modules_load() {
  *
  * @param {any} modules
  * @param {string} username
+ * @param {string} persona
  * @returns {{ core: any, store: any }}
  */
-function runtime_create(modules, username) {
+function runtime_create(modules, username, persona = 'fedml') {
     const vfs = new modules.VirtualFileSystem(username);
     modules.globals.vcs = vfs;
 
@@ -123,7 +124,7 @@ function runtime_create(modules, username) {
     shell.env_set('USER', username);
     shell.env_set('HOME', `/home/${username}`);
     shell.env_set('STAGE', 'search');
-    shell.env_set('PERSONA', 'fedml');
+    shell.env_set('PERSONA', persona);
     shell.env_set('PS1', '$USER@CALYPSO:[$PWD]> ');
 
     modules.store.selection_clear();
@@ -138,8 +139,12 @@ function runtime_create(modules, username) {
                 selectedDatasets: [...modules.store.state.selectedDatasets],
                 activeProject: modules.store.state.activeProject,
                 marketplaceOpen: modules.store.state.marketplaceOpen,
-                installedAssets: [...modules.store.state.installedAssets]
+                installedAssets: [...modules.store.state.installedAssets],
+                lastIntent: modules.store.state.lastIntent
             };
+        },
+        state_set(newState) {
+            Object.assign(modules.store.state, newState);
         },
         reset() {
             modules.store.selection_clear();
@@ -166,17 +171,24 @@ function runtime_create(modules, username) {
         },
         session_setPath(path) {
             this.sessionPath = path;
+        },
+        federation_getState() {
+            return modules.store.state.federationState;
+        },
+        federation_setState(state) {
+            modules.store.state.federationState = state;
         }
     };
 
     const core = new modules.CalypsoCore(vfs, shell, storeAdapter, {
         simulationMode: true,
+        workflowId: persona === 'appdev' ? 'chris' : persona,
         llmConfig: {
             apiKey: 'simulated',
             provider: 'openai',
             model: 'simulated'
         },
-        knowledge: {} // Ensure knowledge base is initialized
+        knowledge: {}
     });
 
     storeAdapter.sessionPath = core.session_getPath();
@@ -194,9 +206,10 @@ function runtime_create(modules, username) {
 async function scenario_run(modules, scenario) {
     const name = scenario.data.name || scenario.file;
     const username = scenario.data.username || 'oracle';
+    const persona = scenario.data.persona || 'fedml';
     const steps = Array.isArray(scenario.data.steps) ? scenario.data.steps : [];
     const vars = { user: username, project: null, session: null };
-    const runtime = runtime_create(modules, username);
+    const runtime = runtime_create(modules, username, persona);
     vars.session = runtime.core.session_getPath();
 
     console.log(`\n[ORACLE] ${name}`);
@@ -207,14 +220,31 @@ async function scenario_run(modules, scenario) {
 
         if (step.send) {
             const command = template_interpolate(step.send, vars);
-            const response = await runtime.core.command_execute(command);
+            console.log(`${label} SEND: ${command}`);
+            let response = await runtime.core.command_execute(command);
+            let fullMessage = response.message;
             
-            // Re-fetch session path in case of /reset
+            // Handle automatic phase jump confirmation
+            const strippedMsg = ansi_strip(response.message);
+            if (!response.success && /PHASE JUMP/i.test(strippedMsg)) {
+                console.log(`${label}   [SYSTEM] Phase jump detected. Sending confirmation...`);
+                response = await runtime.core.command_execute('confirm');
+                fullMessage += '\n' + response.message;
+            }
+
+            // Re-fetch session path in case of /reset or internal session changes
             vars.session = runtime.core.session_getPath();
 
             if (verbose) {
                 console.log(`${label} ${command}`);
                 console.log(`         success=${response.success}`);
+            }
+
+            // Final evaluation based on the last response received
+            if (step.expect && response.statusCode !== step.expect) {
+                console.log(`         ERROR: Expected statusCode=${step.expect} but got ${response.statusCode}`);
+                console.log(`         MESSAGE: ${response.message}`);
+                throw new Error(`${label} Expected statusCode=${step.expect} but got ${response.statusCode}`);
             }
 
             if (typeof step.success === 'boolean' && response.success !== step.success) {
@@ -226,11 +256,20 @@ async function scenario_run(modules, scenario) {
                 throw new Error(`${label} Expected success=${step.success} but got ${response.success}`);
             }
 
+            if (step.materialized) {
+                for (const rawPath of step.materialized) {
+                    const target = template_interpolate(rawPath, vars);
+                    if (!runtime.core.vfs_exists(target)) {
+                        throw new Error(`${label} Expected materialized artifact missing: ${target}`);
+                    }
+                }
+            }
+
             if (step.output_contains) {
                 const required = Array.isArray(step.output_contains)
                     ? step.output_contains
                     : [step.output_contains];
-                const msg = ansi_strip(String(response.message || '')).toLowerCase();
+                const msg = ansi_strip(String(fullMessage || '')).toLowerCase();
                 for (const token of required) {
                     if (!msg.includes(token.toLowerCase())) {
                         console.log(`\n[TOKEN FAILURE] Missing "${token}" in message:\n${msg}\n`);
@@ -261,8 +300,6 @@ async function scenario_run(modules, scenario) {
         }
 
         if (step.vfs_stale) {
-            // CalypsoCore doesn't expose stale stages directly in state,
-            // but WorkflowAdapter does in position_resolve.
             const pos = runtime.core.workflow_getPosition();
             const isStale = pos.staleStages.includes(step.vfs_stale);
             
@@ -296,4 +333,3 @@ main().catch((error) => {
     console.error(`\n[ORACLE] FAILED: ${message}`);
     process.exit(1);
 });
-

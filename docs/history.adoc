@@ -1,0 +1,187 @@
+= ARGUS Project History: The Forensic Chronicle of a State-Grounded Kernel
+:author: ATLAS Project Team
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 4
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+The ARGUS (ATLAS Resource Guided User System) project represents a relentless, multi-phase engineering investigation into the "Truth Gap" of AI-mediated scientific research. Since its inception in late January 2026, the project has evolved through a granular sequence of architectural refinements, transitioning from a monolithic UI-centric prototype into a high-integrity host virtual machine grounded in Merkle-proven materialization. This document provides an exhaustive, forensic narrative of that evolution, providing a dedicated technical analysis for every significant version bump in the project's history. 
+
+Each section details the specific technical pressures—such as monolithic drift, instructional decay, and the irreducible hallucination of agency—that necessitated the continuous refactoring of the system's core. By documenting the "Historical Drama" of every milestone, this specification provides the necessary context for understanding why the v10.0 architecture is the only mathematically viable solution for high-stakes federated research. This history is not a record of a finished product, but a chronicle of an ongoing scientific inquiry into how agentic systems can be made structurally safe.
+
+== Phase I: Genesis and the Codification of "SeaGaP"
+*Period: January 23 – January 25, 2026*
+
+The initial development phase focused on establishing the fundamental interaction patterns and visual identity of the ARGUS interface. This era was characterized by the struggle to decouple UI rendering from scientific logic and the first attempts to define a universal research workflow.
+
+=== Version 1.0: The SeaGaP Baseline
+Released on January 24, 2026, Version 1.0 established the foundational structural spine of the system: the **SeaGaP-MP** framework. We recognized that federated medical research required a consistent procedural language to bridge the gap between diverse personas, from clinicians to data scientists. Without a standard lifecycle, the system's goals remained ill-defined and idiosyncratic.
+
+The resolution was a five-stage linear pipeline—Search, Gather, Process, Monitor, and Post—that imposed a strict temporal order on research operations. This version also introduced the "Tactical Header" and role-based login, proving that a unified interface could manage the complexities of federated data discovery. The SeaGaP framework ensured that progress was no longer a matter of opinion, but a sequence of logical transitions.
+*   _See also: link:philosophy.adoc[ARGUS Philosophy] for the full SeaGaP-MP conceptual framework._
+
+=== Version 1.1: State-Aware Navigation
+The v1.1 update addressed the "Statelessness Problem" identified immediately after the initial baseline. While v1.0 displayed the workflow tracker, it was merely a visual ornament; clicking its stations did nothing, and it had no knowledge of whether a user was searching or gathering. This lack of state awareness made the system feel like a collection of static pages rather than a coherent application.
+
+To resolve this, v1.1 refactored the tracker to drive stage transitions, marking the first move toward a state-aware UI. This release introduced the concept of "visited" and "active" states for workflow stations, ensuring that the user's progress was visually synchronized with the application's internal state machine. It proved that the UI could be used as a mirror of the underlying logical state, a principle that would later be hardened in v10.0.
+
+=== Version 1.3: The RPN Mandate and Layout Integrity
+Version 1.3 was a critical "Architectural Pause" necessitated by the rapid increase in code complexity. The engineering team observed that traditional imperative naming conventions (e.g., `expandWorkspace`) were obscuring the primary targets of functions, leading to "spaghetti-logic" where developers struggled to locate relevant code. Furthermore, layout regressions in the top panel were causing text to truncate on smaller CRT-style displays.
+
+The resolution was the mandatory implementation of **RPN (Reverse Polish Notation)** naming (`subject_verb`). This shifted the focus of the codebase toward objects and their actions (e.g., `workspace_expand`), making the system infinitely more navigable. This release also fixed the top-panel overflows and implemented the first formal "Logout" protocol, ensuring that session state could be cleared reliably before a new persona took control.
+*   _See also: link:framework.adoc[Framework Patterns] for the RPN naming specification._
+
+=== Version 1.4: Multi-Window Telemetry and the Subway Layout
+The final release of Phase I, v1.4, introduced the "Hanging Subway" layout—a specialized LCARS geometry designed to maximize screen real estate for telemetry. We learned that researchers could not effectively monitor a federated network through a single log window; they needed simultaneous visibility into loss curves, node status, and participant metadata.
+
+This version implemented multi-window rendering for the **Monitor** stage, allowing these diverse data streams to be displayed in parallel. It also included the first automated test harness for data models, establishing the "Zero-DOM Policy" by proving that the system's core logic could be verified independently of the browser's document model. This release transformed ARGUS from a "viewer" into a "dashboard," capable of handling high-density scientific information.
+
+== Phase II: The Intelligence Console and the "Agentic Pivot"
+*Period: January 26 – January 28, 2026*
+
+Phase II marked the transition from a traditional GUI to an AI-mediated interface. This era was defined by the struggle against "Instructional Decay" and the implementation of robust reactivity patterns to manage the new conversational surface.
+
+=== Version 1.4.1 - 1.4.5: The Incremental Terminal Shift
+These versions represented a rapid sequence of iterative refinements focused on the integration of the **Intelligence Console**. Early testing revealed that a graphical interface alone was insufficient for the complex directory manipulations required by the project tree. Researchers needed a command-line "escape hatch" to perform technical tasks.
+
+v1.4.1 through v1.4.3 expanded the terminal's capability to include standard Linux-style filesystem commands, while v1.4.4 and v1.4.5 refined the "MU/TH/UR" streaming style. This sequence was driven by the realization that the terminal was not a supplement, but the primary control hub. This era proved that natural language and command-line inputs could coexist within a single LCARS interface, setting the stage for the v2.0 pivot.
+
+=== Version 2.0.0: The Agentic Pivot
+Released on January 26, 2026, v2.0.0 was the most significant conceptual shift in the project's history. It launched the **Unified Intelligence Console**, a retractable terminal that became the primary interaction surface. This was not a cosmetic update; it was a fundamental "Pivot to Agency." The goal was to allow researchers to drive the entire system through natural language, rather than searching through nested menus.
+
+By repositioning the AI assistant, Calypso, as the central mediator of the scientific process, v2.0.0 transformed ARGUS into an agentic system. However, this pivot immediately exposed the "Irreducible Hallucination" problem: without a deterministic kernel to back it up, the AI would often claim success for actions it had no power to execute. This release was the catalyst for the next three phases of grounding.
+*   _See also: link:calypso.adoc[CALYPSO Intelligence Host] for the kernel specification._
+
+=== Version 3.0.0: The Reactive Update and Mock VFS
+Version 3.0.0 addressed the "Context-Window Collapse" failure mode that plagued the early agentic pivot. Because the system's state was managed through disjointed variables, Calypso would frequently lose track of session progress. For instance, after a user renamed a project, the AI would continue to refer to the old name, causing confusion and procedural errors.
+
+The resolution was the migration to a **Pub/Sub (Observer) pattern** using a central `Store` and a global `EventBus`. This release also implemented the first "Mock VFS" and the IDE-style **Process** stage. By forcing every mutation to emit a typed event, the system ensured that all UI components (Terminal, Grid, Tracker) remained synchronized. This version established the "State-First" principle that would eventually lead to v10.0.
+*   _See also: link:framework.adoc[Framework Patterns] for the Pub/Sub and Store implementation details._
+
+=== Version 3.1.0: Professionalized Marketplace and Frame Generation
+This update focused on the scalability of the asset catalog. As the ATLAS ecosystem grew, we learned that static HTML layouts were too rigid to accommodate the diverse range of pre-trained models and processing applications. The manual addition of new assets was becoming a bottleneck for the engineering team.
+
+v3.1.0 introduced **Procedural Frame Generation**, allowing the LCARS UI to dynamically render high-density tiles and detail views based on JSON metadata. This release professionalized the marketplace, making it an extensible platform for MERIDIAN-compliant software. It proved that even the most complex LCARS geometries could be generated deterministically from data, further decoupling the "Appearance" from the "Logic."
+
+=== Version 3.4.0: Visual Dialect Maturity and the Frame Slot
+Version 3.4.0 introduced the **Frame Slot** system and **Beckon Pulse** visual language. These were engineered to solve the problem of "Interactive Overload," where researchers were overwhelmed by the number of clickable elements on the console. The Beckon Pulse signaled interactivity through subtle brightness oscillations, reducing cognitive noise by removing the need for high-contrast "Click Me" buttons.
+
+The Frame Slot system provided a standardized mechanism for animating panel transitions, ensuring that the UI felt like a cohesive "Living System" rather than a set of disjointed screens. This release ensured that the interface remained intuitive even as the system's technical capabilities ballooned, aligning the visual dialect with the rigorous requirements of clinical research environments.
+
+== Phase III: The VCS Substrate and the "Slot" Refactor
+*Period: January 29 – February 1, 2026*
+
+Phase III addressed the "Truth Gap"—the dangerous disconnect between AI assertions and physical system state. This era saw the implementation of the full virtualized hardware substrate.
+
+=== Version 4.0.0: The VCS Foundation
+Released on January 29, 2026, v4.0.0 addressed the "Truth Gap" by introducing the **Virtual Computer System (VCS)**. The team realized that for an AI agent to be truly safe, it must be embedded within a deterministic environment that behaves according to immutable rules. Legacy versions that managed state through JavaScript objects were inherently unverifiable.
+
+The VCS provided a simulated POSIX-compliant filesystem (**VFS**) and a process-aware **Shell**. This move shifted the system's "Ground Truth" from "Assertions in Memory" to "Artifacts on Disk." If the AI claimed to have harmonized a cohort, the system could now perform a physical check of the VFS for the `.harmonized` marker. If the file was absent, the AI's claim was rejected.
+*   _See also: link:vcs.adoc[VCS Substrate], link:vfs.adoc[Virtual File System], and link:shell.adoc[VCS Shell] for exhaustive hardware-level specifications._
+
+=== Version 4.2.0: The IDE-Style Browser
+Building on the VCS foundation, v4.2.0 enhanced the **Process** stage with a professional IDE-style browser. We learned that developers needed more than a terminal; they needed a tabbed, syntax-highlighted interface to manage their training scripts (`train.py`) and configuration files. The previous monolithic file view was insufficient for complex project structures.
+
+This version implemented independent resize handles for the workspace split-pane, allowing researchers to balance their screen real estate between the terminal and the editor. It also introduced the **tabbed tree** metaphor, enabling seamless navigation between `/src`, `/input`, and `/output` directories. This release transformed ARGUS into a viable development environment for federated learning code.
+
+=== Version 4.5.0: The Multi-Mode Slot Architecture
+Version 4.5.0 resolved a critical crisis of "DOM Pollution" in the overlay system. Multiple components (Marketplace, Project Detail, Dataset Detail) were competing for control of the same DOM containers. This led to "Cascading Failures" where, for example, closing a dataset detail would accidentally delete the buttons for the Marketplace view.
+
+The resolution was the **Slot Pattern**, which replaced destructive `innerHTML` mutation with a CSS-driven visibility model. By providing empty `overlay-slot` containers for each mode, the system ensured that visual states were isolated. This pattern enforced a strict "Host/Guest" relationship at the UI layer, proving that isolation was the only way to maintain deterministic visual integrity.
+*   _See also: link:framework.adoc[Framework Patterns] for the Slot Pattern specification._
+
+=== Version 4.7.0: Project MU/TH/UR and Idle Detection
+The final release of Phase III, v4.7.0, implemented advanced idle detection and a persistent workspace. We observed that researchers often spent long periods analyzing data without interacting with the console. During these pauses, the AI assistant remained dormant, missing opportunities to provide contextual guidance or status updates.
+
+The "MU/TH/UR" protocol allowed Calypso to monitor researcher activity and trigger conversational thoughts (e.g., suggesting a project rename if a draft was unnamed). This version solidified the "Intelligence Host" metaphor, ensuring the AI was a proactive participant in the workflow rather than a reactive chatbot. It prepared the core for the transition to headless, service-oriented execution.
+
+== Phase IV: Headless Calypso, Scripts, and ORACLE
+*Period: February 2 – February 13, 2026*
+
+Phase IV was defined by the move toward automated verification and the externalization of scientific logic through the first generation of automation scripts and orchestrators.
+
+=== Version 5.0.0: The Headless Kernel and ORACLE v1.0
+Released on February 3, 2026, v5.0.0 was a breakout milestone that bifurcated the "Calypso Core" from the browser runtime. The team realized that for ARGUS to be a professional research tool, it had to be verifiable in a headless server environment. Testing by clicking through a UI was slow, unscalable, and inherently non-deterministic.
+
+This separation enabled the development of the **ORACLE** methodology—a State-First Verification strategy. This version launched the Calypso CLI and the first in-process test runner, allowing the system to be verified in a CI/CD pipeline. By asserting on protocol codes and VFS artifacts instead of English text, v5.0.0 provided the first mathematical proof of system integrity.
+*   _See also: link:oracle.adoc[ORACLE Specification] for the reflexive verification methodology._
+
+=== Version 5.1.6 - 5.1.9: CLI Hardening and Banner Normalization
+These versions focused on the professionalization of the headless environment. Early versions of the CLI were difficult to read and lacked the "personality" of the LCARS interface. Furthermore, inconsistencies in username and home-path mapping between the browser and the terminal were causing VFS path-resolution errors.
+
+v5.1.6 through v5.1.9 implemented robust dynamic padding for CLI banners and synchronized the headless server with the global Store singletons. This ensured that the researcher persona, project context, and version strings remained consistent across both graphical and terminal sessions. This era proved that "Lore" and "Logic" could be unified into a single systems specification.
+
+=== Version 6.0.0: Three-Tier Execution and Persona Workflows
+Version 6.0.0 introduced **Persona-Driven Workflows**, addressing the "Persona Fragmentation" problem at the logic layer. We learned that different researchers (e.g., Federated ML Developers vs. ChRIS Developers) required different stages and different commands. Hardcoding a single SeaGaP sequence was no longer viable.
+
+This release implemented the "Three-Tier Execution Model," where logic was categorized into Kernel (Core), Shell (Builtins), and Workflow (Manifests). It introduced the first YAML-based manifests to define these stages, providing the initial blueprint for the later Plugin refactor. v6.0.0 proved that the system's "operating model" could be swapped dynamically without changing the kernel code.
+
+=== Version 6.2.0: Data-State Alignment and NL Routing
+Released on February 6, v6.2.0 completed the total migration of workflow progress to physical VFS markers (`.cohort`, `.harmonized`). We found that as long as the system maintained any internal "completion flags," there was a risk of drift. The resolution was to eliminate all flags: progress was now determined solely by performing a topological walk of the disk.
+
+This version also introduced the first iteration of the **Interpretation-First Pipeline**. By using deterministic regex matching to route common natural language verbs (e.g., "harmonize it") to system commands, the system reduced latency and prevented LLM misinterpretation. This phase established the "AI-as-a-Compiler" metaphor that would define the v10.0 architecture.
+
+=== Version 7.0.0: Federation Handshake and Scriptable Automation
+Version 7.0.0 was a major release that introduced the first **Automation Scripts**. The team realized that power users needed to execute complex, multi-step flows—such as site-local harmonization—through a single command. The hardcoded "Simulate" button was replaced by a scriptable CLI layer, marking the first time domain logic was externalized from the core.
+
+This release also launched the **Federation Orchestrator** to manage the 4-phase "Federalization Handshake" (Briefing, Transcompile, Containerize, Dispatch). This service ensured that no model reached the network without formal approval at every gate. v7.0.0 transformed federalization from a "black box" into a transparent, auditable process grounded in Merkle materialization.
+*   _See also: link:federation.adoc[Federation Orchestrator] for the handshake protocol._
+*   _See also: link:shell.adoc[VCS Shell] for the script execution specification._
+
+=== Version 7.0.1 - 7.0.5: Narrative Expansion and Backstory
+These updates addressed the "Documentation Gap." We found that new developers were struggling to understand the deep engineering rationale behind concepts like the VCS and SeaGaP. Without context, the codebase felt like a collection of arbitrary choices rather than a scientific inquiry.
+
+v7.0.1 through v7.0.5 enriched the markdown storytelling and expanded the project's backstory (`story.md`). By weaving the engineering history into the "Scientific Lore" of the project, we ensured that the project's intent was preserved. This era established the "Historical Voice" standard that would later be formalized in the project's writing guide.
+
+=== Version 7.1.0 - 7.1.10: Triad Clarification and Positioning
+This sequence reframed ARGUS within the broader ARPA-H national federated learning initiative. We learned that the project's positioning was ambiguous; it was often confused with the underlying ATLAS platform itself. This lack of clarity was a barrier to wider adoption and clinical partnership.
+
+Versions 7.1.0 through 7.1.10 clarified the "Triad" relationship between ATLAS (The Network), Calypso (The Kernel), and ARGUS (The Interface). This era focused on "Developer Grounding," providing the reading order and setup documentation required for national-scale onboarding. It transformed the project from a "mockup" into a "conceptual idea" for the national ATLAS user layer.
+
+=== Version 7.2.0 - 7.2.1: WebSocket Service Decomposition
+Version 7.2.0 refactored the core into a layered WebSocket architecture. This decomposition was driven by the requirement for remote research sessions. We realized that in a clinical environment, the researcher's interface (the browser) and the research data (the server) were often physically separated.
+
+The WebSocket layer allowed the headless kernel to reside on a secure server while the LCARS interface ran in a local browser. This move finalized the "Service-Oriented" vision of the Calypso Host, ensuring that the system's integrity model was independent of the transport layer. It was the final prerequisite for the v10.0 "Plugin Revolution."
+
+=== Version 7.3.0 - 7.3.1: Command Protocol Alignment
+These releases aligned the Federation Orchestrator's internal command protocol with the workflow manifest stage commands. We discovered that the orchestrator was still using "custom logic" to handle its phases, which bypassed the DAG Engine's standard verification gates. This was a source of subtle "State Drift" during federation.
+
+v7.3.0 eliminated these custom paths, forcing all orchestrator commands through the standard manifest-driven pipeline. This made the federalization handshake as verifiable and auditable as any other SeaGaP stage. It was the final "Cleanup" before the move to the v9.0 DAG revolution.
+
+== Phase V: The v10.0 "Plugin Revolution" and Merkle Conscience
+*Period: February 14 – February 17, 2026*
+
+The final development phase achieved the definitive separation of the Host system from the Guest logic, grounding all progress in cryptographic proofs and modular plugins.
+
+=== Version 9.0.1 - 9.0.6: Manifest-Driven Hardening
+Released on February 16, 2026, the v9.0.x series replaced the legacy linear state machine with a **Manifest-Driven DAG Engine**. We learned that scientific workflows are rarely linear; they involve complex branching and parallel parentage that linear models cannot represent. This "Graph-Gap" was a primary source of state-drift in legacy versions.
+
+The DAG Engine resolved this by modeling processes as graphs defined in YAML manifests. It introduced the **Topological Position Resolution** algorithm, which determined the current stage by walking the VFS and checking for artifact evidence. This ensured that the system's "conscience" was always grounded in the physical disk, making it immune to instructional decay.
+*   _See also: link:dag-engine.adoc[DAG Engine Specification] for the manifest schema and topological resolution logic._
+
+=== Version 9.3.0 - 9.6.0: The Merkle Revolution
+Version 9.6.0 introduced **Merkle Fingerprinting**, addressing the problem of "Silent Data Modification." While the VFS tracked the existence of files, it could not detect if an upstream file (e.g., the search query results) had been tampered with after a downstream stage (e.g., the gathered cohort) had been completed.
+
+The Merkle Engine solved this by cryptographically anchoring every artifact to its specific parentage. If a researcher re-executed an early stage, the system would instantly flag all downstream stages as `[STALE]`, providing a mathematical guarantee against scientific inconsistency. This release transformed the filesystem into a "Proven Ledger," providing the absolute integrity required for national-scale medical research.
+*   _See also: link:merkle-engine.adoc[Merkle Engine Specification] for the recursive hashing math and staleness algorithms._
+
+=== Version 10.0.0: The Plugin Runtime Revolution
+The project reached its current v10.0 state on February 17, 2026. This was the final "Revolution"—the definitive separation of the **Host (Kernel)** from the **Guest (Logic)**. We realized that as long as domain logic (harmonization, gathering) lived in the kernel, the kernel could never be truly generic or secure.
+
+The move to v10.0 purged all domain logic from the kernel and moved it to atomic **Guest Plugins**. The system is now a formal Host VM, providing a strictly-typed **PluginContext** (Standard Library) to unprivileged logic. This bifurcation ensures that the "Integrity" of the system is managed by the Host kernel, while the "Intelligence" remains a flexible AI interface. It resolves the "Irreducible Hallucination" problem by forcing all progress into Merkle-proven artifacts, transforming ARGUS into a verifiable, scientifically rigorous "Operating System for Research."
+*   _See also: link:architecture.adoc[System Architecture] for the Host/Guest VM model specification._
+*   _See also: link:plugins.adoc[Plugin System Specification] for the VM and context details._
+
+== Conclusion: The Arc of Integrity
+
+The evolution of ARGUS is a chronicle of the "Scientific Hardening" of AI. Each major version was a response to a specific failure mode where human trust in the system was compromised by AI-mediated ambiguity. From the early "Gutter Flash" regressions to the final "Merkle Staleness" proofs, the project has consistently prioritized "Evidence over Assertion." 
+
+By grounding the entire system in a virtualized hardware substrate (VCS), a graph-based conscience (DAG Engine), and a Merkle provenance chain, ARGUS v10.0 provides the absolute integrity required for national-scale medical research. The project stands as a successful proof-of-concept for how agentic systems can be made safe, auditable, and mathematically verifiable. The system is not a finished product; it is now architecturally prepared for the next era of federated innovation, where human intent and machine integrity are perfectly synchronized.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

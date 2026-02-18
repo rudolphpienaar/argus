@@ -20,12 +20,14 @@
 
 import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import type { CalypsoResponse, CalypsoAction, CalypsoStoreActions } from '../types.js';
+import { CalypsoStatusCode } from '../types.js';
 import { FederationContentProvider } from './FederationContentProvider.js';
 import type {
     FederationState,
     FederationArgs,
     FederationDagPaths,
-    FederationPublishConfig
+    FederationPublishConfig,
+    FederationStep
 } from './types.js';
 import type { ArtifactEnvelope } from '../../dag/store/types.js';
 
@@ -45,9 +47,6 @@ import type { ArtifactEnvelope } from '../../dag/store/types.js';
  * Each step materializes artifacts in VFS before advancing to the next.
  */
 export class FederationOrchestrator {
-    /** Multi-phase federation handshake state. */
-    private federationState: FederationState | null = null;
-
     /** Full path to the federate artifact file in session tree. */
     private federateArtifactPath: string = '';
 
@@ -58,6 +57,20 @@ export class FederationOrchestrator {
         private storeActions: CalypsoStoreActions
     ) {
         this.contentProvider = new FederationContentProvider(vfs);
+    }
+
+    /**
+     * Get the current federation state from the store.
+     */
+    private federationState_get(): FederationState | null {
+        return this.storeActions.federation_getState();
+    }
+
+    /**
+     * Update the federation state in the store.
+     */
+    private federationState_set(state: FederationState | null): void {
+        this.storeActions.federation_setState(state);
     }
 
     /**
@@ -77,7 +90,7 @@ export class FederationOrchestrator {
      * @param username - Active username for path resolution
      */
     command(verb: string, rawArgs: string[], username: string): CalypsoResponse {
-        const activeMeta = this.storeActions.project_getActive();
+        const activeMeta: { id: string; name: string; } | null = this.storeActions.project_getActive();
         if (!activeMeta) {
             return this.response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
         }
@@ -88,13 +101,14 @@ export class FederationOrchestrator {
 
         // Abort
         if (args.abort) {
-            this.federationState = null;
+            this.federationState_set(null);
             return this.response_create('○ FEDERATION HANDSHAKE ABORTED. NO DISPATCH PERFORMED.', [], true);
         }
 
         // Already-complete check
         const federationComplete: boolean = this.vfs.node_stat(`${projectBase}/.federated`) !== null;
-        const stateMatchesProject: boolean = !!this.federationState && this.federationState.projectId === activeMeta.id;
+        const state: FederationState | null = this.federationState_get();
+        const stateMatchesProject: boolean = !!state && state.projectId === activeMeta.id;
 
         if (!stateMatchesProject && federationComplete && !args.restart) {
             return this.response_create(
@@ -113,7 +127,8 @@ export class FederationOrchestrator {
 
         // Initialize state if needed
         if (args.restart || !stateMatchesProject) {
-            this.federationState = this.state_create(activeMeta.id, projectName);
+            const newState: FederationState = this.state_create(activeMeta.id, projectName);
+            this.federationState_set(newState);
 
             // Restart initializes state; user must then run `federate` to see briefing
             if (args.restart) {
@@ -131,33 +146,33 @@ export class FederationOrchestrator {
         }
 
         const dag: FederationDagPaths = this.dag_paths(projectBase);
-        const state: FederationState | null = this.federationState;
-        if (!state) {
+        const currentState: FederationState | null = this.federationState_get();
+        if (!currentState) {
             return this.response_create('>> ERROR: FEDERATION STATE INITIALIZATION FAILED.', [], false);
         }
 
         // Route by verb
         switch (verb) {
             case 'federate':
-                return this.step_brief(state, projectBase, dag, args);
+                return this.step_brief(currentState, projectBase, dag, args);
 
             case 'approve':
-                return this.step_approve(state, projectBase, dag, projectName, args);
+                return this.step_approve(currentState, projectBase, dag, projectName, args);
 
             case 'show':
-                return this.step_show(state, rawArgs, projectBase, dag);
+                return this.step_show(currentState, rawArgs, projectBase, dag);
 
             case 'config':
-                return this.step_config(state, rawArgs, args);
+                return this.step_config(currentState, rawArgs, args);
 
             case 'dispatch':
-                return this.step_dispatch(state, projectBase, dag, projectName, args);
+                return this.step_dispatch(currentState, projectBase, dag, projectName, args);
 
             case 'status':
-                return this.step_status(state, projectBase, dag);
+                return this.step_status(currentState, projectBase, dag);
 
             case 'publish':
-                return this.step_publish(state, projectBase, dag, projectName);
+                return this.step_publish(currentState, projectBase, dag, projectName);
 
             default:
                 return this.response_create(`>> ERROR: Unknown federation verb '${verb}'.`, [], false);
@@ -175,21 +190,21 @@ export class FederationOrchestrator {
      * Reset federation state (used on abort from external callers).
      */
     state_reset(): void {
-        this.federationState = null;
+        this.federationState_set(null);
     }
 
     /**
      * Whether a federation handshake is currently active.
      */
     get active(): boolean {
-        return this.federationState !== null;
+        return this.federationState_get() !== null;
     }
 
     /**
      * Current federation step, or null if no active handshake.
      */
-    get currentStep(): FederationState['step'] | null {
-        return this.federationState?.step ?? null;
+    get currentStep(): FederationStep | null {
+        return this.federationState_get()?.step ?? null;
     }
 
     // ─── Step Handlers ────────────────────────────────────────────────
@@ -227,6 +242,7 @@ export class FederationOrchestrator {
         }
 
         state.step = 'federate-transcompile';
+        this.federationState_set(state);
         return this.response_create(lines.join('\n'), [], true);
     }
 
@@ -292,6 +308,7 @@ export class FederationOrchestrator {
     ): CalypsoResponse {
         this.contentProvider.transcompile_materialize(projectBase, dag);
         state.step = 'federate-containerize';
+        this.federationState_set(state);
 
         return this.response_create(
             [
@@ -328,6 +345,7 @@ export class FederationOrchestrator {
             this.vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
         } catch { /* ignore */ }
         state.step = 'federate-publish-config';
+        this.federationState_set(state);
 
         return this.response_create(
             [
@@ -372,6 +390,7 @@ export class FederationOrchestrator {
         }
 
         state.step = 'federate-publish-execute';
+        this.federationState_set(state);
         return this.response_create(
             [
                 '● PUBLICATION CONFIGURATION CONFIRMED.',
@@ -401,6 +420,7 @@ export class FederationOrchestrator {
             this.vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
         } catch { /* ignore */ }
         state.step = 'federate-dispatch';
+        this.federationState_set(state);
 
         return this.response_create(
             [
@@ -571,8 +591,9 @@ export class FederationOrchestrator {
         // Materialize dispatch + round artifacts
         this.contentProvider.dispatch_materialize(projectBase, dag);
         state.step = 'federate-execute';
+        this.federationState_set(state);
 
-        const participants = ['BCH', 'MGH', 'BIDMC'];
+        const participants: string[] = ['BCH', 'MGH', 'BIDMC'];
         return this.response_create(
             [
                 '● STEP 6/8 COMPLETE: FEDERATION DISPATCH.',
@@ -676,7 +697,7 @@ export class FederationOrchestrator {
             } catch { /* ignore */ }
         }
 
-        this.federationState = null;
+        this.federationState_set(null);
 
         return this.response_create(
             [
@@ -834,20 +855,25 @@ export class FederationOrchestrator {
      * Apply publish config mutations from command arguments.
      */
     private publish_mutate(args: FederationArgs): boolean {
-        if (!this.federationState) return false;
+        const state: FederationState | null = this.federationState_get();
+        if (!state) return false;
 
         let changed: boolean = false;
-        if (args.name !== null && args.name !== this.federationState.publish.appName) {
-            this.federationState.publish.appName = args.name;
+        if (args.name !== null && args.name !== state.publish.appName) {
+            state.publish.appName = args.name;
             changed = true;
         }
-        if (args.org !== null && args.org !== this.federationState.publish.org) {
-            this.federationState.publish.org = args.org;
+        if (args.org !== null && args.org !== state.publish.org) {
+            state.publish.org = args.org;
             changed = true;
         }
-        if (args.visibility && args.visibility !== this.federationState.publish.visibility) {
-            this.federationState.publish.visibility = args.visibility;
+        if (args.visibility && args.visibility !== state.publish.visibility) {
+            state.publish.visibility = args.visibility;
             changed = true;
+        }
+
+        if (changed) {
+            this.federationState_set(state);
         }
 
         return changed;
@@ -894,6 +920,11 @@ export class FederationOrchestrator {
         actions: CalypsoAction[],
         success: boolean
     ): CalypsoResponse {
-        return { message, actions, success };
+        return { 
+            message, 
+            actions, 
+            success, 
+            statusCode: success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR 
+        };
     }
 }

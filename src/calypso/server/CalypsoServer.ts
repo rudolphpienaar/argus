@@ -14,7 +14,7 @@ import path from 'path';
 import { WebSocketServer } from 'ws';
 import { CalypsoCore } from '../../lcarslm/CalypsoCore.js';
 import type { CalypsoStoreActions } from '../../lcarslm/types.js';
-import type { Dataset, AppState } from '../../core/models/types.js';
+import type { Dataset, AppState, FederationState } from '../../core/models/types.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import { ContentRegistry } from '../../vfs/content/ContentRegistry.js';
@@ -63,8 +63,13 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
             selectedDatasets: [...store.state.selectedDatasets],
             activeProject: store.state.activeProject,
             marketplaceOpen: store.state.marketplaceOpen,
-            installedAssets: [...store.state.installedAssets]
+            installedAssets: [...store.state.installedAssets],
+            lastIntent: store.state.lastIntent
         };
+    }
+
+    public state_set(state: Partial<AppState>): void {
+        Object.assign(store.state, state);
     }
 
     public reset(): void {
@@ -95,6 +100,14 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 
     public session_getPath(): string | null {
         return this.sessionPath;
+    }
+
+    public federation_getState(): FederationState | null {
+        return store.state.federationState;
+    }
+
+    public federation_setState(state: FederationState | null): void {
+        store.state.federationState = state;
     }
 }
 

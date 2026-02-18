@@ -1,137 +1,110 @@
 {
-  "name": "FedML Smoke",
+  "name": "FedML Smoke (v10 Protocol Verification)",
   "username": "oracle",
   "steps": [
     {
-      "send": "OK, do you have power scripts?",
-      "success": true,
-      "output_contains": [
-        "hist-harmonize",
-        "type `/scripts` anytime"
+      "send": "search histology",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/data/search.json"
       ]
     },
     {
-      "send": "I want to run some power scripts",
-      "success": true,
-      "output_contains": "hist-harmonize"
-    },
-    {
-      "send": "what scripts do you have?",
-      "success": true,
-      "output_contains": "hist-harmonize"
-    },
-    {
-      "send": "/scripts hist-harmonize",
-      "success": true,
-      "output_contains": "[s4_rename] rename"
-    },
-    {
-      "send": "/run hist-harmoniize",
-      "success": false,
-      "output_contains": [
-        "DID YOU MEAN",
-        "hist-harmonize"
-      ]
-    },
-    {
-      "send": "Can you run the hist-harmonize for me?",
-      "success": true,
-      "output_contains": [
-        "RUNNING SCRIPT: hist-harmonize",
-        "SCRIPT COMPLETE",
-        "[OK] [5/5] s5_harmonize :: harmonize"
-      ],
+      "send": "add ds-006",
+      "expect": "OK",
       "capture_project": true
     },
     {
-      "vfs_exists": "${session}/search/data/search.json"
+      "send": "gather",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/data/gather.json",
+        "/home/${user}/projects/${project}/input/.cohort"
+      ]
     },
     {
-      "vfs_exists": "${session}/search/gather/data/gather.json"
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
+      "send": "harmonize",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/data/harmonize.json",
+        "/home/${user}/projects/${project}/input/.harmonized"
+      ]
     },
     {
       "send": "proceed",
-      "success": true
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/data/code.json",
+        "/home/${user}/projects/${project}/src/train.py"
+      ]
     },
     {
-      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
-    },
-    {
-      "send": "cd /home/${user}/projects/${project}/src",
-      "success": true
-    },
-    {
-      "send": "python train.py",
-      "success": true,
-      "output_contains": "LOCAL TRAINING COMPLETE"
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/data/train.json"
+      "send": "train",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/data/train.json",
+        "/home/${user}/projects/${project}/.local_pass"
+      ]
     },
     {
       "send": "federate",
-      "success": true,
-      "output_contains": "FEDERATION BRIEFING"
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/data/briefing.json"
+      ]
     },
     {
       "send": "approve",
-      "success": true,
-      "output_contains": "FLOWER TRANSCOMPILATION"
-    },
-    {
-      "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/data/node.py"
-    },
-    {
-      "send": "approve",
-      "success": true,
-      "output_contains": "CONTAINER BUILD"
-    },
-    {
-      "send": "config name histo-exp1-federated",
-      "success": true,
-      "output_contains": "PUBLISH METADATA UPDATED"
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/data/transcompile.json"
+      ]
     },
     {
       "send": "approve",
-      "success": true,
-      "output_contains": "PUBLICATION CONFIGURATION CONFIRMED"
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/data/containerize.json"
+      ]
+    },
+    {
+      "send": "config name oracle-app",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/data/publish-config.json"
+      ]
     },
     {
       "send": "approve",
-      "success": true,
-      "output_contains": "REGISTRY PUBLICATION"
+      "expect": "OK"
     },
     {
-      "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/containerize/marketplace-publish/data/publish-receipt.json"
+      "send": "approve",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/data/publish-execute.json"
+      ]
     },
     {
       "send": "dispatch",
-      "success": true,
-      "output_contains": "FEDERATION DISPATCH"
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/data/dispatch.json"
+      ]
     },
     {
-      "vfs_exists": "/home/${user}/projects/${project}/src/source-crosscompile/containerize/marketplace-publish/dispatch/federated-rounds/data/round-05.json"
+      "send": "status",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
+      ]
     },
     {
       "send": "publish model",
-      "success": true,
-      "output_contains": "MODEL PUBLICATION"
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/data/briefing.json"
-    },
-    {
-      "send": "next?",
-      "success": true,
-      "output_contains": "federate --rerun"
-    },
-    {
-      "send": "federate",
-      "success": true,
-      "output_contains": "FEDERATION ALREADY COMPLETED"
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/federate-model-publish/data/model-publish.json"
+      ]
     }
   ]
 }

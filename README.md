@@ -52,7 +52,7 @@ This design is not a stylistic preference — it is a consequence of the mathema
 
 See also:
 - `docs/intents.adoc` (intent-action switchboard)
-- `docs/persona-workflows.adoc` (artifact-grounded workflow semantics)
+- `docs/legacy/persona-workflows.adoc` (artifact-grounded workflow semantics)
 - `docs/vcs.adoc` (filesystem and shell as state substrate)
 - `docs/oracle.adoc` (agentic self-testing methodology)
 
@@ -144,7 +144,7 @@ New to the project? Read these in sequence. They build on each other — startin
 6. [VCS Specification](docs/vcs.adoc): the filesystem and shell substrate that grounds all workflow state.
 7. [Calypso AI Core](docs/calypso.adoc): the shared browser/CLI intent layer — identity, architecture, and routing chain.
 8. [Calypso Service Architecture](docs/calypso-architecture.adoc): the WebSocket service layer — protocol, transport, modules, and shared sessions.
-9. [Persona Workflows](docs/persona-workflows.adoc): declarative workflow contracts, validation conditions, and artifact semantics.
+9. [Persona Workflows](docs/legacy/persona-workflows.adoc): declarative workflow contracts, validation conditions, and artifact semantics.
 10. [Developer Onboarding](docs/onboarding.adoc): practical setup, coding patterns, and contribution guidelines.
 11. [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): naming conventions, typing rules, and code standards.
 
@@ -156,8 +156,8 @@ New to the project? Read these in sequence. They build on each other — startin
 - [VCS Specification](docs/vcs.adoc): filesystem/shell substrate and provider model.
 - [Calypso AI Core](docs/calypso.adoc): shared browser/CLI core and runtime modes.
 - [Calypso Service Architecture](docs/calypso-architecture.adoc): WebSocket service layer and module reference.
-- [SeaGaP Workflow](docs/seagap-workflow.adoc): UX behavior by stage.
-- [Persona Workflows](docs/persona-workflows.adoc): declarative workflow contracts.
+- [SeaGaP Workflow](docs/legacy/seagap-workflow.adoc): UX behavior by stage.
+- [Persona Workflows](docs/legacy/persona-workflows.adoc): declarative workflow contracts.
 - [Intents and Routing](docs/intents.adoc): intent-action switchboard.
 - [ORACLE Testing](docs/oracle.adoc): assistant-driven verification model.
 - [Why Not Agentic](docs/why-not-agentic.adoc): plain-language case for deterministic orchestration.

@@ -1,0 +1,75 @@
+= Merkle Engine: The Cryptographic Conscience of State
+:author: ATLAS Project Team
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 4
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+The Merkle Engine is the authoritative mechanism for data-state integrity within the ARGUS v10.0 architecture. It implements a recursive, Directed Acyclic Graph (DAG)-aware fingerprinting protocol that cryptographically anchors every workflow artifact to its specific logical provenance. This specification details the mathematical model of the Merkle provenance chain, the structural schema of the `ArtifactEnvelope`, and the deterministic algorithms for branch-aware staleness detection. By transforming the filesystem into a verifiable ledger, the Merkle Engine provides the "Conscience" required to ensure scientific reproducibility in AI-mediated research environments.
+
+== Introduction: The Problem of Assertion Drift
+
+=== The "I Did It" Fallacy
+In early versions of ARGUS, stage completion was tracked via in-memory booleans. This led to the "Assertion Drift" failure mode, where an AI assistant or a monolithic service would claim that a task was finished based on a successful function return, even if the resulting data was inconsistent or the underlying filesystem had been manually tampered with. There was no physical link between the *process* and the *product*.
+
+=== The Resolution: Materialized Proof of Work
+The v10.0 architecture resolves this by mandating that "Truth is a Property of the Disk." The Merkle Engine ensures that no stage is considered "Complete" unless it possesses a cryptographically anchored artifact. This shift moves the system from trusting transient memory to verifying physical evidence. The engine functions as a continuous background auditor, ensuring that the system's logical position is always mathematically synchronized with the physical project tree.
+
+== The Mathematical Model: Recursive Fingerprinting
+
+The core of the Merkle Engine is the SHA-256 fingerprinting protocol. Unlike standard file hashing, the Merkle Engine incorporates the **Topological Lineage** of the artifact.
+
+=== The Fingerprint Function
+For any given stage $n$ in the workflow DAG, the fingerprint $H_n$ is calculated as:
+$$H_n = \text{SHA-256}(Data_n + \sum_{p \in Parents} H_p)$$
+Where:
+*   $Data_n$: The serialized JSON payload produced by the stage's Guest Plugin.
+*   $H_p$: The current fingerprints of all immediate parent nodes defined in the workflow manifest.
+
+=== The Chain of Integrity
+This recursive definition ensures that if any upstream artifact is modified, deleted, or re-executed (creating a new branch), its hash changes. This change propagates through the formula, invalidating the fingerprints of every downstream stage. This "Topological Invalidation" is the primary defense against the use of inconsistent or outdated data in high-stakes training loops.
+
+== The Artifact Envelope Schema
+
+Every piece of work produced by an ARGUS plugin is wrapped in an `ArtifactEnvelope` before being materialized to the VFS. This envelope (defined in `src/lcarslm/MerkleEngine.ts`) provides the metadata required for recursive verification.
+
+[source,json]
+----
+{
+  "stageId": "harmonize",
+  "timestamp": "2026-02-17T14:30:00Z",
+  "fingerprint": "850daa6...",
+  "parents": [
+    { "stageId": "gather", "fingerprint": "2baca4d..." }
+  ],
+  "data": {
+    "modality": "histology",
+    "steps": ["scan", "standardize"]
+  }
+}
+----
+
+== Branch-Aware Staleness Detection
+
+The Merkle Engine enables the system to support non-linear "Branching" without losing provenance.
+
+=== The Detection Algorithm
+When the `WorkflowAdapter` (see `docs/dag-engine.adoc`) queries the state of a stage, it invokes the Merkle Engine to perform a **Staleness Check**:
+1.  **Load Local Envelope**: Read the artifact from the current VFS path.
+2.  **Verify Parentage**: Compare the `fingerprint` values stored in the envelope's `parents` array against the *current* latest fingerprints of those parent stages in the session tree.
+3.  **Flag Drift**: If any parent fingerprint mismatch is detected, the stage is flagged as `[STALE]`.
+
+=== The User Experience of Staleness
+In the LCARS UI, stale stages are marked with an asterisk (`*`). This provides the researcher with immediate visual confirmation that their current work is no longer grounded in the latest upstream data, preventing the "Garbage In, Garbage Out" failure mode.
+
+== Conclusion
+
+The Merkle Engine is the fundamental mechanism that transforms ARGUS from a conversational interface into a scientifically rigorous operating system. By grounding every state transition in a recursive cryptographic proof, the engine ensures that the provenance of every federated model is immutable and auditable. It provides the "Substrate of Integrity" that allows researchers to trust that their results are a direct and valid consequence of their documented scientific process.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

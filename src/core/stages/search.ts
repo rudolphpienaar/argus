@@ -16,7 +16,6 @@ import { populate_ide, training_launch } from './process.js';
 import type { Dataset, Project } from '../models/types.js';
 import type { FileNode as VcsFileNode } from '../../vfs/types.js';
 import { LCARSEngine } from '../../lcarslm/engine.js';
-import { ai_greeting } from '../../lcarslm/AIService.js';
 import { core_reinitialize } from '../../lcarslm/browser.js';
 import { render_assetCard, type AssetCardOptions } from '../../ui/components/AssetCard.js';
 import { FileBrowser } from '../../ui/components/FileBrowser.js';
@@ -104,8 +103,8 @@ export function lcarslm_simulate(): void {
     core_reinitialize();
     if (globals.terminal) {
         globals.terminal.setStatus('MODE: [SIMULATION] // EMULATION ACTIVE');
-        // Trigger Calypso startup sequence
-        ai_greeting();
+        // Trigger Calypso startup sequence via standard command pipeline
+        globals.shell?.command_execute('/greet');
     }
 }
 
@@ -1608,8 +1607,8 @@ export function stage_enter(): void {
     if (globals.frameSlot) {
         setTimeout(() => { 
             globals.frameSlot?.frame_open(); 
-            // Trigger Calypso greeting after frame opens
-            setTimeout(ai_greeting, 800);
+            // Trigger Calypso greeting after frame opens via protocol
+            setTimeout(() => globals.shell?.command_execute('/greet'), 800);
         }, 10);
     }
 }

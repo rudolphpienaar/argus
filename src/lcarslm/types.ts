@@ -6,8 +6,11 @@
  * @module
  */
 
-import type { Dataset, AppState } from '../core/models/types.js';
+import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
+import type { Shell } from '../vfs/Shell.js';
+import type { Dataset, AppState, FederationState } from '../core/models/types.js';
 import type { FileNode } from '../vfs/types.js';
+import type { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 
 // ─── LLM Types ─────────────────────────────────────────────────────────────
 
@@ -36,6 +39,87 @@ export interface LCARSSystemConfig {
     provider: 'openai' | 'gemini';
 }
 
+// ─── Calypso Status & Results ───────────────────────────────────────────
+
+/**
+ * Protocol-level status codes for Calypso interactions.
+ *
+ * Used by Oracle tests to verify the deterministic logic state machine
+ * independently of natural language output.
+ */
+export enum CalypsoStatusCode {
+    /** Intent matched, prerequisites met, execution succeeded. */
+    OK = 'OK',
+
+    /** Intent matched, but blocked by workflow constraints (generic). */
+    BLOCKED = 'BLOCKED',
+
+    /** Intent matched, but blocked by workflow constraints (e.g. missing parent). */
+    BLOCKED_MISSING = 'BLOCKED_MISSING',
+
+    /** Intent matched, but blocked by stale fingerprints (needs re-execution). */
+    BLOCKED_STALE = 'BLOCKED_STALE',
+
+    /** Input resolved to a conversational intent (chat/fallback). */
+    CONVERSATIONAL = 'CONVERSATIONAL',
+
+    /** Intent matched, but a technical error occurred during execution. */
+    ERROR = 'ERROR',
+
+    /** Input could not be resolved to any meaningful intent. */
+    UNKNOWN = 'UNKNOWN'
+}
+
+/**
+ * Result returned by an atomic workflow plugin.
+ *
+ * This is the contract between the Plugin (Guest) and the Calypso Host.
+ * The Host interprets the statusCode and message, while wrapping any
+ * artifactData into the Merkle session tree.
+ */
+export interface PluginResult {
+    /** Protocol-agnostic feedback for the user. */
+    message: string;
+
+    /** Categorical status code for the execution result. */
+    statusCode: CalypsoStatusCode;
+
+    /** Optional UI actions to be dispatched by the host. */
+    actions?: CalypsoAction[];
+
+    /** Optional domain-specific payload for the Merkle artifact envelope. */
+    artifactData?: unknown;
+}
+
+/**
+ * Standard context injected into every plugin.
+ *
+ * Provides the "Standard Library" for plugins to interact with the Argus VM.
+ * Plugins use this to mutate the project tree and read application state.
+ */
+export interface PluginContext {
+    /** Access to the Virtual File System (Project Tree). */
+    vfs: VirtualFileSystem;
+
+    /** Ability to execute Shell builtins and scripts. */
+    shell: Shell;
+
+    /** Read/Write access to the centralized application store. */
+    store: CalypsoStoreActions;
+
+    /** Access to the stateful federation handshake orchestrator. */
+    federation: FederationOrchestrator;
+
+    /** Configuration parameters provided in the Manifest YAML for this stage. */
+    parameters: Record<string, unknown>;
+
+    /** The canonical protocol command that triggered this plugin. */
+    command: string;
+
+    /** Arguments passed to the command. */
+    args: string[];
+}
+
 // ─── CalypsoCore Types ─────────────────────────────────────────────────────
 
 /**
@@ -62,7 +146,7 @@ export type CalypsoAction =
     | { type: 'project_create'; name: string }
     | { type: 'project_open'; id: string }
     | { type: 'project_rename'; id: string; newName: string }
-    | { type: 'stage_advance'; stage: AppState['currentStage']; workflow?: 'fedml' | 'chris' }
+    | { type: 'stage_advance'; stage: AppState['currentStage']; workflow?: string }
     | { type: 'workspace_render'; datasets: Dataset[] }
     | { type: 'overlay_close' }
     | { type: 'federation_start' }
@@ -80,8 +164,11 @@ export interface CalypsoResponse {
     /** Actions for the adapter to execute (environment-specific) */
     actions: CalypsoAction[];
 
-    /** Whether the command executed successfully */
+    /** Whether the command executed successfully (Legacy: Use statusCode for logic) */
     success: boolean;
+
+    /** Categorical status code for protocol verification and Oracle testing. */
+    statusCode: CalypsoStatusCode;
 
     /** Optional state snapshots for testing/debugging */
     state?: {
@@ -92,12 +179,24 @@ export interface CalypsoResponse {
 
 /**
  * Classified intent from natural language input.
+ *
+ * This is the "compiled" form of a user's request.
  */
 export interface CalypsoIntent {
+    /** The broad category of intent. */
     type: 'shell' | 'workflow' | 'llm' | 'special';
+
+    /** The canonical command name (e.g., 'rename', 'harmonize'). */
     command?: string;
+
+    /** Arguments for the command. */
     args?: string[];
+
+    /** The original user input string. */
     raw: string;
+
+    /** Whether the intent was resolved via LLM (true) or deterministic logic (false). */
+    isModelResolved: boolean;
 }
 
 /**
@@ -127,6 +226,9 @@ export interface CalypsoStoreActions {
     /** Get current state snapshot */
     state_get(): Partial<AppState>;
 
+    /** Update partial state */
+    state_set(state: Partial<AppState>): void;
+
     /** Reset to initial state */
     reset(): void;
 
@@ -150,4 +252,10 @@ export interface CalypsoStoreActions {
 
     /** Update the current session path */
     session_setPath(path: string | null): void;
+
+    /** Get current federation handshake state */
+    federation_getState(): FederationState | null;
+
+    /** Update federation handshake state */
+    federation_setState(state: FederationState | null): void;
 }

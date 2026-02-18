@@ -37,6 +37,7 @@ export function manifest_parse(yamlStr: string): DAGDefinition {
 
     const header = header_parse(raw);
     const nodes = new Map<string, DAGNode>();
+    const orderedNodeIds: string[] = [];
     const edges: DAGEdge[] = [];
 
     const rawStages = raw['stages'];
@@ -44,13 +45,14 @@ export function manifest_parse(yamlStr: string): DAGDefinition {
         throw new Error('Invalid manifest: stages must be an array');
     }
 
-    // Build nodes
+    // Build nodes (preserving manifest order)
     for (const rawStage of rawStages) {
         const node = node_parse(rawStage as Record<string, unknown>);
         if (nodes.has(node.id)) {
             throw new Error(`Duplicate stage ID: '${node.id}'`);
         }
         nodes.set(node.id, node);
+        orderedNodeIds.push(node.id);
     }
 
     // Derive edges from backward pointers
@@ -77,6 +79,7 @@ export function manifest_parse(yamlStr: string): DAGDefinition {
         source: 'manifest',
         header,
         nodes,
+        orderedNodeIds,
         edges,
         rootIds,
         terminalIds,

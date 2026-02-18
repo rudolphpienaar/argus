@@ -1,0 +1,108 @@
+= ARGUS v10.0 Refactor Specification: The Plugin Runtime & Intent-First Pipeline
+:author: ARGUS Collaborative Development
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 3
+:sectnums:
+
+toc::[]
+
+== Core Philosophy: The Operating System Metaphor
+
+The v10.0 architecture moves ARGUS from a monolithic command switchboard to a decoupled **Operating System (Host)** and **Workflow (Program)** model.
+
+The "Core" (Calypso) shall no longer contain idiosyncratic knowledge of specific workflows (e.g., FedML, Histology). Instead, it provides a generic runtime environment—a "Virtual Machine"—that executes atomic capabilities defined in external manifests.
+
+== The Intent-First Pipeline (Interpretation as Compilation)
+
+The system shall replace the current "Waterfall" regex matcher with an **Interpretation-First** pipeline.
+
+1.  **Interpretation (LLM as Compiler):** The LLM receives noisy natural language and "compiles" it into a **Deterministic Protocol** (a Canonical Intent object).
+2.  **Graceful Degradation:** Without an LLM, the system accepts the raw protocol directly (e.g., `rename target-name`).
+3.  **Validation (Gatekeeper):** The Core verifies the Protocol against the current DAG state (WorkflowAdapter) and Merkle fingerprints.
+4.  **Execution (Plugin Host):** If allowed, the Core dispatches to a specific plugin module.
+5.  **Materialization (Host):** The Core captures the result, wraps it in a Merkle-proven artifact, and materializes it into the Session Tree.
+
+== Protocol Definition (`src/lcarslm/types.ts`)
+
+=== CalypsoStatusCode (Verification Enum)
+
+The binary `success` boolean is replaced by a categorical status for machine-verifiable logic:
+
+[cols="1,3"]
+|===
+| Code | Meaning
+
+| `OK` | Intent matched, prerequisites met, execution succeeded.
+| `BLOCKED_MISSING` | Denied; prerequisites (parent artifacts) are missing.
+| `BLOCKED_STALE` | Denied; data-state is stale (Merkle mismatch).
+| `CONVERSATIONAL` | Resolved to a chat/fallback intent (no state mutation).
+| `ERROR` | Deterministic handler/plugin crashed during execution.
+| `UNKNOWN` | Input could not be resolved to any intent.
+|===
+
+=== Plugin Context & Result
+
+Every plugin receives a strictly-typed **PluginContext** (the "Standard Library") and must return a **PluginResult**.
+
+[source,typescript]
+----
+interface PluginContext {
+    vfs: VirtualFileSystem;      // Project Tree access
+    shell: Shell;               // POSIX builtins
+    store: CalypsoStoreActions;  // App state access
+    parameters: Record<string, any>; // Manifest-provided config
+}
+
+interface PluginResult {
+    message: string;             // User feedback
+    statusCode: CalypsoStatusCode;
+    artifactData?: any;          // Payload for Merkle envelope
+}
+----
+
+== The Plugin Runtime (`src/plugins/`)
+
+Idiosyncratic logic is moved to standalone modules in `src/plugins/`.
+
+1.  **Naming Convention:** Module filenames must match the `handler` field in the Manifest YAML.
+2.  **Isolation:** Plugins are prohibited from touching the Session Tree (`~/sessions/`). They only mutate the Project Tree (`~/projects/`).
+3.  **Merkle Responsibility:** The Host (CalypsoCore) is solely responsible for hashing `artifactData` and writing to the Session Tree.
+
+== Oracle v2: Data-State Grounding
+
+Verification shifts from conversational output to **materialized side effects**.
+
+1.  **Atomic Step Schema:**
+    [source,json]
+    {
+      "send": "harmonize",
+      "expect": "OK",
+      "materialized": [
+        "${session}/.../harmonize/data/harmonize.json",
+        "${project}/input/.harmonized"
+      ]
+    }
+2.  **Verification:** The runner confirms the `statusCode` and checks the VFS for the physical existence of every path in the `materialized` list.
+
+== Coding Mandates (The Argus Standard)
+
+All changes must strictly adhere to these four pillars:
+
+[horizontal]
+Strict Typing:: No usage of `any`. Every variable, parameter, and return must be explicitly typed.
+RPN Naming:: Methods must follow `<subject>_<verb>` (e.g., `intent_resolve`, `plugin_load`).
+Atomic Responsibility:: Functions must be single-purpose and decoupled.
+JSDoc Documentation:: Complete documentation for every interface, type, and exported function.
+
+== Implementation Roadmap
+
+1.  **Phase 1: Foundation.** Establish `types.ts` and `ArtifactEnvelope` updates.
+2.  **Phase 2: Intent Infrastructure.** Refactor `IntentParser` and `CalypsoCore` for Interpretation-First flow.
+3.  **Phase 3: Plugin Host.** Implement the dynamic loader and the Merkle materialization engine.
+4.  **Phase 4: The Great Purge.** Move `harmonize`, `gather`, and `federation` logic into `src/plugins/`.
+5.  **Phase 5: Oracle v2.** Update the runner and rewrite `fedml-smoke` for atomic verification.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

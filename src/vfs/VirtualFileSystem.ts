@@ -54,7 +54,7 @@ export class VirtualFileSystem {
     public node_invalidate(path: string): void {
         const resolved: string = this.path_resolve(path);
         const node: FileNode | null = this.node_at(resolved);
-        if (node && node.type === 'file') {
+        if (node && node.type === 'file' && node.contentGenerator) {
             node.content = null;
         }
     }
@@ -122,7 +122,10 @@ export class VirtualFileSystem {
     public node_write(path: string, content: string): void {
         const resolved: string = this.path_resolve(path);
         const parentPath: string = path_parent(resolved);
-        this.dir_create(parentPath); // Ensure parent exists
+        const parent = this.node_at(parentPath);
+        if (!parent || parent.type !== 'folder') {
+            throw new Error('Parent directory does not exist');
+        }
 
         let node: FileNode | null = this.node_at(resolved);
         if (node && node.type === 'folder') throw new Error(`write: ${path}: Is a directory`);
@@ -198,11 +201,11 @@ export class VirtualFileSystem {
         const segments: string[] = resolved.split('/').filter(Boolean);
         let current: FileNode = this.root;
 
-        let currentPath = '';
+        let currentPath: string = '';
         for (const seg of segments) {
             currentPath += '/' + seg;
             if (!current.children) current.children = [];
-            let child = current.children.find(c => c.name === seg);
+            let child: FileNode | undefined = current.children.find((c: FileNode): boolean => c.name === seg);
             if (!child) {
                 child = node_create(seg, 'folder', currentPath);
                 current.children.push(child);
@@ -219,14 +222,18 @@ export class VirtualFileSystem {
         const resolved: string = this.path_resolve(path);
         this.dir_create(path_parent(resolved));
         
-        const existing = this.node_at(resolved);
+        const existing: FileNode | null = this.node_at(resolved);
         if (existing) {
             existing.modified = new Date();
+            if (content !== undefined) {
+                existing.content = content;
+                existing.size = size_format(content.length);
+            }
             return;
         }
 
-        const parent = this.node_at(path_parent(resolved))!;
-        const node = node_create(path_basename(resolved), 'file', resolved);
+        const parent: FileNode = this.node_at(path_parent(resolved))!;
+        const node: FileNode = node_create(path_basename(resolved), 'file', resolved);
         if (content !== undefined) {
             node.content = content;
             node.size = size_format(content.length);
@@ -260,9 +267,13 @@ export class VirtualFileSystem {
         const segments: string[] = absolutePath.split('/').filter(Boolean);
         let current: FileNode = this.root;
         for (const seg of segments) {
-            if (!current.children) return null;
-            const child: FileNode | undefined = current.children.find(c => c.name === seg);
-            if (!child) return null;
+            if (!current.children) {
+                return null;
+            }
+            const child: FileNode | undefined = current.children.find((c: FileNode): boolean => c.name === seg);
+            if (!child) {
+                return null;
+            }
             current = child;
         }
         return current;

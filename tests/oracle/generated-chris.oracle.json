@@ -1,0 +1,53 @@
+{
+  "name": "Generated Linear Walk: ChRIS Plugin — Developer Pipeline",
+  "username": "oracle",
+  "persona": "appdev",
+  "steps": [
+    {
+      "send": "/reset",
+      "success": true
+    },
+    {
+      "send": "search brain",
+      "success": true,
+      "capture_project": false
+    },
+    {
+      "vfs_exists": "${session}/search/data/search.json"
+    },
+    {
+      "send": "add ds-001",
+      "success": true,
+      "capture_project": false
+    },
+    {
+      "send": "gather",
+      "success": true,
+      "capture_project": true
+    },
+    {
+      "vfs_exists": "${session}/search/gather/data/gather.json"
+    },
+    {
+      "send": "proceed chris",
+      "success": true,
+      "capture_project": false
+    },
+    {
+      "vfs_exists": "${session}/search/gather/code/data/code.json"
+    },
+    {
+      "send": "python main.py",
+      "success": true,
+      "capture_project": false
+    },
+    {
+      "vfs_exists": "${session}/search/gather/code/test/data/test.json"
+    },
+    {
+      "send": "publish",
+      "success": true,
+      "capture_project": false
+    }
+  ]
+}

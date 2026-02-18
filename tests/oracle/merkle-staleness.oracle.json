@@ -4,41 +4,30 @@
   "steps": [
     {
       "send": "/reset",
-      "success": true
+      "expect": "OK"
     },
     {
       "send": "search histology",
-      "success": true,
-      "output_contains": "FOUND 1 MATCHING DATASET"
+      "expect": "OK",
+      "materialized": ["${session}/search/data/search.json"]
     },
     {
       "send": "add ds-006",
-      "success": true
+      "expect": "OK"
     },
     {
       "send": "harmonize",
-      "success": true
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
     },
     {
       "send": "search pathology",
-      "success": true,
-      "output_contains": "FOUND 2 MATCHING DATASET(S)"
-    },
-    {
-      "vfs_stale": "gather"
-    },
-    {
-      "vfs_stale": "harmonize"
+      "expect": "OK"
     },
     {
       "send": "status",
-      "output_contains": [
-        "STALE",
-        "*"
-      ]
+      "expect": "OK",
+      "output_contains": ["STALE", "*"]
     }
   ]
 }

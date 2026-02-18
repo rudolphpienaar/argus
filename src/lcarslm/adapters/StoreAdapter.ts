@@ -8,7 +8,7 @@
  */
 
 import type { CalypsoStoreActions } from '../types.js';
-import type { Dataset, AppState } from '../../core/models/types.js';
+import type { Dataset, AppState, FederationState } from '../../core/models/types.js';
 import { store, state } from '../../core/state/store.js';
 
 /**
@@ -28,8 +28,16 @@ export class StoreAdapter implements CalypsoStoreActions {
             marketplaceOpen: state.marketplaceOpen,
             installedAssets: [...state.installedAssets],
             costEstimate: { ...state.costEstimate },
-            trainingJob: state.trainingJob ? { ...state.trainingJob } : null
+            trainingJob: state.trainingJob ? { ...state.trainingJob } : null,
+            lastIntent: state.lastIntent
         };
+    }
+
+    /**
+     * Update partial state.
+     */
+    public state_set(newState: Partial<AppState>): void {
+        Object.assign(state, newState);
     }
 
     /**
@@ -94,6 +102,20 @@ export class StoreAdapter implements CalypsoStoreActions {
      */
     public session_setPath(path: string | null): void {
         this.sessionPath = path;
+    }
+
+    /**
+     * Get current federation handshake state from global store.
+     */
+    public federation_getState(): FederationState | null {
+        return state.federationState;
+    }
+
+    /**
+     * Update federation handshake state in global store.
+     */
+    public federation_setState(fedState: FederationState | null): void {
+        state.federationState = fedState;
     }
 }
 

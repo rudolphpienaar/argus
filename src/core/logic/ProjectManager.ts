@@ -82,13 +82,6 @@ export function project_gather(
         project_initialize(project);
         isNewDraft = true;
         
-        // Notify via Terminal if available
-        if (globals.terminal) {
-             globals.terminal.println('<span class="muthur-text">NO ACTIVE PROJECT DETECTED.</span>');
-             globals.terminal.println(`<span class="muthur-text">INITIATING NEW DRAFT WORKSPACE [${project.name}].</span>`);
-             globals.terminal.println('<span class="muthur-text">COHORT MOUNTED.</span>');
-        }
-        
         // Load into store as active (persistence for session)
         store.project_load(project);
         
@@ -209,61 +202,7 @@ export function project_rename(project: Project, newName: string): void {
             }
         }
 
-        if (globals.terminal) {
-            globals.terminal.println(`● PROJECT RENAMED: [${oldName}] -> [${newName}]`);
-            globals.terminal.println(`○ VFS PATH MOVED TO ${newPath}`);
-            if (globals.shell) {
-                // Force prompt update in case CWD changed
-                // (Though command_execute(cd) handles it, prompt_sync forces redraw)
-                // In headless, prompt is rendered by CLIAdapter automatically.
-            }
-        }
-
     } catch (e: unknown) {
         console.error('Rename failed', e);
-        if (globals.terminal) {
-            globals.terminal.println(`<span class="error">>> ERROR: RENAME FAILED. ${e instanceof Error ? e.message : String(e)}</span>`);
-        }
-    }
-}
-
-/**
- * Simulates data harmonization across a project's gathered cohort.
- * Standardizes metadata, modalities, and labels.
- *
- * @param project - The project to harmonize.
- */
-export function project_harmonize(project: Project): void {
-    const username = globals.shell?.env_get('USER') || 'user';
-    const inputPath = `/home/${username}/projects/${project.name}/input`;
-
-    if (globals.terminal) {
-        globals.terminal.println('● INITIATING COHORT HARMONIZATION PROTOCOL...');
-        globals.terminal.println('○ SCANNING SITES FOR METADATA VARIANCE...');
-        globals.terminal.println('○ STANDARDIZING PIXEL SPACING TO 1.0mm ISOTROPIC...');
-        globals.terminal.println('○ NORMALIZING INTENSITY DISTRIBUTIONS (Z-SCORE)...');
-    }
-
-    try {
-        // Create harmonization marker in VFS
-        if (!globals.vcs.node_stat(inputPath)) {
-            globals.vcs.dir_create(inputPath);
-        }
-        
-        const markerPath = `${inputPath}/.harmonized`;
-        globals.vcs.file_create(markerPath, JSON.stringify({
-            timestamp: new Date().toISOString(),
-            status: 'COMPLETED',
-            appliedFilters: ['normalization', 'resampling', 'label_alignment']
-        }, null, 2));
-
-        if (globals.terminal) {
-            globals.terminal.println('<span class="success">>> SUCCESS: COHORT HARMONIZED.</span>');
-            globals.terminal.println(`<span class="dim">   MARKER CREATED: ${markerPath}</span>`);
-        }
-    } catch (e: unknown) {
-        if (globals.terminal) {
-            globals.terminal.println(`<span class="error">>> ERROR: HARMONIZATION FAILED. ${e instanceof Error ? e.message : String(e)}</span>`);
-        }
     }
 }

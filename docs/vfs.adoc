@@ -1,0 +1,72 @@
+= Virtual File System (VFS): The Ledger of Deterministic State
+:author: ATLAS Project Team
+:revdate: 2026-02-17
+:revnumber: 10.0.0
+:toc: macro
+:toclevels: 4
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+The Virtual File System (VFS) is the primary ledger of the ARGUS environment. It provides a high-fidelity, in-memory simulation of a POSIX-compliant filesystem, serving as the "Ground Truth" for all workflow progress and data provenance. This specification details the architectural design of the VFS node model, the mechanics of path resolution, and the engineering rationale for grounding agentic side effects in physical, Merkle-ready artifacts. By enforcing strict POSIX semantics within a virtualized substrate, the VFS ensures that the system's state is always verifiable and immune to AI-mediated drift.
+
+== Introduction: The Historical Context
+
+The development of the VFS was driven by the "State-Drift" failure mode identified in early iterations of ARGUS. In legacy versions (v9.0 and below), project state was represented by high-level TypeScript interfaces. While intuitive, this approach lacked the structural rigor required for complex, multi-stage scientific workflows. Without a persistent, file-based substrate, there was no objective mechanism to verify if an AI agent had actually performed a claimed action (e.g., "I have initialized your workspace").
+
+The resolution was the implementation of a full-stack Virtual File System. The VFS moves state management from "Assertions in Memory" to "Artifacts on Disk." In the v10.0 architecture, every significant procedural transition must be materialized as a physical file mutation. This "Filesystem-First" philosophy ensures that the system's conscience—the Merkle Engine—has a physical ledger upon which to anchor the scientific provenance chain. The VFS is not merely a storage layer; it is the fundamental mechanism of truth in the ARGUS operating model.
+
+== The Node Model: POSIX-Compliant Integrity
+
+The VFS is architected as a recursive tree of `FileNode` objects, located in `src/vfs/VirtualFileSystem.ts`. This model strictly enforces POSIX metadata standards to ensure high-fidelity simulation.
+
+=== Anatomical Specification of a FileNode
+Every node in the system, whether a directory, a file, or a symbolic link, implements a common metadata structure:
+*   **Permissions (`mode`):** Enforces access controls (e.g., `0755` for directories, `0644` for files). This is utilized by the Host to prevent unprivileged Guest plugins from accessing sensitive system paths.
+*   **Ownership (`uid/gid`):** Maps nodes to specific users and groups (e.g., `oracle`, `developer`), enabling persona-based isolation within the shared virtual disk.
+*   **Temporal Markers (`mtime`, `atime`, `ctime`):** Tracks modification, access, and change timestamps. These are critical for the `MerkleEngine` to detect stale artifacts and for the UI to display accurate "Last Modified" information.
+
+=== Recursive Tree Navigation
+The filesystem tree is managed by the `VirtualFileSystem` kernel. It maintains a reference to the `root` node (`/`) and executes all mutations through recursive walks. This ensures that operations like `node_move` (renaming) or `node_cloneDeep` (branching) are performed with perfect structural integrity, including the recursive update of parent-child pointers.
+
+== Path Resolution and CWD Isolation
+
+To support a multi-process execution environment, the VFS implements an advanced path resolution engine.
+
+=== Relative vs. Absolute Resolution
+Every Shell process in ARGUS maintains its own Current Working Directory (CWD). The VFS resolves paths by normalizing them against this CWD:
+1.  **Absolute Paths (`/`):** Resolved directly from the root node.
+2.  **Home Paths (`~/`):** Resolved relative to the `$HOME` environment variable (e.g., `/home/oracle/`).
+3.  **Relative Paths (`./`, `../`):** Resolved relative to the active process's CWD.
+
+=== Symbolic Linking
+The VFS supports soft links (`type: 'link'`), allowing the same physical data to appear at multiple logical paths. This is used extensively in the `Gather` stage to map institutional datasets from the global catalog into a project-scoped `/input/` directory without duplicating memory.
+
+== The Mutation Protocol: Events and Materialization
+
+All mutations to the VFS tree are performed through a suite of atomic operations.
+
+=== Deterministic Operations
+Operations like `node_write`, `node_create`, and `dir_create` are synchronous and deterministic. They either succeed completely or fail with a POSIX-like error (e.g., "File exists," "Permission denied"). This ensures that the filesystem is never in an inconsistent state.
+
+=== Event-Driven Synchronization
+Every mutation emits a `VFS_CHANGED` event via the global `EventBus`. This enables:
+*   **UI Reactivity:** The FileBrowser and Workspace IDE components update their views in real-time as files are created or modified.
+*   **Merkle Anchoring:** The `MerkleEngine` listens for changes to the `/sessions/` tree to trigger automatic fingerprint calculation and staleness detection.
+
+== Lazy Materialization and Content Generators
+
+To support massive medical imaging catalogs without excessive memory overhead, the VFS utilizes a "Lazy Materialization" strategy via the `ContentRegistry`.
+
+*   **Content Generators:** Files can be initialized with a `contentGenerator` ID rather than a static buffer. 
+*   **Just-in-Time Synthesis:** When `node_read()` is invoked, the VFS kernel detects the generator and synthesizes the content (e.g., a `train.py` scaffold) based on the current system context.
+*   **Freezing:** Once a file is manually modified, the generator is detached, and the file becomes a static "snapshot," ensuring the integrity of the provenance chain.
+
+== Conclusion
+
+The Virtual File System is the "Substrate of Truth" for the ARGUS environment. By virtualizing the node-level file metadata and enforcing a strictly-typed mutation protocol, it provides the deterministic grounding required for high-integrity federated research. The VFS ensures that "Truth" is not a linguistic assertion made by an AI, but a physical property of a persistent, verifiable, and POSIX-compliant filesystem tree.
+
+---
+_Last updated: 2026-02-17 (v10.0.0)_

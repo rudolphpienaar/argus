@@ -217,7 +217,6 @@ stages:
       - show transcompile
       - approve
     handler: federation
-    completes_with: federate-brief
 
   - id: federate-containerize
     name: Container Build
@@ -238,7 +237,6 @@ stages:
       - show container
       - approve
     handler: federation
-    completes_with: federate-brief
 
   - id: federate-publish-config
     name: Publication Configuration
@@ -262,7 +260,6 @@ stages:
       - config visibility <public|private>
       - approve
     handler: federation
-    completes_with: federate-brief
 
   - id: federate-publish-execute
     name: Registry Publication
@@ -280,7 +277,6 @@ stages:
       - show publish
       - approve
     handler: federation
-    completes_with: federate-brief
 
   - id: federate-dispatch
     name: Federation Dispatch
@@ -301,8 +297,8 @@ stages:
     commands:
       - dispatch
       - dispatch --sites <site1,site2>
+      - approve
     handler: federation
-    completes_with: federate-brief
 
   - id: federate-execute
     name: Federated Training Execution
@@ -324,7 +320,6 @@ stages:
       - show metrics
       - show rounds
     handler: federation
-    completes_with: federate-brief
 
   - id: federate-model-publish
     name: Model Publication
@@ -348,4 +343,3 @@ stages:
       - publish model
       - show provenance
     handler: federation
-    completes_with: federate-brief
