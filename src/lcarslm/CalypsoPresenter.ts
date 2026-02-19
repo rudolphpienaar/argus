@@ -38,7 +38,7 @@ export class CalypsoPresenter {
      * Format a success message with the affirmative marker.
      */
     static success_format(message: string): string {
-        const text: string = `${MARKERS.AFFIRMATIVE} ${message.toUpperCase()}`;
+        const text: string = `${MARKERS.AFFIRMATIVE} ${message}`;
         return this.wrap_muthur(text, 'success');
     }
 
@@ -46,7 +46,7 @@ export class CalypsoPresenter {
      * Format an info message with the info marker.
      */
     static info_format(message: string): string {
-        const text: string = `${MARKERS.INFO} ${message.toUpperCase()}`;
+        const text: string = `${MARKERS.INFO} ${message}`;
         return this.wrap_muthur(text, 'info');
     }
 
@@ -54,7 +54,7 @@ export class CalypsoPresenter {
      * Format an error message.
      */
     static error_format(message: string): string {
-        const text: string = `${MARKERS.ERROR} ${message.toUpperCase()}`;
+        const text: string = `${MARKERS.ERROR} ${message}`;
         return this.wrap_muthur(text, 'error');
     }
 
@@ -64,10 +64,10 @@ export class CalypsoPresenter {
     static workflowWarning_format(transition: TransitionResult): string {
         let msg: string = `${MARKERS.WARNING} ${transition.warning?.toUpperCase() || 'WORKFLOW CONSTRAINT'}`;
         if (transition.reason) {
-            msg += `\n${MARKERS.INFO} REASON: ${transition.reason.toUpperCase()}`;
+            msg += `\n${MARKERS.INFO} REASON: ${transition.reason}`;
         }
         if (transition.suggestion) {
-            msg += `\n${MARKERS.HINT} SUGGESTION: ${transition.suggestion.toUpperCase()}`;
+            msg += `\n${MARKERS.HINT} SUGGESTION: ${transition.suggestion}`;
         }
         return this.wrap_muthur(msg, 'warning');
     }

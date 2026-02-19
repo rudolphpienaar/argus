@@ -12,7 +12,6 @@ import type { PluginContext, PluginResult } from '../lcarslm/types.js';
 import type { CalypsoStoreActions } from '../lcarslm/types.js';
 import { CalypsoStatusCode } from '../lcarslm/types.js';
 import type { Dataset, Project } from '../core/models/types.js';
-import { SearchProvider } from '../lcarslm/SearchProvider.js';
 import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
 import { cohortTree_build } from '../vfs/providers/DatasetProvider.js';
 
@@ -36,18 +35,17 @@ interface GatherMutationResult {
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
     const { command, args, vfs, shell, store, ui, sleep } = context;
-    const searchProvider: SearchProvider = new SearchProvider(vfs, shell);
     const deps: GatherDeps = { store, vfs, shell, ui, sleep };
 
     switch (command) {
         case 'add':
-            return plugin_add(args[0], searchProvider, deps);
+            return plugin_add(args, deps);
         case 'remove':
         case 'deselect':
-            return plugin_remove(args[0], searchProvider, store, ui);
+            return plugin_remove(args, store, ui);
         case 'gather':
         case 'review':
-            return plugin_review(args[0], searchProvider, deps);
+            return plugin_review(args, deps);
         case 'mount':
             return plugin_mount(ui);
         default:
@@ -59,24 +57,28 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
 }
 
 /**
- * Add a dataset to the selection buffer.
+ * Add datasets to the selection buffer.
  */
 async function plugin_add(
-    targetId: string | undefined,
-    searchProvider: SearchProvider,
+    ids: string[],
     deps: GatherDeps,
 ): Promise<PluginResult> {
-    if (!targetId) {
+    if (ids.length === 0) {
         return {
             message: CalypsoPresenter.error_format('NO DATASET ID PROVIDED.'),
             statusCode: CalypsoStatusCode.ERROR
         };
     }
 
-    const datasets: Dataset[] = searchProvider.resolve(targetId);
+    // Since IntentParser (The Compiler) now resolves anaphora to IDs,
+    // we expect concrete ds-xxx identifiers here.
+    const datasets: Dataset[] = ids
+        .map(id => deps.store.dataset_getById(id))
+        .filter((ds): ds is Dataset => !!ds);
+
     if (datasets.length === 0) {
         return {
-            message: CalypsoPresenter.error_format(`DATASET "${targetId}" NOT FOUND.`),
+            message: CalypsoPresenter.error_format(`DATASET(S) "${ids.join(', ')}" NOT FOUND OR UNRESOLVED.`),
             statusCode: CalypsoStatusCode.ERROR
         };
     }
@@ -84,10 +86,10 @@ async function plugin_add(
     const mutation: GatherMutationResult = await gatherMutations_apply(datasets, deps);
     const username: string = deps.shell.env_get('USER') || 'user';
     const projectInputRoot: string = `/home/${username}/projects/${mutation.project.name}/input`;
-    const ids: string = datasets.map((dataset: Dataset): string => dataset.id).join(', ');
+    const idsStr: string = datasets.map((dataset: Dataset): string => dataset.id).join(', ');
 
     return {
-        message: CalypsoPresenter.success_format(`DATASET(S) GATHERED: ${ids}`) +
+        message: CalypsoPresenter.success_format(`DATASET(S) GATHERED: ${idsStr}`) +
                  `\n${CalypsoPresenter.info_format(`MOUNTED TO PROJECT [${mutation.project.name}]`)}` +
                  `\n${CalypsoPresenter.info_format(`VFS ROOT: ${projectInputRoot}`)}`,
         statusCode: CalypsoStatusCode.OK,
@@ -97,25 +99,27 @@ async function plugin_add(
 }
 
 /**
- * Remove a dataset from the selection buffer.
+ * Remove datasets from the selection buffer.
  */
 function plugin_remove(
-    targetId: string | undefined,
-    searchProvider: SearchProvider,
+    ids: string[],
     store: CalypsoStoreActions,
     ui: PluginContext['ui']
 ): PluginResult {
-    if (!targetId) {
+    if (ids.length === 0) {
         return {
             message: CalypsoPresenter.error_format('NO DATASET ID PROVIDED.'),
             statusCode: CalypsoStatusCode.ERROR
         };
     }
 
-    const datasets: Dataset[] = searchProvider.resolve(targetId);
+    const datasets: Dataset[] = ids
+        .map(id => store.dataset_getById(id))
+        .filter((ds): ds is Dataset => !!ds);
+
     if (datasets.length === 0) {
         return {
-            message: CalypsoPresenter.error_format(`DATASET "${targetId}" NOT FOUND IN BUFFER.`),
+            message: CalypsoPresenter.error_format(`DATASET(S) "${ids.join(', ')}" NOT FOUND IN BUFFER.`),
             statusCode: CalypsoStatusCode.ERROR
         };
     }
@@ -137,20 +141,24 @@ function plugin_remove(
  * Review the current cohort.
  */
 async function plugin_review(
-    targetId: string | undefined,
-    searchProvider: SearchProvider,
+    ids: string[],
     deps: GatherDeps,
 ): Promise<PluginResult> {
-    if (targetId) {
-        const datasets: Dataset[] = searchProvider.resolve(targetId);
-        await gatherMutations_apply(datasets, deps);
+    if (ids.length > 0) {
+        const datasets: Dataset[] = ids
+            .map(id => deps.store.dataset_getById(id))
+            .filter((ds): ds is Dataset => !!ds);
+        
+        if (datasets.length > 0) {
+            await gatherMutations_apply(datasets, deps);
+        }
     }
 
     const selected: Dataset[] = deps.store.datasets_getSelected();
     if (selected.length === 0) {
         return {
-            message: CalypsoPresenter.info_format('NO DATASETS SELECTED.'),
-            statusCode: CalypsoStatusCode.OK
+            message: CalypsoPresenter.error_format('COHORT ASSEMBLY FAILED: NO DATASETS SELECTED.'),
+            statusCode: CalypsoStatusCode.BLOCKED_MISSING
         };
     }
 
@@ -187,6 +195,11 @@ async function gatherMutations_apply(datasets: Dataset[], deps: GatherDeps): Pro
 
     deps.store.project_setActive(hydratedProject);
     await projectWorkspace_materialize(hydratedProject, selected, deps);
+
+    // v10.2: Materialize VFS proof-of-work
+    const username: string = deps.shell.env_get('USER') || 'user';
+    const markerPath: string = `/home/${username}/projects/${hydratedProject.name}/input/.cohort`;
+    deps.vfs.file_create(markerPath, `COHORT ASSEMBLED: ${new Date().toISOString()}\nDATASETS: ${selected.map(d => d.id).join(',')}\n`);
 
     return {
         project: hydratedProject,

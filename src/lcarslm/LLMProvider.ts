@@ -14,18 +14,15 @@ import type { CalypsoStoreActions, CalypsoResponse, CalypsoAction, QueryResponse
 import { IntentParser } from './routing/IntentParser.js';
 
 export class LLMProvider {
-    private intentParser: IntentParser;
-
     constructor(
         private readonly engine: LCARSEngine | null,
         private readonly status: StatusProvider,
         private readonly search: SearchProvider,
         private readonly store: CalypsoStoreActions,
+        private readonly intentParser: IntentParser,
         private readonly responseCreator: (msg: string, actions: CalypsoAction[], success: boolean) => CalypsoResponse,
         private readonly commandExecutor: (cmd: string) => Promise<CalypsoResponse | null>
-    ) {
-        this.intentParser = new IntentParser(search, store);
-    }
+    ) {}
 
     /**
      * Query the LLM with system context.
@@ -72,7 +69,8 @@ export class LLMProvider {
             const type: string = proceedMatch[1] || '';
             const cmd: string = `proceed ${type}`.trim();
             console.log(`[LLM] Triggering internal command: ${cmd}`);
-            await this.commandExecutor(cmd);
+            const result = await this.commandExecutor(cmd);
+            if (result) return result;
         }
 
         // 3. Check for [ACTION: RENAME]

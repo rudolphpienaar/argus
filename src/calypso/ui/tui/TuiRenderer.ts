@@ -9,7 +9,8 @@
  */
 
 import { syntaxHighlight_renderAnsi, catLanguage_detect } from './SyntaxHighlight.js';
-import type { CalypsoResponse } from '../../../lcarslm/types.js';
+import type { CalypsoResponse, StepAnimationConfig } from '../../../lcarslm/types.js';
+export type { CalypsoResponse, StepAnimationConfig };
 import { WorkflowAdapter } from '../../../dag/bridge/WorkflowAdapter.js';
 
 // ─── ANSI Colors ────────────────────────────────────────────────────────────
@@ -127,19 +128,19 @@ export function stepCommandHint_build(action: string, params: Record<string, unk
 
 // ─── Reactive UI Primitives ────────────────────────────────────────────────
 
-const FRAME_WIDTH: number = 64;
-
 /**
  * Open a styled UI frame (box start).
  */
 export function rendererFrame_open(title: string, subtitle?: string): void {
+    const width: number = terminalWidth_get();
+    
     const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
-        console.log(`${COLORS.cyan}${left}${'═'.repeat(FRAME_WIDTH)}${right}${COLORS.reset}`);
+        console.log(`${COLORS.cyan}${left}${'═'.repeat(width)}${right}${COLORS.reset}`);
     };
 
     const boxRow_print = (content: string = ''): void => {
         const visibleLength: number = Array.from(ansi_strip(content)).length;
-        const paddingLength: number = Math.max(0, FRAME_WIDTH - visibleLength);
+        const paddingLength: number = Math.max(0, width - visibleLength);
         console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
     };
 
@@ -157,13 +158,15 @@ export function rendererFrame_open(title: string, subtitle?: string): void {
  * Close a styled UI frame (box end) and print summary.
  */
 export function rendererFrame_close(summary?: string[]): void {
+    const width: number = terminalWidth_get();
+
     const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
-        console.log(`${COLORS.cyan}${left}${'═'.repeat(FRAME_WIDTH)}${right}${COLORS.reset}`);
+        console.log(`${COLORS.cyan}${left}${'═'.repeat(width)}${right}${COLORS.reset}`);
     };
 
     const boxRow_print = (content: string = ''): void => {
         const visibleLength: number = Array.from(ansi_strip(content)).length;
-        const paddingLength: number = Math.max(0, FRAME_WIDTH - visibleLength);
+        const paddingLength: number = Math.max(0, width - visibleLength);
         console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
     };
 
@@ -186,14 +189,53 @@ export function rendererFrame_close(summary?: string[]): void {
  * Mark the start of a sub-phase within an open frame.
  */
 export function rendererPhase_start(name: string): void {
+    const width: number = terminalWidth_get();
+
     const boxRow_print = (content: string = ''): void => {
         const visibleLength: number = Array.from(ansi_strip(content)).length;
-        const paddingLength: number = Math.max(0, FRAME_WIDTH - visibleLength);
+        const paddingLength: number = Math.max(0, width - visibleLength);
         console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
     };
 
     boxRow_print();
     boxRow_print(`  ${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${name}${COLORS.reset}`);
+}
+
+/**
+ * Render a sequence of steps as an animated box.
+ */
+export async function stepAnimation_render(config: StepAnimationConfig): Promise<void> {
+    const { steps, duration_ms, type } = config;
+    const stepDelay: number = Math.floor(duration_ms / steps.length);
+
+    rendererFrame_open(type.toUpperCase(), `Executing ${steps.length} atomic operations`);
+
+    for (let i = 0; i < steps.length; i++) {
+        const percent = Math.round(((i + 1) / steps.length) * 100);
+        const name = steps[i];
+        
+        rendererPhase_start(name);
+        
+        // Internal progress bar simulation for each step
+        for (let p = 0; i < 5; i++) {
+            const innerPercent = (p + 1) * 20;
+            const label = `${name} [${innerPercent}%]`;
+            // Normally we'd use ui.progress but we are inside the renderer
+            const width: number = terminalWidth_get();
+            const barWidth: number = 20;
+            const filled: number = Math.round((innerPercent / 100) * barWidth);
+            const bar: string = `[${'#'.repeat(filled)}${'-'.repeat(barWidth - filled)}]`;
+            const content = `  ${label.padEnd(width - barWidth - 10)}${bar} ${innerPercent}%`;
+            
+            const visibleLength: number = Array.from(ansi_strip(content)).length;
+            const paddingLength: number = Math.max(0, width - visibleLength);
+            console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
+            
+            await sleep_ms(stepDelay / 5);
+        }
+    }
+
+    rendererFrame_close(['Sequence complete', `${steps.length} operations materialized`]);
 }
 
 /**
@@ -292,10 +334,22 @@ function tableMarkdown_parse(tableText: string): string[][] {
 }
 
 /**
+ * Resolve available terminal width, respecting CALYPSO_COLS override.
+ */
+function terminalWidth_get(): number {
+    const override: string | undefined = process.env.CALYPSO_COLS;
+    if (override) {
+        const parsed = parseInt(override, 10);
+        if (!isNaN(parsed)) return parsed;
+    }
+    return Math.max(process.stdout.columns || 120, 80);
+}
+
+/**
  * Calculate available width for table content based on terminal size.
  */
 function tableContentBudget_calculate(colCount: number): number {
-    const terminalWidth: number = Math.max(process.stdout.columns || 120, 80);
+    const terminalWidth: number = terminalWidth_get();
     return terminalWidth - (colCount + 1) - (colCount * 2) - 2;
 }
 

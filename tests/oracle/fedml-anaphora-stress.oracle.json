@@ -1,0 +1,38 @@
+{
+  "name": "FedML Walk: Anaphora Stress (Architectural Integrity)",
+  "username": "oracle",
+  "steps": [
+    {
+      "send": "search chest",
+      "expect": "OK",
+      "materialized": ["${session}/search/data/search.json"]
+    },
+    {
+      "send": "add this",
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/data/gather.json"],
+      "args_concrete": true,
+      "capture_project": true
+    },
+    {
+      "send": "search mri",
+      "expect": "OK"
+    },
+    {
+      "send": "add them",
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/data/gather.json"],
+      "args_concrete": true
+    },
+    {
+      "send": "rename this to Project-Anaphora",
+      "expect": "OK",
+      "args_concrete": true
+    },
+    {
+      "send": "harmonize",
+      "expect": "OK",
+      "materialized": ["${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json"]
+    }
+  ]
+}

@@ -24,7 +24,7 @@ stages:
     name: Dataset Discovery
     phase: search-and-gather
     previous: ~
-    optional: false
+    optional: true
     produces:
       - search.json
     parameters:

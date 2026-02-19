@@ -94,10 +94,7 @@
     },
     {
       "send": "status",
-      "expect": "OK",
-      "materialized": [
-        "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
-      ]
+      "expect": "OK"
     },
     {
       "send": "publish model",

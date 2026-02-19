@@ -70,12 +70,20 @@ export enum CalypsoStatusCode {
     UNKNOWN = 'UNKNOWN'
 }
 
+/** Configuration for complex step animations (e.g. harmonization lattice). */
+export interface StepAnimationConfig {
+    type: 'harmonization' | 'training';
+    duration_ms: number;
+    steps: string[];
+}
+
 /** v10.1 UI hints for explicit rendering control (animation, labels). */
 export interface ui_hints {
     spinner_label?: string;
-    render_mode?: 'plain' | 'streaming';
+    render_mode?: 'plain' | 'streaming' | 'training';
     stream_delay_ms?: number;
-    animation?: 'progress_box' | 'none';
+    animation?: 'progress_box' | 'harmonization' | 'none';
+    animation_config?: StepAnimationConfig;
 }
 
 /**
@@ -296,6 +304,9 @@ export interface CalypsoStoreActions {
     /** Deselect a dataset by ID */
     dataset_deselect(id: string): void;
 
+    /** Get a dataset by its ID */
+    dataset_getById(id: string): Dataset | undefined;
+
     /** Get selected datasets */
     datasets_getSelected(): Dataset[];
 
@@ -322,4 +333,9 @@ export interface CalypsoStoreActions {
 
     /** Update federation handshake state */
     federation_setState(state: FederationState | null): void;
+
+    /** v10.2: Store recently mentioned datasets for anaphora resolution across turns. */
+    lastMentioned_set(datasets: Dataset[]): void;
+    /** v10.2: Retrieve recently mentioned datasets. */
+    lastMentioned_get(): Dataset[];
 }

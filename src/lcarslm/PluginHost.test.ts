@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { Dataset, AppState, FederationState, Project } from '../core/models/types.js';
+import { DATASETS } from '../core/data/datasets.js';
 import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import { Shell } from '../vfs/Shell.js';
 import { FederationOrchestrator } from './federation/FederationOrchestrator.js';
@@ -57,6 +58,10 @@ function storeFixture_create(): StoreFixture {
             state.selectedDatasets = selected.filter((item: Dataset): boolean => item.id !== id);
         },
 
+        dataset_getById(id: string): Dataset | undefined {
+            return DATASETS.find(ds => ds.id === id);
+        },
+
         datasets_getSelected(): Dataset[] {
             return state.selectedDatasets ?? [];
         },
@@ -96,6 +101,14 @@ function storeFixture_create(): StoreFixture {
 
         federation_setState(nextState: FederationState | null): void {
             state.federationState = nextState;
+        },
+
+        lastMentioned_set(datasets: Dataset[]): void {
+            state.lastMentionedDatasets = datasets;
+        },
+
+        lastMentioned_get(): Dataset[] {
+            return state.lastMentionedDatasets || [];
         },
     };
 

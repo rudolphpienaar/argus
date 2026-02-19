@@ -25,37 +25,62 @@ const MODEL_WORKFLOW_COMMANDS: ReadonlySet<string> = new Set<string>([
 export class IntentParser {
     constructor(
         private searchProvider: SearchProvider,
-        private storeActions: CalypsoStoreActions
+        private storeActions: CalypsoStoreActions,
+        private workflowContext?: {
+            activeStageId_get: () => string | null;
+            stage_forCommand: (cmd: string) => { id: string; commands: string[] } | null;
+        }
     ) {}
+
+    /**
+     * Resolve whether the current workflow context handles the 'status' command.
+     */
+    private workflowHandles_status(): boolean {
+        if (!this.workflowContext) return false;
+        const activeId = this.workflowContext.activeStageId_get();
+        if (!activeId) return false;
+
+        const stage = this.workflowContext.stage_forCommand('status');
+        return stage?.id === activeId;
+    }
 
     /**
      * Resolve raw natural language input to a canonical protocol intent.
      *
-     * In full agentic mode, this delegates to the LLM. In simulation or
-     * legacy mode, it uses deterministic regex matching.
+     * Every input is treated as a semantic compilation target. The LLM 
+     * functions as the 'Compiler' that maps noisy human language to 
+     * the deterministic protocol (workflow or shell).
      *
      * @param input - The user's raw input string.
      * @param model - Optional LLM model for interpretation.
      * @returns The resolved CalypsoIntent.
      */
     public async intent_resolve(input: string, model?: LCARSEngine | null): Promise<CalypsoIntent> {
-        // 1. Check for deterministic protocol match first (1970s mode)
-        const deterministic: CalypsoIntent | null = this.deterministicIntent_resolve(input);
+        // 1. FAST PATH: Check for exact deterministic matches first.
+        // If the user typed the exact protocol command, we don't need a model to guess.
+        const deterministic = this.deterministicIntent_resolve(input);
         if (deterministic) {
+            // v10.2: Even deterministic intents must be grounded (anaphora resolution)
+            if (deterministic.type === 'workflow' && deterministic.command) {
+                const resolutionVerbs = ['add', 'remove', 'deselect', 'gather', 'review', 'rename'];
+                if (resolutionVerbs.includes(deterministic.command)) {
+                    deterministic.args = this.modelArgs_resolve(deterministic.args || []);
+                }
+            }
             return deterministic;
         }
 
-        // 2. If no model, we are stuck with the deterministic match (which failed)
-        if (!model) {
-            return {
-                type: 'llm', // Fallback to chat if unrecognized
-                raw: input,
-                isModelResolved: false
-            };
+        // 2. PRIMARY PATH: Delegate to LLM for \"Noisy-to-Protocol\" compilation
+        if (model) {
+            return await this.modelIntent_resolve(input, model);
         }
 
-        // 3. Delegate to LLM for "Noisy-to-Protocol" compilation
-        return await this.modelIntent_resolve(input, model);
+        // 3. FALLBACK: Return basic LLM intent for conversational input
+        return {
+            type: 'llm',
+            raw: input,
+            isModelResolved: false
+        };
     }
 
     /**
@@ -79,6 +104,29 @@ export class IntentParser {
             };
         }
 
+        // Match 'proceed [workflow]'
+        const proceedMatch: RegExpMatchArray | null = trimmed.match(/^proceed(?:\s+(.+))?$/);
+        if (proceedMatch) {
+            return {
+                type: 'workflow',
+                command: 'proceed',
+                args: proceedMatch[1] ? [proceedMatch[1].trim()] : [],
+                raw: input,
+                isModelResolved: false
+            };
+        }
+
+        // Match 'status' or '/status'
+        if (trimmed === '/status' || (trimmed === 'status' && !this.workflowHandles_status())) {
+            return {
+                type: 'special',
+                command: 'status',
+                args: [],
+                raw: input,
+                isModelResolved: false
+            };
+        }
+
         // Match exact workflow verbs
         const workflowVerbs: string[] = [
             'search', 'add', 'remove', 'deselect', 'gather', 'review', 'mount', 
@@ -87,7 +135,16 @@ export class IntentParser {
         ];
         const firstWord: string = trimmed.split(/\s+/)[0];
         if (workflowVerbs.includes(firstWord)) {
-            const args: string[] = trimmed.split(/\s+/).slice(1);
+            let args: string[] = trimmed.split(/\s+/).slice(1);
+            
+            // Special case for 'search for X' -> arg is X
+            if (firstWord === 'search' && args.length > 0 && args[0] === 'for') {
+                args = args.slice(1);
+            } else if (args.length > 0 && (args[0] === 'the' || args[0] === 'a')) {
+                // v10.1: Strip leading prepositions/filler from arguments (e.g. 'add the X')
+                args = args.slice(1);
+            }
+
             return {
                 type: 'workflow',
                 command: firstWord,
@@ -112,14 +169,24 @@ export class IntentParser {
             You are the ARGUS Intent Compiler. Your job is to translate noisy natural language
             into a strictly-typed JSON intent object for the ARGUS Operating System.
 
-            AVAILABLE COMMANDS: search, add, gather, harmonize, federate, dispatch, status, publish, proceed, rename.
+            AVAILABLE COMMANDS: 
+            - Workflow: search, add, gather, harmonize, federate, dispatch, status, publish, proceed, rename.
+            - Shell: ls, cd, cat, mkdir, pwd, touch, rm, cp, mv, tree.
 
             FORMAT:
-            { "type": "workflow" | "llm", "command": string, "args": string[] }
+            { "type": "workflow" | "shell" | "llm", "command": string, "args": string[] }
+
+            RULES:
+            1. If the input is a command request, map it to the most relevant command.
+            2. For "search for [topic]", command is "search" and args is ["[topic]"].
+            3. For "list all [extension] files", command is "ls" and args is ["*.[extension]"].
+            4. If the input is conversational (greeting, question, etc.), set type to "llm".
 
             EXAMPLES:
-            "rename this to histo-exp please" -> { "type": "workflow", "command": "rename", "args": ["histo-exp"] }
-            "what's the weather?" -> { "type": "llm" }
+            "Search for histology data" -> { "type": "workflow", "command": "search", "args": ["histology"] }
+            "list all text files" -> { "type": "shell", "command": "ls", "args": ["*.txt"] }
+            "rename this to project-x" -> { "type": "workflow", "command": "rename", "args": ["project-x"] }
+            "hello calypso" -> { "type": "llm" }
 
             USER INPUT: "${input}"
         `;
@@ -268,14 +335,49 @@ export class IntentParser {
             return this.intent_modelFallback(input);
         }
 
-        const args: string[] | undefined = this.args_fromUnknown(payload.args);
+        const rawArgs: string[] | undefined = this.args_fromUnknown(payload.args);
+        
+        // v10.2: Selective resolution. 
+        // We only resolve anaphora/pronouns for assembly/mutation verbs.
+        // SEARCH queries must remain fuzzy/noisy for the provider to handle.
+        const resolutionVerbs = ['add', 'remove', 'deselect', 'gather', 'review', 'rename'];
+        const resolvedArgs: string[] = resolutionVerbs.includes(command) 
+            ? this.modelArgs_resolve(rawArgs || [])
+            : (rawArgs || []);
+
         return {
             type: 'workflow',
             command,
-            args,
+            args: resolvedArgs,
             raw: input,
             isModelResolved: true
         };
+    }
+
+    /**
+     * Resolve ambiguous model arguments (anaphora) into concrete protocol identifiers.
+     * 
+     * This is the 'Compiler' phase that grounds human-centric pronouns ('this', 'it', 'them')
+     * into machine-centric identifiers (ds-001) using the Host's persistent memory.
+     *
+     * @param args - Raw arguments from LLM.
+     * @returns Resolved concrete arguments.
+     */
+    private modelArgs_resolve(args: string[]): string[] {
+        const resolved: string[] = [];
+
+        for (const arg of args) {
+            const resolvedDatasets = this.searchProvider.resolve(arg);
+            if (resolvedDatasets.length > 0) {
+                // If it resolves to datasets, push their IDs instead of the raw arg
+                resolved.push(...resolvedDatasets.map(ds => ds.id));
+            } else {
+                // Otherwise keep the arg as-is (e.g. search terms, project names)
+                resolved.push(arg);
+            }
+        }
+
+        return resolved;
     }
 
     /**

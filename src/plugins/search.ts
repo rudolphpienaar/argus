@@ -21,7 +21,7 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
     const { parameters, vfs, shell, command, args, ui } = context;
-    
+
     // 1. Resolve query
     const query: string = (parameters.query as string) || args.join(' ');
     if (!query) {
@@ -34,11 +34,11 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
     // 2. Perform Simulated Compute (The Experience)
     ui.status('CALYPSO: SEARCHING ATLAS CATALOG...');
     ui.log(CalypsoPresenter.info_format(`QUERY: "${query}"`));
-    
+
     await catalog_scan(context);
 
     // 3. Resolve results (The Logic)
-    const searchProvider: SearchProvider = new SearchProvider(vfs, shell);
+    const searchProvider: SearchProvider = new SearchProvider(vfs, shell, context.store);
     const results: Dataset[] = searchProvider.search(query);
     const snap: SearchMaterialization = searchProvider.snapshot_materialize(query, results);
 
@@ -46,7 +46,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
     if (results.length === 0) {
         return {
             message: CalypsoPresenter.info_format(`NO MATCHING DATASETS FOUND FOR "${query}".`),
-            statusCode: CalypsoStatusCode.OK,
+            statusCode: CalypsoStatusCode.CONVERSATIONAL,
             artifactData: snap.content
         };
     }
@@ -55,7 +55,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
     const snapLine: string = displayPath ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${displayPath}`)}` : '';
 
     return {
-        message: CalypsoPresenter.success_format(`FOUND ${results.length} MATCHING DATASET(S):`) + 
+        message: CalypsoPresenter.success_format(`FOUND ${results.length} MATCHING DATASET(S):`) +
                  `\n${CalypsoPresenter.searchListing_format(results)}\n\n` +
                  `${CalypsoPresenter.searchDetails_format(results)}${snapLine}`,
         statusCode: CalypsoStatusCode.OK,
@@ -70,14 +70,14 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
 async function catalog_scan(context: PluginContext): Promise<void> {
     const { ui, sleep } = context;
     const shards = 8;
-    
+
     for (let i = 1; i <= shards; i++) {
         const percent = Math.round((i / shards) * 100);
         ui.progress(`Scanning catalog shard ${i}/${shards}`, percent);
         // Simulated latency
         await sleep(150);
     }
-    
+
     ui.log('  ● Catalog scan complete. Resolving rank heuristics...');
     await sleep(300);
 }

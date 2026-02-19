@@ -137,4 +137,6 @@ export interface AppState {
     installedAssets: string[];
     lastIntent: string | null;
     federationState: FederationState | null;
+    /** v10.2: Persistent memory of recently searched/mentioned datasets. */
+    lastMentionedDatasets: Dataset[];
 }

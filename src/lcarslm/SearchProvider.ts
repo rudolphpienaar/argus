@@ -11,6 +11,7 @@ import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import type { Shell } from '../vfs/Shell.js';
 import type { Dataset } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
+import type { CalypsoStoreActions } from './types.js';
 
 /**
  * Domain-specific content for a search stage artifact.
@@ -41,9 +42,6 @@ export interface SearchMaterialization {
  * Handles dataset discovery and conversation context (anaphora).
  */
 export class SearchProvider {
-    /** Recently mentioned datasets for anaphora resolution ("that", "it", "them") */
-    private lastMentionedDatasets: Dataset[] = [];
-
     /** Singular anaphoric tokens that refer to the last-mentioned dataset */
     private static readonly ANAPHORA_SINGULAR: ReadonlySet<string> = new Set([
         'that', 'it', 'this'
@@ -56,7 +54,8 @@ export class SearchProvider {
 
     constructor(
         private readonly vfs: VirtualFileSystem,
-        private readonly shell: Shell
+        private readonly shell: Shell,
+        private readonly store?: CalypsoStoreActions
     ) {}
 
     /**
@@ -72,7 +71,9 @@ export class SearchProvider {
             ds.provider.toLowerCase().includes(q)
         );
 
-        this.lastMentionedDatasets = results;
+        if (this.store) {
+            this.store.lastMentioned_set(results);
+        }
         return results;
     }
 
@@ -84,15 +85,16 @@ export class SearchProvider {
         if (!targetId) return [];
 
         const tid = targetId.toLowerCase();
+        const lastMentioned = this.lastMentioned_get();
 
         // 1. Check for singular anaphora (it, that)
         if (SearchProvider.ANAPHORA_SINGULAR.has(tid)) {
-            return this.lastMentionedDatasets.length > 0 ? [this.lastMentionedDatasets[0]] : [];
+            return lastMentioned.length > 0 ? [lastMentioned[0]] : [];
         }
 
         // 2. Check for plural anaphora (them, those, all)
         if (SearchProvider.ANAPHORA_PLURAL.has(tid)) {
-            return [...this.lastMentionedDatasets];
+            return [...lastMentioned];
         }
 
         // 3. Exact ID match
@@ -114,9 +116,13 @@ export class SearchProvider {
             .map(match => match[0]);
 
         if (ids.length > 0) {
-            this.lastMentionedDatasets = ids
+            const datasets = ids
                 .map(id => DATASETS.find(ds => ds.id === id))
                 .filter((ds): ds is Dataset => !!ds);
+            
+            if (this.store) {
+                this.store.lastMentioned_set(datasets);
+            }
         }
     }
 
@@ -124,7 +130,10 @@ export class SearchProvider {
      * Get the last mentioned datasets.
      */
     public lastMentioned_get(): Dataset[] {
-        return [...this.lastMentionedDatasets];
+        if (this.store) {
+            return this.store.lastMentioned_get();
+        }
+        return [];
     }
 
     /**

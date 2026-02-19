@@ -97,8 +97,7 @@ export class CalypsoCore {
         this.knowledge = config.knowledge;
 
         this.telemetryBus = new TelemetryBus();
-        this.searchProvider = new SearchProvider(vfs, shell);
-        this.intentParser = new IntentParser(this.searchProvider, storeActions);
+        this.searchProvider = new SearchProvider(vfs, shell, storeActions);
 
         const workflowId: string = config.workflowId ?? 'fedml';
         this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
@@ -112,13 +111,17 @@ export class CalypsoCore {
             this.engine = null;
         }
 
-        this.llmProvider = this.llmProvider_create();
-
         const username: string = shell.env_get('USER') || 'user';
         const sessionId: string = `session-${Date.now()}`;
         this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
         
         this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
+        this.intentParser = new IntentParser(this.searchProvider, storeActions, {
+            activeStageId_get: () => this.workflowSession.activeStageId_get(),
+            stage_forCommand: (cmd: string) => this.workflowAdapter.stage_forCommand(cmd)
+        });
+
+        this.llmProvider = this.llmProvider_create();
         this.federation = new FederationOrchestrator(vfs, storeActions);
         this.pluginHost = new PluginHost(vfs, shell, storeActions, this.federation, this.telemetryBus);
         this.merkleEngine = new MerkleEngine(
@@ -140,7 +143,7 @@ export class CalypsoCore {
             storeActions,
             this.workflowAdapter,
             (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd),
-            (): Dataset[] => this.searchProvider.lastMentioned_get(),
+            (): Dataset[] => this.storeActions.lastMentioned_get(),
         );
     }
 
@@ -161,41 +164,48 @@ export class CalypsoCore {
             return this.response_create('', [], true, CalypsoStatusCode.OK);
         }
 
+        // v10.2: Always sync session before processing
         await this.workflowSession.sync();
-        const resolution: CommandResolution = this.workflowSession.resolveCommand(parsed.trimmed);
 
-        const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
-        if (fastPathResult) {
-            return fastPathResult;
-        }
-
-        // ─── 2. INTENT RESOLUTION (The Compiler) ───────────────────────────
-
+        // ─── 1. INTENT COMPILATION (The LLM Layer) ──────────────────────────
+        // Every input must be resolved to an intent. 
+        // This maps noisy human language to protocol commands.
         const intent: CalypsoIntent = await this.intentParser.intent_resolve(parsed.trimmed, this.engine);
 
-        // ─── 3. ACTION EXECUTION (The Runtime) ─────────────────────────────
-
+        // ─── 2. ACTION EXECUTION (The System Layer) ─────────────────────────
+        
+        // Handle Workflow Intents
         if (intent.type === 'workflow' && intent.command) {
-            const finalResolution: CommandResolution = this.workflowResolution_resolve(
-                intent.command,
-                parsed.primary,
-                resolution,
-            );
-
-            if (finalResolution.stage) {
+            const resolution: CommandResolution = this.workflowSession.resolveCommand(intent.command);
+            if (resolution.stage) {
                 const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
-                const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, finalResolution);
+                const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, resolution);
                 if (workflowResult) return workflowResult;
             }
         }
 
-        // ─── 4. LLM FALLBACK (The Communicator) ────────────────────────────
+        // Handle Shell Intents
+        if (intent.type === 'shell' && intent.command) {
+            const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
+            const shellResult: CalypsoResponse | null = await this.shell_handle(protocolCommand, intent.command);
+            if (shellResult) return shellResult;
+        }
+
+        // ─── 3. CORE FALLBACK (The Interpreter Layer) ──────────────────────
+        // If the LLM failed to resolve or resolved incorrectly, 
+        // fallback to the raw deterministic interpreter.
+        
+        // Handle Special Commands (/, scripts, run)
+        const resolution = this.workflowSession.resolveCommand(parsed.primary);
+        const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
+        if (fastPathResult) return fastPathResult;
 
         // Interrogative guidance (what's next?)
         const guidance: CalypsoResponse | null = this.guidance_handle(parsed.trimmed);
         if (guidance) return guidance;
 
-        // Conversational query
+        // ─── 4. CONVERSATIONAL FALLBACK (The Communicator) ──────────────────
+        
         const response: CalypsoResponse = await this.llmProvider.query(parsed.trimmed, this.sessionPath);
         response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
         return response;
@@ -437,7 +447,7 @@ export class CalypsoCore {
                 }
             }
         }
-        const ui_hints = primary === 'python' ? { render_mode: 'training' as const } : undefined;
+        const ui_hints: CalypsoResponse['ui_hints'] = primary === 'python' ? { render_mode: 'training' } : undefined;
         return this.response_create(
             result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout, 
             [], 
@@ -723,6 +733,7 @@ export class CalypsoCore {
             this.statusProvider,
             this.searchProvider,
             this.storeActions,
+            this.intentParser,
             (
                 message: string,
                 actions: CalypsoAction[],

@@ -25,8 +25,10 @@ import {
     rendererPhase_start,
     response_renderAnimated,
     message_style,
+    stepAnimation_render,
     type CommandExecuteOptions,
-    type ScriptStepPlan
+    type ScriptStepPlan,
+    type StepAnimationConfig
 } from '../ui/tui/TuiRenderer.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

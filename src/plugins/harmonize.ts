@@ -44,6 +44,11 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
     await intensity_normalization(context, 200);
     await qualityMetrics_generate(context, 100);
 
+    // 3. Materialize VFS proof-of-work
+    const username: string = context.shell.env_get('USER') || 'user';
+    const markerPath: string = `/home/${username}/projects/${active.name}/input/.harmonized`;
+    context.vfs.file_create(markerPath, `HARMONIZED: ${new Date().toISOString()}\nMODALITY: ${modality}\n`);
+
     ui.frame_close([
         'Images processed:     1,247',
         'Metadata fields:      18,705',

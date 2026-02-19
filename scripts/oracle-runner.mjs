@@ -77,7 +77,8 @@ async function modules_load() {
         registryMod,
         templatesMod,
         providerMod,
-        storeMod
+        storeMod,
+        datasetsMod
     ] = await Promise.all([
         mod('lcarslm/CalypsoCore.js'),
         mod('vfs/VirtualFileSystem.js'),
@@ -85,7 +86,8 @@ async function modules_load() {
         mod('vfs/content/ContentRegistry.js'),
         mod('vfs/content/templates/index.js'),
         mod('vfs/providers/ProjectProvider.js'),
-        mod('core/state/store.js')
+        mod('core/state/store.js'),
+        mod('core/data/datasets.js')
     ]);
 
     return {
@@ -95,7 +97,8 @@ async function modules_load() {
         ContentRegistry: registryMod.ContentRegistry,
         ALL_GENERATORS: templatesMod.ALL_GENERATORS,
         homeDir_scaffold: providerMod.homeDir_scaffold,
-        store: storeMod.store
+        store: storeMod.store,
+        DATASETS: datasetsMod.DATASETS
     };
 }
 
@@ -155,6 +158,10 @@ function runtime_create(modules, username, persona = 'fedml') {
         dataset_deselect(id) {
             modules.store.dataset_deselect(id);
         },
+        dataset_getById(id) {
+            return modules.store.state.selectedDatasets.find(ds => ds.id === id) || 
+                   modules.DATASETS?.find(ds => ds.id === id);
+        },
         datasets_getSelected() {
             return modules.store.state.selectedDatasets;
         },
@@ -181,6 +188,12 @@ function runtime_create(modules, username, persona = 'fedml') {
         },
         federation_setState(state) {
             modules.store.federationState_set(state);
+        },
+        lastMentioned_set(datasets) {
+            modules.store.lastMentioned_set(datasets);
+        },
+        lastMentioned_get() {
+            return modules.store.lastMentioned_get();
         }
     };
 
@@ -267,6 +280,27 @@ async function scenario_run(modules, scenario) {
                     const target = template_interpolate(rawPath, vars);
                     if (!runtime.core.vfs_exists(target)) {
                         throw new Error(`${label} Expected materialized artifact missing: ${target}`);
+                    }
+
+                    // v10.2: Concrete Protocol Assertion
+                    if (step.args_concrete) {
+                        const content = JSON.parse(runtime.core.vfs_read(target));
+                        // The Merkle Engine stores the command/args used to generate the artifact
+                        const commandStr = (content.command || '').toLowerCase();
+                        const args = Array.isArray(content.args) ? content.args.map(a => String(a).toLowerCase()) : [];
+                        
+                        const forbidden = ['this', 'it', 'them', 'that', 'those', 'all'];
+                        const hasAmbiguity = forbidden.some(p => 
+                            commandStr.includes(` ${p}`) || commandStr.endsWith(` ${p}`) || args.includes(p)
+                        );
+
+                        if (hasAmbiguity) {
+                            console.log(`\n[ARCHITECTURAL DRIFT] Ambiguous arguments leaked to Guest plugin!`);
+                            console.log(`         Artifact: ${target}`);
+                            console.log(`         Command: "${commandStr}"`);
+                            console.log(`         Args: ${JSON.stringify(args)}`);
+                            throw new Error(`${label} Architectural Integrity Failure: Ambiguous arguments leaked to plugin.`);
+                        }
                     }
                 }
             }

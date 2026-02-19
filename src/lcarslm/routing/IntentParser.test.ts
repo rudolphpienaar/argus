@@ -5,6 +5,7 @@ import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import type { CalypsoStoreActions, CalypsoAction, QueryResponse } from '../types.js';
 import type { AppState, Dataset, FederationState, Project } from '../../core/models/types.js';
+import { DATASETS } from '../../core/data/datasets.js';
 import { LCARSEngine } from '../engine.js';
 
 function storeActions_create(activeProject: { id: string; name: string } | null): CalypsoStoreActions {
@@ -54,7 +55,19 @@ function storeActions_create(activeProject: { id: string; name: string } | null)
         federation_getState(): FederationState | null {
             return null;
         },
-        federation_setState(): void {}
+        federation_setState(): void {},
+
+        dataset_getById(id: string): Dataset | undefined {
+            return DATASETS.find(ds => ds.id === id);
+        },
+
+        lastMentioned_set(datasets: Dataset[]): void {
+            state.lastMentionedDatasets = datasets;
+        },
+
+        lastMentioned_get(): Dataset[] {
+            return state.lastMentionedDatasets || [];
+        }
     };
 }
 
@@ -62,7 +75,10 @@ function parser_create(activeProject: { id: string; name: string } | null = null
     const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
     const shell: Shell = new Shell(vfs, 'tester');
     const searchProvider: SearchProvider = new SearchProvider(vfs, shell);
-    return new IntentParser(searchProvider, storeActions_create(activeProject));
+    return new IntentParser(searchProvider, storeActions_create(activeProject), {
+        activeStageId_get: () => null,
+        stage_forCommand: () => null
+    });
 }
 
 function modelStub_create(answer: string): LCARSEngine {
@@ -97,7 +113,7 @@ describe('IntentParser', (): void => {
 
         expect(intent.type).toBe('workflow');
         expect(intent.command).toBe('search');
-        expect(intent.args).toEqual(['histology']);
+        expect(intent.args).toEqual(['ds-006']);
         expect(intent.isModelResolved).toBe(true);
     });
 

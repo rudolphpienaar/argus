@@ -90,7 +90,7 @@ export class WorkflowSession {
                 const isMatch: boolean = activeNode.commands.some((c: string): boolean => {
                     const canonical: string = c.split(/[<\[]/)[0].toLowerCase().trim();
                     const base: string = canonical.split(/\s+/)[0];
-                    return canonical === trimmed || base === cmd;
+                    return base === cmd;
                 });
 
                 if (isMatch) {
@@ -103,11 +103,14 @@ export class WorkflowSession {
         const fallbackStage = this.adapter.stage_forCommand(input);
         if (fallbackStage) {
             const isJump = fallbackStage.id !== this.activeStageId;
+            const isRoot = fallbackStage.previous === null;
+            const requiresConfirmation = isJump && !isRoot;
+
             return {
                 stage: fallbackStage,
                 isJump,
-                requiresConfirmation: isJump,
-                warning: isJump ? `You are currently at the '${this.activeStageId}' stage. Running '${input}' will shift context to '${fallbackStage.id}'.` : undefined
+                requiresConfirmation,
+                warning: requiresConfirmation ? `You are currently at the '${this.activeStageId}' stage. Running '${input}' will shift context to '${fallbackStage.id}'.` : undefined
             };
         }
 

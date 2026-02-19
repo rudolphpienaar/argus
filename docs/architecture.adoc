@@ -28,49 +28,49 @@ The following figure illustrates the relationship between the user, the distribu
 
 [source,text]
 ----
-                                  [ USER ]                                      
-                                     │                                          
-             ┌───────────────────────┴───────────────────────┐                  
-             │                                               │                  
-             ▼ (CLI / SSH)                                   ▼ (Browser / HTTP) 
-    ┌───────────────────────────┐               ┌───────────────────────────┐   
-    │       TUI TERMINAL        │               │       WEB TERMINAL        │   
-    │  ┌─────────────────────┐  │               │  ┌─────────────────────┐  │   
-    │  │ [ ASCII RENDERER ]  │◀─┼──────┐ ┌──────┼─▶│ [ DOM/CSS ENGINE ]  │  │   
-    │  └─────────────────────┘  │      │ │      │  └─────────────────────┘  │   
-    │             │             │      │ │      │             │             │   
-    │      (Dumb Client)        │      │ │      │    (Intelligent Surface)  │   
-    └──────┬──────┴─────────────┘      │ │      └──────┬──────┴─────────────┘   
-           │      ▲                    │ │             │      ▲                 
-           ▼      │            [ UI WEBSOCKET PIPE ]   ▼      │                 
-           │      │         (Commands ▼ | Telemetry ▲) │      │                 
-           └──────┼───────────────────┬─┴─┬────────────┘      │                 
-                  └───────────────────┼───┼───────────────────┘                 
-                                      │   │                                     
-    ┌─────────────────────────────────┴───┴─────────────────────────────────┐   
-    │ CALYPSO SERVER (The System CNS / WebSocket Orchestrator)              │   
-    │                                                                       │   
-    │  ┌─────────────────────────────────────────────────────────────────┐  │   
-    │  │ CALYPSO HOST (The System Kernel)                                │  │   
-    │  │                                                                 │  │   
-    │  │  ┌───────────────────────────────────────────────────────────┐  │  │   
-    │  │  │ PLUGIN VM (The Guest Execution Sandbox)                   │  │  │   
-    │  │  │  ┌─────────────────────────────────────────────────────┐  │  │  │   
-    │  │  │  │ GUEST PLUGIN (Compute Logic & Narrative Source)     │  │  │  │   
-    │  │  │  │                                                     │  │  │  │   
-    │  │  │  │  ● Compute Loop  ──▶ [ TELEMETRY BUS ]  ────────────┼──┼──┐│  │   
-    │  │  │  │  ● Lore Source   ──▶ (Internal Pipe)                │  │  ││  │   
-    │  │  │  └────────▲────────────────────────────────────────────┘  │  ││  │   
-    │  │  └───────────┼───────────────────────────────────────────────┘  ││  │   
-    │  └──────────────┼──────────────────────────────────────────────────┘│  │   
-    │                 │ (Commands)        │ (Telemetry Stream)            │  │   
-    │          [ COMMAND ROUTER ] ◄───────┘                               │  │   
-    │                 │                                                   │  │   
-    └─────────────────┼───────────────────────────────────────────────────┘   
-                      │                                                         
-                      ▼                                                         
-            [ FEDERATION NETWORK ]                                              
-            (Secure Multi-Site Transport)                                       
+                                  [ USER ]
+                                     │
+             ┌───────────────────────┴───────────────────────┐
+             │                                               │
+             ▼ (CLI / SSH)                                   ▼ (Browser / HTTP)
+    ┌───────────────────────────┐               ┌───────────────────────────┐
+    │       TUI TERMINAL        │               │       WEB TERMINAL        │
+    │  ┌─────────────────────┐  │               │  ┌─────────────────────┐  │
+    │  │ [ ASCII RENDERER ]  │◀─┼──────┐ ┌──────┼─▶│ [ DOM/CSS ENGINE ]  │  │
+    │  └─────────────────────┘  │      │ │      │  └─────────────────────┘  │
+    │             │             │      │ │      │             │             │
+    │      (Dumb Client)        │      │ │      │    (Intelligent Surface)  │
+    └──────┬──────┴─────────────┘      │ │      └──────┬──────┴─────────────┘
+           │      ▲                    │ │             │      ▲
+           ▼      │            [ UI WEBSOCKET PIPE ]   ▼      │
+           │      │         (Commands ▼ | Telemetry ▲) │      │
+           └──────┼───────────────────┬─┴─┬────────────┘      │
+                  └───────────────────┼───┼───────────────────┘
+                                      │   │
+    ┌─────────────────────────────────┴───┴─────────────────────────────────┐
+    │ CALYPSO SERVER (The System CNS / WebSocket Orchestrator)              │
+    │                                                                       │
+    │  ┌─────────────────────────────────────────────────────────────────┐  │
+    │  │ CALYPSO HOST (The System Kernel)                                │  │
+    │  │                                                                 │  │
+    │  │  ┌───────────────────────────────────────────────────────────┐  │  │
+    │  │  │ PLUGIN VM (The Guest Execution Sandbox)                   │  │  │
+    │  │  │  ┌─────────────────────────────────────────────────────┐  │  │  │
+    │  │  │  │ GUEST PLUGIN (Compute Logic & Narrative Source)     │  │  │  │
+    │  │  │  │                                                     │  │  │  │
+    │  │  │  │  ● Compute Loop  ──▶ [ TELEMETRY BUS ]  ────────────┼──┼──┐│  │
+    │  │  │  │  ● Lore Source   ──▶ (Internal Pipe)                │  │  ││  │
+    │  │  │  └────────▲────────────────────────────────────────────┘  │  ││  │
+    │  │  └───────────┼───────────────────────────────────────────────┘  ││  │
+    │  └──────────────┼──────────────────────────────────────────────────┘│  │
+    │                 │ (Commands)        │ (Telemetry Stream)            │  │
+    │          [ COMMAND ROUTER ] ◄───────┘                               │  │
+    │                 │                                                   │  │
+    └─────────────────┼───────────────────────────────────────────────────┘
+                      │
+                      ▼
+            [ FEDERATION NETWORK ]
+            (Secure Multi-Site Transport)
 ----
 
 Argus v10.2 establishes the **Streaming Unified Kernel (SUK)** model, marking the final transition of ARGUS from a monolithic application into a **Distributed Orchestration System**. In this paradigm, the core logic—housed in atomic Guest plugins—is strictly isolated within a high-integrity Host (Calypso), which functions as a headless computation engine. This engine exposes its entire operational state, including live execution telemetry, through a **Unified Protocol Surface**. This ensures that the "Truth" of the scientific process is never trapped within a single UI component or local memory stack, but is instead a global broadcast available to any authorized observer, whether that observer is a human researcher or an automated validation suite.

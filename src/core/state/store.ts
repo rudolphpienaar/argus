@@ -37,7 +37,8 @@ const initialState: ExtendedState = {
     marketplaceOpen: false,
     installedAssets: [],
     lastIntent: null,
-    federationState: null
+    federationState: null,
+    lastMentionedDatasets: []
 };
 
 /**
@@ -283,6 +284,25 @@ class Store {
     public federationState_set(federationState: FederationState | null): void {
         this._state.federationState = federationState;
         events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    /**
+     * Stores recently mentioned datasets for anaphora resolution.
+     *
+     * @param datasets - Array of recently mentioned datasets.
+     */
+    public lastMentioned_set(datasets: Dataset[]): void {
+        this._state.lastMentionedDatasets = [...datasets];
+        events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    /**
+     * Retrieves recently mentioned datasets.
+     *
+     * @returns Array of recently mentioned datasets.
+     */
+    public lastMentioned_get(): Dataset[] {
+        return [...this._state.lastMentionedDatasets];
     }
 
     /**

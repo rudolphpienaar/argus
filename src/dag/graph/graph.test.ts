@@ -462,6 +462,7 @@ describe('dag/graph/validator', () => {
             id: 'dup', name: 'Dup', phase: null, previous: null,
             optional: false, produces: ['x.json'], parameters: {},
             instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
+            narrative: null, blueprint: []
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -482,6 +483,7 @@ describe('dag/graph/validator', () => {
             id: 'empty', name: 'Empty', phase: null, previous: null,
             optional: false, produces: [], parameters: {},
             instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
+            narrative: null, blueprint: []
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -503,11 +505,13 @@ describe('dag/graph/validator', () => {
             id: 'gather', name: 'Gather', phase: null, previous: null,
             optional: false, produces: ['g.json'], parameters: {},
             instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
+            narrative: null, blueprint: []
         };
         const harmonize: DAGNode = {
             id: 'harmonize', name: 'Harmonize', phase: null, previous: ['gather', 'nonexistent'],
             optional: false, produces: ['h.json'], parameters: {},
             instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
+            narrative: null, blueprint: []
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -529,11 +533,13 @@ describe('dag/graph/validator', () => {
             id: 'a', name: 'A', phase: null, previous: ['b'],
             optional: false, produces: ['a.json'], parameters: {},
             instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
+            narrative: null, blueprint: []
         };
         const b: DAGNode = {
             id: 'b', name: 'B', phase: null, previous: ['a'],
             optional: false, produces: ['b.json'], parameters: {},
             instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
+            narrative: null, blueprint: []
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -554,6 +560,7 @@ describe('dag/graph/validator', () => {
             id: 'solo', name: 'Solo', phase: null, previous: null,
             optional: false, produces: ['solo.json'], parameters: {},
             instruction: '', commands: [], handler: null, completes_with: null, skip_warning: null,
+            narrative: null, blueprint: []
         };
         const def: DAGDefinition = {
             source: 'manifest',
@@ -772,6 +779,8 @@ describe('dag/graph/types contracts', () => {
             handler: null,
             completes_with: null,
             skip_warning: null,
+            narrative: null,
+            blueprint: [],
         };
         expect(root.previous).toBeNull();
         expect(root.produces.length).toBeGreaterThan(0);
@@ -795,6 +804,8 @@ describe('dag/graph/types contracts', () => {
                 reason: 'FL requires consistent formats.',
                 max_warnings: 2,
             },
+            narrative: null,
+            blueprint: [],
         };
         expect(join.previous).toHaveLength(2);
         expect(join.skip_warning).not.toBeNull();
@@ -821,6 +832,8 @@ describe('dag/graph/types contracts', () => {
             handler: null,
             completes_with: null,
             skip_warning: null,
+            narrative: null,
+            blueprint: [],
         });
 
         const def: DAGDefinition = {
@@ -886,6 +899,8 @@ describe('dag/graph/types contracts', () => {
             handler: null,
             completes_with: null,
             skip_warning: null,
+            narrative: null,
+            blueprint: [],
         };
         const position: WorkflowPosition = {
             completedStages: [],

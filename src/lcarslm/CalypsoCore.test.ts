@@ -5,6 +5,7 @@ import { CalypsoStatusCode } from './types.js';
 import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import { Shell } from '../vfs/Shell.js';
 import type { AppState, Dataset, FederationState, Project } from '../core/models/types.js';
+import { DATASETS } from '../core/data/datasets.js';
 
 interface CoreFixture {
     core: CalypsoCore;
@@ -74,6 +75,15 @@ function storeActions_create(): CalypsoStoreActions {
         },
         federation_setState(nextState: FederationState | null): void {
             state.federationState = nextState;
+        },
+        dataset_getById(id: string): Dataset | undefined {
+            return DATASETS.find(ds => ds.id === id);
+        },
+        lastMentioned_set(datasets: Dataset[]): void {
+            state.lastMentionedDatasets = datasets;
+        },
+        lastMentioned_get(): Dataset[] {
+            return state.lastMentionedDatasets || [];
         }
     };
 }

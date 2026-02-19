@@ -4,6 +4,7 @@ import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import type { CalypsoStoreActions, CalypsoResponse, PluginTelemetry } from '../types.js';
 import { CalypsoStatusCode } from '../types.js';
 import type { AppState, Dataset, FederationState, Project } from '../../core/models/types.js';
+import { DATASETS } from '../../core/data/datasets.js';
 
 interface OrchestratorFixture {
     orchestrator: FederationOrchestrator;
@@ -82,6 +83,15 @@ function storeActions_create(): CalypsoStoreActions {
         },
         federation_setState(nextState: FederationState | null): void {
             state.federationState = nextState;
+        },
+        dataset_getById(id: string): Dataset | undefined {
+            return DATASETS.find(ds => ds.id === id);
+        },
+        lastMentioned_set(datasets: Dataset[]): void {
+            state.lastMentionedDatasets = datasets;
+        },
+        lastMentioned_get(): Dataset[] {
+            return state.lastMentionedDatasets || [];
         }
     };
 }
@@ -103,7 +113,7 @@ function fixture_create(): OrchestratorFixture {
 }
 
 describe('FederationOrchestrator', (): void => {
-    it('requires an active project context', async (): void => {
+    it('requires an active project context', async (): Promise<void> => {
         const fixture: OrchestratorFixture = fixture_create();
         const response: CalypsoResponse = await fixture.orchestrator.command('federate', [], 'tester', fixture.ui, fixture.sleep);
 
@@ -112,7 +122,7 @@ describe('FederationOrchestrator', (): void => {
         expect(fixture.orchestrator.active).toBe(false);
     });
 
-    it('initializes handshake and advances through transcompile/containerize approvals', async (): void => {
+    it('initializes handshake and advances through transcompile/containerize approvals', async (): Promise<void> => {
         const fixture: OrchestratorFixture = fixture_create();
         fixture.storeActions.project_setActive(project_create('p-1', 'fedproj'));
 
@@ -141,7 +151,7 @@ describe('FederationOrchestrator', (): void => {
         ).not.toBeNull();
     });
 
-    it('completes publish path and clears active federation state', async (): void => {
+    it('completes publish path and clears active federation state', async (): Promise<void> => {
         const fixture: OrchestratorFixture = fixture_create();
         fixture.storeActions.project_setActive(project_create('p-2', 'fedproj2'));
 

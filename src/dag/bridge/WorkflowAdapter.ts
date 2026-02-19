@@ -532,6 +532,22 @@ export class WorkflowAdapter {
         return this.commandIndex.get(baseCmd) ?? null;
     }
 
+    /**
+     * Find a stage by ID or name.
+     *
+     * @param stageRef - Stage ID or partial name
+     * @returns The DAGNode, or undefined if not found
+     */
+    public stage_find(stageRef: string): DAGNode | undefined {
+        const idMatch = this.definition.nodes.get(stageRef);
+        if (idMatch) return idMatch;
+
+        const lowerRef = stageRef.toLowerCase();
+        return Array.from(this.definition.nodes.values()).find(
+            (node: DAGNode): boolean => node.name.toLowerCase().includes(lowerRef)
+        );
+    }
+
     // ─── Skip Management ───────────────────────────────────────
 
     /**

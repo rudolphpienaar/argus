@@ -108,6 +108,17 @@ The context provided to you contains a JSON list of available datasets. Use this
                 const renameMatch: RegExpMatchArray | null = actualInput.match(/(?:name|rename)\s+(?:this|project)?\s*(?:to\s+)?([a-zA-Z0-9_-]+)/i);
                 if (renameMatch) {
                     json = { type: 'workflow', command: 'rename', args: [renameMatch[1].toLowerCase()] };
+                } else if (actualInput.toLowerCase().startsWith('search ')) {
+                    const query = actualInput.substring(7).trim();
+                    json = { type: 'workflow', command: 'search', args: [query] };
+                } else if (actualInput.toLowerCase().startsWith('proceed')) {
+                    const parts = actualInput.split(/\s+/);
+                    json = { type: 'workflow', command: 'proceed', args: parts.slice(1) };
+                } else if (actualInput.toLowerCase().startsWith('add ') || actualInput.toLowerCase().startsWith('gather ')) {
+                    const parts = actualInput.split(/\s+/);
+                    const cmd = parts[0].toLowerCase();
+                    const args = parts.slice(1);
+                    json = { type: 'workflow', command: cmd, args: args };
                 } else if (actualInput.match(/(?:harmonize|standardize|normalize)/i)) {
                     json = { type: 'workflow', command: 'harmonize', args: [] };
                 }
@@ -226,8 +237,9 @@ The context provided to you contains a JSON list of available datasets. Use this
         return DATASETS.filter((ds: Dataset): boolean =>
             ds.name.toLowerCase().includes(q) ||
             ds.description.toLowerCase().includes(q) ||
-            ds.modality.includes(q) ||
-            ds.annotationType.includes(q) ||
+            ds.modality.toLowerCase().includes(q) ||
+            ds.annotationType.toLowerCase().includes(q) ||
+            ds.provider.toLowerCase().includes(q) ||
             q.includes('all') || // return all if query is generic
             q.includes('dataset')
         );

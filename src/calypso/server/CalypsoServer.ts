@@ -24,6 +24,7 @@ import { ALL_GENERATORS } from '../../vfs/content/templates/index.js';
 import { homeDir_scaffold } from '../../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../../generated/version.js';
 import { store } from '../../core/state/store.js';
+import { DATASETS } from '../../core/data/datasets.js';
 import { restRequest_handle } from './RestHandler.js';
 import { wsConnection_handle } from './WebSocketHandler.js';
 import type { RestHandlerDeps } from './rest/types.js';
@@ -147,6 +148,10 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
         store.dataset_deselect(id);
     }
 
+    public dataset_getById(id: string): Dataset | undefined {
+        return DATASETS.find(ds => ds.id === id);
+    }
+
     public datasets_getSelected(): Dataset[] {
         return store.state.selectedDatasets;
     }
@@ -177,6 +182,14 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 
     public federation_setState(state: FederationState | null): void {
         store.federationState_set(state);
+    }
+
+    public lastMentioned_set(datasets: Dataset[]): void {
+        store.lastMentioned_set(datasets);
+    }
+
+    public lastMentioned_get(): Dataset[] {
+        return store.lastMentioned_get();
     }
 }
 

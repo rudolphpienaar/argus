@@ -10,6 +10,7 @@
 import type { CalypsoStoreActions } from '../types.js';
 import type { Dataset, AppState, FederationState, Project } from '../../core/models/types.js';
 import { store } from '../../core/state/store.js';
+import { DATASETS } from '../../core/data/datasets.js';
 
 /**
  * Adapter that exposes Store functionality to CalypsoCore.
@@ -61,6 +62,13 @@ export class StoreAdapter implements CalypsoStoreActions {
      */
     public dataset_deselect(id: string): void {
         store.dataset_deselect(id);
+    }
+
+    /**
+     * Get a dataset by its ID.
+     */
+    public dataset_getById(id: string): Dataset | undefined {
+        return DATASETS.find(ds => ds.id === id);
     }
 
     /**
@@ -130,6 +138,20 @@ export class StoreAdapter implements CalypsoStoreActions {
      */
     public federation_setState(fedState: FederationState | null): void {
         store.federationState_set(fedState);
+    }
+
+    /**
+     * Store recently mentioned datasets for anaphora resolution.
+     */
+    public lastMentioned_set(datasets: Dataset[]): void {
+        store.lastMentioned_set(datasets);
+    }
+
+    /**
+     * Retrieve recently mentioned datasets.
+     */
+    public lastMentioned_get(): Dataset[] {
+        return store.lastMentioned_get();
     }
 }
 

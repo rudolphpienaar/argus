@@ -23,7 +23,7 @@ stages:
     name: Dataset Discovery
     phase: data-assembly
     previous: ~
-    optional: false
+    optional: true
     produces:
       - search.json
     instruction: >
