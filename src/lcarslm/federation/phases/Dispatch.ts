@@ -63,7 +63,8 @@ export function step_dispatch(
             '  `show rounds`      — View per-round details',
         ].join('\n'),
         [],
-        true
+        true,
+        { render_mode: 'streaming', stream_delay_ms: 200 }
     );
 }
 
@@ -90,13 +91,17 @@ export function step_status(
                     ? 'Next:\n  `publish model` — Publish trained model'
                     : '○ Ready for model publication.',
             ].join('\n'),
-            [], true
+            [], 
+            true,
+            { render_mode: 'streaming', stream_delay_ms: 100 }
         );
     }
 
     return response_create(
         `○ Federation training has not started yet. Current step: ${state.step}`,
-        [], true
+        [], 
+        true,
+        { render_mode: 'plain' }
     );
 }
 
@@ -122,11 +127,6 @@ export function step_publish(
             completed: false
         };
     }
-
-    // Write final markers
-    try {
-        vfs.file_create(`${projectBase}/.federated`, new Date().toISOString());
-    } catch { /* ignore */ }
 
     // Materialize session tree artifact
     if (federateArtifactPath) {
@@ -155,14 +155,14 @@ export function step_publish(
                 '○ MODEL PUBLISHED TO ATLAS MARKETPLACE.',
                 '',
                 `○ PROJECT: ${projectName}`,
-                `○ MARKER: ${projectBase}/.federated`,
                 '',
                 '<span class="success">● FEDERATION COMPLETE.</span>',
                 '',
                 '>> NEXT: Ask `next?` for post-federation guidance.',
             ].join('\n'),
             [{ type: 'federation_start' }],
-            true
+            true,
+            { spinner_label: 'Finalizing provenance' }
         ),
         completed: true
     };

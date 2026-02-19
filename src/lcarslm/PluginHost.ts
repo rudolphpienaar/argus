@@ -14,6 +14,7 @@ import { CalypsoStatusCode } from './types.js';
 import type { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 import type { PluginHandlerName } from '../plugins/registry.js';
 import { pluginHandler_isKnown } from '../plugins/registry.js';
+import { TelemetryBus } from './TelemetryBus.js';
 
 /**
  * Contract for plugin modules dynamically loaded by the host.
@@ -41,7 +42,8 @@ export class PluginHost {
         private readonly vfs: VirtualFileSystem,
         private readonly shell: Shell,
         private readonly storeActions: CalypsoStoreActions,
-        private readonly federation: FederationOrchestrator
+        private readonly federation: FederationOrchestrator,
+        private readonly telemetryBus: TelemetryBus
     ) {}
 
     /**
@@ -106,6 +108,8 @@ export class PluginHost {
             shell: this.shell,
             store: this.storeActions,
             federation: this.federation,
+            ui: this.telemetryBus.context_create(),
+            sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)),
             parameters,
             command,
             args,

@@ -2,6 +2,7 @@
  * @file Plugin: Harmonize
  *
  * Implements data harmonization logic for federated ML cohorts.
+ * v10.2: Acts as the blueprint for compute-driven telemetry.
  *
  * @module plugins/harmonize
  */
@@ -9,7 +10,6 @@
 import type { PluginContext, PluginResult } from '../lcarslm/types.js';
 import { CalypsoStatusCode } from '../lcarslm/types.js';
 import type { Dataset } from '../core/models/types.js';
-
 import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
 
 /**
@@ -19,7 +19,7 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { store, vfs, parameters, shell } = context;
+    const { store, ui, parameters } = context;
 
     const active: { id: string; name: string } | null = store.project_getActive();
     if (!active) {
@@ -29,59 +29,115 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         };
     }
 
-    // 1. Build the "experience" trace
-    const lines: string[] = [
-        CalypsoPresenter.success_format('INITIATING COHORT HARMONIZATION PROTOCOL...'),
-        '',
-        await step_scan(context),
-        await step_standardize(context),
-        await step_normalize(context),
-        '',
-        CalypsoPresenter.success_format('COHORT HARMONIZATION COMPLETE. DATA STANDARDIZED.')
-    ];
-
-    // 2. Perform actual VFS mutation (Side Effect)
-    const username: string = shell.env_get('USER') || 'user';
-    const markerPath: string = `/home/${username}/projects/${active.name}/input/.harmonized`;
-
+    // 1. Start the Orchestration Narrative
+    ui.log(CalypsoPresenter.success_format('INITIATING COHORT HARMONIZATION PROTOCOL...'));
+    
     // Derive modality from first dataset if not in parameters
     const selected: Dataset[] = store.datasets_getSelected();
     const modality: string = (parameters.modality as string) || (selected.length > 0 ? selected[0].modality : 'unknown');
 
-    vfs.file_create(markerPath, JSON.stringify({
-        harmonizedAt: new Date().toISOString(),
-        modality,
-        steps: ['scan', 'standardize', 'normalize']
-    }));
+    // 2. Perform Simulated Compute Steps (The Live Feed)
+    ui.frame_open('CALYPSO HARMONIZATION ENGINE', `Standardizing ${modality.toUpperCase()} cohort for federated learning`);
+    
+    await dicom_headerAnalysis(context, 300);
+    await imageGeometry_check(context, 150);
+    await intensity_normalization(context, 200);
+    await qualityMetrics_generate(context, 100);
+
+    ui.frame_close([
+        'Images processed:     1,247',
+        'Metadata fields:      18,705',
+        'Format conversions:   312',
+        'Quality score:        94.7%',
+        'Federation ready:     YES'
+    ]);
 
     return {
-        message: lines.join('\n'),
+        message: '● COHORT HARMONIZATION COMPLETE. DATA STANDARDIZED.',
         statusCode: CalypsoStatusCode.OK,
         artifactData: {
             success: true,
-            modality
+            modality,
+            timestamp: new Date().toISOString()
         }
     };
 }
 
 /**
- * Step 1: Scan sites for metadata variance.
+ * Phase 1: Header Analysis
+ * Simulates reading DICOM tags from a cohort of files.
  */
-async function step_scan(context: PluginContext): Promise<string> {
-    // Simulate some logic/delay if needed (though Calypso is currently sync-response)
-    return CalypsoPresenter.progressBar_format('SCANNING SITES', 100, 0.8);
+async function dicom_headerAnalysis(context: PluginContext, fileCount: number): Promise<void> {
+    const { ui, sleep } = context;
+    ui.phase_start('DICOM HEADER ANALYSIS');
+    
+    for (let i = 1; i <= fileCount; i++) {
+        // Emit high-frequency progress
+        if (i % 10 === 0 || i === fileCount) {
+            const percent = Math.round((i / fileCount) * 100);
+            ui.progress(`  » Reading tags: file ${i}/${fileCount}`, percent);
+        }
+        
+        // Simulated I/O latency: 10ms per file
+        await sleep(10);
+    }
+    ui.log('  ● Header validation complete.');
 }
 
 /**
- * Step 2: Standardize pixel spacing.
+ * Phase 2: Geometry Check
+ * Simulates pixel spacing and orientation matrix validation.
  */
-async function step_standardize(context: PluginContext): Promise<string> {
-    return CalypsoPresenter.progressBar_format('STANDARDIZING', 100, 1.2);
+async function imageGeometry_check(context: PluginContext, volumeCount: number): Promise<void> {
+    const { ui, sleep } = context;
+    ui.phase_start('IMAGE GEOMETRY VALIDATION');
+
+    for (let i = 1; i <= volumeCount; i++) {
+        if (i % 5 === 0 || i === volumeCount) {
+            const percent = Math.round((i / volumeCount) * 100);
+            ui.progress(`  » Checking spacing: vol ${i}/${volumeCount}`, percent);
+        }
+        // Simulated Compute: 20ms per volume
+        await sleep(20);
+    }
+    ui.log('  ● Orientation matrices synchronized.');
 }
 
 /**
- * Step 3: Normalize intensity distributions.
+ * Phase 3: Intensity Normalization
+ * Simulates histogram equalization and bit-depth conversion.
  */
-async function step_normalize(context: PluginContext): Promise<string> {
-    return CalypsoPresenter.progressBar_format('NORMALIZING', 100, 1.5);
+async function intensity_normalization(context: PluginContext, sliceCount: number): Promise<void> {
+    const { ui, sleep } = context;
+    ui.phase_start('INTENSITY NORMALIZATION');
+
+    for (let i = 1; i <= sliceCount; i++) {
+        if (i % 10 === 0 || i === sliceCount) {
+            const percent = Math.round((i / sliceCount) * 100);
+            ui.progress(`  » Normalizing slices: ${i}/${sliceCount}`, percent);
+        }
+        // Simulated Compute: 15ms per slice
+        await sleep(15);
+    }
+}
+
+/**
+ * Phase 4: Quality Metrics
+ * Simulates SNR calculation and artifact detection.
+ */
+async function qualityMetrics_generate(context: PluginContext, sampleCount: number): Promise<void> {
+    const { ui, sleep } = context;
+    ui.phase_start('QUALITY METRICS GENERATION');
+
+    const metrics = ['SNR Calculation', 'Artifact Detection', 'Contrast Resolution', 'Noise Floor'];
+    
+    for (let i = 0; i < metrics.length; i++) {
+        ui.log(`  » Computing ${metrics[i]}...`);
+        // Internal loop for samples
+        const stepSamples = Math.floor(sampleCount / metrics.length);
+        for (let s = 1; s <= stepSamples; s++) {
+            await sleep(20);
+        }
+    }
+    ui.log('  ● Final quality score: 94.7%');
 }

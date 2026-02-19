@@ -41,6 +41,7 @@ export function step_transcompile_approve(
             '  `approve`        — Build container image',
         ].join('\n'),
         [],
-        true
+        true,
+        { spinner_label: 'Transcompiling source' }
     );
 }

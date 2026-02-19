@@ -36,6 +36,7 @@ import { StatusProvider } from './StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
 import { IntentParser } from './routing/IntentParser.js';
 import { PluginHost } from './PluginHost.js';
+import { TelemetryBus } from './TelemetryBus.js';
 import { MerkleEngine, type RuntimeMaterializationMode } from './MerkleEngine.js';
 import { vfs_snapshot } from './utils/VfsUtils.js';
 import { fingerprint_compute } from '../dag/fingerprint/hasher.js';
@@ -83,6 +84,7 @@ export class CalypsoCore {
     private intentParser: IntentParser;
     private pluginHost: PluginHost;
     private merkleEngine: MerkleEngine;
+    private telemetryBus: TelemetryBus;
 
     constructor(
         private vfs: VirtualFileSystem,
@@ -94,6 +96,7 @@ export class CalypsoCore {
         this.simulationMode = config.simulationMode ?? false;
         this.knowledge = config.knowledge;
 
+        this.telemetryBus = new TelemetryBus();
         this.searchProvider = new SearchProvider(vfs, shell);
         this.intentParser = new IntentParser(this.searchProvider, storeActions);
 
@@ -117,7 +120,7 @@ export class CalypsoCore {
         
         this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
         this.federation = new FederationOrchestrator(vfs, storeActions);
-        this.pluginHost = new PluginHost(vfs, shell, storeActions, this.federation);
+        this.pluginHost = new PluginHost(vfs, shell, storeActions, this.federation, this.telemetryBus);
         this.merkleEngine = new MerkleEngine(
             vfs,
             this.workflowAdapter,
@@ -135,6 +138,7 @@ export class CalypsoCore {
 
         this.scripts = new ScriptRuntime(
             storeActions,
+            this.workflowAdapter,
             (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd),
             (): Dataset[] => this.searchProvider.lastMentioned_get(),
         );
@@ -244,6 +248,16 @@ export class CalypsoCore {
 
     public store_snapshot(): Partial<AppState> {
         return this.storeActions.state_get();
+    }
+
+    /**
+     * Subscribe to live telemetry events from guest plugins.
+     * 
+     * @param observer - Callback for telemetry events.
+     * @returns Unsubscribe function.
+     */
+    public telemetry_subscribe(observer: (event: any) => void): () => void {
+        return this.telemetryBus.subscribe(observer);
     }
 
     /**
@@ -423,12 +437,21 @@ export class CalypsoCore {
                 }
             }
         }
-        return this.response_create(result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout, [], result.exitCode === 0, result.exitCode === 0 ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR);
+        const ui_hints = primary === 'python' ? { render_mode: 'training' as const } : undefined;
+        return this.response_create(
+            result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout, 
+            [], 
+            result.exitCode === 0, 
+            result.exitCode === 0 ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR,
+            ui_hints
+        );
     }
 
     private guidance_handle(input: string): CalypsoResponse | null {
         const patterns: RegExp[] = [/^what('?s| is| should be)?\s*(the\s+)?next/i, /^next\??$/i, /^how\s+do\s+i\s+(proceed|continue|start)/i, /status/i, /progress/i];
-        return patterns.some((p: RegExp): boolean => p.test(input)) ? this.response_create(this.workflow_nextStep(), [], true, CalypsoStatusCode.OK) : null;
+        return patterns.some((p: RegExp): boolean => p.test(input)) 
+            ? this.response_create(this.workflow_nextStep(), [], true, CalypsoStatusCode.OK) 
+            : null;
     }
 
     // ─── Workflow Handlers ──────────────────────────────────────────────────
@@ -528,14 +551,21 @@ export class CalypsoCore {
             result.message, 
             result.actions || [], 
             result.statusCode === CalypsoStatusCode.OK, 
-            result.statusCode
+            result.statusCode,
+            result.ui_hints
         );
     }
 
     // ─── Internal Utilities ────────────────────────────────────────────────
 
-    private response_create(message: string, actions: CalypsoAction[], success: boolean, statusCode: CalypsoStatusCode): CalypsoResponse {
-        return { message, actions, success, statusCode };
+    private response_create(
+        message: string, 
+        actions: CalypsoAction[], 
+        success: boolean, 
+        statusCode: CalypsoStatusCode,
+        ui_hints?: CalypsoResponse['ui_hints']
+    ): CalypsoResponse {
+        return { message, actions, success, statusCode, ui_hints };
     }
 
     private reset(): void {

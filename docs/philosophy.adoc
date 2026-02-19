@@ -67,7 +67,7 @@ The architecture ensures that despite these varying needs, the underlying state 
 
 ARGUS is the interface to a platform whose compute model is fundamentally data-state-centric. This model, inherited from the ChRIS platform, represents computation as a Directed Acyclic Graph (DAG) where each node is a mortal container that consumes `/input` and produces `/output`.
 
-In ARGUS, we extend this principle to the UI layer. The system reasons about workflow progress by inspecting the physical state of the VFS—checking for the existence of `.harmonized` markers, `train.py` scaffolds, and `.federated` receipts. This eliminates the "whack-a-mole" bug cycle associated with in-memory state tracking and provides the LLM with a "Ground Truth" context derived directly from the filesystem.
+In ARGUS, we extend this principle to the UI layer. The system reasons about workflow progress by inspecting the physical state of the session tree—checking for the existence of Merkle-proven artifact envelopes for stages like harmonization, code scaffolding, and federation. This eliminates the "whack-a-mole" bug cycle associated with in-memory state tracking and provides the LLM with a "Ground Truth" context derived directly from the immutable session ledger.
 
 == Conclusion
 

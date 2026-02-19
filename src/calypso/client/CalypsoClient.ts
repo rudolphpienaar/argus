@@ -9,7 +9,7 @@
  */
 
 import WebSocket from 'ws';
-import type { CalypsoResponse } from '../../lcarslm/types.js';
+import type { CalypsoResponse, TelemetryEvent } from '../../lcarslm/types.js';
 import type { WorkflowSummary } from '../../core/workflows/types.js';
 import type {
     ClientMessage,
@@ -43,6 +43,9 @@ export class CalypsoClient {
     private readonly url: string;
     private readonly timeout: number = 30000;
 
+    /** v10.2 Live telemetry listener. */
+    public onTelemetry: ((event: TelemetryEvent) => void) | null = null;
+
     constructor(options: CalypsoClientOptions = {}) {
         if (options.url) {
             this.url = options.url;
@@ -67,6 +70,12 @@ export class CalypsoClient {
             this.ws.on('message', (data: Buffer | string) => {
                 try {
                     const msg = JSON.parse(typeof data === 'string' ? data : data.toString()) as ServerMessage;
+                    
+                    if (msg.type === 'telemetry') {
+                        if (this.onTelemetry) this.onTelemetry(msg.payload);
+                        return;
+                    }
+
                     const pending = this.pending.get(msg.id);
                     if (pending) {
                         clearTimeout(pending.timer);

@@ -10,7 +10,7 @@
  */
 
 import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
-import type { CalypsoResponse, CalypsoStoreActions } from '../types.js';
+import type { CalypsoResponse, CalypsoAction, CalypsoStoreActions } from '../types.js';
 import { FederationContentProvider } from './FederationContentProvider.js';
 import type {
     FederationState,
@@ -19,37 +19,49 @@ import type {
     FederationStep
 } from './types.js';
 
-import { 
-    dag_paths, 
-    publish_mutate, 
-    response_create, 
-    state_create 
+import {
+    dag_paths,
+    publish_mutate,
+    response_create,
+    state_create
 } from './utils.js';
 
 import { step_brief } from './phases/Briefing.js';
 import { step_transcompile_approve } from './phases/Transcompile.js';
 import { step_containerize_approve } from './phases/Containerize.js';
-import { 
-    step_config, 
-    step_publishConfig_approve, 
-    step_publishExecute_approve 
+import {
+    step_config,
+    step_publishConfig_approve,
+    step_publishExecute_approve
 } from './phases/Publish.js';
-import { 
-    step_dispatch, 
-    step_publish, 
-    step_status 
+import {
+    step_dispatch,
+    step_publish,
+    step_status
 } from './phases/Dispatch.js';
 import { step_show } from './phases/Show.js';
 
 /**
  * Orchestrates the multi-phase federation handshake protocol.
+ *
+ * This class serves as the primary controller for the federation lifecycle,
+ * coordinating state transitions across the 8-step manifest-aligned handshake.
+ * It manages context resolution, state initialization, and command dispatching
+ * to specialized phase handlers.
  */
 export class FederationOrchestrator {
     /** Full path to the federate artifact file in session tree. */
     private federateArtifactPath: string = '';
 
+    /** Provider for materializing federation artifacts in the VFS. */
     private contentProvider: FederationContentProvider;
 
+    /**
+     * Create a new FederationOrchestrator.
+     *
+     * @param vfs - The Virtual File System for artifact materialization.
+     * @param storeActions - Actions for interacting with the global Calypso store.
+     */
     constructor(
         private vfs: VirtualFileSystem,
         private storeActions: CalypsoStoreActions
@@ -59,6 +71,8 @@ export class FederationOrchestrator {
 
     /**
      * Get the current federation state from the store.
+     *
+     * @returns The current FederationState or null if no handshake is active.
      */
     private federationState_get(): FederationState | null {
         return this.storeActions.federation_getState();
@@ -66,6 +80,8 @@ export class FederationOrchestrator {
 
     /**
      * Update the federation state in the store.
+     *
+     * @param state - The new federation state or null to clear it.
      */
     private federationState_set(state: FederationState | null): void {
         this.storeActions.federation_setState(state);
@@ -73,6 +89,8 @@ export class FederationOrchestrator {
 
     /**
      * Set the federation artifact path for session tree writes.
+     *
+     * @param artifactPath - The full path to the federate artifact file.
      */
     session_set(artifactPath: string): void {
         this.federateArtifactPath = artifactPath;
@@ -82,9 +100,18 @@ export class FederationOrchestrator {
 
     /**
      * Route a command verb to the appropriate federation step handler.
+     *
+     * This is the primary entry point for all federation-related commands.
+     * It performs context resolution, state validation, and delegates to
+     * specialized dispatch methods.
+     *
+     * @param verb - Command verb (e.g., 'federate', 'approve', 'show', 'config').
+     * @param rawArgs - Raw command line arguments.
+     * @param username - The active user's name.
+     * @returns A CalypsoResponse containing the operation result.
      */
     command(verb: string, rawArgs: string[], username: string): CalypsoResponse {
-        const activeMeta: { id: string; name: string; } | null = this.storeActions.project_getActive();
+        const activeMeta = this.storeActions.project_getActive();
         if (!activeMeta) {
             return response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
         }
@@ -93,16 +120,54 @@ export class FederationOrchestrator {
         const projectBase: string = `/home/${username}/projects/${projectName}`;
         const args: FederationArgs = this.args_parse(rawArgs);
 
-        // Abort
         if (args.abort) {
             this.federationState_set(null);
             return response_create('○ FEDERATION HANDSHAKE ABORTED. NO DISPATCH PERFORMED.', [], true);
         }
 
-        // Already-complete check
+        // 1. Guard against re-execution without explicit intent
+        const completionCheck = this.completion_check(projectBase, activeMeta.id, projectName, args);
+        if (completionCheck) return completionCheck;
+
+        // 2. Initialize or restore state
+        const stateResult = this.state_initialize(activeMeta.id, projectName, args);
+        if (stateResult) return stateResult;
+
+        const dag: FederationDagPaths = dag_paths(projectBase);
+        const currentState = this.federationState_get();
+        if (!currentState) {
+            return response_create('>> ERROR: FEDERATION STATE INITIALIZATION FAILED.', [], false);
+        }
+
+        // 3. Dispatch to phase handler
+        const response = this.verb_dispatch(verb, currentState, projectBase, dag, projectName, rawArgs, args);
+
+        // 4. Persist updated state (unless completed)
+        if (this.federationState_get() !== null) {
+            this.federationState_set(currentState);
+        }
+
+        return response;
+    }
+
+    /**
+     * Check if the federation is already complete and return a response if so.
+     *
+     * @param projectBase - Base filesystem path of the project.
+     * @param projectId - Unique ID of the active project.
+     * @param projectName - Display name of the active project.
+     * @param args - Parsed federation arguments.
+     * @returns A CalypsoResponse if completion prevents execution, otherwise null.
+     */
+    private completion_check(
+        projectBase: string,
+        projectId: string,
+        projectName: string,
+        args: FederationArgs
+    ): CalypsoResponse | null {
         const federationComplete: boolean = this.vfs.node_stat(`${projectBase}/.federated`) !== null;
-        const state: FederationState | null = this.federationState_get();
-        const stateMatchesProject: boolean = !!state && state.projectId === activeMeta.id;
+        const state = this.federationState_get();
+        const stateMatchesProject: boolean = !!state && state.projectId === projectId;
 
         if (!stateMatchesProject && federationComplete && !args.restart) {
             return response_create(
@@ -118,13 +183,25 @@ export class FederationOrchestrator {
                 true
             );
         }
+        return null;
+    }
 
-        // Initialize state if needed
+    /**
+     * Initialize or reset the federation state based on arguments and current project.
+     *
+     * @param projectId - Unique ID of the active project.
+     * @param projectName - Display name of the active project.
+     * @param args - Parsed federation arguments.
+     * @returns A CalypsoResponse if initialization requires immediate user feedback, otherwise null.
+     */
+    private state_initialize(projectId: string, projectName: string, args: FederationArgs): CalypsoResponse | null {
+        const state = this.federationState_get();
+        const stateMatchesProject: boolean = !!state && state.projectId === projectId;
+
         if (args.restart || !stateMatchesProject) {
-            const newState: FederationState = state_create(activeMeta.id, projectName);
+            const newState: FederationState = state_create(projectId, projectName);
             this.federationState_set(newState);
 
-            // Restart initializes state; user must then run `federate` to see briefing
             if (args.restart) {
                 return response_create(
                     [
@@ -138,42 +215,51 @@ export class FederationOrchestrator {
                 );
             }
         }
+        return null;
+    }
 
-        const dag: FederationDagPaths = dag_paths(projectBase);
-        const currentState: FederationState | null = this.federationState_get();
-        if (!currentState) {
-            return response_create('>> ERROR: FEDERATION STATE INITIALIZATION FAILED.', [], false);
-        }
-
-        // Route by verb
-        let response: CalypsoResponse;
+    /**
+     * Dispatch the command verb to the appropriate phase handler.
+     *
+     * @param verb - Command verb.
+     * @param state - Current federation state.
+     * @param projectBase - Base project path.
+     * @param dag - Federation DAG paths.
+     * @param projectName - Active project name.
+     * @param rawArgs - Raw arguments for sub-routing.
+     * @param args - Parsed arguments.
+     * @returns The CalypsoResponse from the phase handler.
+     */
+    private verb_dispatch(
+        verb: string,
+        state: FederationState,
+        projectBase: string,
+        dag: FederationDagPaths,
+        projectName: string,
+        rawArgs: string[],
+        args: FederationArgs
+    ): CalypsoResponse {
         switch (verb) {
             case 'federate':
-                response = step_brief(currentState, projectBase, dag, args);
-                break;
+                return step_brief(state, projectBase, dag, args);
 
             case 'approve':
-                response = this.step_approve(currentState, projectBase, dag, projectName, args);
-                break;
+                return this.step_approve(state, projectBase, dag, projectName, args);
 
             case 'show':
-                response = step_show(currentState, rawArgs, projectBase, dag);
-                break;
+                return step_show(state, rawArgs, projectBase, dag);
 
             case 'config':
-                response = step_config(currentState, rawArgs, args);
-                break;
+                return step_config(state, rawArgs, args);
 
             case 'dispatch':
-                response = step_dispatch(currentState, projectBase, dag, projectName, args, this.contentProvider);
-                break;
+                return step_dispatch(state, projectBase, dag, projectName, args, this.contentProvider);
 
             case 'status':
-                response = step_status(currentState, projectBase, dag);
-                break;
+                return step_status(state, projectBase, dag);
 
             case 'publish':
-                const result = step_publish(currentState, projectBase, dag, projectName, this.vfs, this.federateArtifactPath);
+                const result = step_publish(state, projectBase, dag, projectName, this.vfs, this.federateArtifactPath);
                 if (result.completed) {
                     this.federationState_set(null);
                 }
@@ -182,17 +268,14 @@ export class FederationOrchestrator {
             default:
                 return response_create(`>> ERROR: Unknown federation verb '${verb}'.`, [], false);
         }
-
-        // Update state after step execution (in case it was mutated in place)
-        // Only if not completed (null set handled in publish)
-        if (this.federationState_get() !== null) {
-            this.federationState_set(currentState);
-        }
-        return response;
     }
 
     /**
      * Start or advance the federation sequence (backward-compat wrapper).
+     *
+     * @param rawArgs - Command line arguments.
+     * @param username - Active user's name.
+     * @returns CalypsoResponse result.
      */
     federate(rawArgs: string[], username: string): CalypsoResponse {
         return this.command('federate', rawArgs, username);
@@ -223,6 +306,16 @@ export class FederationOrchestrator {
 
     /**
      * Context-dependent approve: advance whatever step we're on.
+     *
+     * Delegates to phase-specific handlers based on the current step recorded
+     * in the federation state.
+     *
+     * @param state - Current federation state.
+     * @param projectBase - Base project path.
+     * @param dag - Federation DAG paths.
+     * @param projectName - Active project name.
+     * @param args - Parsed arguments.
+     * @returns CalypsoResponse result.
      */
     private step_approve(
         state: FederationState,
@@ -235,7 +328,6 @@ export class FederationOrchestrator {
 
         switch (state.step) {
             case 'federate-brief':
-                // Brief hasn't been shown yet; show it and advance
                 return step_brief(state, projectBase, dag, args);
 
             case 'federate-transcompile':
@@ -277,7 +369,12 @@ export class FederationOrchestrator {
 
     /**
      * Parse federate arguments into structured flags.
+     *
      * Preserves backward compatibility with --yes, --name, --org, etc.
+     * while normalizing them into a FederationArgs record.
+     *
+     * @param rawArgs - Raw argument tokens.
+     * @returns Parsed FederationArgs.
      */
     private args_parse(rawArgs: string[]): FederationArgs {
         const parsed: FederationArgs = {
@@ -292,11 +389,11 @@ export class FederationOrchestrator {
             const token: string = rawArgs[i].toLowerCase();
             const rawToken: string = rawArgs[i];
 
-            if (token === '--abort' || token === 'abort' || token === 'cancel') {
+            if (this.argIs_abort(token)) {
                 parsed.abort = true;
                 continue;
             }
-            if (token === '--rerun' || token === '--restart' || token === 'rerun' || token === 'restart') {
+            if (this.argIs_restart(token)) {
                 parsed.restart = true;
                 continue;
             }
@@ -329,5 +426,25 @@ export class FederationOrchestrator {
         }
 
         return parsed;
+    }
+
+    /**
+     * Check if a token represents an abort intent.
+     *
+     * @param token - Argument token.
+     * @returns True if the token is an abort flag.
+     */
+    private argIs_abort(token: string): boolean {
+        return token === '--abort' || token === 'abort' || token === 'cancel';
+    }
+
+    /**
+     * Check if a token represents a restart intent.
+     *
+     * @param token - Argument token.
+     * @returns True if the token is a restart flag.
+     */
+    private argIs_restart(token: string): boolean {
+        return token === '--rerun' || token === '--restart' || token === 'rerun' || token === 'restart';
     }
 }

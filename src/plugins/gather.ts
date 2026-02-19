@@ -89,7 +89,10 @@ async function plugin_add(
                  `\n${CalypsoPresenter.info_format(`VFS ROOT: ${projectInputRoot}`)}`,
         statusCode: CalypsoStatusCode.OK,
         actions: datasets.map((dataset: Dataset) => ({ type: 'dataset_select', id: dataset.id })),
-        artifactData: { added: datasets.map((dataset: Dataset): string => dataset.id) }
+        artifactData: { added: datasets.map((dataset: Dataset): string => dataset.id) },
+        ui_hints: {
+            spinner_label: 'Assembling cohort'
+        }
     };
 }
 
@@ -122,7 +125,10 @@ function plugin_remove(
         message: CalypsoPresenter.success_format(`DATASET(S) REMOVED: ${datasets.map((d: Dataset): string => d.id).join(', ')}`),
         statusCode: CalypsoStatusCode.OK,
         actions: datasets.map((d: Dataset) => ({ type: 'dataset_deselect', id: d.id })),
-        artifactData: { removed: datasets.map((d: Dataset): string => d.id) }
+        artifactData: { removed: datasets.map((d: Dataset): string => d.id) },
+        ui_hints: {
+            spinner_label: 'Updating cohort'
+        }
     };
 }
 
@@ -152,7 +158,10 @@ function plugin_review(
                  `\n${selected.map((d: Dataset): string => `  [${d.id}] ${d.name}`).join('\n')}`,
         statusCode: CalypsoStatusCode.OK,
         actions: [{ type: 'stage_advance', stage: 'gather' }],
-        artifactData: { cohort: selected.map((d: Dataset): string => d.id) }
+        artifactData: { cohort: selected.map((d: Dataset): string => d.id) },
+        ui_hints: {
+            spinner_label: 'Resolving cohort state'
+        }
     };
 }
 
@@ -238,22 +247,7 @@ function projectWorkspace_materialize(project: Project, selected: Dataset[], dep
     deps.vfs.dir_create(projectRootPath);
     deps.vfs.tree_unmount(inputPath);
     deps.vfs.tree_mount(inputPath, cohortTree_build(selected));
-    cohortMarker_write(inputPath, selected, deps);
     shellProjectContext_sync(projectRootPath, project.name, deps);
-}
-
-/**
- * Write `.cohort` marker into the active project input path.
- */
-function cohortMarker_write(inputPath: string, selected: Dataset[], deps: GatherDeps): void {
-    const markerPath: string = `${inputPath}/.cohort`;
-    const payload: string = JSON.stringify({
-        timestamp: new Date().toISOString(),
-        datasets: selected.map((dataset: Dataset): string => dataset.id),
-        count: selected.length,
-    }, null, 2);
-
-    deps.vfs.file_create(markerPath, payload);
 }
 
 /**

@@ -36,6 +36,8 @@ import {
     type CalypsoStructuredScript,
     type CalypsoStructuredStep
 } from './Catalog.js';
+import { WorkflowAdapter } from '../../dag/bridge/WorkflowAdapter.js';
+import type { DAGNode } from '../../dag/graph/types.js';
 
 /**
  * Callback type for executing a CalypsoCore command from within a script step.
@@ -54,6 +56,7 @@ export class ScriptRuntime {
 
     constructor(
         private storeActions: CalypsoStoreActions,
+        private workflowAdapter: WorkflowAdapter,
         private commandExecutor: CommandExecutor,
         private lastMentionedDatasets_get: () => Dataset[]
     ) {}
@@ -199,6 +202,7 @@ export class ScriptRuntime {
             actions.push(...result.actions);
 
             const summary: string | null = this.scriptStep_summary(result.message);
+            const stageNode: DAGNode | undefined = this.workflowAdapter.stage_find(trimmedStep);
 
             if (!result.success) {
                 lines.push(`[FAIL] [${i + 1}/${script.steps.length}] ${trimmedStep}`);
@@ -212,6 +216,12 @@ export class ScriptRuntime {
 
             lines.push(`[OK] [${i + 1}/${script.steps.length}] ${trimmedStep}`);
             if (summary) lines.push(`  -> ${summary}`);
+
+            // v10.1: Capture narrative/blueprint for TUI
+            if (stageNode) {
+                if (stageNode.narrative) lines.push(`  ○ ${stageNode.narrative}`);
+                stageNode.blueprint.forEach(line => lines.push(`     • ${line}`));
+            }
         }
 
         lines.push('');
@@ -331,48 +341,35 @@ export class ScriptRuntime {
             const step: CalypsoStructuredStep = session.spec.steps[session.stepIndex];
             const progress: string = `${session.stepIndex + 1}/${totalSteps}`;
 
+            // 1. Resolve Parameters
             const resolved: ScriptStepParamResolution = this.scriptStructured_stepParamsResolve(step, session.context);
             if (!resolved.ok) {
                 session.pending = resolved.pending;
-                lines.push(`[WAIT] [${progress}] ${step.id} :: ${step.action}`);
-                lines.push('● SCRIPT INPUT REQUIRED.');
-                lines.push(`○ ${resolved.pending.prompt}`);
-                if (resolved.pending.options && resolved.pending.options.length > 0) {
-                    lines.push(...resolved.pending.options);
-                }
-                lines.push('○ Reply with a value, or type abort.');
-                return this.response_create(lines.join('\n'), [...session.actions], true);
+                return this.scriptStepWait_response(lines, step, progress, resolved.pending, session.actions);
             }
 
+            // 2. Execute Step
             const execution: ScriptStepExecutionResult = await this.scriptStructured_stepExecute(step, resolved.params, session);
             session.actions.push(...execution.actions);
 
             if (execution.success === 'pending') {
                 session.pending = execution.pending;
-                lines.push(`[WAIT] [${progress}] ${step.id} :: ${step.action}`);
-                lines.push('● SCRIPT INPUT REQUIRED.');
-                lines.push(`○ ${execution.pending.prompt}`);
-                if (execution.pending.options && execution.pending.options.length > 0) {
-                    lines.push(...execution.pending.options);
-                }
-                lines.push('○ Reply with a value, or type abort.');
-                return this.response_create(lines.join('\n'), [...session.actions], true);
+                return this.scriptStepWait_response(lines, step, progress, execution.pending, session.actions);
             }
 
             if (!execution.success) {
-                lines.push(`[FAIL] [${progress}] ${step.id} :: ${step.action}`);
-                if (execution.message) {
-                    lines.push(`>> ${execution.message}`);
-                }
-                lines.push(`>> SCRIPT ABORTED AT STEP ${session.stepIndex + 1}.`);
-                const actions: CalypsoAction[] = [...session.actions];
-                this.session = null;
-                return this.response_create(lines.join('\n'), actions, false);
+                return this.scriptStepFailure_response(lines, step, progress, execution.message, session.actions);
             }
 
+            // 3. Handle Success
             lines.push(`[OK] [${progress}] ${step.id} :: ${step.action}`);
-            if (execution.summary) {
-                lines.push(`  -> ${execution.summary}`);
+            if (execution.summary) lines.push(`  -> ${execution.summary}`);
+
+            // v10.1: Dynamic manifest-grounded telemetry
+            const stageNode = this.workflowAdapter.dag.nodes.get(step.id);
+            if (stageNode) {
+                if (stageNode.narrative) lines.push(`  ○ ${stageNode.narrative}`);
+                stageNode.blueprint.forEach(line => lines.push(`     • ${line}`));
             }
 
             const alias: string | undefined = step.outputs?.alias;
@@ -383,11 +380,60 @@ export class ScriptRuntime {
             session.stepIndex += 1;
         }
 
-        lines.push('');
-        lines.push(`● SCRIPT COMPLETE. TARGET ${session.script.target.toUpperCase()} READY.`);
-        const actions: CalypsoAction[] = [...session.actions];
+        return this.scriptComplete_response(lines, session.script.target, session.actions);
+    }
+
+    /**
+     * Generate response for a step awaiting user input.
+     */
+    private scriptStepWait_response(
+        lines: string[],
+        step: CalypsoStructuredStep,
+        progress: string,
+        pending: ScriptPendingInput,
+        actions: CalypsoAction[]
+    ): CalypsoResponse {
+        lines.push(`[WAIT] [${progress}] ${step.id} :: ${step.action}`);
+        lines.push('● SCRIPT INPUT REQUIRED.');
+        lines.push(`○ ${pending.prompt}`);
+        if (pending.options && pending.options.length > 0) {
+            lines.push(...pending.options);
+        }
+        lines.push('○ Reply with a value, or type abort.');
+        return this.response_create(lines.join('\n'), [...actions], true);
+    }
+
+    /**
+     * Generate response for a failed script step.
+     */
+    private scriptStepFailure_response(
+        lines: string[],
+        step: CalypsoStructuredStep,
+        progress: string,
+        message: string | undefined,
+        actions: CalypsoAction[]
+    ): CalypsoResponse {
+        lines.push(`[FAIL] [${progress}] ${step.id} :: ${step.action}`);
+        if (message) lines.push(`>> ${message}`);
+        lines.push(`>> SCRIPT ABORTED AT STEP ${this.session?.stepIndex ? this.session.stepIndex + 1 : '?'}.`);
+        const finalActions = [...actions];
         this.session = null;
-        return this.response_create(lines.join('\n'), actions, true);
+        return this.response_create(lines.join('\n'), finalActions, false);
+    }
+
+    /**
+     * Generate response for a successfully completed script.
+     */
+    private scriptComplete_response(
+        lines: string[],
+        target: string,
+        actions: CalypsoAction[]
+    ): CalypsoResponse {
+        lines.push('');
+        lines.push(`● SCRIPT COMPLETE. TARGET ${target.toUpperCase()} READY.`);
+        const finalActions = [...actions];
+        this.session = null;
+        return this.response_create(lines.join('\n'), finalActions, true);
     }
 
     // ─── Parameter Resolution ─────────────────────────────────────────────
@@ -771,7 +817,7 @@ export class ScriptRuntime {
      * Resolve nearest script candidates by normalized edit distance.
      */
     private scriptSuggestions_resolve(ref: string): string[] {
-        const query: string = ref.trim().toLowerCase().replace(/\.clpso$/i, '');
+        const query: string = ref.trim().toLowerCase().replace(/\.calypso\.yaml$/i, '');
         if (!query) return [];
 
         const ranked: ScriptSuggestionScore[] = [];

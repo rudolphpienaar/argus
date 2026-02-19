@@ -18,13 +18,15 @@ import type { FederationArgs, FederationDagPaths, FederationPublishConfig, Feder
 export function response_create(
     message: string,
     actions: CalypsoAction[],
-    success: boolean
+    success: boolean,
+    ui_hints?: CalypsoResponse['ui_hints']
 ): CalypsoResponse {
     return { 
         message, 
         actions, 
         success, 
-        statusCode: success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR 
+        statusCode: success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR,
+        ui_hints
     };
 }
 

@@ -10,7 +10,7 @@
  * @module
  */
 
-import type { CalypsoResponse } from '../../lcarslm/types.js';
+import type { CalypsoResponse, TelemetryEvent } from '../../lcarslm/types.js';
 import type { WorkflowSummary } from '../../core/workflows/types.js';
 
 // ─── Client → Server ────────────────────────────────────────────────────────
@@ -60,6 +60,11 @@ export interface ResponseMessage {
     payload: CalypsoResponse;
 }
 
+export interface TelemetryMessage {
+    type: 'telemetry';
+    payload: TelemetryEvent;
+}
+
 export interface LoginResponseMessage {
     type: 'login-response';
     id: string;
@@ -96,6 +101,7 @@ export interface ErrorMessage {
 
 export type ServerMessage =
     | ResponseMessage
+    | TelemetryMessage
     | LoginResponseMessage
     | PersonaResponseMessage
     | PromptResponseMessage

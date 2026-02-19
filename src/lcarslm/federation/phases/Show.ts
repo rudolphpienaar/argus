@@ -95,7 +95,9 @@ export function step_show(
             '  `show rounds`       — Show per-round details',
             '  `show provenance`   — Show full provenance chain',
         ].join('\n'),
-        [], true
+        [], 
+        true,
+        { render_mode: 'streaming', stream_delay_ms: 100 }
     );
 }
 

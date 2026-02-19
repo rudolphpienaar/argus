@@ -97,16 +97,9 @@ export function cohort_validate(vfs: VirtualFileSystem, projectInputPath: string
         }
 
         const uniqueModalities = Object.keys(stats.modalities);
-        let isMixedModality = uniqueModalities.length > 1;
+        const isMixedModality = uniqueModalities.length > 1;
 
-        // Check for Harmonization Marker
-        const isHarmonized = vfs.node_stat(`${projectInputPath}/.harmonized`) !== null;
-        if (isHarmonized) {
-            isMixedModality = false;
-            hasSkewedLabels = false;
-        }
-
-        return { stats, isMixedModality, hasSkewedLabels };
+        return { stats, isMixedModality, hasSkewedLabels: false };
 
     } catch (e: unknown) {
         return { 
@@ -141,17 +134,6 @@ export function cohort_analyze(vfs: VirtualFileSystem, projectInputPath: string)
     }
 
     const { stats, isMixedModality } = validation;
-
-    // 0. Harmonization Status
-    const isHarmonized = vfs.node_stat(`${projectInputPath}/.harmonized`) !== null;
-    report.push('[HARMONIZATION STATUS]');
-    if (isHarmonized) {
-        report.push('  ● STATUS: <span class="success">HARMONIZED</span>');
-        report.push('  ○ Applied: normalization, resampling, schema_alignment');
-    } else {
-        report.push('  ○ STATUS: <span class="dim">PENDING</span>');
-    }
-    report.push('');
 
     // 1. Modality Check
     report.push('[MODALITY CHECK]');

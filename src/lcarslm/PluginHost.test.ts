@@ -10,6 +10,7 @@ import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import { Shell } from '../vfs/Shell.js';
 import { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 import { PluginHost } from './PluginHost.js';
+import { TelemetryBus } from './TelemetryBus.js';
 import type { CalypsoStoreActions, PluginResult } from './types.js';
 import { CalypsoStatusCode } from './types.js';
 
@@ -107,7 +108,8 @@ describe('PluginHost', (): void => {
         const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
         const shell: Shell = new Shell(vfs, 'tester');
         const federation: FederationOrchestrator = new FederationOrchestrator(vfs, fixture.actions);
-        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, federation);
+        const telemetryBus: TelemetryBus = new TelemetryBus();
+        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, federation, telemetryBus);
 
         const result: PluginResult = await host.plugin_execute(
             '../search',
@@ -125,7 +127,8 @@ describe('PluginHost', (): void => {
         const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
         const shell: Shell = new Shell(vfs, 'tester');
         const federation: FederationOrchestrator = new FederationOrchestrator(vfs, fixture.actions);
-        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, federation);
+        const telemetryBus: TelemetryBus = new TelemetryBus();
+        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, federation, telemetryBus);
 
         const result: PluginResult = await host.plugin_execute(
             'search',

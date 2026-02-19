@@ -23,9 +23,6 @@ export function step_containerize_approve(
     vfs: VirtualFileSystem
 ): CalypsoResponse {
     contentProvider.containerize_materialize(dag);
-    try {
-        vfs.file_create(`${projectBase}/.containerized`, new Date().toISOString());
-    } catch { /* ignore */ }
     state.step = 'federate-publish-config';
 
     return response_create(
@@ -46,6 +43,7 @@ export function step_containerize_approve(
             '  `approve`                — Accept defaults and publish',
         ].join('\n'),
         [],
-        true
+        true,
+        { spinner_label: 'Building OCI image' }
     );
 }

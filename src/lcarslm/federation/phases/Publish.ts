@@ -42,7 +42,8 @@ export function step_publishConfig_approve(
             '  `approve`       — Push to registry',
         ].join('\n'),
         [],
-        true
+        true,
+        { spinner_label: 'Updating registry metadata' }
     );
 }
 
@@ -58,9 +59,6 @@ export function step_publishExecute_approve(
     vfs: VirtualFileSystem
 ): CalypsoResponse {
     contentProvider.publish_materialize(dag, state.publish);
-    try {
-        vfs.file_create(`${projectBase}/.published`, new Date().toISOString());
-    } catch { /* ignore */ }
     state.step = 'federate-dispatch';
 
     return response_create(
@@ -78,7 +76,8 @@ export function step_publishExecute_approve(
             '  `dispatch --sites BCH,MGH`  — Dispatch to specific sites',
         ].join('\n'),
         [],
-        true
+        true,
+        { spinner_label: 'Pushing to ChRIS registry' }
     );
 }
 
@@ -119,6 +118,7 @@ export function step_config(
             '  `approve` — Accept configuration',
         ].join('\n'),
         [],
-        true
+        true,
+        { spinner_label: 'Updating project context' }
     );
 }

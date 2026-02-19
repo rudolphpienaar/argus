@@ -403,5 +403,5 @@ function scriptRef_normalize(ref: string): string {
     return ref
         .trim()
         .toLowerCase()
-        .replace(/\.clpso$/i, '');
+        .replace(/\.calypso\.yaml$/i, '');
 }

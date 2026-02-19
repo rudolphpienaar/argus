@@ -9,6 +9,8 @@
  */
 
 import { syntaxHighlight_renderAnsi, catLanguage_detect } from './SyntaxHighlight.js';
+import type { CalypsoResponse } from '../../../lcarslm/types.js';
+import { WorkflowAdapter } from '../../../dag/bridge/WorkflowAdapter.js';
 
 // ─── ANSI Colors ────────────────────────────────────────────────────────────
 
@@ -76,77 +78,26 @@ export function spinner_start(label: string = 'CALYPSO thinking'): () => void {
 /**
  * Resolve spinner label by command intent.
  */
-export function spinnerLabel_resolve(input: string, options: CommandExecuteOptions = {}): string {
-    const cmd: string = input.trim().split(/\s+/)[0]?.toLowerCase() || '';
+export function spinnerLabel_resolve(
+    input: string, 
+    options: CommandExecuteOptions = {},
+    ui_hints?: CalypsoResponse['ui_hints']
+): string {
+    if (ui_hints?.spinner_label) {
+        return ui_hints.spinner_label;
+    }
     const stepPrefix: string = options.scriptStep && options.stepIndex && options.stepTotal
         ? `STEP ${options.stepIndex}/${options.stepTotal} · `
         : '';
-    switch (cmd) {
-        case 'search':
-            return `${stepPrefix}CALYPSO scanning catalog`;
-        case 'add':
-        case 'gather':
-            return `${stepPrefix}CALYPSO assembling cohort`;
-        case 'rename':
-            return `${stepPrefix}CALYPSO updating project context`;
-        case 'harmonize':
-            return `${stepPrefix}CALYPSO harmonizing cohort`;
-        case 'proceed':
-        case 'code':
-            return `${stepPrefix}CALYPSO preparing code workspace`;
-        case 'python':
-            return `${stepPrefix}CALYPSO executing local validation`;
-        case 'federate':
-            return `${stepPrefix}CALYPSO preparing federation sequence`;
-        case '/run':
-            return `${stepPrefix}CALYPSO running script`;
-        default:
-            return `${stepPrefix}CALYPSO thinking`;
-    }
+    return `${stepPrefix}CALYPSO thinking`;
 }
 
 /**
  * Resolve minimum spinner duration per command to avoid instant flashes.
  */
 export function spinnerMinDuration_resolve(input: string, options: CommandExecuteOptions = {}): number {
-    const cmd: string = input.trim().split(/\s+/)[0]?.toLowerCase() || '';
-    if (options.scriptStep) {
-        switch (cmd) {
-            case 'search':
-                return 1800;
-            case 'add':
-            case 'gather':
-                return 1650;
-            case 'rename':
-                return 1300;
-            case 'harmonize':
-                return 1200;
-            case 'proceed':
-            case 'code':
-                return 1700;
-            case 'python':
-                return 2400;
-            case 'federate':
-                return 2100;
-            default:
-                return 1400;
-        }
-    }
-    switch (cmd) {
-        case 'search':
-        case 'add':
-            case 'gather':
-            return 360;
-        case 'proceed':
-        case 'code':
-            return 520;
-        case 'python':
-            return 700;
-        case 'federate':
-            return 820;
-        default:
-            return 280;
-    }
+    if (options.scriptStep) return 1400;
+    return 280;
 }
 
 // ─── Script Step Telemetry ──────────────────────────────────────────────────
@@ -154,87 +105,6 @@ export function spinnerMinDuration_resolve(input: string, options: CommandExecut
 export interface ScriptStepPlan {
     title: string;
     lines: string[];
-}
-
-/**
- * Human-readable step telemetry sentence for script execution.
- */
-export function scriptStepTelemetry_resolve(command: string): string {
-    const cmd: string = command.trim().split(/\s+/)[0]?.toLowerCase() || '';
-    switch (cmd) {
-        case 'search':
-            return 'Scanning catalog indices and ranking candidate cohorts.';
-        case 'add':
-        case 'gather':
-            return 'Mounting cohort assets and validating provenance metadata.';
-        case 'rename':
-            return 'Updating project identity and synchronizing workspace paths.';
-        case 'harmonize':
-            return 'Standardizing site heterogeneity for federated readiness.';
-        case 'proceed':
-        case 'code':
-            return 'Generating scaffold source and manifest assets.';
-        case 'python':
-            return 'Running local execution pass and collecting validation artifacts.';
-        case 'federate':
-            return 'Preparing federation orchestration and execution artifacts.';
-        default:
-            return 'Executing scripted DAG step.';
-    }
-}
-
-/**
- * Verbose foreground plan lines for a script step.
- */
-export function scriptStepPlan_resolve(command: string): ScriptStepPlan {
-    const cmd: string = command.trim().split(/\s+/)[0]?.toLowerCase() || '';
-    switch (cmd) {
-        case 'search':
-            return {
-                title: 'SEARCH STAGE',
-                lines: [
-                    'Querying ATLAS catalog shards for cohort candidates.',
-                    'Scoring modality/provider relevance and confidence.',
-                    'Materializing search snapshot artifact in ~/searches/.'
-                ]
-            };
-        case 'add':
-        case 'gather':
-            return {
-                title: 'GATHER STAGE',
-                lines: [
-                    'Resolving dataset identity and provenance signature.',
-                    'Mounting cohort tree into project input workspace.',
-                    'Writing gather receipts and .cohort completion marker.'
-                ]
-            };
-        case 'rename':
-            return {
-                title: 'RENAME STAGE',
-                lines: [
-                    'Computing path migration plan for active project root.',
-                    'Applying VFS move and shell-context synchronization.',
-                    'Updating project model and shell context.'
-                ]
-            };
-        case 'harmonize':
-            return {
-                title: 'HARMONIZE STAGE',
-                lines: [
-                    'Profiling cross-site metadata variance and label schema drift.',
-                    'Applying normalization/resampling/alignment transforms.',
-                    'Writing harmonization report and .harmonized marker.'
-                ]
-            };
-        default:
-            return {
-                title: 'EXECUTION STAGE',
-                lines: [
-                    'Executing scripted DAG operation.',
-                    'Validating output artifacts and stage completion markers.'
-                ]
-            };
-    }
 }
 
 /**
@@ -248,239 +118,120 @@ export function stepCommandHint_build(action: string, params: Record<string, unk
             return `add ${String(params.dataset || '')}`.trim();
         case 'rename':
             return `rename ${String(params.project || '')}`.trim();
-        case 'harmonize':
-            return 'harmonize';
-        case 'proceed':
-            return 'proceed';
-        case 'code':
-            return 'code';
         case 'run_python':
             return `python ${String(params.script || 'train.py')}`.trim();
-        case 'federate.transcompile':
-        case 'federate.containerize':
-        case 'federate.publish_metadata':
-        case 'federate.publish':
-        case 'federate.dispatch_compute':
-            return 'federate';
         default:
             return action;
     }
 }
 
-// ─── Harmonization Animation ────────────────────────────────────────────────
+// ─── Reactive UI Primitives ────────────────────────────────────────────────
+
+const FRAME_WIDTH: number = 64;
 
 /**
- * Runs an animated harmonization sequence in the terminal.
- * Creates a btop-style progress display with fake metrics.
+ * Open a styled UI frame (box start).
  */
-export async function harmonization_animate(): Promise<void> {
-    const WIDTH: number = 64;
-    const BAR_WIDTH: number = 24;
-    const METRIC_WIDTH: number = 28;
-
-    const boxRow_render = (content: string): string => {
-        const visibleLength: number = Array.from(ansi_strip(content)).length;
-        const paddingLength: number = Math.max(0, WIDTH - visibleLength);
-        return `${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`;
+export function rendererFrame_open(title: string, subtitle?: string): void {
+    const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
+        console.log(`${COLORS.cyan}${left}${'═'.repeat(FRAME_WIDTH)}${right}${COLORS.reset}`);
     };
 
     const boxRow_print = (content: string = ''): void => {
-        console.log(boxRow_render(content));
+        const visibleLength: number = Array.from(ansi_strip(content)).length;
+        const paddingLength: number = Math.max(0, FRAME_WIDTH - visibleLength);
+        console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
     };
-
-    const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
-        console.log(`${COLORS.cyan}${left}${'═'.repeat(WIDTH)}${right}${COLORS.reset}`);
-    };
-
-    const text_fit = (text: string, width: number): string => {
-        const chars: string[] = Array.from(text);
-        if (chars.length <= width) return text.padEnd(width);
-        if (width <= 1) return chars.slice(0, width).join('');
-        return `${chars.slice(0, width - 1).join('')}…`;
-    };
-
-    const phases: Array<{ name: string; metrics: string[] }> = [
-        {
-            name: 'DICOM Header Analysis',
-            metrics: ['Patient ID normalization', 'Study date validation', 'Modality tag verification']
-        },
-        {
-            name: 'Image Geometry Check',
-            metrics: ['Pixel spacing validation', 'Slice thickness analysis', 'Orientation matrix check']
-        },
-        {
-            name: 'Intensity Normalization',
-            metrics: ['Histogram equalization', 'Window/level standardization', 'Bit depth conversion']
-        },
-        {
-            name: 'Metadata Reconciliation',
-            metrics: ['Institution code mapping', 'Series description cleanup', 'Annotation format sync']
-        },
-        {
-            name: 'Quality Metrics Generation',
-            metrics: ['SNR calculation', 'Artifact detection', 'Coverage completeness']
-        }
-    ];
 
     process.stdout.write(COLORS.hideCursor);
-
     console.log();
     boxRule_print('╔', '╗');
-    boxRow_print(`  ${COLORS.bright}${COLORS.yellow}CALYPSO HARMONIZATION ENGINE${COLORS.reset}`);
-    boxRow_print(`  ${COLORS.dim}Standardizing cohort for federated learning${COLORS.reset}`);
-    boxRule_print('╠', '╣');
-
-    for (let phaseIdx = 0; phaseIdx < phases.length; phaseIdx++) {
-        const phase = phases[phaseIdx];
-
-        boxRow_print();
-        boxRow_print(`  ${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${phase.name}${COLORS.reset}`);
-
-        for (let progress = 0; progress <= 100; progress += 5) {
-            const filled: number = Math.floor((progress / 100) * BAR_WIDTH);
-            const empty: number = BAR_WIDTH - filled;
-            const bar: string = `${COLORS.green}${'█'.repeat(filled)}${COLORS.dim}${'░'.repeat(empty)}${COLORS.reset}`;
-
-            const metricIdx: number = Math.min(Math.floor((progress / 100) * phase.metrics.length), phase.metrics.length - 1);
-            const metric: string = phase.metrics[metricIdx];
-            const metricPadded: string = text_fit(metric, METRIC_WIDTH);
-
-            const progressLine: string = `  [${bar}] ${COLORS.yellow}${progress.toString().padStart(3)}%${COLORS.reset} ${COLORS.dim}${metricPadded}${COLORS.reset}`;
-            process.stdout.write(`\r${boxRow_render(progressLine)}`);
-
-            await sleep_ms(30 + Math.random() * 40);
-        }
-        console.log();
+    boxRow_print(`  ${COLORS.bright}${COLORS.yellow}${title.toUpperCase()}${COLORS.reset}`);
+    if (subtitle) {
+        boxRow_print(`  ${COLORS.dim}${subtitle}${COLORS.reset}`);
     }
-
-    boxRow_print();
     boxRule_print('╠', '╣');
-    boxRow_print(`  ${COLORS.bright}HARMONIZATION SUMMARY${COLORS.reset}`);
-    boxRow_print();
+}
 
-    const stats: string[] = [
-        `  ${COLORS.green}✓${COLORS.reset} Images processed:     ${COLORS.yellow}1,247${COLORS.reset}`,
-        `  ${COLORS.green}✓${COLORS.reset} Metadata fields:      ${COLORS.yellow}18,705${COLORS.reset}`,
-        `  ${COLORS.green}✓${COLORS.reset} Format conversions:   ${COLORS.yellow}312${COLORS.reset}`,
-        `  ${COLORS.green}✓${COLORS.reset} Quality score:        ${COLORS.yellow}94.7%${COLORS.reset}`,
-        `  ${COLORS.green}✓${COLORS.reset} Federation ready:     ${COLORS.green}YES${COLORS.reset}`
-    ];
+/**
+ * Close a styled UI frame (box end) and print summary.
+ */
+export function rendererFrame_close(summary?: string[]): void {
+    const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
+        console.log(`${COLORS.cyan}${left}${'═'.repeat(FRAME_WIDTH)}${right}${COLORS.reset}`);
+    };
 
-    for (const stat of stats) {
-        boxRow_print(stat);
-        await sleep_ms(100);
+    const boxRow_print = (content: string = ''): void => {
+        const visibleLength: number = Array.from(ansi_strip(content)).length;
+        const paddingLength: number = Math.max(0, FRAME_WIDTH - visibleLength);
+        console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
+    };
+
+    if (summary && summary.length > 0) {
+        boxRow_print();
+        boxRow_print(`  ${COLORS.bright}EXECUTION SUMMARY${COLORS.reset}`);
+        boxRow_print();
+        for (const stat of summary) {
+            boxRow_print(`  ${COLORS.green}✓${COLORS.reset} ${stat}`);
+        }
     }
 
     boxRow_print();
     boxRule_print('╚', '╝');
     console.log();
-
     process.stdout.write(COLORS.showCursor);
 }
 
-// ─── Output Mode Detection ──────────────────────────────────────────────────
-
 /**
- * Detect whether response output should be streamed with timing.
+ * Mark the start of a sub-phase within an open frame.
  */
-export function outputMode_detect(
-    message: string,
-    input: string,
-    options: CommandExecuteOptions = {}
-): 'plain' | 'training' | 'federation' | 'script' {
-    const lowerInput: string = input.toLowerCase();
-    if (message.includes('--- TRAINING LOG ---') || (lowerInput.startsWith('python ') && message.includes('LOCAL TRAINING COMPLETE'))) {
-        return 'training';
-    }
-    if (options.scriptStep) {
-        return 'script';
-    }
-    if (message.includes('RUNNING SCRIPT:') && /\[(OK|ERR)\]\s+\[\d+\/\d+\]/.test(message)) {
-        return 'script';
-    }
-    if (
-        /STEP\s+[1-5]\/5/.test(message) ||
-        message.includes('PHASE 1/3 COMPLETE: BUILD ARTIFACTS') ||
-        message.includes('PHASE 2/3: MARKETPLACE PUBLISH PREPARATION') ||
-        message.includes('PHASE 2/3 COMPLETE: MARKETPLACE PUBLISHING') ||
-        message.includes('PHASE 3/3: FEDERATION DISPATCH & COMPUTE') ||
-        message.includes('DISTRIBUTING CONTAINER TO TRUSTED DOMAINS') ||
-        message.includes('FEDERATED COMPUTE ROUNDS') ||
-        message.includes('[1/5] SOURCE CODE TRANSCOMPILE') ||
-        message.includes('[2/5] CONTAINER COMPILATION') ||
-        message.includes('[3/5] MARKETPLACE PUBLISHING COMPLETE')
-    ) {
-        return 'federation';
-    }
-    return 'plain';
-}
+export function rendererPhase_start(name: string): void {
+    const boxRow_print = (content: string = ''): void => {
+        const visibleLength: number = Array.from(ansi_strip(content)).length;
+        const paddingLength: number = Math.max(0, FRAME_WIDTH - visibleLength);
+        console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
+    };
 
-// ─── Animated Response Rendering ────────────────────────────────────────────
+    boxRow_print();
+    boxRow_print(`  ${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${name}${COLORS.reset}`);
+}
 
 /**
  * Stream response output line-by-line for realistic execution feel.
+ *
+ * v10.1+: Fully data-driven. No workflow-specific string-sniffing or regex.
+ * Behavior is controlled via message content and ui_hints.
  */
 export async function response_renderAnimated(
     message: string,
     input: string,
-    options: CommandExecuteOptions = {}
+    options: CommandExecuteOptions = {},
+    ui_hints?: CalypsoResponse['ui_hints']
 ): Promise<void> {
-    const mode = outputMode_detect(message, input, options);
-    if (mode === 'plain') {
+    const renderMode = ui_hints?.render_mode || 'plain';
+    
+    if (renderMode === 'plain') {
         console.log(message_style(message, { input }));
         return;
     }
 
-    const hasMarkdownTable: boolean = /\|(?:\s*:?-{3,}:?\s*\|)+/.test(message);
-    if (hasMarkdownTable) {
-        console.log(message_style(message, { input }));
-        await sleep_ms(180 + Math.floor(Math.random() * 140));
+    // Handle generic step animation primitive
+    if (ui_hints?.animation === 'harmonization' && ui_hints?.animation_config) {
+        await stepAnimation_render(ui_hints.animation_config);
         return;
     }
 
+    // Generic line streaming
     const lines: string[] = message.split('\n');
+    const baseDelay: number = ui_hints?.stream_delay_ms ?? 50;
+
     for (const line of lines) {
         console.log(message_style(line, { input }));
-
         if (!line.trim()) {
-            await sleep_ms(70 + Math.floor(Math.random() * 70));
+            await sleep_ms(baseDelay / 2);
             continue;
         }
-
-        if (mode === 'training') {
-            if (/^Epoch \d+\/\d+/i.test(line)) {
-                await sleep_ms(320 + Math.floor(Math.random() * 340));
-            } else if (line.includes('LOCAL TRAINING COMPLETE')) {
-                await sleep_ms(180 + Math.floor(Math.random() * 140));
-            } else {
-                await sleep_ms(130 + Math.floor(Math.random() * 170));
-            }
-            continue;
-        }
-
-        if (mode === 'script') {
-            if (/\[(OK|ERR)\]\s+\[\d+\/\d+\]/.test(line)) {
-                await sleep_ms(650 + Math.floor(Math.random() * 520));
-            } else if (/^\s*->/.test(line)) {
-                await sleep_ms(260 + Math.floor(Math.random() * 220));
-            } else {
-                await sleep_ms(180 + Math.floor(Math.random() * 180));
-            }
-            continue;
-        }
-
-        // federation mode
-        if (/ROUND\s+\d+\/\d+/i.test(line)) {
-            await sleep_ms(700 + Math.floor(Math.random() * 700));
-        } else if (line.includes('DISPATCHED')) {
-            await sleep_ms(520 + Math.floor(Math.random() * 520));
-        } else if (/^\s*○\s+\[\d\/5\]/.test(line)) {
-            await sleep_ms(620 + Math.floor(Math.random() * 520));
-        } else if (line.includes('PHASE 3/3') || line.includes('PHASE 2/3') || line.includes('PHASE 1/3') || /STEP\s+[1-5]\/5/.test(line)) {
-            await sleep_ms(540 + Math.floor(Math.random() * 420));
-        } else {
-            await sleep_ms(260 + Math.floor(Math.random() * 340));
-        }
+        await sleep_ms(baseDelay + Math.floor(Math.random() * baseDelay));
     }
 }
 
@@ -488,10 +239,35 @@ export async function response_renderAnimated(
 
 /**
  * Render a markdown table as formatted terminal output with box drawing.
+ *
+ * Decomposes the table into header/rows, calculates constrained column
+ * widths, and applies box-drawing borders.
  */
 export function table_render(tableText: string): string {
+    const rows: string[][] = tableMarkdown_parse(tableText);
+    if (rows.length === 0) return tableText;
+
+    const colCount: number = rows.reduce((max: number, row: string[]): number => Math.max(max, row.length), 0);
+    const contentBudget: number = tableContentBudget_calculate(colCount);
+    const colWidths: number[] = tableColumnWidths_calculate(rows, colCount, contentBudget);
+
+    const output: string[] = [tableBorder_render(colWidths, 'top')];
+
+    rows.forEach((row: string[], rowIdx: number): void => {
+        output.push(tableRow_render(row, colWidths, rowIdx === 0));
+        if (rowIdx === 0) output.push(tableBorder_render(colWidths, 'mid'));
+    });
+
+    output.push(tableBorder_render(colWidths, 'bot'));
+    return output.join('\n');
+}
+
+/**
+ * Parse markdown table text into a 2D array of cells, stripping separators.
+ */
+function tableMarkdown_parse(tableText: string): string[][] {
     const lines = tableText.trim().split('\n');
-    if (lines.length < 2) return tableText;
+    if (lines.length < 2) return [];
 
     const separatorRow_is = (line: string): boolean => {
         const trimmed: string = line.trim();
@@ -501,42 +277,7 @@ export function table_render(tableText: string): string {
             .slice(1, -1)
             .map((cell: string): string => cell.trim())
             .filter((cell: string): boolean => cell.length > 0);
-        if (cells.length === 0) return false;
-        return cells.every((cell: string): boolean => /^:?-{3,}:?$/.test(cell));
-    };
-
-    const cell_wrap = (text: string, width: number): string[] => {
-        if (width <= 0) return [''];
-        const raw: string = text.trim();
-        if (!raw) return [''];
-
-        const words: string[] = raw.split(/\s+/);
-        const wrapped: string[] = [];
-        let current: string = '';
-
-        for (const word of words) {
-            if (word.length > width) {
-                if (current) {
-                    wrapped.push(current);
-                    current = '';
-                }
-                for (let i = 0; i < word.length; i += width) {
-                    wrapped.push(word.slice(i, i + width));
-                }
-                continue;
-            }
-
-            const candidate: string = current ? `${current} ${word}` : word;
-            if (candidate.length <= width) {
-                current = candidate;
-            } else {
-                if (current) wrapped.push(current);
-                current = word;
-            }
-        }
-
-        if (current) wrapped.push(current);
-        return wrapped.length > 0 ? wrapped : [''];
+        return cells.length > 0 && cells.every((cell: string): boolean => /^:?-{3,}:?$/.test(cell));
     };
 
     const rows: string[][] = [];
@@ -545,92 +286,119 @@ export function table_render(tableText: string): string {
         const cells = line.split('|')
             .slice(1, -1)
             .map((cell: string): string => cell.trim().replace(/\*\*/g, ''));
-        if (cells.length > 0) {
-            rows.push(cells);
-        }
+        if (cells.length > 0) rows.push(cells);
     }
+    return rows;
+}
 
-    if (rows.length === 0) return tableText;
+/**
+ * Calculate available width for table content based on terminal size.
+ */
+function tableContentBudget_calculate(colCount: number): number {
+    const terminalWidth: number = Math.max(process.stdout.columns || 120, 80);
+    return terminalWidth - (colCount + 1) - (colCount * 2) - 2;
+}
 
-    const colCount: number = rows.reduce((max: number, row: string[]): number => Math.max(max, row.length), 0);
-    rows.forEach((row: string[]): void => {
-        while (row.length < colCount) row.push('');
+/**
+ * Calculate optimal column widths within the available budget.
+ */
+function tableColumnWidths_calculate(rows: string[][], colCount: number, budget: number): number[] {
+    const natural: number[] = new Array(colCount).fill(0);
+    rows.forEach(row => {
+        row.forEach((cell, i) => {
+            natural[i] = Math.max(natural[i] || 0, cell.length);
+        });
     });
 
-    const colWidthsNatural: number[] = new Array(colCount).fill(0);
-    for (const row of rows) {
-        row.forEach((cell: string, i: number): void => {
-            colWidthsNatural[i] = Math.max(colWidthsNatural[i] || 0, cell.length);
-        });
-    }
-
-    const terminalWidth: number = Math.max(process.stdout.columns || 120, 80);
-    const contentBudget: number = terminalWidth - (colCount + 1) - (colCount * 2) - 2;
-    const colWidths: number[] = [...colWidthsNatural];
+    const colWidths: number[] = [...natural];
     const minWidths: number[] = new Array(colCount).fill(8);
+
+    // Specialized logic for 2-column detail tables (ID/Value pairs)
     if (colCount === 2) {
         const fixedFieldWidth: number = 40;
         const minValueWidth: number = 18;
-
-        if (contentBudget >= fixedFieldWidth + minValueWidth) {
+        if (budget >= fixedFieldWidth + minValueWidth) {
             colWidths[0] = fixedFieldWidth;
-            colWidths[1] = Math.max(minValueWidth, contentBudget - fixedFieldWidth);
+            colWidths[1] = Math.max(minValueWidth, budget - fixedFieldWidth);
         } else {
-            const fallbackField: number = Math.max(12, Math.min(fixedFieldWidth, contentBudget - minValueWidth));
+            const fallbackField: number = Math.max(12, Math.min(fixedFieldWidth, budget - minValueWidth));
             colWidths[0] = fallbackField;
-            colWidths[1] = Math.max(minValueWidth, contentBudget - fallbackField);
+            colWidths[1] = Math.max(minValueWidth, budget - fallbackField);
         }
-
         minWidths[0] = Math.min(colWidths[0], 12);
         minWidths[1] = Math.min(colWidths[1], minValueWidth);
     }
 
-    let totalWidth: number = colWidths.reduce((sum: number, w: number): number => sum + w, 0);
-    while (totalWidth > contentBudget && colWidths.some((w: number, i: number): boolean => w > minWidths[i])) {
-        let widestIdx: number = -1;
-        let widestWidth: number = -1;
+    // Shrink columns that exceed budget
+    let total: number = colWidths.reduce((sum, w) => sum + w, 0);
+    while (total > budget && colWidths.some((w, i) => w > minWidths[i])) {
+        let widestIdx = -1;
+        let widestWidth = -1;
         for (let i = 0; i < colWidths.length; i++) {
             if (colWidths[i] > minWidths[i] && colWidths[i] > widestWidth) {
-                widestIdx = i;
-                widestWidth = colWidths[i];
+                widestIdx = i; widestWidth = colWidths[i];
             }
         }
         if (widestIdx < 0) break;
         colWidths[widestIdx] -= 1;
-        totalWidth -= 1;
+        total -= 1;
     }
+    return colWidths;
+}
 
-    const hLine = '─';
-    const topBorder: string = `┌${colWidths.map((w: number): string => hLine.repeat(w + 2)).join('┬')}┐`;
-    const midBorder: string = `├${colWidths.map((w: number): string => hLine.repeat(w + 2)).join('┼')}┤`;
-    const botBorder: string = `└${colWidths.map((w: number): string => hLine.repeat(w + 2)).join('┴')}┘`;
+/**
+ * Render a table border line.
+ */
+function tableBorder_render(widths: number[], type: 'top' | 'mid' | 'bot'): string {
+    const h = '─';
+    const [left, mid, right] = type === 'top' ? ['┌', '┬', '┐'] : (type === 'mid' ? ['├', '┼', '┤'] : ['└', '┴', '┘']);
+    return `${left}${widths.map(w => h.repeat(w + 2)).join(mid)}${right}`;
+}
 
-    const output: string[] = [topBorder];
+/**
+ * Render a single data row, handling multi-line cell wrapping.
+ */
+function tableRow_render(cells: string[], widths: number[], isHeader: boolean): string {
+    const wrapped: string[][] = cells.map((cell, i) => tableCell_wrap(cell, widths[i]));
+    const height: number = wrapped.reduce((max, lines) => Math.max(max, lines.length), 1);
+    const lines: string[] = [];
 
-    rows.forEach((row: string[], rowIdx: number): void => {
-        const wrappedCells: string[][] = row.map((cell: string, i: number): string[] => cell_wrap(cell, colWidths[i]));
-        const rowHeight: number = wrappedCells.reduce(
-            (max: number, linesPerCell: string[]): number => Math.max(max, linesPerCell.length),
-            1
-        );
+    for (let i = 0; i < height; i++) {
+        const padded = wrapped.map((lines, j) => ` ${(lines[i] || '').padEnd(widths[j])} `);
+        const line = `│${padded.join('│')}│`;
+        lines.push(isHeader ? `${COLORS.yellow}${line}${COLORS.reset}` : line);
+    }
+    return lines.join('\n');
+}
 
-        for (let lineIdx = 0; lineIdx < rowHeight; lineIdx++) {
-            const paddedCells: string[] = wrappedCells.map(
-                (cellLines: string[], i: number): string => ` ${(cellLines[lineIdx] || '').padEnd(colWidths[i])} `
-            );
-            const rowLine: string = `│${paddedCells.join('│')}│`;
-            if (rowIdx === 0) {
-                output.push(`${COLORS.yellow}${rowLine}${COLORS.reset}`);
-            } else {
-                output.push(rowLine);
-            }
+/**
+ * Wrap cell text to a specific width.
+ */
+function tableCell_wrap(text: string, width: number): string[] {
+    if (width <= 0) return [''];
+    const raw: string = text.trim();
+    if (!raw) return [''];
+
+    const words: string[] = raw.split(/\s+/);
+    const lines: string[] = [];
+    let current: string = '';
+
+    for (const word of words) {
+        if (word.length > width) {
+            if (current) lines.push(current);
+            for (let i = 0; i < word.length; i += width) lines.push(word.slice(i, i + width));
+            current = '';
+            continue;
         }
-
-        if (rowIdx === 0) output.push(midBorder);
-    });
-
-    output.push(botBorder);
-    return output.join('\n');
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length <= width) current = candidate;
+        else {
+            if (current) lines.push(current);
+            current = word;
+        }
+    }
+    if (current) lines.push(current);
+    return lines.length > 0 ? lines : [''];
 }
 
 // ─── Message Styling ────────────────────────────────────────────────────────
@@ -641,43 +409,73 @@ interface MessageStyleOptions {
 
 /**
  * Style a message for terminal output (dark background optimized).
+ *
+ * Applies multi-pass transformations: code blocks, cat-payloads,
+ * markdown tables, HTML spans, markdown emphasis, and LCARS markers.
  */
 export function message_style(message: string, options: MessageStyleOptions = {}): string {
-    const codeMasks: Map<string, string> = new Map();
-    let codeMaskIdx: number = 0;
-    const codeMask_stash = (renderedBlock: string): string => {
-        const key: string = `__CODE_BLOCK_${codeMaskIdx++}__`;
-        codeMasks.set(key, renderedBlock);
-        return key;
-    };
+    const { styled: codeStyled, masks } = fencedCodeBlocks_style(message);
+    let styled: string = codeStyled;
 
-    // Render fenced code blocks with syntax highlighting
-    message = message.replace(/```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g, (_full: string, rawLang: string, code: string): string => {
-        const language: string = rawLang?.trim().toLowerCase() || 'text';
-        const highlighted: string = syntaxHighlight_renderAnsi(code, language);
-        const label: string = `${COLORS.dim}[${language.toUpperCase()}]${COLORS.reset}`;
-        return codeMask_stash(`${label}\n${highlighted}`);
-    });
+    // Special handling for raw 'cat' output
+    const catStyled = catPayload_style(styled, options.input, masks.size);
+    if (catStyled) return catStyled;
 
-    // If this is direct `cat` output, highlight the whole payload
-    const catLang: string | null = catLanguage_detect(options.input);
-    if (catLang && codeMasks.size === 0) {
-        const looksStructuredResponse: boolean = /(^\s*[●○>>]|<span class=|^\s*POWER SCRIPTS AVAILABLE|^\s*CALYPSO GUIDANCE)/m.test(message);
-        if (!looksStructuredResponse) {
-            return syntaxHighlight_renderAnsi(message, catLang);
-        }
+    styled = markdownTables_style(styled);
+    styled = htmlSpans_style(styled);
+    styled = markdownEmphasis_style(styled);
+    styled = lcarsMarkers_style(styled);
+
+    // Restore code blocks from masks
+    for (const [key, value] of masks.entries()) {
+        styled = styled.replaceAll(key, value);
     }
+    return styled;
+}
 
-    // Markdown tables
-    const tableRegex = /(\|[^\n]+\|\n)+/g;
-    message = message.replace(tableRegex, (match) => {
-        if (match.includes('---')) {
-            return table_render(match);
-        }
-        return match;
+/**
+ * Replace fenced code blocks with syntax-highlighted placeholders (masks).
+ */
+function fencedCodeBlocks_style(message: string): { styled: string, masks: Map<string, string> } {
+    const masks: Map<string, string> = new Map();
+    let idx: number = 0;
+    const styled = message.replace(/```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g, (_full, rawLang, code) => {
+        const lang = rawLang?.trim().toLowerCase() || 'text';
+        const highlighted = syntaxHighlight_renderAnsi(code, lang);
+        const label = `${COLORS.dim}[${lang.toUpperCase()}]${COLORS.reset}`;
+        const key = `__CODE_BLOCK_${idx++}__`;
+        masks.set(key, `${label}\n${highlighted}`);
+        return key;
     });
+    return { styled, masks };
+}
 
-    let styled: string = message
+/**
+ * Apply full-payload syntax highlighting for 'cat' commands if not already structured.
+ */
+function catPayload_style(message: string, input?: string, maskCount: number = 0): string | null {
+    const catLang = catLanguage_detect(input);
+    if (!catLang || maskCount > 0) return null;
+
+    const structuredPattern = /(^\s*[●○>>]|<span class=|^\s*POWER SCRIPTS AVAILABLE|^\s*CALYPSO GUIDANCE)/m;
+    if (structuredPattern.test(message)) return null;
+
+    return syntaxHighlight_renderAnsi(message, catLang);
+}
+
+/**
+ * Detect and render markdown tables within the message.
+ */
+function markdownTables_style(message: string): string {
+    const tableRegex = /(\|[^\n]+\|\n)+/g;
+    return message.replace(tableRegex, (match) => match.includes('---') ? table_render(match) : match);
+}
+
+/**
+ * Convert HTML-style spans used in browser-mode to ANSI terminal colors.
+ */
+function htmlSpans_style(message: string): string {
+    return message
         .replace(/<span class="dir">(.*?)<\/span>/g, `${COLORS.cyan}$1${COLORS.reset}`)
         .replace(/<span class="file">(.*?)<\/span>/g, `${COLORS.white}$1${COLORS.reset}`)
         .replace(/<span class="exec">(.*?)<\/span>/g, `${COLORS.green}$1${COLORS.reset}`)
@@ -685,20 +483,29 @@ export function message_style(message: string, options: MessageStyleOptions = {}
         .replace(/<span class="highlight">(.*?)<\/span>/g, `${COLORS.yellow}$1${COLORS.reset}`)
         .replace(/<span class="success">(.*?)<\/span>/g, `${COLORS.green}$1${COLORS.reset}`)
         .replace(/<span class="error">(.*?)<\/span>/g, `${COLORS.red}$1${COLORS.reset}`)
-        .replace(/<[^>]+>/g, '')
+        .replace(/<[^>]+>/g, '');
+}
+
+/**
+ * Apply ANSI styles for standard markdown emphasis (bold, italic, code).
+ */
+function markdownEmphasis_style(message: string): string {
+    return message
         .replace(/\*\*([^*]+)\*\*/g, `${COLORS.bright}${COLORS.white}$1${COLORS.reset}`)
         .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, `${COLORS.italic}$1${COLORS.reset}`)
         .replace(/`([^`]+)`/g, `${COLORS.yellow}$1${COLORS.reset}`)
-        .replace(/^(#{1,4})\s+(.+)$/gm, `${COLORS.bright}${COLORS.cyan}$2${COLORS.reset}`)
+        .replace(/^(#{1,4})\s+(.+)$/gm, `${COLORS.bright}${COLORS.cyan}$2${COLORS.reset}`);
+}
+
+/**
+ * Colorize LCARS-specific markers and entities (markers, site-ids, paths).
+ */
+function lcarsMarkers_style(message: string): string {
+    return message
         .replace(/●/g, `${COLORS.green}●${COLORS.reset}`)
         .replace(/○/g, `${COLORS.cyan}○${COLORS.reset}`)
         .replace(/>>/g, `${COLORS.red}>>${COLORS.reset}`)
         .replace(/\[(ds-\d+)\]/g, `${COLORS.yellow}[$1]${COLORS.reset}`)
         .replace(/(~\/[^\s]+)/g, `${COLORS.magenta}$1${COLORS.reset}`)
         .replace(/(\/home\/[^\s]+)/g, `${COLORS.magenta}$1${COLORS.reset}`);
-
-    for (const [key, value] of codeMasks.entries()) {
-        styled = styled.replaceAll(key, value);
-    }
-    return styled;
 }

@@ -124,7 +124,10 @@ describe('FederationOrchestrator', (): void => {
         const containerApprove: CalypsoResponse = fixture.orchestrator.command('approve', [], 'tester');
         expect(containerApprove.statusCode).toBe(CalypsoStatusCode.OK);
         expect(fixture.orchestrator.currentStep).toBe('federate-publish-config');
-        expect(fixture.vfs.node_stat('/home/tester/projects/fedproj/.containerized')).not.toBeNull();
+        // Verify container data exists instead of legacy marker
+        expect(
+            fixture.vfs.node_stat('/home/tester/projects/fedproj/src/source-crosscompile/containerize/data/Dockerfile')
+        ).not.toBeNull();
     });
 
     it('completes publish path and clears active federation state', (): void => {
@@ -144,7 +147,7 @@ describe('FederationOrchestrator', (): void => {
         const publish: CalypsoResponse = fixture.orchestrator.command('publish', ['model'], 'tester');
         expect(publish.statusCode).toBe(CalypsoStatusCode.OK);
         expect(publish.message).toContain('FEDERATION COMPLETE');
-        expect(fixture.vfs.node_stat('/home/tester/projects/fedproj2/.federated')).not.toBeNull();
+        
         expect(fixture.orchestrator.active).toBe(false);
         expect(fixture.orchestrator.currentStep).toBeNull();
     });

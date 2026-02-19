@@ -31,6 +31,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
             step: command,
             success: response.success,
             timestamp: new Date().toISOString()
-        }
+        },
+        ui_hints: response.ui_hints
     };
 }

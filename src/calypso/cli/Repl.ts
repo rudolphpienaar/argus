@@ -20,9 +20,9 @@ import {
     spinner_start,
     spinnerLabel_resolve,
     spinnerMinDuration_resolve,
-    scriptStepTelemetry_resolve,
-    scriptStepPlan_resolve,
-    harmonization_animate,
+    rendererFrame_open,
+    rendererFrame_close,
+    rendererPhase_start,
     response_renderAnimated,
     message_style,
     type CommandExecuteOptions,
@@ -55,13 +55,13 @@ function transcriptCommand_extract(line: string): string | null {
 }
 
 /**
- * Resolve a .clpso script path from user input.
+ * Resolve a .calypso.yaml script path from user input.
  */
 function scriptPath_resolve(scriptRef: string): string | null {
     const trimmedRef: string = scriptRef.trim();
     if (!trimmedRef) return null;
 
-    const withExtension: string = trimmedRef.endsWith('.clpso') ? trimmedRef : `${trimmedRef}.clpso`;
+    const withExtension: string = trimmedRef.endsWith('.calypso.yaml') ? trimmedRef : `${trimmedRef}.calypso.yaml`;
     const candidates: string[] = [
         path.resolve(process.cwd(), trimmedRef),
         path.resolve(process.cwd(), withExtension),
@@ -103,7 +103,7 @@ function scriptCommands_parse(content: string): string[] {
 // ─── Script Execution ───────────────────────────────────────────────────────
 
 /**
- * Execute a .clpso script (fail-fast).
+ * Execute a .calypso.yaml script (fail-fast).
  * Legacy scripts run client-side; structured scripts delegate to server.
  */
 async function script_run(
@@ -134,13 +134,7 @@ async function script_run(
     for (let i = 0; i < commands.length; i++) {
         const command: string = commands[i];
         console.log(`${COLORS.dim}[RUN ${i + 1}/${commands.length}] ${command}${COLORS.reset}`);
-        const stepPlan: ScriptStepPlan = scriptStepPlan_resolve(command);
-        console.log(`${COLORS.yellow}○ ${stepPlan.title}${COLORS.reset}`);
-        console.log(`${COLORS.dim}○ ${scriptStepTelemetry_resolve(command)}${COLORS.reset}`);
-        for (const line of stepPlan.lines) {
-            console.log(`${COLORS.dim}   • ${line}${COLORS.reset}`);
-            await sleep_ms(110 + Math.floor(Math.random() * 120));
-        }
+        
         const success: boolean = await commandExecute(command, {
             scriptStep: true,
             stepIndex: i + 1,
@@ -312,6 +306,32 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
 
     banner_print(host, port);
 
+    // v10.2: Live Telemetry Listener
+    client.onTelemetry = async (event) => {
+        switch (event.type) {
+            case 'log':
+                console.log(message_style(event.message));
+                break;
+            case 'progress':
+                // In TUI, we handle high-frequency progress via carriage return
+                process.stdout.write(`\r${COLORS.dim}   » ${event.label}: ${event.percent}%${COLORS.reset}`);
+                if (event.percent === 100) console.log();
+                break;
+            case 'frame_open':
+                rendererFrame_open(event.title, event.subtitle);
+                break;
+            case 'frame_close':
+                rendererFrame_close(event.summary);
+                break;
+            case 'phase_start':
+                rendererPhase_start(event.name);
+                break;
+            case 'status':
+                // Update persistent status line if TUI supports it
+                break;
+        }
+    };
+
     // Fetch initial prompt
     let currentPrompt: string = prompt_colorize(await client.prompt_fetch());
 
@@ -375,16 +395,20 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
             const stopSpinner: () => void = spinner_start(spinnerLabel);
             const response = await client.command_send(input);
             const elapsed: number = Date.now() - startedAt;
+
+            // If response has a label, we can't retroactively change the spinner, 
+            // but we can ensure future ones use it. 
+            // Actually, for now, we just pass hints to the render phase.
+            
             if (elapsed < minSpinnerMs) {
                 await sleep_ms(minSpinnerMs - elapsed);
             }
             stopSpinner();
 
-            if (response.message === '__HARMONIZE_ANIMATE__') {
-                await harmonization_animate();
-                console.log(message_style(`● **COHORT HARMONIZATION COMPLETE.** Data is now standardized for federated training.`));
+            if (response.ui_hints?.animation === 'harmonization' && response.ui_hints.animation_config) {
+                await stepAnimation_render(response.ui_hints.animation_config);
             } else {
-                await response_renderAnimated(response.message, input, options);
+                await response_renderAnimated(response.message, input, options, response.ui_hints);
             }
 
             if (process.env.CALYPSO_VERBOSE === 'true' && response.actions.length > 0) {
@@ -427,7 +451,7 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
         if (input === '/run' || input.startsWith('/run ')) {
             const scriptRef: string = input.replace(/^\/run\s*/, '').trim();
             if (!scriptRef) {
-                console.log(`${COLORS.yellow}Usage: /run <script.clpso>${COLORS.reset}`);
+                console.log(`${COLORS.yellow}Usage: /run <script.calypso.yaml>${COLORS.reset}`);
                 console.log(`${COLORS.dim}Examples: /scripts, /run hist-harmonize${COLORS.reset}`);
             } else {
                 await script_run(scriptRef, command_executeAndRender);

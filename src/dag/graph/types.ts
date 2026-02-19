@@ -65,6 +65,8 @@ export interface SkipWarning {
  * @property handler - The logic handler to invoke for these commands
  * @property completes_with - Optional alias stage whose completion marks this stage complete
  * @property skip_warning - Warning config if user tries to skip (null if not optional)
+ * @property narrative - v10.1 One-line telemetry summary for script/spinner display
+ * @property blueprint - v10.1 Multi-line execution plan details for script review
  */
 export interface DAGNode {
     id: string;
@@ -79,6 +81,8 @@ export interface DAGNode {
     handler: string | null;
     completes_with?: string | null;
     skip_warning: SkipWarning | null;
+    narrative: string | null;
+    blueprint: string[];
 }
 
 // ─── DAG Edge ────────────────────────────────────────────────────

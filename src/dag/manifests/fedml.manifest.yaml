@@ -13,7 +13,7 @@ description: >
   Search, Gather, Harmonize, Code, Train, Federate, Execute, Publish.
 category: Federated Learning
 persona: fedml
-version: 1.0.0
+version: 1.1.0
 locked: false
 
 stages:
@@ -32,6 +32,11 @@ stages:
       modality: null
       anatomy: null
       catalog: atlas
+    narrative: Scanning ATLAS catalog indices and ranking candidate cohorts.
+    blueprint:
+      - Querying ATLAS catalog shards for cohort candidates.
+      - Scoring modality/provider relevance and confidence.
+      - Materializing search snapshot artifact in ~/searches/.
     instruction: >
       Search the ATLAS catalog for datasets matching your research criteria.
       Use keywords, modality filters, or anatomical region. Each search
@@ -56,6 +61,11 @@ stages:
       - gather.json
     parameters:
       auto_select: false
+    narrative: Mounting cohort assets and validating provenance metadata.
+    blueprint:
+      - Resolving dataset identity and provenance signature.
+      - Mounting cohort tree into project input workspace.
+      - Writing gather receipts and session provenance artifacts.
     instruction: >
       Add datasets to your cohort from the search results. When your
       selection is complete, run 'gather' to assemble the cohort and
@@ -84,6 +94,11 @@ stages:
       - rename.json
     parameters:
       name: null
+    narrative: Updating project identity and synchronizing workspace paths.
+    blueprint:
+      - Computing path migration plan for active project root.
+      - Applying VFS move and shell-context synchronization.
+      - Updating project model and shell context.
     instruction: >
       Your project was created with an auto-generated name (e.g. DRAFT-1234).
       Rename it now if you'd like a meaningful identifier. You can skip this
@@ -106,6 +121,11 @@ stages:
       resolution: [1.0, 1.0, 1.0]
       naming_convention: snake_case
       label_schema: default
+    narrative: Standardizing site heterogeneity for federated readiness.
+    blueprint:
+      - Profiling cross-site metadata variance and label schema drift.
+      - Applying normalization/resampling/alignment transforms.
+      - Writing harmonization report and session state receipt.
     instruction: >
       Harmonize your cohort to ensure consistent data formats across sites.
       This applies image resampling, filename normalization, label schema
@@ -134,6 +154,11 @@ stages:
     parameters:
       scaffold: true
       framework: flower
+    narrative: Generating scaffold source and manifest assets.
+    blueprint:
+      - Injecting template parameters into training scaffold.
+      - Materializing src/train.py and project Dockerfile.
+      - Initializing local validation environment.
     instruction: >
       Develop your training code. The scaffold generates src/train.py with
       Flower client hooks, a Dockerfile, and plugin metadata. You can edit
@@ -161,6 +186,11 @@ stages:
     parameters:
       epochs: 1
       batch_size: 32
+    narrative: Running local execution pass and collecting validation artifacts.
+    blueprint:
+      - Executing local Phantom training loop simulation.
+      - Validating data loader and model architecture compatibility.
+      - Writing local passing receipt and validation metrics.
     instruction: >
       Run your training code locally to validate it before federation.
       Federation distributes your code to remote sites where debugging is
@@ -189,6 +219,11 @@ stages:
     produces:
       - briefing.json
     parameters: {}
+    narrative: Preparing federation orchestration and execution artifacts.
+    blueprint:
+      - Resolving active project context and participant site list.
+      - Initializing stateful federation handshake orchestrator.
+      - Displaying multi-phase execution strategy summary.
     instruction: >
       Review the federation briefing. This summarizes what will happen:
       your code will be transcompiled for Flower, containerized as a
@@ -208,6 +243,11 @@ stages:
     parameters:
       flower_version: "1.5"
       strategy: fedavg
+    narrative: Flower transcompilation suite executing.
+    blueprint:
+      - Parsing training loop and data loader contracts.
+      - Injecting Flower client/server hooks and adapters.
+      - Emitting federated entrypoint and execution hooks.
     instruction: >
       Your training code is being transcompiled for the Flower federated
       learning framework. This wraps train.py in a Flower client, generates
@@ -228,6 +268,11 @@ stages:
     parameters:
       base_image: "python:3.11-slim"
       gpu: false
+    narrative: Reproducible container image build in progress.
+    blueprint:
+      - Resolving base image and runtime dependencies.
+      - Staging federated entrypoint and Flower hooks.
+      - Building OCI image layers and writing SBOM.
     instruction: >
       Your transcompiled code is being built into a MERIDIAN-compliant
       OCI container image. This packages your code, dependencies, and
@@ -249,6 +294,11 @@ stages:
       app_name: null
       organization: null
       visibility: private
+    narrative: Finalizing publication metadata and visibility.
+    blueprint:
+      - Updating application identity and organization namespace.
+      - Configuring registry access controls and visibility.
+      - Confirming publication manifest for ChRIS store push.
     instruction: >
       Configure your application for publication to the ChRIS store.
       Set the application name, organization, and visibility. Private
@@ -269,6 +319,11 @@ stages:
     produces:
       - publish-execute.json
     parameters: {}
+    narrative: Pushing container image to global registry.
+    blueprint:
+      - Signing image reference and registry manifest.
+      - Writing application metadata and publish receipts.
+      - Validating global availability for federation dispatch.
     instruction: >
       Your container image is being pushed to the ChRIS store registry.
       This makes it available for federation dispatch. The publication
@@ -289,6 +344,11 @@ stages:
       sites: null
       rounds: 5
       timeout_minutes: 60
+    narrative: Distributing container to trusted site domains.
+    blueprint:
+      - Resolving participant endpoints and secure handshakes.
+      - Pushing OCI image to site-local compute clusters.
+      - Triggering federated training job across the network.
     instruction: >
       Your application is being dispatched to the federation network.
       Select target sites or accept the default (all sites with matching
@@ -309,6 +369,11 @@ stages:
       - execute.json
     parameters:
       monitor_interval_s: 30
+    narrative: Aggregator coordinating federated compute rounds.
+    blueprint:
+      - Monitoring real-time site participation and loss curves.
+      - Capturing per-round weight updates and aggregation logs.
+      - Materializing global model metrics and execution receipts.
     instruction: >
       Federated training is in progress. The aggregator coordinates
       training rounds across participating sites. You can monitor
@@ -332,6 +397,11 @@ stages:
       model_name: null
       model_version: null
       description: null
+    narrative: Attaching provenance chain and publishing to marketplace.
+    blueprint:
+      - Packaging aggregated model weights and metadata.
+      - Linking Merkle provenance from search through execution.
+      - Materializing marketplace catalog entry and public receipts.
     instruction: >
       Federated training is complete. The aggregated model weights are
       available in the aggregator's output directory. Publish the trained

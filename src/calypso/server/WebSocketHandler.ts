@@ -30,6 +30,12 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
         }
     };
 
+    // v10.2: Subscribe to live telemetry and broadcast to client
+    const calypso = deps.calypso_get();
+    const unsubscribe = calypso.telemetry_subscribe((event) => {
+        send({ type: 'telemetry', payload: event });
+    });
+
     ws.on('message', async (data: Buffer | string) => {
         let msg: ClientMessage;
         try {
@@ -123,7 +129,8 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
     });
 
     ws.on('close', () => {
-        // Connection cleanup — no per-connection state to clean up currently
+        unsubscribe();
+        console.log(`WebSocket client disconnected`);
     });
 
     ws.on('error', (err: Error) => {

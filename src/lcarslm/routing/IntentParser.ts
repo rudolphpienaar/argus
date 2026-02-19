@@ -148,55 +148,74 @@ export class IntentParser {
         // 1. Update conversation context (side effect)
         this.searchProvider.context_updateFromText(text);
 
-        // 2. Extract [SELECT: ds-xxx]
-        const selectMatches: RegExpMatchArray[] = Array.from(text.matchAll(/\[SELECT: (ds-[0-9]+)\]/g));
-        for (const match of selectMatches) {
+        // 2. Extract Individual Actions
+        this.datasetSelection_extract(text, actions);
+        this.workflowAdvance_extract(text, actions);
+        this.datasetRender_extract(text, actions);
+        this.projectRename_extract(text, actions);
+        this.harmonization_extract(text, actions);
+
+        // 3. Clean up text markers
+        const cleanText: string = this.actionMarkers_strip(text);
+
+        return { actions, cleanText };
+    }
+
+    /** Extract [SELECT: ds-xxx] dataset selection intents. */
+    private datasetSelection_extract(text: string, actions: CalypsoAction[]): void {
+        const matches: RegExpMatchArray[] = Array.from(text.matchAll(/\[SELECT: (ds-[0-9]+)\]/g));
+        for (const match of matches) {
             actions.push({ type: 'dataset_select', id: match[1] });
         }
+    }
 
-        // 3. Extract [ACTION: PROCEED]
-        const proceedMatch: RegExpMatchArray | null = text.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
-        if (proceedMatch) {
-            const workflow: string | undefined = this.workflow_parseFromProceedMatch(proceedMatch);
+    /** Extract [ACTION: PROCEED] workflow advance intents. */
+    private workflowAdvance_extract(text: string, actions: CalypsoAction[]): void {
+        const match: RegExpMatchArray | null = text.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
+        if (match) {
             actions.push({
                 type: 'stage_advance',
                 stage: 'process',
-                workflow
+                workflow: this.workflow_parseFromProceedMatch(match)
             });
         }
+    }
 
-        // 4. Extract [ACTION: SHOW_DATASETS]
-        if (text.includes('[ACTION: SHOW_DATASETS]')) {
-            let datasetsToShow: Dataset[] = [...this.searchProvider.lastMentioned_get()];
-            const filterMatch: RegExpMatchArray | null = text.match(/\[FILTER: (.*?)\]/);
-            if (filterMatch) {
-                const ids: string[] = filterMatch[1].split(',').map((s: string): string => s.trim());
-                datasetsToShow = datasetsToShow.filter((ds: Dataset): boolean => ids.includes(ds.id));
-            }
-            actions.push({ type: 'workspace_render', datasets: datasetsToShow });
+    /** Extract [ACTION: SHOW_DATASETS] and [FILTER: ...] render intents. */
+    private datasetRender_extract(text: string, actions: CalypsoAction[]): void {
+        if (!text.includes('[ACTION: SHOW_DATASETS]')) return;
+
+        let datasets: Dataset[] = [...this.searchProvider.lastMentioned_get()];
+        const filterMatch: RegExpMatchArray | null = text.match(/\[FILTER: (.*?)\]/);
+        
+        if (filterMatch) {
+            const ids: string[] = filterMatch[1].split(',').map(s => s.trim());
+            datasets = datasets.filter(ds => ids.includes(ds.id));
         }
+        actions.push({ type: 'workspace_render', datasets });
+    }
 
-        // 5. Extract [ACTION: RENAME xxx]
-        const renameMatch: RegExpMatchArray | null = text.match(/\[ACTION: RENAME (.*?)\]/);
-        if (renameMatch) {
-            const newName: string = renameMatch[1].trim();
-            const activeMeta: { id: string; name: string; } | null = this.storeActions.project_getActive();
-            if (activeMeta) {
-                actions.push({ type: 'project_rename', id: activeMeta.id, newName });
+    /** Extract [ACTION: RENAME xxx] project rename intents. */
+    private projectRename_extract(text: string, actions: CalypsoAction[]): void {
+        const match: RegExpMatchArray | null = text.match(/\[ACTION: RENAME (.*?)\]/);
+        if (match) {
+            const active = this.storeActions.project_getActive();
+            if (active) {
+                actions.push({ type: 'project_rename', id: active.id, newName: match[1].trim() });
             }
         }
+    }
 
-        // 6. Extract [ACTION: HARMONIZE]
+    /** Extract [ACTION: HARMONIZE] intents. */
+    private harmonization_extract(text: string, actions: CalypsoAction[]): void {
         if (text.includes('[ACTION: HARMONIZE]')) {
-            const activeMeta: { id: string; name: string; } | null = this.storeActions.project_getActive();
-            if (activeMeta) {
-                // Return as an action for the host to handle (or for backward compat)
-                // In v10, this should ideally be resolved to a workflow intent instead.
-            }
+            // Future: resolve to workflow intent
         }
+    }
 
-        // 7. Clean up text
-        const cleanText: string = text
+    /** Strip all [ACTION: ...] and control markers from conversational text. */
+    private actionMarkers_strip(text: string): string {
+        return text
             .replace(/\[SELECT: ds-[0-9]+\]/g, '')
             .replace(/\[ACTION: PROCEED(?:\s+(?:fedml|chris))?\]/gi, '')
             .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
@@ -204,8 +223,6 @@ export class IntentParser {
             .replace(/\[ACTION: RENAME.*?\]/g, '')
             .replace(/\[ACTION: HARMONIZE\]/g, '')
             .trim();
-
-        return { actions, cleanText };
     }
 
     /**

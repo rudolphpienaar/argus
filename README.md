@@ -128,7 +128,7 @@ The `src/vfs/` layer provides an in-memory POSIX-like filesystem with shell sema
 
 ## Calypso CLI
 
-`calypso-ws` connects to the headless CALYPSO server and supports shell commands, workflow commands, transcript replay, script discovery through `/scripts`, and script execution through `/run <script>`. Detailed usage patterns are documented in [The ARGUS Story](backstory/story.md#power-user-workflows) and [Calypso Scripts (`.clpso`)](scripts/calypso/README.md).
+`calypso-ws` connects to the headless CALYPSO server and supports shell commands, workflow commands, transcript replay, script discovery through `/scripts`, and script execution through `/run <script>`. Detailed usage patterns are documented in [The ARGUS Story](backstory/story.md#power-user-workflows) and [Calypso Scripts (`.calypso.yaml`)](scripts/calypso/README.md).
 
 ## Documentation Map
 
@@ -184,7 +184,7 @@ New to the project? Read these in sequence. They build on each other — startin
 
 ## Script Documentation
 
-Structured and legacy `.clpso` behavior is documented in [Calypso Scripts (`.clpso`)](scripts/calypso/README.md).
+Structured and legacy `.calypso.yaml` behavior is documented in [Calypso Scripts (`.calypso.yaml`)](scripts/calypso/README.md).
 
 ## Related Work and Positioning
 

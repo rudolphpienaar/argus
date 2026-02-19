@@ -70,6 +70,14 @@ export enum CalypsoStatusCode {
     UNKNOWN = 'UNKNOWN'
 }
 
+/** v10.1 UI hints for explicit rendering control (animation, labels). */
+export interface ui_hints {
+    spinner_label?: string;
+    render_mode?: 'plain' | 'streaming';
+    stream_delay_ms?: number;
+    animation?: 'progress_box' | 'none';
+}
+
 /**
  * Result returned by an atomic workflow plugin.
  *
@@ -89,6 +97,41 @@ export interface PluginResult {
 
     /** Optional domain-specific payload for the Merkle artifact envelope. */
     artifactData?: unknown;
+
+    /** v10.1 UI hints for explicit rendering control (animation, labels). */
+    ui_hints?: ui_hints;
+}
+
+// ─── Telemetry Types ──────────────────────────────────────────────────────
+
+/**
+ * Primitives for live UI updates from plugins.
+ * v10.2: Reactive primitives for line-by-line narrative control.
+ */
+export type TelemetryEvent =
+    | { type: 'log'; message: string }
+    | { type: 'progress'; label: string; percent: number }
+    | { type: 'frame_open'; title: string; subtitle?: string }
+    | { type: 'frame_close'; summary?: string[] }
+    | { type: 'phase_start'; name: string }
+    | { type: 'status'; message: string };
+
+/**
+ * Live telemetry bus provided to Guest plugins.
+ */
+export interface PluginTelemetry {
+    /** Emit a log line to the client terminal. */
+    log(message: string): void;
+    /** Start or update a progress tracker. */
+    progress(label: string, percent: number): void;
+    /** Open an animated UI frame (e.g. btop-style box). */
+    frame_open(title: string, subtitle?: string): void;
+    /** Close the current UI frame and display summary. */
+    frame_close(summary?: string[]): void;
+    /** Mark the beginning of a new sub-phase within a frame. */
+    phase_start(name: string): void;
+    /** Update the status line. */
+    status(message: string): void;
 }
 
 /**
@@ -109,6 +152,12 @@ export interface PluginContext {
 
     /** Access to the stateful federation handshake orchestrator. */
     federation: FederationOrchestrator;
+
+    /** v10.2 Live telemetry bus for streaming UI updates. */
+    ui: PluginTelemetry;
+
+    /** Utility to sleep for N milliseconds (simulating compute). */
+    sleep(ms: number): Promise<void>;
 
     /** Configuration parameters provided in the Manifest YAML for this stage. */
     parameters: Record<string, unknown>;
@@ -169,6 +218,9 @@ export interface CalypsoResponse {
 
     /** Categorical status code for protocol verification and Oracle testing. */
     statusCode: CalypsoStatusCode;
+
+    /** v10.1 UI hints for explicit rendering control (animation, labels). */
+    ui_hints?: ui_hints;
 
     /** Optional state snapshots for testing/debugging */
     state?: {

@@ -1,8 +1,8 @@
-# Calypso Scripts (`.clpso`)
+# Calypso Scripts (`.calypso.yaml`)
 
 The Calypso WebSocket CLI (`make calypso-ws`) supports script-driven execution so repeatable workflows can be invoked as named operational units instead of retyped command sequences. In practice, the script system gives advanced users a fast path while preserving deterministic behavior and observable state transitions.
 
-A script is invoked through `/run <script>`, and discovery is available through `/scripts`. When CALYPSO resolves a script reference, it first checks direct paths, then tries the same reference with `.clpso` appended, and finally searches under `scripts/calypso/` using both bare and extension-qualified forms.
+A script is invoked through `/run <script>`, and discovery is available through `/scripts`. When CALYPSO resolves a script reference, it first checks direct paths, then tries the same reference with `.calypso.yaml` appended, and finally searches under `scripts/calypso/` using both bare and extension-qualified forms.
 
 ```bash
 /scripts
@@ -51,9 +51,9 @@ Typical usage flows include script listing, inspection, dry-run, and execution.
 /scripts hist-harmonize
 /run --dry hist-harmonize
 /run hist-harmonize
-/run scripts/calypso/hist-harmonize.clpso
+/run scripts/calypso/hist-harmonize.calypso.yaml
 ```
 
-Starter scripts in this directory include `harmonize.clpso` for interactive cohort setup, `hist-harmonize.clpso` for deterministic histology setup, `fedml-quickstart.clpso` for local training acceleration, and `fedml-fullrun.clpso` for end-to-end federated simulation.
+Starter scripts in this directory include `harmonize.calypso.yaml` for interactive cohort setup, `hist-harmonize.calypso.yaml` for deterministic histology setup, `fedml-quickstart.calypso.yaml` for local training acceleration, and `fedml-fullrun.calypso.yaml` for end-to-end federated simulation.
 
 The same capability is reachable via natural language through CalypsoCore, so conversational requests for available scripts or script execution map to the same control plane.

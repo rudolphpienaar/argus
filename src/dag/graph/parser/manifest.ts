@@ -134,6 +134,8 @@ function node_parse(raw: Record<string, unknown>): DAGNode {
         handler: handler_parse(id, raw['handler']),
         completes_with: raw['completes_with'] === null ? null : (raw['completes_with'] != null ? String(raw['completes_with']) : undefined),
         skip_warning: skipWarning_parse(raw['skip_warning']),
+        narrative: raw['narrative'] != null ? String(raw['narrative']) : null,
+        blueprint: Array.isArray(raw['blueprint']) ? raw['blueprint'].map(String) : [],
     };
 }
 

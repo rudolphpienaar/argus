@@ -77,6 +77,27 @@ The `shell` property provides access to the VCS Shell singleton. This allows plu
 === State Capability (`store`)
 Plugins can read application state (e.g., the currently selected datasets) and emit specific UI actions (e.g., `project_rename`). This ensures that the visual interface remains synchronized with the plugin's internal logic without the plugin needing direct access to the LCARS framework or the DOM.
 
+=== Telemetry and UI Primitives (`ui`)
+Argus v10.2 introduces the live telemetry bus, allowing plugins to function as streaming computation sources. The `ui` property in the `PluginContext` provides a set of high-integrity primitives for emitting real-time feedback to the user without the plugin needing knowledge of the underlying transport or surface.
+
+[source,text]
+----
+  PLUGIN (Guest)          CALYPSO HOST (Kernel)        CALYPSO SERVER          CLIENT (Adapter)
+┌────────────────┐      ┌────────────────────┐      ┌────────────────┐      ┌────────────────┐
+│ ui.log()       │───┐  │                    │      │                │      │                │
+│ ui.progress()  │───┼─▶│ TelemetryBus       │─────▶│ WebSocket      │─────▶│ TUI Renderer   │
+│ ui.animation() │───┘  │ (Internal Events)  │      │ Broadcast      │      │ WUI Renderer   │
+└────────────────┘      └────────────────────┘      └────────────────┘      └────────────────┘
+----
+
+The telemetry flow ensures a strict separation between **Lore** (owned by the plugin) and **Geometry** (owned by the host/adapter):
+*   **The Emitter (Plugin):** Calls primitives like `ui.progress(45, "Scanning")`. It owns the narrative and the timing of updates.
+*   **The Pipe (TelemetryBus):** Captures these local function calls and turns them into system-wide events within the Calypso Host.
+*   **The Transport (WebSocket):** The `CalypsoServer` subscribes to the bus and serializes events into JSON-RPC frames for all connected clients.
+*   **The Sink (Renderer):** The TUI or WUI receives the raw primitive and decides how to draw it (e.g., ASCII box-drawing vs. CSS animations).
+
+This model enables "tqdm-style" live updates for long-running scientific processes, ensuring that the user is never disconnected from the state of the virtual machine.
+
 == Surface-Neutral Contract: Plugins Do Logic, Adapters Do Rendering
 
 Plugins are developer-facing workflow entry points. Their contract is intentionally surface-neutral so the same logic can run in browser, TUI, or headless validation paths.
