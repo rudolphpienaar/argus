@@ -2,6 +2,7 @@
  * @file Plugin: Publish
  *
  * Generic shell execution plugin for the model publication stage.
+ * v10.2: Compute-driven telemetry for registry push.
  *
  * @module plugins/publish
  */
@@ -17,14 +18,18 @@ import type { ShellResult } from '../vfs/types.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { command, args, shell } = context;
+    const { command, args, shell, ui, sleep } = context;
+    
+    // v10.2: Start Live Telemetry
+    ui.status('CALYPSO: PUBLISHING MODEL TO MARKETPLACE...');
     
     // Delegate to the shell capability
     const input: string = command + (args.length > 0 ? ' ' + args.join(' ') : '');
     const result: ShellResult = await shell.command_execute(input);
 
-    // If shell command not found but it's the 'publish' verb, simulate success
+    // If shell command not found but it's the 'publish' verb, simulate success with telemetry
     if (result.exitCode === 127 && command === 'publish') {
+        await publish_animate(context);
         return {
             message: '● PLUGIN PUBLICATION COMPLETE. AVAILABLE IN CHRIS STORE.',
             statusCode: CalypsoStatusCode.OK,
@@ -41,4 +46,21 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
             stdout: result.stdout
         }
     };
+}
+
+/**
+ * Simulated registry push latency.
+ */
+async function publish_animate(context: PluginContext): Promise<void> {
+    const { ui, sleep } = context;
+    ui.log('○ PACKAGING ARTIFACTS AND SIGNING MANIFEST...');
+    await sleep(400);
+    
+    const chunks = 10;
+    for (let i = 1; i <= chunks; i++) {
+        const percent = Math.round((i / chunks) * 100);
+        ui.progress(`Pushing image blob chunk ${i}/${chunks}`, percent);
+        await sleep(150);
+    }
+    ui.log('  ● Registry push successful. Manifest signed.');
 }

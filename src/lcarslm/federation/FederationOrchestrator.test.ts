@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FederationOrchestrator } from './FederationOrchestrator.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
-import type { CalypsoStoreActions, CalypsoResponse } from '../types.js';
+import type { CalypsoStoreActions, CalypsoResponse, PluginTelemetry } from '../types.js';
 import { CalypsoStatusCode } from '../types.js';
 import type { AppState, Dataset, FederationState, Project } from '../../core/models/types.js';
 
@@ -9,6 +9,8 @@ interface OrchestratorFixture {
     orchestrator: FederationOrchestrator;
     vfs: VirtualFileSystem;
     storeActions: CalypsoStoreActions;
+    ui: PluginTelemetry;
+    sleep: (ms: number) => Promise<void>;
 }
 
 function project_create(id: string, name: string): Project {
@@ -88,40 +90,49 @@ function fixture_create(): OrchestratorFixture {
     const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
     const storeActions: CalypsoStoreActions = storeActions_create();
     const orchestrator: FederationOrchestrator = new FederationOrchestrator(vfs, storeActions);
-    return { orchestrator, vfs, storeActions };
+    const ui: PluginTelemetry = {
+        log: () => {},
+        progress: () => {},
+        frame_open: () => {},
+        frame_close: () => {},
+        phase_start: () => {},
+        status: () => {}
+    };
+    const sleep = async () => {};
+    return { orchestrator, vfs, storeActions, ui, sleep };
 }
 
 describe('FederationOrchestrator', (): void => {
-    it('requires an active project context', (): void => {
+    it('requires an active project context', async (): void => {
         const fixture: OrchestratorFixture = fixture_create();
-        const response: CalypsoResponse = fixture.orchestrator.command('federate', [], 'tester');
+        const response: CalypsoResponse = await fixture.orchestrator.command('federate', [], 'tester', fixture.ui, fixture.sleep);
 
         expect(response.statusCode).toBe(CalypsoStatusCode.ERROR);
         expect(response.message).toContain('NO ACTIVE PROJECT CONTEXT');
         expect(fixture.orchestrator.active).toBe(false);
     });
 
-    it('initializes handshake and advances through transcompile/containerize approvals', (): void => {
+    it('initializes handshake and advances through transcompile/containerize approvals', async (): void => {
         const fixture: OrchestratorFixture = fixture_create();
         fixture.storeActions.project_setActive(project_create('p-1', 'fedproj'));
 
-        const brief: CalypsoResponse = fixture.orchestrator.command('federate', [], 'tester');
+        const brief: CalypsoResponse = await fixture.orchestrator.command('federate', [], 'tester', fixture.ui, fixture.sleep);
         expect(brief.statusCode).toBe(CalypsoStatusCode.OK);
         expect(fixture.orchestrator.active).toBe(true);
         expect(fixture.orchestrator.currentStep).toBe('federate-transcompile');
 
-        const transcompileApprove: CalypsoResponse = fixture.orchestrator.command('approve', [], 'tester');
+        const transcompileApprove: CalypsoResponse = await fixture.orchestrator.command('approve', [], 'tester', fixture.ui, fixture.sleep);
         expect(transcompileApprove.statusCode).toBe(CalypsoStatusCode.OK);
         expect(fixture.orchestrator.currentStep).toBe('federate-containerize');
         expect(
             fixture.vfs.node_stat('/home/tester/projects/fedproj/src/source-crosscompile/data/node.py')
         ).not.toBeNull();
 
-        const dispatchTooEarly: CalypsoResponse = fixture.orchestrator.command('dispatch', [], 'tester');
+        const dispatchTooEarly: CalypsoResponse = await fixture.orchestrator.command('dispatch', [], 'tester', fixture.ui, fixture.sleep);
         expect(dispatchTooEarly.statusCode).toBe(CalypsoStatusCode.ERROR);
         expect(dispatchTooEarly.message).toContain('Cannot dispatch yet');
 
-        const containerApprove: CalypsoResponse = fixture.orchestrator.command('approve', [], 'tester');
+        const containerApprove: CalypsoResponse = await fixture.orchestrator.command('approve', [], 'tester', fixture.ui, fixture.sleep);
         expect(containerApprove.statusCode).toBe(CalypsoStatusCode.OK);
         expect(fixture.orchestrator.currentStep).toBe('federate-publish-config');
         // Verify container data exists instead of legacy marker
@@ -130,21 +141,21 @@ describe('FederationOrchestrator', (): void => {
         ).not.toBeNull();
     });
 
-    it('completes publish path and clears active federation state', (): void => {
+    it('completes publish path and clears active federation state', async (): void => {
         const fixture: OrchestratorFixture = fixture_create();
         fixture.storeActions.project_setActive(project_create('p-2', 'fedproj2'));
 
-        fixture.orchestrator.command('federate', [], 'tester');    // -> transcompile
-        fixture.orchestrator.command('approve', [], 'tester');     // -> containerize
-        fixture.orchestrator.command('approve', [], 'tester');     // -> publish-config
-        fixture.orchestrator.command('config', ['name', 'atlas-fed-app'], 'tester');
-        fixture.orchestrator.command('approve', [], 'tester');     // -> publish-execute
-        fixture.orchestrator.command('approve', [], 'tester');     // -> dispatch
-        const dispatch: CalypsoResponse = fixture.orchestrator.command('dispatch', [], 'tester'); // -> execute
+        await fixture.orchestrator.command('federate', [], 'tester', fixture.ui, fixture.sleep);    // -> transcompile
+        await fixture.orchestrator.command('approve', [], 'tester', fixture.ui, fixture.sleep);     // -> containerize
+        await fixture.orchestrator.command('approve', [], 'tester', fixture.ui, fixture.sleep);     // -> publish-config
+        await fixture.orchestrator.command('config', ['name', 'atlas-fed-app'], 'tester', fixture.ui, fixture.sleep);
+        await fixture.orchestrator.command('approve', [], 'tester', fixture.ui, fixture.sleep);     // -> publish-execute
+        await fixture.orchestrator.command('approve', [], 'tester', fixture.ui, fixture.sleep);     // -> dispatch
+        const dispatch: CalypsoResponse = await fixture.orchestrator.command('dispatch', [], 'tester', fixture.ui, fixture.sleep); // -> execute
         expect(dispatch.statusCode).toBe(CalypsoStatusCode.OK);
         expect(fixture.orchestrator.currentStep).toBe('federate-execute');
 
-        const publish: CalypsoResponse = fixture.orchestrator.command('publish', ['model'], 'tester');
+        const publish: CalypsoResponse = await fixture.orchestrator.command('publish', ['model'], 'tester', fixture.ui, fixture.sleep);
         expect(publish.statusCode).toBe(CalypsoStatusCode.OK);
         expect(publish.message).toContain('FEDERATION COMPLETE');
         

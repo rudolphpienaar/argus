@@ -2,12 +2,13 @@
  * @file Federation Dispatch Phase
  *
  * Handles federation dispatch, status monitoring, and final model publication.
+ * v10.2: Compute-driven telemetry for federated compute rounds.
  *
  * @module
  */
 
 import type { VirtualFileSystem } from '../../../vfs/VirtualFileSystem.js';
-import type { CalypsoResponse } from '../../types.js';
+import type { PluginTelemetry, CalypsoResponse } from '../../types.js';
 import type { FederationContentProvider } from '../FederationContentProvider.js';
 import type { FederationArgs, FederationDagPaths, FederationState } from '../types.js';
 import type { ArtifactEnvelope } from '../../../dag/store/types.js';
@@ -16,14 +17,16 @@ import { response_create } from '../utils.js';
 /**
  * dispatch: Initiate federation dispatch.
  */
-export function step_dispatch(
+export async function step_dispatch(
     state: FederationState,
     projectBase: string,
     dag: FederationDagPaths,
     projectName: string,
     args: FederationArgs,
-    contentProvider: FederationContentProvider
-): CalypsoResponse {
+    contentProvider: FederationContentProvider,
+    ui: PluginTelemetry,
+    sleep: (ms: number) => Promise<void>
+): Promise<CalypsoResponse> {
     if (state.step !== 'federate-dispatch') {
         return response_create(
             `○ Cannot dispatch yet — current step is ${state.step}. Complete earlier steps first.`,
@@ -31,31 +34,28 @@ export function step_dispatch(
         );
     }
 
-    // Materialize dispatch + round artifacts
+    // 1. Simulate Dispatch & Compute (The Experience)
+    ui.log('○ INITIATING FEDERATION DISPATCH...');
+    await dispatch_animate(ui, sleep);
+    
+    ui.log('● STEP 7/8: FEDERATED TRAINING EXECUTION.');
+    await computeRounds_animate(ui, sleep);
+
+    // 2. Materialize Artifacts (The Logic)
     contentProvider.dispatch_materialize(projectBase, dag);
     state.step = 'federate-execute';
 
-    const participants: string[] = ['BCH', 'MGH', 'BIDMC'];
     return response_create(
         [
             '● STEP 6/8 COMPLETE: FEDERATION DISPATCH.',
             '',
             '○ RESOLVING PARTICIPANT ENDPOINTS...',
             '○ DISTRIBUTING CONTAINER TO TRUSTED DOMAINS...',
-            ...participants.map(s => `  [${s}] -> DISPATCHED`),
+            '  [BCH] -> DISPATCHED',
+            '  [MGH] -> DISPATCHED',
+            '  [BIDMC] -> DISPATCHED',
             '',
             `○ ARTIFACTS MATERIALIZED: ${dag.dispatchData}`,
-            '',
-            '● STEP 7/8: FEDERATED TRAINING EXECUTION.',
-            '',
-            '○ FEDERATED COMPUTE ROUNDS:',
-            '  ROUND 1/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.62',
-            '  ROUND 2/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.71',
-            '  ROUND 3/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.79',
-            '  ROUND 4/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.84',
-            '  ROUND 5/5  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=0.89',
-            '',
-            `○ ROUND METRICS MATERIALIZED: ${dag.roundsData}`,
             '',
             'Training complete. Publish the aggregated model:',
             '  `publish model`    — Publish trained model to marketplace',
@@ -64,7 +64,7 @@ export function step_dispatch(
         ].join('\n'),
         [],
         true,
-        { render_mode: 'streaming', stream_delay_ms: 200 }
+        { render_mode: 'streaming', stream_delay_ms: 100 }
     );
 }
 
@@ -107,7 +107,6 @@ export function step_status(
 
 /**
  * publish model: Publish the aggregated model and complete the handshake.
- * Returns null state to indicate completion.
  */
 export function step_publish(
     state: FederationState,
@@ -115,7 +114,9 @@ export function step_publish(
     dag: FederationDagPaths,
     projectName: string,
     vfs: VirtualFileSystem,
-    federateArtifactPath: string
+    federateArtifactPath: string,
+    ui: PluginTelemetry,
+    sleep: (ms: number) => Promise<void>
 ): { response: CalypsoResponse, completed: boolean } {
     // Only "publish model" triggers completion
     if (state.step !== 'federate-execute' && state.step !== 'federate-model-publish') {
@@ -127,6 +128,9 @@ export function step_publish(
             completed: false
         };
     }
+
+    ui.log('○ PACKAGING AGGREGATED MODEL WEIGHTS...');
+    ui.log('○ ATTACHING MERKLE PROVENANCE CHAIN...');
 
     // Materialize session tree artifact
     if (federateArtifactPath) {
@@ -166,4 +170,30 @@ export function step_publish(
         ),
         completed: true
     };
+}
+
+/**
+ * Simulated dispatch latency.
+ */
+async function dispatch_animate(ui: PluginTelemetry, sleep: (ms: number) => Promise<void>): Promise<void> {
+    const sites = ['BCH', 'MGH', 'BIDMC'];
+    for (let i = 0; i < sites.length; i++) {
+        const percent = Math.round(((i + 1) / sites.length) * 100);
+        ui.progress(`Dispatching to site ${sites[i]}`, percent);
+        await sleep(400);
+    }
+}
+
+/**
+ * Simulated federated compute rounds.
+ */
+async function computeRounds_animate(ui: PluginTelemetry, sleep: (ms: number) => Promise<void>): Promise<void> {
+    const rounds = 5;
+    ui.log('○ FEDERATED COMPUTE ROUNDS INITIATED:');
+    for (let r = 1; r <= rounds; r++) {
+        const agg = (0.6 + (0.3 * (r / rounds)) + Math.random() * 0.05).toFixed(2);
+        ui.log(`  ROUND ${r}/${rounds}  [BCH:OK] [MGH:OK] [BIDMC:OK]  AGG=${agg}`);
+        await sleep(600);
+    }
+    ui.log('  ● Convergence threshold met.');
 }

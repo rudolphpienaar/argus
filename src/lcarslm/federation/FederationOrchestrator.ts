@@ -10,7 +10,12 @@
  */
 
 import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
-import type { CalypsoResponse, CalypsoAction, CalypsoStoreActions } from '../types.js';
+import { 
+    CalypsoAction,
+    CalypsoStoreActions,
+    PluginTelemetry,
+    CalypsoResponse 
+} from '../types.js';
 import { FederationContentProvider } from './FederationContentProvider.js';
 import type {
     FederationState,
@@ -100,17 +105,25 @@ export class FederationOrchestrator {
 
     /**
      * Route a command verb to the appropriate federation step handler.
-     *
+     * 
      * This is the primary entry point for all federation-related commands.
-     * It performs context resolution, state validation, and delegates to
+     * It performs context resolution, state validation, and delegates to 
      * specialized dispatch methods.
-     *
+     * 
      * @param verb - Command verb (e.g., 'federate', 'approve', 'show', 'config').
      * @param rawArgs - Raw command line arguments.
      * @param username - The active user's name.
+     * @param ui - Live telemetry bus handle.
+     * @param sleep - Sleep helper for simulated compute.
      * @returns A CalypsoResponse containing the operation result.
      */
-    command(verb: string, rawArgs: string[], username: string): CalypsoResponse {
+    async command(
+        verb: string, 
+        rawArgs: string[], 
+        username: string,
+        ui: PluginTelemetry,
+        sleep: (ms: number) => Promise<void>
+    ): Promise<CalypsoResponse> {
         const activeMeta = this.storeActions.project_getActive();
         if (!activeMeta) {
             return response_create('>> ERROR: NO ACTIVE PROJECT CONTEXT.', [], false);
@@ -140,7 +153,7 @@ export class FederationOrchestrator {
         }
 
         // 3. Dispatch to phase handler
-        const response = this.verb_dispatch(verb, currentState, projectBase, dag, projectName, rawArgs, args);
+        const response = await this.verb_dispatch(verb, currentState, projectBase, dag, projectName, rawArgs, args, ui, sleep);
 
         // 4. Persist updated state (unless completed)
         if (this.federationState_get() !== null) {
@@ -220,31 +233,24 @@ export class FederationOrchestrator {
 
     /**
      * Dispatch the command verb to the appropriate phase handler.
-     *
-     * @param verb - Command verb.
-     * @param state - Current federation state.
-     * @param projectBase - Base project path.
-     * @param dag - Federation DAG paths.
-     * @param projectName - Active project name.
-     * @param rawArgs - Raw arguments for sub-routing.
-     * @param args - Parsed arguments.
-     * @returns The CalypsoResponse from the phase handler.
      */
-    private verb_dispatch(
+    private async verb_dispatch(
         verb: string,
         state: FederationState,
         projectBase: string,
         dag: FederationDagPaths,
         projectName: string,
         rawArgs: string[],
-        args: FederationArgs
-    ): CalypsoResponse {
+        args: FederationArgs,
+        ui: PluginTelemetry,
+        sleep: (ms: number) => Promise<void>
+    ): Promise<CalypsoResponse> {
         switch (verb) {
             case 'federate':
                 return step_brief(state, projectBase, dag, args);
 
             case 'approve':
-                return this.step_approve(state, projectBase, dag, projectName, args);
+                return await this.step_approve(state, projectBase, dag, projectName, args, ui, sleep);
 
             case 'show':
                 return step_show(state, rawArgs, projectBase, dag);
@@ -253,13 +259,13 @@ export class FederationOrchestrator {
                 return step_config(state, rawArgs, args);
 
             case 'dispatch':
-                return step_dispatch(state, projectBase, dag, projectName, args, this.contentProvider);
+                return await step_dispatch(state, projectBase, dag, projectName, args, this.contentProvider, ui, sleep);
 
             case 'status':
                 return step_status(state, projectBase, dag);
 
             case 'publish':
-                const result = step_publish(state, projectBase, dag, projectName, this.vfs, this.federateArtifactPath);
+                const result = step_publish(state, projectBase, dag, projectName, this.vfs, this.federateArtifactPath, ui, sleep);
                 if (result.completed) {
                     this.federationState_set(null);
                 }
@@ -272,13 +278,14 @@ export class FederationOrchestrator {
 
     /**
      * Start or advance the federation sequence (backward-compat wrapper).
-     *
-     * @param rawArgs - Command line arguments.
-     * @param username - Active user's name.
-     * @returns CalypsoResponse result.
      */
-    federate(rawArgs: string[], username: string): CalypsoResponse {
-        return this.command('federate', rawArgs, username);
+    async federate(
+        rawArgs: string[], 
+        username: string,
+        ui: PluginTelemetry,
+        sleep: (ms: number) => Promise<void>
+    ): Promise<CalypsoResponse> {
+        return await this.command('federate', rawArgs, username, ui, sleep);
     }
 
     /**
@@ -306,24 +313,16 @@ export class FederationOrchestrator {
 
     /**
      * Context-dependent approve: advance whatever step we're on.
-     *
-     * Delegates to phase-specific handlers based on the current step recorded
-     * in the federation state.
-     *
-     * @param state - Current federation state.
-     * @param projectBase - Base project path.
-     * @param dag - Federation DAG paths.
-     * @param projectName - Active project name.
-     * @param args - Parsed arguments.
-     * @returns CalypsoResponse result.
      */
-    private step_approve(
+    private async step_approve(
         state: FederationState,
         projectBase: string,
         dag: FederationDagPaths,
         projectName: string,
         args: FederationArgs,
-    ): CalypsoResponse {
+        ui: PluginTelemetry,
+        sleep: (ms: number) => Promise<void>
+    ): Promise<CalypsoResponse> {
         publish_mutate(state, args);
 
         switch (state.step) {
@@ -331,16 +330,16 @@ export class FederationOrchestrator {
                 return step_brief(state, projectBase, dag, args);
 
             case 'federate-transcompile':
-                return step_transcompile_approve(state, projectBase, dag, this.contentProvider);
+                return await step_transcompile_approve(state, projectBase, dag, this.contentProvider, ui, sleep);
 
             case 'federate-containerize':
-                return step_containerize_approve(state, projectBase, dag, this.contentProvider, this.vfs);
+                return await step_containerize_approve(state, projectBase, dag, this.contentProvider, this.vfs, ui, sleep);
 
             case 'federate-publish-config':
                 return step_publishConfig_approve(state);
 
             case 'federate-publish-execute':
-                return step_publishExecute_approve(state, projectBase, dag, projectName, this.contentProvider, this.vfs);
+                return await step_publishExecute_approve(state, projectBase, dag, projectName, this.contentProvider, this.vfs, ui, sleep);
 
             case 'federate-dispatch':
                 return response_create(

@@ -2,6 +2,7 @@
  * @file Plugin: Search
  *
  * Implements dataset discovery logic for the ATLAS catalog.
+ * v10.2: Compute-driven telemetry for catalog scanning.
  *
  * @module plugins/search
  */
@@ -19,12 +20,9 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { parameters, vfs, shell, command, args } = context;
+    const { parameters, vfs, shell, command, args, ui } = context;
     
-    // 1. Instantiate specialized provider
-    const searchProvider: SearchProvider = new SearchProvider(vfs, shell);
-
-    // 2. Extract query from parameters or args
+    // 1. Resolve query
     const query: string = (parameters.query as string) || args.join(' ');
     if (!query) {
         return {
@@ -33,17 +31,22 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         };
     }
 
-    // 3. Perform search
-    const results: Dataset[] = searchProvider.search(query);
+    // 2. Perform Simulated Compute (The Experience)
+    ui.status('CALYPSO: SEARCHING ATLAS CATALOG...');
+    ui.log(CalypsoPresenter.info_format(`QUERY: "${query}"`));
+    
+    await catalog_scan(context);
 
-    // 4. Generate materialization content (for Merkle artifact)
+    // 3. Resolve results (The Logic)
+    const searchProvider: SearchProvider = new SearchProvider(vfs, shell);
+    const results: Dataset[] = searchProvider.search(query);
     const snap: SearchMaterialization = searchProvider.snapshot_materialize(query, results);
 
-    // 5. Format response
+    // 4. Format response
     if (results.length === 0) {
         return {
             message: CalypsoPresenter.info_format(`NO MATCHING DATASETS FOUND FOR "${query}".`),
-            statusCode: CalypsoStatusCode.OK, // Search itself succeeded even if 0 results
+            statusCode: CalypsoStatusCode.OK,
             artifactData: snap.content
         };
     }
@@ -59,4 +62,22 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         actions: [{ type: 'workspace_render', datasets: results }],
         artifactData: snap.content
     };
+}
+
+/**
+ * Simulated catalog index scan.
+ */
+async function catalog_scan(context: PluginContext): Promise<void> {
+    const { ui, sleep } = context;
+    const shards = 8;
+    
+    for (let i = 1; i <= shards; i++) {
+        const percent = Math.round((i / shards) * 100);
+        ui.progress(`Scanning catalog shard ${i}/${shards}`, percent);
+        // Simulated latency
+        await sleep(150);
+    }
+    
+    ui.log('  ● Catalog scan complete. Resolving rank heuristics...');
+    await sleep(300);
 }

@@ -2,12 +2,13 @@
  * @file Federation Publish Phase
  *
  * Handles publication configuration and registry execution steps.
+ * v10.2: Compute-driven telemetry for registry push.
  *
  * @module
  */
 
 import type { VirtualFileSystem } from '../../../vfs/VirtualFileSystem.js';
-import type { CalypsoResponse } from '../../types.js';
+import type { PluginTelemetry, CalypsoResponse } from '../../types.js';
 import type { FederationContentProvider } from '../FederationContentProvider.js';
 import type { FederationArgs, FederationDagPaths, FederationState } from '../types.js';
 import { publishSummary_lines, publish_mutate, response_create } from '../utils.js';
@@ -42,22 +43,28 @@ export function step_publishConfig_approve(
             '  `approve`       — Push to registry',
         ].join('\n'),
         [],
-        true,
-        { spinner_label: 'Updating registry metadata' }
+        true
     );
 }
 
 /**
  * Approve publish-execute → materialize step 4, advance to dispatch.
  */
-export function step_publishExecute_approve(
+export async function step_publishExecute_approve(
     state: FederationState,
     projectBase: string,
     dag: FederationDagPaths,
     projectName: string,
     contentProvider: FederationContentProvider,
-    vfs: VirtualFileSystem
-): CalypsoResponse {
+    vfs: VirtualFileSystem,
+    ui: PluginTelemetry,
+    sleep: (ms: number) => Promise<void>
+): Promise<CalypsoResponse> {
+    // 1. Simulate Registry Push Compute
+    ui.log('○ INITIATING REGISTRY PUBLICATION...');
+    await publish_animate(ui, sleep);
+
+    // 2. Materialize Artifacts (The Logic)
     contentProvider.publish_materialize(dag, state.publish);
     state.step = 'federate-dispatch';
 
@@ -76,8 +83,7 @@ export function step_publishExecute_approve(
             '  `dispatch --sites BCH,MGH`  — Dispatch to specific sites',
         ].join('\n'),
         [],
-        true,
-        { spinner_label: 'Pushing to ChRIS registry' }
+        true
     );
 }
 
@@ -118,7 +124,19 @@ export function step_config(
             '  `approve` — Accept configuration',
         ].join('\n'),
         [],
-        true,
-        { spinner_label: 'Updating project context' }
+        true
     );
+}
+
+/**
+ * Simulated registry push latency.
+ */
+async function publish_animate(ui: PluginTelemetry, sleep: (ms: number) => Promise<void>): Promise<void> {
+    const chunks = 10;
+    for (let i = 1; i <= chunks; i++) {
+        const percent = Math.round((i / chunks) * 100);
+        ui.progress(`Pushing image blob chunk ${i}/${chunks}`, percent);
+        await sleep(150);
+    }
+    ui.log('  ● Registry push successful. Manifest signed.');
 }

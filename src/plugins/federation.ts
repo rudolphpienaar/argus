@@ -17,11 +17,11 @@ import { CalypsoStatusCode } from '../lcarslm/types.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { command, args, shell, federation } = context;
+    const { command, args, shell, federation, ui, sleep } = context;
     
     // 1. Delegate to the stateful orchestrator instance
     const username: string = shell.env_get('USER') || 'user';
-    const response: CalypsoResponse = federation.command(command, args, username);
+    const response: CalypsoResponse = await federation.command(command, args, username, ui, sleep);
 
     return {
         message: response.message,

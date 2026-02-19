@@ -2,6 +2,7 @@
  * @file Plugin: Scaffold
  *
  * Implements project scaffolding logic for different workflow types (FedML, ChRIS).
+ * v10.2: Compute-driven telemetry for code generation.
  *
  * @module plugins/scaffold
  */
@@ -17,18 +18,23 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { args, store, vfs, shell, parameters } = context;
+    const { args, store, vfs, shell, parameters, ui } = context;
     
     // 1. Resolve workflow identity
     const workflowId: string = args[0] || (parameters.workflowId as string) || 'fedml';
     const active: { id: string; name: string; } | null = store.project_getActive();
     
     if (active) {
+        ui.status(`CALYPSO: SCAFFOLDING ${workflowId.toUpperCase()} WORKSPACE...`);
+        
         const username: string = shell.env_get('USER') || 'user';
         const projectPath: string = `/home/${username}/projects/${active.name}/src`;
         shell.env_set('PROJECT', active.name);
         
-        // 2. Perform dynamic scaffolding
+        // 2. Perform Simulated Compute (The Experience)
+        await codeGeneration_animate(context, workflowId);
+
+        // 3. Perform actual scaffolding (The Logic)
         const { projectDir_populate, chrisProject_populate } = await import('../vfs/providers/ProjectProvider.js');
         if (workflowId === 'chris') {
             chrisProject_populate(vfs, username, active.name);
@@ -36,7 +42,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
             projectDir_populate(vfs, username, active.name);
         }
         
-        // 3. Update working directory
+        // 4. Update working directory
         vfs.cwd_set(projectPath);
         shell.env_set('PWD', projectPath);
     }
@@ -47,4 +53,20 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         actions: [{ type: 'stage_advance', stage: 'process', workflow: workflowId }],
         artifactData: { workflowId, scaffolded: true }
     };
+}
+
+/**
+ * Simulated code generation latency.
+ */
+async function codeGeneration_animate(context: PluginContext, workflowId: string): Promise<void> {
+    const { ui, sleep } = context;
+    ui.log(`○ Generating ${workflowId} manifest and scaffold source...`);
+    
+    const assets = ['src/train.py', 'Dockerfile', 'plugin.json', 'requirements.txt', '.gitignore'];
+    for (let i = 0; i < assets.length; i++) {
+        const percent = Math.round(((i + 1) / assets.length) * 100);
+        ui.progress(`Materializing ${assets[i]}`, percent);
+        await sleep(150);
+    }
+    ui.log('  ● Scaffold complete. Validation environment initialized.');
 }

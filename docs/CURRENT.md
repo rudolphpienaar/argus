@@ -1,17 +1,15 @@
 # Current Project Status
 
 **Date:** 2026-02-18
-**Version:** v10.1.0
-**Focus:** SUK Model Foundation & Compute-Driven Telemetry
+**Version:** v10.1.1
+**Focus:** Full Plugin Telemetry Synchronization
 
 ## Recent Changes
-- **Architecture Specification (v10.2 Blueprint):** Defined the Streaming Unified Kernel (SUK) architecture in `docs/architecture.adoc`, establishing the dual-socket topology and bidirectional telemetry loop.
-- **Plugin VM Blueprint (`harmonize.ts`):** Refactored the harmonization plugin to own both the compute loop and the telemetry emission, utilizing reactive UI primitives.
-- **Reactive UI Primitives:** Lobotomized the rendering engine, replacing hardcoded workflow lore with data-driven primitives (`frame_open`, `progress`, `phase_start`).
-- **Unified WebSocket Transport:** Implemented the Telemetry Bus and server-side broadcasting, ensuring 100% parity between TUI and WUI observation surfaces.
-- **The Great Purge:** Removed all legacy completion markers (`.cohort`, `.harmonized`, etc.) in favor of the single-source-of-truth session tree.
+- **Compute-Driven Telemetry (Full Suite):** Refactored all 8 core plugins (`search`, `gather`, `rename`, `scaffold`, `train`, `federation`, `publish`) to own their execution clock and live telemetry loops.
+- **Reactive UI Protocol:** Solidified the `frame_open`, `phase_start`, and `progress` primitives, ensuring the renderer is a purely reactive "dumb sink."
+- **Asynchronous Orchestration:** Updated the `FederationOrchestrator` to support asynchronous phase execution with live feedback.
+- **Protocol Purity:** Scrubbed all temporal logic (`delay_ms`, pre-programmed phases) from the renderer and host types.
 
 ## Next Steps
 - Implement the WUI-side telemetry subscriber to achieve full parity with the TUI.
-- Extend the compute-driven telemetry model to the `train.ts` and `federation` plugin phases.
-- Finalize the v10.2 release following surface synchronization.
+- Finalize the v10.2 "Streaming VM" release after verifying multi-client synchronization.

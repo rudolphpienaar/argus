@@ -2,6 +2,7 @@
  * @file Plugin: Rename
  *
  * Implements project renaming logic.
+ * v10.2: Compute-driven telemetry for path migration.
  *
  * @module plugins/rename
  */
@@ -18,7 +19,7 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { args, store, shell, vfs } = context;
+    const { args, store, shell, vfs, ui } = context;
     
     let newName: string = args.join(' ');
     if (newName.toLowerCase().startsWith('to ')) {
@@ -40,9 +41,14 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         };
     }
 
+    ui.status(`CALYPSO: RENAMING PROJECT [${active.name}] -> [${newName}]`);
+    
     const username: string = shell.env_get('USER') || 'user';
     const oldPath: string = `/home/${username}/projects/${active.name}`;
     const newPath: string = `/home/${username}/projects/${newName}`;
+
+    // Simulate path migration compute
+    await pathMigration_animate(context, oldPath, newPath);
 
     if (vfs.node_stat(oldPath)) {
         vfs.node_move(oldPath, newPath);
@@ -75,4 +81,21 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         actions: [{ type: 'project_rename', id: active.id, newName }],
         artifactData: { oldName: active.name, newName, path: newPath }
     };
+}
+
+/**
+ * Simulated path migration latency.
+ */
+async function pathMigration_animate(context: PluginContext, oldPath: string, newPath: string): Promise<void> {
+    const { ui, sleep } = context;
+    ui.log(`○ Computing migration plan: ${oldPath} -> ${newPath}`);
+    await sleep(200);
+    
+    const steps = ['Synchronizing shell context', 'Updating VFS node pointers', 'Verifying directory integrity'];
+    for (let i = 0; i < steps.length; i++) {
+        const percent = Math.round(((i + 1) / steps.length) * 100);
+        ui.progress(steps[i], percent);
+        await sleep(150);
+    }
+    ui.log('  ● Path migration complete.');
 }
