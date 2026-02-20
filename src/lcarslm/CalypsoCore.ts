@@ -188,14 +188,14 @@ export class CalypsoCore {
                 if (workflowResult) return workflowResult;
             }
 
-            // v10.2.1: If strict lock rejects, try global lookup.
-            // This routes through workflow_dispatch (transition checks, auto-decline,
-            // phase jumps) instead of falling through to the LLM — preventing
-            // infinite recursion from LLM action markers.
-            const globalResolution: CommandResolution = this.workflowSession.resolveCommand(intent.command, false);
-            if (globalResolution.stage) {
-                const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, globalResolution);
-                if (workflowResult) return workflowResult;
+            // Global fallback is restricted to explicit jump intents only.
+            // Generic workflow words do not trigger cross-stage routing.
+            if (this.workflowFallback_allowed(protocolCommand, intent.command)) {
+                const globalResolution: CommandResolution = this.workflowSession.resolveCommand(protocolCommand, false);
+                if (globalResolution.stage) {
+                    const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, globalResolution);
+                    if (workflowResult) return workflowResult;
+                }
             }
         }
 
@@ -669,6 +669,21 @@ export class CalypsoCore {
         ui_hints?: CalypsoResponse['ui_hints']
     ): CalypsoResponse {
         return { message, actions, success, statusCode, ui_hints };
+    }
+
+    /**
+     * Allow cross-stage routing only for explicit jump-capable intents.
+     *
+     * Current policy:
+     * - `proceed` remains an explicit phase-advance intent.
+     * - Any protocol command phrase that is explicitly declared in the manifest
+     *   (exact phrase or declared phrase prefix + args) is jump-eligible.
+     */
+    private workflowFallback_allowed(protocolCommand: string, intentCommand: string): boolean {
+        if (intentCommand.toLowerCase() === 'proceed') {
+            return true;
+        }
+        return this.workflowAdapter.commandDeclared_isExplicit(protocolCommand);
     }
 
     private reset(): void {

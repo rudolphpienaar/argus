@@ -6,4 +6,4 @@
  */
 
 export const VERSION = '10.3.1';
-export const GIT_HASH = '4ef752';
+export const GIT_HASH = 'c8c2bd';

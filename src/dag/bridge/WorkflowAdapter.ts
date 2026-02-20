@@ -6,14 +6,13 @@
  *
  * The adapter owns:
  * - The parsed DAGDefinition (from YAML manifest)
- * - The CompletionMapper (VFS → stage completion)
  * - Skip-count state (in-memory, same as old WorkflowState)
  *
  * @module dag/bridge
  * @see docs/dag-engine.adoc
  */
 
-import { readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,11 +21,9 @@ import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import type { FileNode } from '../../vfs/types.js';
 import { manifest_parse } from '../graph/parser/manifest.js';
 import { dag_resolve, position_resolve } from '../graph/resolver.js';
-import { manifestMapper_create } from './CompletionMapper.js';
 import { chain_validate } from '../fingerprint/chain.js';
 import type { FingerprintRecord, ChainValidationResult, StalenessResult } from '../fingerprint/types.js';
 import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
-import type { CompletionMapper } from './CompletionMapper.js';
 import type { ArtifactEnvelope } from '../store/types.js';
 
 // ─── Protocol-Facing Types ─────────────────────────────────────
@@ -39,6 +36,9 @@ interface ArtifactSearchResult {
     fingerprint: string;
     parentFingerprints: Record<string, string>;
     stageId: string;
+    path: string;
+    materialized?: string[];
+    envelope?: ArtifactEnvelope;
 }
 
 /**
@@ -66,6 +66,10 @@ export interface TransitionResult {
     hardBlock: boolean;
     skippedStageId: string | null;
     staleBlock: boolean;
+    /** v10.2.1: Optional parent IDs pending resolution at a JOIN point. */
+    pendingOptionals?: string[];
+    /** v10.2.1: True when all pending parents are optional and can be auto-declined. */
+    autoDeclinable?: boolean;
 }
 
 // ─── Manifest Registry ─────────────────────────────────────────
@@ -116,30 +120,31 @@ function manifestRegistry_get(): Record<string, ManifestEntry> {
  * Manifest-driven workflow adapter for CalypsoCore.
  *
  * Replaces the old WorkflowEngine static class. Wraps the DAG engine's
- * resolver + CompletionMapper + skip-count state into a single API.
+ * resolver + skip-count state into a single API.
  */
 export class WorkflowAdapter {
     readonly workflowId: string;
     private readonly definition: DAGDefinition;
-    private readonly mapper: CompletionMapper;
     private skipCounts: Record<string, number> = {};
 
     /** Reverse index: command string → DAGNode. */
     private readonly commandIndex: Map<string, DAGNode>;
+    /** Canonical declared command phrases from manifest (without placeholders). */
+    private readonly declaredCommands: Set<string>;
 
     /** Topology-aware session tree paths for each stage. */
     private readonly _stagePaths: Map<string, StagePath>;
 
-    constructor(workflowId: string, definition: DAGDefinition, mapper: CompletionMapper) {
+    constructor(workflowId: string, definition: DAGDefinition) {
         this.workflowId = workflowId;
         this.definition = definition;
-        this.mapper = mapper;
 
         // Compute topology-aware session tree paths from DAG structure
         this._stagePaths = sessionPaths_compute(definition);
 
         // Build command → stage reverse index
         this.commandIndex = new Map();
+        this.declaredCommands = new Set<string>();
         
         // Use orderedNodeIds to ensure we process stages in manifest order
         const nodes: DAGNode[] = definition.orderedNodeIds.map(
@@ -151,6 +156,9 @@ export class WorkflowAdapter {
         for (const node of nodes) {
             for (const cmd of node.commands) {
                 const canonicalFull = cmd.split(/[<\[]/)[0].toLowerCase().trim();
+                if (canonicalFull) {
+                    this.declaredCommands.add(canonicalFull);
+                }
                 if (canonicalFull.split(/\s+/).length > 1) {
                     if (!this.commandIndex.has(canonicalFull)) {
                         this.commandIndex.set(canonicalFull, node);
@@ -171,13 +179,7 @@ export class WorkflowAdapter {
             }
         }
 
-        // 3. PRIORITY OVERRIDE: Ensure 'search' always maps to the 'search' stage if it exists.
-        const searchNode = definition.nodes.get('search');
-        if (searchNode) {
-            this.commandIndex.set('search', searchNode);
-        }
-
-        // 4. Fourth pass: Index remaining commands as base-word fallbacks.
+        // 3. Third pass: Index remaining commands as base-word fallbacks.
         for (const node of nodes) {
             for (const cmd of node.commands) {
                 const baseCmd = cmd.split(/\s+/)[0].toLowerCase();
@@ -215,10 +217,38 @@ export class WorkflowAdapter {
 
         const yaml = readFileSync(entry.yamlPath, 'utf-8');
         const definition = manifest_parse(yaml);
-        const pathMap = sessionPaths_compute(definition);
-        const mapper = manifestMapper_create(definition, pathMap);
+        WorkflowAdapter.handlers_validate(definition);
 
-        return new WorkflowAdapter(workflowId, definition, mapper);
+        return new WorkflowAdapter(workflowId, definition);
+    }
+
+    /**
+     * Validate that all declared stage handlers resolve to plugin modules.
+     */
+    private static handlers_validate(definition: DAGDefinition): void {
+        const missingHandlers: string[] = [];
+
+        for (const node of definition.nodes.values()) {
+            if (!node.handler) continue;
+            if (!WorkflowAdapter.pluginModule_exists(node.handler)) {
+                missingHandlers.push(node.handler);
+            }
+        }
+
+        if (missingHandlers.length > 0) {
+            const uniqueMissing: string[] = Array.from(new Set(missingHandlers)).sort();
+            throw new Error(`Workflow manifest references missing plugins: ${uniqueMissing.join(', ')}`);
+        }
+    }
+
+    /**
+     * Check if a plugin module file exists for a handler name.
+     */
+    private static pluginModule_exists(handlerName: string): boolean {
+        const pluginsDir = modulePath_resolve('../../plugins');
+        const tsPath = resolve(pluginsDir, `${handlerName}.ts`);
+        const jsPath = resolve(pluginsDir, `${handlerName}.js`);
+        return existsSync(tsPath) || existsSync(jsPath);
     }
 
     /**
@@ -278,7 +308,7 @@ export class WorkflowAdapter {
      * Find the latest materialized fingerprint record for a stage within a session.
      *
      * @param vfs - VirtualFileSystem
-     * @param sessionPath - Path to the session root
+     * @param sessionPath - Project-relative data path (e.g. /home/user/projects/my-proj/data)
      * @param stageId - The stage ID to look up
      * @returns The latest fingerprint record, or null if never materialized
      */
@@ -287,13 +317,13 @@ export class WorkflowAdapter {
         sessionPath: string,
         stageId: string
     ): FingerprintRecord | null {
-        const node: DAGNode | undefined = this.definition.nodes.get(stageId);
-        const targetId: string = (node?.completes_with !== undefined && node.completes_with !== null)
-            ? node.completes_with
-            : stageId;
+        // Each stage checks its own artifact.
+        const targetId: string = stageId;
 
-        // Deep search for all artifacts matching this stage ID
+        // Search the session tree for the latest artifact matching this stage.
+        // The recursive search handles both topology-aware and join-materialized layouts.
         const all: ArtifactSearchResult[] = this.artifacts_find(vfs, sessionPath, targetId);
+
         if (all.length === 0) {
             return null;
         }
@@ -306,6 +336,25 @@ export class WorkflowAdapter {
             fingerprint: latest.fingerprint,
             parentFingerprints: latest.parentFingerprints,
         };
+    }
+
+    /**
+     * Find the latest full artifact envelope for a stage.
+     */
+    public latestArtifact_get(
+        vfs: VirtualFileSystem,
+        sessionPath: string,
+        stageId: string
+    ): ArtifactEnvelope | null {
+        // Search the session tree for the latest artifact produced by this exact stage.
+        const all: ArtifactSearchResult[] = this.artifacts_find(vfs, sessionPath, stageId);
+
+        if (all.length === 0) {
+            return null;
+        }
+
+        all.sort((a: ArtifactSearchResult, b: ArtifactSearchResult): number => b.timestamp.localeCompare(a.timestamp));
+        return all[0].envelope || null;
     }
 
     /**
@@ -348,6 +397,12 @@ export class WorkflowAdapter {
                 timestamp: envelope.timestamp,
                 fingerprint: envelope._fingerprint,
                 parentFingerprints: envelope._parent_fingerprints,
+                path,
+                materialized: envelope.materialized,
+                envelope: {
+                    ...envelope,
+                    _physical_path: path
+                },
             };
         } catch {
             return null;
@@ -454,6 +509,8 @@ export class WorkflowAdapter {
     private transitionPendingParentBlock_resolve(
         nodeReadiness: NodeReadiness,
     ): TransitionResult | null {
+        const pendingOptionals: string[] = [];
+
         for (const parentId of nodeReadiness.pendingParents) {
             const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
             if (!parentNode) {
@@ -468,7 +525,29 @@ export class WorkflowAdapter {
                     return warningBlock;
                 }
             }
+            // v10.2.1: Optional parents without skip_warning are auto-declinable.
+            // Collect them so CalypsoCore can materialize skip sentinels.
+            if (parentNode.optional && !parentNode.skip_warning) {
+                pendingOptionals.push(parentId);
+            }
         }
+
+        // v10.2.1: If only auto-declinable optionals remain, signal to caller
+        if (pendingOptionals.length > 0) {
+            return {
+                allowed: false,
+                warning: null,
+                reason: null,
+                suggestion: null,
+                skipCount: 0,
+                hardBlock: false,
+                skippedStageId: null,
+                staleBlock: false,
+                pendingOptionals,
+                autoDeclinable: true,
+            };
+        }
+
         return null;
     }
 
@@ -530,6 +609,50 @@ export class WorkflowAdapter {
         // 2. Fallback to base command (first word)
         const baseCmd = trimmed.split(/\s+/)[0];
         return this.commandIndex.get(baseCmd) ?? null;
+    }
+
+    /**
+     * Return true when input is an explicit manifest-declared command phrase.
+     *
+     * Accepts exact phrase matches (e.g. "harmonize", "show container")
+     * and argument-bearing invocations whose prefix matches a declared phrase
+     * (e.g. "config name oracle-app" for declared "config name").
+     */
+    public commandDeclared_isExplicit(input: string): boolean {
+        const trimmed: string = input.trim().toLowerCase();
+        if (!trimmed) return false;
+
+        for (const phrase of this.declaredCommands) {
+            if (trimmed === phrase) return true;
+            if (trimmed.startsWith(`${phrase} `)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * List canonical workflow command verbs declared by the manifest.
+     *
+     * Verbs are resolved from stage command declarations, preserving first-seen
+     * manifest order.
+     */
+    public commandVerbs_list(): string[] {
+        const verbs: string[] = [];
+        const seen: Set<string> = new Set<string>();
+
+        for (const stageId of this.definition.orderedNodeIds) {
+            const node: DAGNode | undefined = this.definition.nodes.get(stageId);
+            if (!node) continue;
+
+            for (const cmd of node.commands) {
+                const canonical: string = cmd.split(/[<\[]/)[0].toLowerCase().trim();
+                const base: string = canonical.split(/\s+/)[0];
+                if (!base || seen.has(base)) continue;
+                seen.add(base);
+                verbs.push(base);
+            }
+        }
+
+        return verbs;
     }
 
     /**

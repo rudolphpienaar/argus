@@ -172,4 +172,11 @@ describe('CalypsoCore', (): void => {
             }
         }
     });
+
+    it('does not globally jump on ambiguous workflow base verbs', async (): Promise<void> => {
+        const fixture: CoreFixture = fixture_create();
+
+        const response: CalypsoResponse = await fixture.core.command_execute('show');
+        expect(response.statusCode).toBe(CalypsoStatusCode.CONVERSATIONAL);
+    });
 });
