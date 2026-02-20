@@ -35,8 +35,15 @@ export class WorkflowSession {
     constructor(
         private readonly vfs: VirtualFileSystem,
         private readonly adapter: WorkflowAdapter,
-        private readonly sessionPath: string
+        private sessionPath: string
     ) {}
+
+    /**
+     * Update the physical session root path.
+     */
+    public sessionPath_set(path: string): void {
+        this.sessionPath = path;
+    }
 
     /**
      * Synchronize the session state with the VFS and session.json.
@@ -60,6 +67,7 @@ export class WorkflowSession {
             if (this.verify_fast(persisted.activeStageId)) {
                 this.activeStageId = persisted.activeStageId;
                 this.lastVfsSync = Date.now();
+                this.inputSymlink_update();
                 return;
             }
         }
@@ -71,14 +79,46 @@ export class WorkflowSession {
         
         // Save the reconciled pointer
         this.save();
+        this.inputSymlink_update();
         this.lastVfsSync = Date.now();
     }
 
     /**
-     * Resolve a user command in the current context.
-     * Prioritizes the active stage.
+     * Update the 'input' symlink at the project root to point to the current stage.
      */
-    public resolveCommand(input: string): CommandResolution {
+    private inputSymlink_update(): void {
+        const activeId = this.activeStageId;
+        if (!activeId) return;
+
+        const stagePath = this.adapter.stagePaths.get(activeId);
+        if (!stagePath) return;
+
+        // The sessionPath is /home/user/projects/PROJ/data
+        // The stagePath.dataDir is e.g. search/gather/data
+        // The absolute target
+        const absoluteTarget = `${this.sessionPath}/${stagePath.dataDir}`;
+        
+        // The project root is one level up from sessionPath
+        const projectRoot = this.sessionPath.substring(0, this.sessionPath.lastIndexOf('/'));
+        const symlinkPath = `${projectRoot}/input`;
+
+        try {
+            this.vfs.link_create(symlinkPath, absoluteTarget);
+        } catch (e) {
+            // ignore symlink errors during headless/simulation
+        }
+    }
+
+    /**
+     * Resolve a user command in the current context.
+     * 
+     * v10.2: Implements Strict Stage-Locking. 
+     * Commands are ONLY matched against the active stage.
+     * 
+     * @param input - The command to resolve.
+     * @param contextualOnly - If true, only matches against the active stage.
+     */
+    public resolveCommand(input: string, contextualOnly: boolean = false): CommandResolution {
         const trimmed = input.trim().toLowerCase();
         const parts = trimmed.split(/\s+/);
         const cmd = parts[0];
@@ -86,20 +126,17 @@ export class WorkflowSession {
         // 1. Check Active Stage Priority
         if (this.activeStageId) {
             const activeNode = this.adapter.dag.nodes.get(this.activeStageId);
-            if (activeNode) {
-                const isMatch: boolean = activeNode.commands.some((c: string): boolean => {
-                    const canonical: string = c.split(/[<\[]/)[0].toLowerCase().trim();
-                    const base: string = canonical.split(/\s+/)[0];
-                    return base === cmd;
-                });
-
-                if (isMatch) {
-                    return { stage: activeNode, isJump: false, requiresConfirmation: false };
-                }
+            if (activeNode && this.nodeHandles_command(activeNode, cmd)) {
+                return { stage: activeNode, isJump: false, requiresConfirmation: false };
             }
         }
 
         // 2. Global Fallback (Phase Jump Detection)
+        // Forbidden if contextualOnly is true to enforce strict stage-locking.
+        if (contextualOnly) {
+            return { stage: null, isJump: false, requiresConfirmation: false };
+        }
+
         const fallbackStage = this.adapter.stage_forCommand(input);
         if (fallbackStage) {
             const isJump = fallbackStage.id !== this.activeStageId;
@@ -118,13 +155,24 @@ export class WorkflowSession {
     }
 
     /**
+     * Helper to check if a node defines a specific command verb.
+     */
+    private nodeHandles_command(node: DAGNode, verb: string): boolean {
+        return node.commands.some((c: string): boolean => {
+            const canonical: string = c.split(/[<\[]/)[0].toLowerCase().trim();
+            const base: string = canonical.split(/\s+/)[0];
+            return base === verb;
+        });
+    }
+
+    /**
      * Mark the current stage as complete and advance the pointer.
      */
     public async advance(completedStageId: string): Promise<void> {
-        // Full re-resolve after completion to ensure we find the true next leaf
         const pos = this.adapter.position_resolve(this.vfs, this.sessionPath);
         this.activeStageId = pos.currentStage?.id || null;
         this.save();
+        this.inputSymlink_update();
     }
 
     /**
@@ -133,6 +181,7 @@ export class WorkflowSession {
     public advance_force(stageId: string): void {
         this.activeStageId = stageId;
         this.save();
+        this.inputSymlink_update();
     }
 
     /**
@@ -158,26 +207,28 @@ export class WorkflowSession {
             if (this.vfs.node_stat(this.sessionPath)) {
                 this.vfs.file_create(sessionFile, JSON.stringify(data, null, 2));
             }
-        } catch { /* directory might not be created yet */ }
+        } catch { /* ignore */ }
     }
 
     /**
-     * Fast-path verification: checks if the prerequisites for a stage are still met.
+     * Fast-path verification: checks if the prerequisites for a stage are still met
+     * AND the stage itself is not yet completed (still the current position).
      */
     private verify_fast(stageId: string): boolean {
         const node = this.adapter.dag.nodes.get(stageId);
         if (!node) return false;
 
-        // If root, always valid
+        // If this stage already has an artifact, the pointer is stale.
+        // Force slow path to advance to the next stage.
+        const selfRecord = this.adapter.latestFingerprint_get(this.vfs, this.sessionPath, stageId);
+        if (selfRecord) return false;
+
         if (!node.previous || node.previous.length === 0) return true;
 
-        // Check if all parents have materialized artifacts.
-        // Uses adapter fingerprint discovery so both legacy and join layouts
-        // are treated as valid for fast verification.
         for (const parentId of node.previous) {
             const record = this.adapter.latestFingerprint_get(this.vfs, this.sessionPath, parentId);
             if (!record) {
-                return false; // Parent artifact missing, trigger crawl
+                return false;
             }
         }
 

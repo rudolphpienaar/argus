@@ -31,10 +31,11 @@ function ansi_strip(str) {
  */
 function template_interpolate(value, vars) {
     const projectRoot = vars.project ? `/home/${vars.user}/projects/${vars.project}` : `/home/${vars.user}/projects/DRAFT`;
+    const sessionRoot = vars.session || `${projectRoot}/data`;
     return value
         .replaceAll('${user}', vars.user)
         .replaceAll('${project}', projectRoot)
-        .replaceAll('${session}', `${projectRoot}/data`);
+        .replaceAll('${session}', sessionRoot);
 }
 
 /**

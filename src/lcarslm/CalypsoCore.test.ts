@@ -4,7 +4,7 @@ import type { CalypsoStoreActions, CalypsoResponse } from './types.js';
 import { CalypsoStatusCode } from './types.js';
 import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import { Shell } from '../vfs/Shell.js';
-import type { AppState, Dataset, FederationState, Project } from '../core/models/types.js';
+import type { AppState, Dataset, Project } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 
 interface CoreFixture {
@@ -16,7 +16,6 @@ function storeActions_create(): CalypsoStoreActions {
         currentStage: 'search',
         selectedDatasets: [],
         activeProject: null,
-        federationState: null,
         lastIntent: null
     };
     let sessionPath: string | null = null;
@@ -32,7 +31,6 @@ function storeActions_create(): CalypsoStoreActions {
             state.currentStage = 'search';
             state.selectedDatasets = [];
             state.activeProject = null;
-            state.federationState = null;
             state.lastIntent = null;
             sessionPath = null;
         },
@@ -70,12 +68,6 @@ function storeActions_create(): CalypsoStoreActions {
         session_setPath(path: string | null): void {
             sessionPath = path;
         },
-        federation_getState(): FederationState | null {
-            return state.federationState ?? null;
-        },
-        federation_setState(nextState: FederationState | null): void {
-            state.federationState = nextState;
-        },
         dataset_getById(id: string): Dataset | undefined {
             return DATASETS.find(ds => ds.id === id);
         },
@@ -92,7 +84,7 @@ function fixture_create(): CoreFixture {
     const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
     const shell: Shell = new Shell(vfs, 'tester');
     const storeActions: CalypsoStoreActions = storeActions_create();
-    const core: CalypsoCore = new CalypsoCore(vfs, shell, storeActions, { simulationMode: true });
+    const core: CalypsoCore = new CalypsoCore(vfs, shell, storeActions);
     return { core };
 }
 
@@ -136,5 +128,22 @@ describe('CalypsoCore', (): void => {
         await fixture.core.command_execute('mkdir projects');
         const completions: string[] = fixture.core.tab_complete('cd pro');
         expect(completions).toContain('projects/');
+    });
+
+    it('preserves upstream artifacts when add switches into a draft project', async (): Promise<void> => {
+        const fixture: CoreFixture = fixture_create();
+
+        const searchResponse: CalypsoResponse = await fixture.core.command_execute('search histology');
+        expect(searchResponse.statusCode).toBe(CalypsoStatusCode.OK);
+
+        const sourceSessionPath: string = fixture.core.session_getPath();
+        expect(fixture.core.vfs_exists(`${sourceSessionPath}/search/data/search.json`)).toBe(true);
+
+        const addResponse: CalypsoResponse = await fixture.core.command_execute('add ds-006');
+        expect(addResponse.statusCode).toBe(CalypsoStatusCode.OK);
+
+        const draftSessionPath: string = fixture.core.session_getPath();
+        expect(draftSessionPath).not.toBe(sourceSessionPath);
+        expect(fixture.core.vfs_exists(`${draftSessionPath}/search/data/search.json`)).toBe(true);
     });
 });
