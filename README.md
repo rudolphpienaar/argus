@@ -90,7 +90,7 @@ After the initial `make argus`, day-to-day iteration is just `make build && make
 
 ### Connecting CALYPSO to an LLM
 
-CALYPSO works in simulation mode out of the box — no API key required. To connect to a real LLM for natural language interaction, pass an API key via the `KEY` variable:
+CALYPSO works in offline deterministic mode out of the box — no API key required. To connect to a real LLM for natural language interaction, pass an API key via the `KEY` variable:
 
 ```bash
 make calypso KEY=your-api-key-here
@@ -106,7 +106,7 @@ For terminal-only interaction without a browser, CALYPSO can run as a standalone
 
 ```bash
 make calypso KEY=your-key    # Start headless Calypso server with LLM (port 8081)
-make calypso                 # Start in simulation mode (no LLM)
+make calypso                 # Start in offline mode (no LLM)
 make calypso-ws              # Connect an interactive CLI client to the server
 ```
 
@@ -166,6 +166,7 @@ New to the project? Read these in sequence. They build on each other — startin
 - [Visual Language](docs/visual_language.adoc): LCARS interaction and motion grammar.
 - [Development Context Timeline](docs/CONTEXT.md): versioned architecture trajectory.
 - [Active Design Work](docs/CURRENT.md): manifest-driven sequencing and DAG fingerprinting.
+- [Release Notes v10.2.2](docs/release-v10.2.2.md): hardening release positioning and messaging.
 - [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): coding and naming standards.
 
 ### Narrative Context

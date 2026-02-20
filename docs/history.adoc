@@ -1,7 +1,7 @@
 = ARGUS Project History: The Forensic Chronicle of a State-Grounded Kernel
 :author: ATLAS Project Team
-:revdate: 2026-02-17
-:revnumber: 10.0.1
+:revdate: 2026-02-20
+:revnumber: 10.2.2
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -10,7 +10,7 @@ toc::[]
 
 == Abstract
 
-The ARGUS (ATLAS Resource Guided User System) project represents a relentless, single-developer engineering investigation into the "Truth Gap" of AI-mediated scientific research. Since its inception on January 23, 2026, the system has evolved through ten distinct architectural phases, transitioning from a monolithic UI-centric prototype into a high-integrity system kernel grounded in Merkle-proven materialization. This document provides an exhaustive, forensic narrative of that evolution, providing a dedicated technical analysis for every significant version bump in the project's history. 
+The ARGUS (ATLAS Resource Guided User System) project represents a relentless, single-developer engineering investigation into the "Truth Gap" of AI-mediated scientific research. Since its inception on January 23, 2026, the system has evolved through multiple architectural phases, transitioning from a monolithic UI-centric prototype into a high-integrity system kernel grounded in Merkle-proven materialization. This document provides an exhaustive, forensic narrative of that evolution, providing a dedicated technical analysis for every significant version bump in the project's history.
 
 Each section details the specific technical pressures—such as monolithic drift, instructional decay, and the irreducible hallucination of agency—that necessitated the continuous refactoring of the system's core during this high-velocity solo sprint. The architectural decisions documented here are not the result of user studies, but the expression of over two decades of practitioner expertise in scientific computing systems. By documenting the "Historical Drama" of every milestone, this specification provides the necessary context for understanding why the v10.0 architecture is the only mathematically viable solution for high-stakes federated research.
 
@@ -18,13 +18,13 @@ Each section details the specific technical pressures—such as monolithic drift
 
 [source,text]
 ----
-2026-01-23                                                            2026-02-17
+2026-01-23                                                            2026-02-20
     │                                                                      │
     ├── Phase I   v1.0  .. v1.4      SeaGaP codification
     ├── Phase II  v1.4.1.. v3.4      Intelligence console + agentic pivot
     ├── Phase III v4.0  .. v4.7      VCS substrate + slot refactor
     ├── Phase IV  v5.0  .. v8.0      Headless Calypso + ORACLE + scripts
-    └── Phase V   v9.0  .. v10.0     DAG + Merkle + plugin runtime
+    └── Phase V   v9.0  .. v10.2.2   DAG + Merkle + plugin runtime hardening
 
 arc: monolithic UI prototype  ─────────────────────────▶  state-grounded kernel
 ----
@@ -163,8 +163,8 @@ These releases aligned the Federation Orchestrator's internal command protocol w
 
 v7.3.0 eliminated these custom paths, forcing all orchestrator commands through the standard manifest-driven pipeline. This made the federalization handshake as verifiable and auditable as any other SeaGaP stage. It was the final "Cleanup" before the move to the v9.0 DAG revolution.
 
-== Phase V: The v10.0 "Plugin Revolution" and Merkle Conscience (v9.0 - v10.0)
-*Period: February 14 – February 17, 2026*
+== Phase V: The v10.x Plugin Revolution and Hardening Line (v9.0 - v10.2.2)
+*Period: February 14 – February 20, 2026*
 
 === Version 9.0.0: Manifest-Driven DAG Engine
 Released on February 16, 2026, the v9.0.x series replaced the legacy linear state machine with a **Manifest-Driven DAG Engine**. Scientific workflows are rarely linear; they involve complex branching, re-execution of upstream stages, and parallel parentage that linear models cannot represent. This "Graph-Gap" was a primary source of state-drift in legacy versions.
@@ -184,6 +184,17 @@ The project reached its current v10.0 state on February 17, 2026. This was the f
 The move to v10.0 purged all domain logic from the kernel and moved it to atomic **Guest Plugins**. The system is now a formal Host VM, providing a strictly-typed **PluginContext** (Standard Library) to unprivileged logic. This bifurcation ensures that the "Integrity" of the system is managed by the high-integrity Host, while the "Intelligence" remains a flexible AI interface. It resolves the "Irreducible Hallucination" problem by forcing all work into plugins and all progress into Merkle-proven artifacts, transforming ARGUS into a verifiable scientific operating system.
 *   _See also: link:architecture.adoc[System Architecture] for the Host/Guest VM model specification._
 *   _See also: link:plugins.adoc[Plugin System Specification] for the VM and context details._
+
+=== Version 10.2.1 - 10.2.2: The Hardening Release Line
+By February 20, 2026, it was clear that early v10.x represented a partial but incomplete pivot: plugin boundaries existed, but some federation behavior and simulation assumptions still leaked into backend pathways. The engineering pressure in this period was not feature expansion; it was architectural purification.
+
+The v10.2.1 to v10.2.2 line hardens that boundary in three concrete ways:
+
+1.  **Plugin-Only Federation Compute:** Federation phases were materialized as explicit stage plugins (`federate-*`), removing legacy backend orchestrator pathways and state coupling (`federationState`).
+2.  **Production-Pure Backend:** Synthetic compute latency was removed from backend execution paths. Any realism delay remains plugin-local and can be disabled deterministically with `CALYPSO_FAST=true` for oracle/CI throughput.
+3.  **Verification Baseline Restoration:** Store/Merkle test regressions were reconciled with current runtime semantics, and oracle scenarios stabilized under fast-mode policy.
+
+This release line is intentionally framed as a **hardening checkpoint**, not a terminal destination. `v10.2.2` marks the stabilization baseline before `v10.3` deletion work (compatibility scaffold removal) and `v11.0` contract lock (Host kernel vs plugin compute vs adapter rendering boundaries).
 
 == Persistence and Integrity Matrix
 
@@ -232,13 +243,18 @@ The following matrix summarizes the evolution of the system's grounding mechanis
 |v10.0
 |Host/Guest Bifurcation
 |Isolates idiosyncratic logic, ensuring a stable and generic system kernel.
+
+|**Plugin-Only Federation Hardening**
+|v10.2.2
+|Backend Purity Enforcement
+|Removes legacy federation/simulation debt from Host paths and restores deterministic release confidence.
 |===
 
 == Conclusion: The Arc of Integrity
 
 The evolution of ARGUS from January to February 2026 is a chronicle of the "Scientific Hardening" of AI. Each major version was a response to a specific failure mode where human trust in the system was compromised by AI-mediated ambiguity. From the early "Gutter Flash" regressions to the final "Merkle Staleness" proofs, the project has consistently prioritized "Evidence over Assertion."
 
-By grounding the entire system in a virtualized hardware substrate (VCS), a graph-based conscience (DAG Engine), and a Merkle provenance chain, ARGUS v10.0 provides the absolute integrity required for national-scale medical research. The project stands as a successful proof-of-concept for how agentic systems can be made structurally safe, transforming the "Hallucinating Agent" into a high-fidelity instrument of scientific discovery. The journey continues, but the architectural foundation is now absolute.
+By grounding the entire system in a virtualized hardware substrate (VCS), a graph-based conscience (DAG Engine), and a Merkle provenance chain, ARGUS v10.2.2 provides the strongest integrity baseline yet for national-scale medical research. The project stands as a successful proof-of-concept for how agentic systems can be made structurally safe, transforming the "Hallucinating Agent" into a high-fidelity instrument of scientific discovery. The next arc is explicit: trim transitional scaffolding in v10.3 and lock contracts in v11.0.
 
 ---
-_Last updated: 2026-02-17 (v10.0.1)_
+_Last updated: 2026-02-20 (v10.2.2)_
