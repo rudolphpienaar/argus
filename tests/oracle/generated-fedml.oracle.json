@@ -9,8 +9,7 @@
     },
     {
       "send": "search brain",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
       "vfs_exists": "${session}/search/data/search.json"
@@ -18,131 +17,114 @@
     {
       "send": "add ds-001",
       "success": true,
-      "capture_project": false
+      "capture_project": true
     },
     {
       "send": "gather",
-      "success": true,
-      "capture_project": true
+      "success": true
     },
     {
       "vfs_exists": "${session}/search/gather/data/gather.json"
     },
     {
       "send": "rename walk-test",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
       "vfs_exists": "${session}/search/gather/rename/data/rename.json"
     },
     {
       "send": "harmonize",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json"
+      "vfs_exists": "${session}/search/gather/harmonize/data/harmonize.json"
     },
     {
       "send": "proceed",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
     },
     {
       "send": "python train.py",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/data/train.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/data/train.json"
     },
     {
       "send": "federate",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/data/briefing.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/data/briefing.json"
     },
     {
       "send": "show transcompile",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "send": "approve",
-      "success": true,
-      "capture_project": false
+      "send": "transcompile",
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/data/transcompile.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/data/transcompile.json"
     },
     {
       "send": "show container",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "send": "approve",
-      "success": true,
-      "capture_project": false
+      "send": "containerize",
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/data/containerize.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/data/containerize.json"
     },
     {
       "send": "config name oracle-app",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "send": "approve",
-      "success": true,
-      "capture_project": false
+      "send": "publish-config",
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/data/publish-config.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/data/publish-config.json"
     },
     {
       "send": "show publish",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "send": "approve",
-      "success": true,
-      "capture_project": false
+      "send": "publish-execute",
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/data/publish-execute.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/data/publish-execute.json"
     },
     {
       "send": "dispatch",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/data/dispatch.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/data/dispatch.json"
     },
     {
       "send": "status",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/data/execute.json"
     },
     {
       "send": "publish model",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/federate-model-publish/data/model-publish.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/federate-model-publish/data/model-publish.json"
     }
   ]
 }

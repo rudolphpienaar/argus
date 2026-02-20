@@ -4,7 +4,7 @@ import { SearchProvider } from '../SearchProvider.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import type { CalypsoStoreActions, CalypsoAction, QueryResponse } from '../types.js';
-import type { AppState, Dataset, FederationState, Project } from '../../core/models/types.js';
+import type { AppState, Dataset, Project } from '../../core/models/types.js';
 import { DATASETS } from '../../core/data/datasets.js';
 import { LCARSEngine } from '../engine.js';
 
@@ -52,10 +52,6 @@ function storeActions_create(activeProject: { id: string; name: string } | null)
             return null;
         },
         session_setPath(): void {},
-        federation_getState(): FederationState | null {
-            return null;
-        },
-        federation_setState(): void {},
 
         dataset_getById(id: string): Dataset | undefined {
             return DATASETS.find(ds => ds.id === id);
@@ -77,7 +73,13 @@ function parser_create(activeProject: { id: string; name: string } | null = null
     const searchProvider: SearchProvider = new SearchProvider(vfs, shell);
     return new IntentParser(searchProvider, storeActions_create(activeProject), {
         activeStageId_get: () => null,
-        stage_forCommand: () => null
+        stage_forCommand: () => null,
+        commands_list: () => [
+            'search', 'add', 'remove', 'gather', 'rename', 'harmonize',
+            'proceed', 'code', 'python', 'train', 'federate',
+            'transcompile', 'containerize', 'publish-config', 'publish-execute',
+            'show', 'config', 'dispatch', 'status', 'publish'
+        ]
     });
 }
 
@@ -113,7 +115,7 @@ describe('IntentParser', (): void => {
 
         expect(intent.type).toBe('workflow');
         expect(intent.command).toBe('search');
-        expect(intent.args).toEqual(['ds-006']);
+        expect(intent.args).toEqual(['histology']);
         expect(intent.isModelResolved).toBe(true);
     });
 
@@ -126,6 +128,17 @@ describe('IntentParser', (): void => {
         expect(intent.isModelResolved).toBe(true);
     });
 
+    it('falls back when model command is outside active workflow command set', async (): Promise<void> => {
+        const parser: IntentParser = parser_create();
+        const model: LCARSEngine = modelStub_create(
+            '{"type":"workflow","command":"nonexistent","args":[]}'
+        );
+        const intent = await parser.intent_resolve('run something custom', model);
+
+        expect(intent.type).toBe('llm');
+        expect(intent.isModelResolved).toBe(true);
+    });
+
     it('extracts deterministic actions from LLM tags and cleans response text', (): void => {
         const parser: IntentParser = parser_create({ id: 'p-01', name: 'demo-project' });
         const llmText: string = [
@@ -133,7 +146,7 @@ describe('IntentParser', (): void => {
             '[ACTION: SHOW_DATASETS]',
             '[FILTER: ds-001]',
             '[ACTION: RENAME project-v2]',
-            '[ACTION: PROCEED fedml]',
+            '[ACTION: PROCEED custom-workflow]',
             'Proceeding with selected dataset.'
         ].join(' ');
 
@@ -157,6 +170,9 @@ describe('IntentParser', (): void => {
         expect(workspaceAction).toBeDefined();
         expect(renameAction).toBeDefined();
         expect(proceedAction).toBeDefined();
+        if (proceedAction && proceedAction.type === 'stage_advance') {
+            expect(proceedAction.workflow).toBe('custom-workflow');
+        }
         expect(extracted.cleanText).toContain('Proceeding with selected dataset.');
         expect(extracted.cleanText).not.toContain('[ACTION:');
         expect(extracted.cleanText).not.toContain('[SELECT:');

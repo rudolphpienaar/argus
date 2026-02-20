@@ -263,17 +263,25 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
             'proceed',
             'python train.py',
             'federate',
-            'federate --yes',
-            'federate --yes',
-            'federate --yes',
-            'federate --yes'
+            'transcompile',
+            'containerize',
+            'config name histo-exp1',
+            'config org atlas',
+            'config visibility public',
+            'publish-config',
+            'publish-execute',
+            'dispatch',
+            'status',
+            'publish model'
         ],
         structured: {
             script: 'fedml-fullrun',
             version: 1,
-            description: 'From search through dispatch/compute with publish prompts.',
+            description: 'From search through full federated model publication.',
             defaults: {
-                project_name: 'histo-exp1'
+                project_name: 'histo-exp1',
+                app_name: 'histo-exp1',
+                org: 'atlas'
             },
             steps: [
                 {
@@ -330,36 +338,81 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
                     }
                 },
                 {
-                    id: 's8_federate_transcompile',
-                    action: 'federate.transcompile',
-                    params: {}
-                },
-                {
-                    id: 's9_federate_containerize',
-                    action: 'federate.containerize',
-                    params: {}
-                },
-                {
-                    id: 's10_publish_metadata',
-                    action: 'federate.publish_metadata',
+                    id: 's8_federate_brief',
+                    action: 'command',
                     params: {
-                        app_name: '?',
-                        org: '?',
-                        visibility: 'public'
-                    },
-                    outputs: {
-                        alias: 'publish_meta'
+                        command: 'federate'
                     }
                 },
                 {
-                    id: 's11_marketplace_publish',
-                    action: 'federate.publish',
-                    params: {}
+                    id: 's9_federate_transcompile',
+                    action: 'command',
+                    params: {
+                        command: 'transcompile'
+                    }
                 },
                 {
-                    id: 's12_dispatch_compute',
-                    action: 'federate.dispatch_compute',
-                    params: {}
+                    id: 's10_federate_containerize',
+                    action: 'command',
+                    params: {
+                        command: 'containerize'
+                    }
+                },
+                {
+                    id: 's11_publish_config_name',
+                    action: 'command',
+                    params: {
+                        command: 'config name ${answers.app_name ?? defaults.app_name}'
+                    }
+                },
+                {
+                    id: 's12_publish_config_org',
+                    action: 'command',
+                    params: {
+                        command: 'config org ${answers.org ?? defaults.org}'
+                    }
+                },
+                {
+                    id: 's13_publish_config_visibility',
+                    action: 'command',
+                    params: {
+                        command: 'config visibility public'
+                    }
+                },
+                {
+                    id: 's14_publish_config_finalize',
+                    action: 'command',
+                    params: {
+                        command: 'publish-config'
+                    }
+                },
+                {
+                    id: 's15_federate_publish_execute',
+                    action: 'command',
+                    params: {
+                        command: 'publish-execute'
+                    }
+                },
+                {
+                    id: 's16_federate_dispatch',
+                    action: 'command',
+                    params: {
+                        command: 'dispatch'
+                    }
+                },
+                {
+                    id: 's17_federate_execute',
+                    action: 'command',
+                    params: {
+                        command: 'status'
+                    }
+                },
+                {
+                    id: 's18_federate_model_publish',
+                    action: 'command',
+                    params: {
+                        command: 'publish model'
+                    }
                 }
             ]
         }

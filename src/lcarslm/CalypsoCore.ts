@@ -94,7 +94,7 @@ export class CalypsoCore {
         this.telemetryBus = new TelemetryBus();
         this.searchProvider = new SearchProvider(vfs, shell, storeActions);
 
-        const workflowId: string = config.workflowId ?? 'fedml';
+        const workflowId: string = this.workflowId_resolve(config);
         this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
         this.statusProvider = new StatusProvider(vfs, storeActions, this.workflowAdapter);
 
@@ -106,17 +106,16 @@ export class CalypsoCore {
             this.engine = null;
         }
 
-        const username: string = shell.env_get('USER') || 'user';
-        const activeProject = this.storeActions.project_getActive();
-        const projectName = activeProject?.name || 'DRAFT';
+        const projectName: string = this.projectName_resolve(config.projectName);
         
         // v10.2: Physical Provenance - sessionPath is now project/data
-        this.sessionPath = `/home/${username}/projects/${projectName}/data`;
+        this.sessionPath = this.sessionPath_resolve(projectName);
         
         this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
         this.intentParser = new IntentParser(this.searchProvider, storeActions, {
             activeStageId_get: () => this.workflowSession.activeStageId_get(),
-            stage_forCommand: (cmd: string) => this.workflowAdapter.stage_forCommand(cmd)
+            stage_forCommand: (cmd: string) => this.workflowAdapter.stage_forCommand(cmd),
+            commands_list: () => this.workflowAdapter.commandVerbs_list()
         });
 
         this.llmProvider = this.llmProvider_create();
@@ -161,6 +160,14 @@ export class CalypsoCore {
         if (this.shell.isBuiltin(parsed.primary)) {
             const shellResult: CalypsoResponse | null = await this.shell_handle(parsed.trimmed, parsed.primary);
             if (shellResult) return shellResult;
+        }
+
+        // ─── 0.5. CONFIRMATION FAST-PATH ────────────────────────────────────
+        // Treat short human confirmations as response-channel input before
+        // invoking intent compilation/global command routing.
+        const confirmationFastPath: CalypsoResponse | null = await this.confirmation_dispatch(parsed.trimmed);
+        if (confirmationFastPath) {
+            return confirmationFastPath;
         }
 
         // ─── 1. INTENT COMPILATION (The LLM Layer) ──────────────────────────
@@ -644,11 +651,8 @@ export class CalypsoCore {
      * Re-calculate and propagate the physical session path based on active project.
      */
     private async session_realign(): Promise<void> {
-        const username: string = this.shell.env_get('USER') || 'user';
-        const activeProject = this.storeActions.project_getActive();
-        const projectName = activeProject?.name || 'DRAFT';
-        
-        const newPath = `/home/${username}/projects/${projectName}/data`;
+        const projectName: string = this.projectName_resolve();
+        const newPath: string = this.sessionPath_resolve(projectName);
         if (newPath === this.sessionPath) return;
 
         this.sessionPath = newPath;
@@ -684,6 +688,85 @@ export class CalypsoCore {
         // Re-initialize workflow session
         this.workflowSession = new WorkflowSession(this.vfs, this.workflowAdapter, this.sessionPath);
         this.merkleEngine.session_setPath(this.sessionPath);
+    }
+
+    /**
+     * Resolve active workflow ID from explicit config, shell persona, or registry.
+     */
+    private workflowId_resolve(config: CalypsoCoreConfig): string {
+        const configuredWorkflow: string = (config.workflowId || '').trim();
+        if (configuredWorkflow) {
+            return configuredWorkflow;
+        }
+
+        const personaWorkflow: string = (this.shell.env_get('PERSONA') || '').trim();
+        if (personaWorkflow) {
+            return personaWorkflow;
+        }
+
+        const availableWorkflows: string[] = WorkflowAdapter.workflows_list();
+        if (availableWorkflows.length === 0) {
+            throw new Error('No workflows available for CalypsoCore initialization.');
+        }
+
+        return availableWorkflows[0];
+    }
+
+    /**
+     * Resolve current project name from active project, explicit config, env, or session path.
+     */
+    private projectName_resolve(configuredProjectName?: string): string {
+        const activeProjectName: string = (this.storeActions.project_getActive()?.name || '').trim();
+        if (activeProjectName) {
+            return activeProjectName;
+        }
+
+        const configuredName: string = (configuredProjectName || '').trim();
+        if (configuredName) {
+            return configuredName;
+        }
+
+        const envProjectName: string = (this.shell.env_get('PROJECT') || '').trim();
+        if (envProjectName) {
+            return envProjectName;
+        }
+
+        const sessionProjectName: string | null = this.projectName_fromSessionPath(this.storeActions.session_getPath());
+        if (sessionProjectName) {
+            return sessionProjectName;
+        }
+
+        const username: string = this.username_resolve();
+        return username;
+    }
+
+    /**
+     * Resolve canonical session path for the provided project.
+     */
+    private sessionPath_resolve(projectName: string): string {
+        const username: string = this.username_resolve();
+        return `/home/${username}/projects/${projectName}/data`;
+    }
+
+    /**
+     * Resolve shell username with a stable fallback for headless runtimes.
+     */
+    private username_resolve(): string {
+        return this.shell.env_get('USER') || 'user';
+    }
+
+    /**
+     * Parse project name from a canonical session path.
+     */
+    private projectName_fromSessionPath(sessionPath: string | null): string | null {
+        if (!sessionPath) {
+            return null;
+        }
+        const match: RegExpMatchArray | null = sessionPath.match(/^\/home\/[^/]+\/projects\/([^/]+)\/data(?:\/|$)/);
+        if (!match || !match[1]) {
+            return null;
+        }
+        return match[1];
     }
 
     private workflow_nextStep(): string {
@@ -722,7 +805,7 @@ export class CalypsoCore {
     }
 
     private async confirmation_dispatch(input: string): Promise<CalypsoResponse | null> {
-        if (!/^(yes|y|affirmative|confirm|ok|go\s+ahead)$/i.test(input)) {
+        if (!/^(yes|y|affirmative|confirm|ok|go\s+ahead|approve)$/i.test(input)) {
             return null;
         }
 
@@ -748,18 +831,63 @@ export class CalypsoCore {
             }
         }
 
-        // Standard workflow confirmation (e.g. approve)
-        // v10.2: Only resolve 'approve' if it is VALID for the current stage.
-        // This prevents 'yes' from triggering federation blocks while in 'search'.
-        const pos = this.workflow_getPosition();
-        if (pos.availableCommands.includes('approve')) {
-            const res: CommandResolution = this.workflowSession.resolveCommand('approve', true);
+        // Stage-local affirmative continuation.
+        // Resolve to the active stage's safe execution verb only; never global-jump.
+        const stageCommand: string | null = this.activeStageAffirmativeCommand_resolve();
+        if (stageCommand) {
+            const res: CommandResolution = this.workflowSession.resolveCommand(stageCommand, true);
             if (res.stage) {
-                return await this.workflow_dispatch('approve', res, true);
+                return await this.workflow_dispatch(stageCommand, res, true);
             }
         }
 
         return null;
+    }
+
+    /**
+     * Resolve a safe active-stage command for generic affirmative replies.
+     *
+     * We intentionally avoid meta verbs (show/config/status) and commands with
+     * required placeholders. This keeps short confirmations stage-local.
+     */
+    private activeStageAffirmativeCommand_resolve(): string | null {
+        const activeStageId: string | null = this.workflowSession.activeStageId_get();
+        if (!activeStageId) return null;
+
+        const node: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(activeStageId);
+        if (!node) return null;
+
+        interface CommandCandidate {
+            command: string;
+            required: boolean;
+            base: string;
+        }
+
+        const candidates: CommandCandidate[] = node.commands
+            .map((raw: string): CommandCandidate => {
+                const normalized: string = raw.toLowerCase().trim();
+                const command: string = normalized.split(/[<\[]/)[0].trim();
+                const base: string = command.split(/\s+/)[0] || '';
+                const required: boolean = normalized.includes('<');
+                return { command, required, base };
+            })
+            .filter((entry: CommandCandidate): boolean => entry.command.length > 0);
+
+        const metaVerbs: Set<string> = new Set<string>(['show', 'config', 'status']);
+
+        const stageIdExact: CommandCandidate | undefined = candidates.find(
+            (entry: CommandCandidate): boolean =>
+                entry.command === activeStageId && !entry.required && !metaVerbs.has(entry.base),
+        );
+        if (stageIdExact) {
+            return stageIdExact.command;
+        }
+
+        const firstSafe: CommandCandidate | undefined = candidates.find(
+            (entry: CommandCandidate): boolean =>
+                !entry.required && !metaVerbs.has(entry.base),
+        );
+        return firstSafe?.command ?? null;
     }
 
     private key_register(provider: string, key: string): CalypsoResponse {

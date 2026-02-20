@@ -8,7 +8,7 @@
 - **Plugin-Only Federation:** Replaced legacy federation orchestration with 8 stage-scoped plugins (`federate-*`) loaded by manifest handler.
 - **Backend Purge:** Removed `src/lcarslm/federation/*`, removed `federationState` from store/types, and removed `federate --yes` runtime/script pathways.
 - **Latency Boundary Enforcement:** Backend no longer injects synthetic sleep into compute flow; simulation delay remains plugin-owned and gated by `CALYPSO_FAST`.
-- **Script Runtime Alignment:** Updated `fedml-fullrun` script catalog/YAML to explicit stage commands (`federate`, `approve`, `dispatch`, `status`, `publish model`).
+- **Script Runtime Alignment:** Updated `fedml-fullrun` script catalog/YAML to explicit stage commands (`federate`, `transcompile`, `containerize`, `publish-config`, `publish-execute`, `dispatch`, `status`, `publish model`).
 - **Oracle Stability:** `oracle-runner` now sets `CALYPSO_FAST=true` and all 9 oracle scenarios pass.
 - **Test Health:** Full test suite is green (`355/355`), including prior store and MerkleEngine regressions.
 - **Release Cut:** Project version bumped to `10.2.2` as the hardening milestone for the 10.x line.

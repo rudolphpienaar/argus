@@ -106,7 +106,6 @@ stages:
     commands:
       - rename <new-name>
     handler: rename
-    completes_with: gather
 
   # ─── Phase 2: Harmonize ──────────────────────────────────────
 
@@ -222,7 +221,7 @@ stages:
     narrative: Preparing federation orchestration and execution artifacts.
     blueprint:
       - Resolving active project context and participant site list.
-      - Initializing stateful federation handshake orchestrator.
+      - Initializing federation stage pipeline and project publish config.
       - Displaying multi-phase execution strategy summary.
     instruction: >
       Review the federation briefing. This summarizes what will happen:
@@ -231,7 +230,7 @@ stages:
       dispatched to the federation network. Confirm to proceed.
     commands:
       - federate
-    handler: federation
+    handler: federate-brief
 
   - id: federate-transcompile
     name: Flower Transcompilation
@@ -255,8 +254,8 @@ stages:
       hooks. Review the generated code if needed.
     commands:
       - show transcompile
-      - approve
-    handler: federation
+      - transcompile
+    handler: federate-transcompile
 
   - id: federate-containerize
     name: Container Build
@@ -280,8 +279,8 @@ stages:
       any federation site.
     commands:
       - show container
-      - approve
-    handler: federation
+      - containerize
+    handler: federate-containerize
 
   - id: federate-publish-config
     name: Publication Configuration
@@ -308,8 +307,8 @@ stages:
       - config name <app-name>
       - config org <organization>
       - config visibility <public|private>
-      - approve
-    handler: federation
+      - publish-config
+    handler: federate-publish-config
 
   - id: federate-publish-execute
     name: Registry Publication
@@ -330,8 +329,8 @@ stages:
       record includes the image digest, registry URL, and metadata.
     commands:
       - show publish
-      - approve
-    handler: federation
+      - publish-execute
+    handler: federate-publish-execute
 
   - id: federate-dispatch
     name: Federation Dispatch
@@ -357,8 +356,7 @@ stages:
     commands:
       - dispatch
       - dispatch --sites <site1,site2>
-      - approve
-    handler: federation
+    handler: federate-dispatch
 
   - id: federate-execute
     name: Federated Training Execution
@@ -384,7 +382,7 @@ stages:
       - status
       - show metrics
       - show rounds
-    handler: federation
+    handler: federate-execute
 
   - id: federate-model-publish
     name: Model Publication
@@ -412,4 +410,4 @@ stages:
     commands:
       - publish model
       - show provenance
-    handler: federation
+    handler: federate-model-publish

@@ -38,10 +38,10 @@ interface OracleScenario {
 const ORACLE_DEFAULTS: Record<string, string[]> = {
     'search': ['search brain'],
     'gather': ['add ds-001', 'gather'],
-    'federate-transcompile': ['show transcompile', 'approve'],
-    'federate-containerize': ['show container', 'approve'],
-    'federate-publish-config': ['config name oracle-app', 'approve'],
-    'federate-publish-execute': ['show publish', 'approve'],
+    'federate-transcompile': ['show transcompile', 'transcompile'],
+    'federate-containerize': ['show container', 'containerize'],
+    'federate-publish-config': ['config name oracle-app', 'publish-config'],
+    'federate-publish-execute': ['show publish', 'publish-execute'],
     'federate-dispatch': ['dispatch'],
     'federate-execute': ['status'],
     'federate-model-publish': ['publish model'],
@@ -78,9 +78,7 @@ function scenario_generate(definition: DAGDefinition): OracleScenario {
         if (custom) {
             commands = custom;
         } else {
-            // Priority: 'approve' > first command
-            const approveCmd = node.commands.find(c => c.startsWith('approve'));
-            const rawCmd = approveCmd || node.commands[0] || node.id;
+            const rawCmd = node.commands[0] || node.id;
             commands = [rawCmd.split(' <')[0].trim()];
         }
 
@@ -92,9 +90,9 @@ function scenario_generate(definition: DAGDefinition): OracleScenario {
             });
         }
 
-        // 2. Assert artifacts for this stage (if it's not an action stage)
+        // 2. Assert stage artifact materialization.
         const stagePath = pathMap.get(stageId);
-        if (stagePath && node.completes_with !== null) {
+        if (stagePath) {
             steps.push({
                 vfs_exists: `\${session}/${stagePath.artifactFile}`
             });

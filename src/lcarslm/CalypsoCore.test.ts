@@ -146,4 +146,30 @@ describe('CalypsoCore', (): void => {
         expect(draftSessionPath).not.toBe(sourceSessionPath);
         expect(fixture.core.vfs_exists(`${draftSessionPath}/search/data/search.json`)).toBe(true);
     });
+
+    it('treats approve as stage-local affirmative continuation', async (): Promise<void> => {
+        const env = globalThis as { process?: { env?: Record<string, string | undefined> } };
+        const prevFast: string | undefined = env.process?.env?.CALYPSO_FAST;
+        if (env.process?.env) {
+            env.process.env.CALYPSO_FAST = 'true';
+        }
+
+        try {
+            const fixture: CoreFixture = fixture_create();
+
+            await fixture.core.command_execute('search histology');
+            await fixture.core.command_execute('add ds-006');
+            await fixture.core.command_execute('harmonize');
+
+            const approveResponse: CalypsoResponse = await fixture.core.command_execute('approve');
+            expect(approveResponse.statusCode).toBe(CalypsoStatusCode.OK);
+
+            const sessionPath: string = fixture.core.session_getPath();
+            expect(fixture.core.vfs_exists(`${sessionPath}/search/gather/harmonize/code/data/code.json`)).toBe(true);
+        } finally {
+            if (env.process?.env) {
+                env.process.env.CALYPSO_FAST = prevFast;
+            }
+        }
+    });
 });
