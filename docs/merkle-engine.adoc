@@ -1,7 +1,7 @@
 = Merkle Engine: The Cryptographic Conscience of State
 :author: ATLAS Project Team
-:revdate: 2026-02-18
-:revnumber: 10.0.0
+:revdate: 2026-02-20
+:revnumber: 10.3.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -70,9 +70,20 @@ When the `WorkflowAdapter` (see `docs/dag-engine.adoc`) queries the state of a s
 === The User Experience of Staleness
 In the LCARS UI, stale stages are marked with an asterisk (`*`). This provides the researcher with immediate visual confirmation that their current work is no longer grounded in the latest upstream data, preventing the "Garbage In, Garbage Out" failure mode.
 
+== v10.3 Runtime Notes
+
+*   **Single canonical materialization path:** Runtime writes are always routed
+    through `SessionStore` path semantics (store/join model).
+*   **Root-stage overwrite policy:** Root stages update in place on re-execution
+    instead of creating branch directories.
+*   **Optional-parent filtering:** Multi-parent JOIN materialization excludes optional
+    parents that are unresolved, preventing unnecessary join nesting.
+*   **Deletion pass cleanup:** Legacy runtime materialization mode toggles and join
+    materialization toggles were removed from active runtime configuration.
+
 == Conclusion
 
 The Merkle Engine is the fundamental mechanism that transforms ARGUS from a conversational interface into a scientifically rigorous operating system. By grounding every state transition in a recursive cryptographic proof, the engine ensures that the provenance of every federated model is immutable and auditable. It provides the "Substrate of Integrity" that allows researchers to trust that their results are a direct and valid consequence of their documented scientific process.
 
 ---
-_Last updated: 2026-02-18 (v10.0.0)_
+_Last updated: 2026-02-20 (v10.3.0)_

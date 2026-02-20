@@ -29,7 +29,6 @@ import type {
 } from './types.js';
 import { CalypsoStatusCode } from './types.js';
 import type { Dataset, AppState, Project } from '../core/models/types.js';
-import { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 import { ScriptRuntime } from './scripts/ScriptRuntime.js';
 import { SearchProvider } from './SearchProvider.js';
 import { StatusProvider } from './StatusProvider.js';
@@ -37,7 +36,7 @@ import { LLMProvider } from './LLMProvider.js';
 import { IntentParser } from './routing/IntentParser.js';
 import { PluginHost } from './PluginHost.js';
 import { TelemetryBus } from './TelemetryBus.js';
-import { MerkleEngine, type RuntimeMaterializationMode } from './MerkleEngine.js';
+import { MerkleEngine } from './MerkleEngine.js';
 import { vfs_snapshot } from './utils/VfsUtils.js';
 import { fingerprint_compute } from '../dag/fingerprint/hasher.js';
 import type { FingerprintRecord } from '../dag/fingerprint/types.js';
@@ -51,7 +50,6 @@ import { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
 import type { TransitionResult, WorkflowSummary } from '../dag/bridge/WorkflowAdapter.js';
 import type { WorkflowPosition, DAGNode, StageParameters } from '../dag/graph/types.js';
 import type { ArtifactEnvelope } from '../dag/store/types.js';
-import type { StagePath } from '../dag/bridge/SessionPaths.js';
 import { WorkflowSession, type CommandResolution } from '../dag/bridge/WorkflowSession.js';
 
 interface ParsedCommandInput {
@@ -65,7 +63,6 @@ interface ParsedCommandInput {
  */
 export class CalypsoCore {
     private engine: LCARSEngine | null;
-    private simulationMode: boolean;
     private knowledge: Record<string, string> | undefined;
     private activeProvider: 'openai' | 'gemini' | null = null;
     private activeModel: string | null = null;
@@ -79,7 +76,6 @@ export class CalypsoCore {
     private workflowAdapter: WorkflowAdapter;
     private sessionPath: string;
     private workflowSession: WorkflowSession;
-    private federation: FederationOrchestrator;
     private scripts: ScriptRuntime;
     private intentParser: IntentParser;
     private pluginHost: PluginHost;
@@ -93,7 +89,6 @@ export class CalypsoCore {
         config: CalypsoCoreConfig = {}
     ) {
         this.storeActions = storeActions;
-        this.simulationMode = config.simulationMode ?? false;
         this.knowledge = config.knowledge;
 
         this.telemetryBus = new TelemetryBus();
@@ -104,7 +99,7 @@ export class CalypsoCore {
         this.statusProvider = new StatusProvider(vfs, storeActions, this.workflowAdapter);
 
         if (config.llmConfig) {
-            this.engine = new LCARSEngine(config.llmConfig, config.knowledge, this.simulationMode);
+            this.engine = new LCARSEngine(config.llmConfig, config.knowledge);
             this.activeProvider = config.llmConfig.provider;
             this.activeModel = config.llmConfig.model;
         } else {
@@ -112,8 +107,11 @@ export class CalypsoCore {
         }
 
         const username: string = shell.env_get('USER') || 'user';
-        const sessionId: string = `session-${Date.now()}`;
-        this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
+        const activeProject = this.storeActions.project_getActive();
+        const projectName = activeProject?.name || 'DRAFT';
+        
+        // v10.2: Physical Provenance - sessionPath is now project/data
+        this.sessionPath = `/home/${username}/projects/${projectName}/data`;
         
         this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
         this.intentParser = new IntentParser(this.searchProvider, storeActions, {
@@ -122,22 +120,12 @@ export class CalypsoCore {
         });
 
         this.llmProvider = this.llmProvider_create();
-        this.federation = new FederationOrchestrator(vfs, storeActions);
-        this.pluginHost = new PluginHost(vfs, shell, storeActions, this.federation, this.telemetryBus);
+        this.pluginHost = new PluginHost(vfs, shell, storeActions, this.searchProvider, this.telemetryBus);
         this.merkleEngine = new MerkleEngine(
             vfs,
             this.workflowAdapter,
             this.sessionPath,
-            {
-                runtimeMode: this.runtimeMaterialization_resolve(config),
-                joinMaterializationEnabled: this.runtimeJoinMaterialization_resolve(config),
-            },
         );
-
-        const fedPath: StagePath | undefined = this.workflowAdapter.stagePaths.get('federate-brief');
-        if (fedPath) {
-            this.federation.session_set(`${this.sessionPath}/${fedPath.artifactFile}`);
-        }
 
         this.scripts = new ScriptRuntime(
             storeActions,
@@ -164,8 +152,16 @@ export class CalypsoCore {
             return this.response_create('', [], true, CalypsoStatusCode.OK);
         }
 
-        // v10.2: Always sync session before processing
+        // v10.2: Always sync project-relative session path before processing
+        await this.session_realign();
         await this.workflowSession.sync();
+
+        // ─── 0. SHELL FAST-PATH ─────────────────────────────────────────────
+        // Obvious shell builtins bypass the intent compiler to minimize latency.
+        if (this.shell.isBuiltin(parsed.primary)) {
+            const shellResult: CalypsoResponse | null = await this.shell_handle(parsed.trimmed, parsed.primary);
+            if (shellResult) return shellResult;
+        }
 
         // ─── 1. INTENT COMPILATION (The LLM Layer) ──────────────────────────
         // Every input must be resolved to an intent. 
@@ -176,10 +172,22 @@ export class CalypsoCore {
         
         // Handle Workflow Intents
         if (intent.type === 'workflow' && intent.command) {
-            const resolution: CommandResolution = this.workflowSession.resolveCommand(intent.command);
-            if (resolution.stage) {
-                const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
-                const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, resolution);
+            const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
+
+            // v10.2: Try strict stage-locking first (current stage only).
+            const strictResolution: CommandResolution = this.workflowSession.resolveCommand(intent.command, true);
+            if (strictResolution.stage) {
+                const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, strictResolution);
+                if (workflowResult) return workflowResult;
+            }
+
+            // v10.2.1: If strict lock rejects, try global lookup.
+            // This routes through workflow_dispatch (transition checks, auto-decline,
+            // phase jumps) instead of falling through to the LLM — preventing
+            // infinite recursion from LLM action markers.
+            const globalResolution: CommandResolution = this.workflowSession.resolveCommand(intent.command, false);
+            if (globalResolution.stage) {
+                const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, globalResolution);
                 if (workflowResult) return workflowResult;
             }
         }
@@ -196,7 +204,7 @@ export class CalypsoCore {
         // fallback to the raw deterministic interpreter.
         
         // Handle Special Commands (/, scripts, run)
-        const resolution = this.workflowSession.resolveCommand(parsed.primary);
+        const resolution = this.workflowSession.resolveCommand(parsed.primary, false);
         const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
         if (fastPathResult) return fastPathResult;
 
@@ -258,6 +266,20 @@ export class CalypsoCore {
 
     public store_snapshot(): Partial<AppState> {
         return this.storeActions.state_get();
+    }
+
+    /**
+     * Get the latest artifact envelope for a stage.
+     */
+    public merkleEngine_latestFingerprint_get(stageId: string): ArtifactEnvelope | null {
+        return this.workflowAdapter.latestArtifact_get(this.vfs, this.sessionPath, stageId);
+    }
+
+    /**
+     * Resolve the physical data directory for a stage.
+     */
+    public async merkleEngine_dataDir_resolve(stageId: string): Promise<string> {
+        return this.merkleEngine.dataDir_resolve(stageId);
     }
 
     /**
@@ -399,7 +421,7 @@ export class CalypsoCore {
             case 'version':
                 return this.response_create(this.version_get(), [], true, CalypsoStatusCode.OK);
             case 'status':
-                return this.response_create(this.statusProvider.status_generate(this.simulationMode, this.activeProvider, this.activeModel), [], true, CalypsoStatusCode.OK);
+                return this.response_create(this.statusProvider.status_generate(Boolean(this.engine), this.activeProvider, this.activeModel), [], true, CalypsoStatusCode.OK);
             case 'key':
                 return this.key_register(args[0], args[1]);
             case 'workflows': {
@@ -483,25 +505,41 @@ export class CalypsoCore {
 
         // 1. Gatekeeper Check (Prerequisites & Skip Warnings)
         // We always check transition readiness first.
+        let optionalsAutoDeclined = false;
         const transition: TransitionResult = this.workflow_checkTransition(cmd);
         if (!transition.allowed) {
-            if (transition.staleBlock) {
+            // v10.2.1: Auto-decline optional parents at JOIN points.
+            // When only auto-declinable optionals block the transition,
+            // materialize skip sentinels and proceed.
+            if (transition.pendingOptionals?.length && transition.autoDeclinable) {
+                for (const optionalId of transition.pendingOptionals) {
+                    await this.merkleEngine.skipSentinel_materialize(
+                        optionalId,
+                        `Auto-declined: user proceeded to ${resolution.stage!.id}`,
+                    );
+                }
+                await this.workflowSession.sync();
+                optionalsAutoDeclined = true;
+                // Fall through to execution — transition is now satisfied
+            } else if (transition.staleBlock) {
                 return this.response_create(
                     CalypsoPresenter.workflowWarning_format(transition),
                     [],
                     false,
                     CalypsoStatusCode.BLOCKED_STALE,
                 );
-            }
-            if (transition.skippedStageId) {
+            } else if (transition.skippedStageId) {
                 this.workflowAdapter.skip_increment(transition.skippedStageId);
                 return this.response_create(CalypsoPresenter.workflowWarning_format(transition), [], false, CalypsoStatusCode.BLOCKED);
+            } else {
+                return this.response_create(CalypsoPresenter.error_format(transition.warning || 'Transition blocked.'), [], false, CalypsoStatusCode.BLOCKED);
             }
-            return this.response_create(CalypsoPresenter.error_format(transition.warning!), [], false, CalypsoStatusCode.BLOCKED);
         }
 
         // 2. Phase Jump Confirmation
-        if (!isConfirmed && resolution.requiresConfirmation && resolution.warning) {
+        // Skip if optionals were just auto-declined — position has moved and the
+        // original resolution's requiresConfirmation is stale.
+        if (!optionalsAutoDeclined && !isConfirmed && resolution.requiresConfirmation && resolution.warning) {
             const state: Partial<AppState> = this.storeActions.state_get();
             const expectedIntent: string = `CONFIRM_JUMP:${resolution.stage!.id}|${input}`;
             
@@ -535,11 +573,34 @@ export class CalypsoCore {
         const command: string = parts[0].toLowerCase();
         const args: string[] = parts.slice(1);
 
-        // Invoke the Plugin Host (The VM)
-        const result: PluginResult = await this.pluginHost.plugin_execute(stage.handler, stage.parameters, command, args);
+        // v10.2: Always realign session paths before resolving dataDir
+        await this.session_realign();
+
+        // v10.2: Resolve physical data directory for this execution node
+        const dataDir = await this.merkleEngine.dataDir_resolve(stage.id);
+
+        // v10.2: Execution Watchdog (Runaway Guard)
+        // Ensure no plugin or engine operation exceeds 10 seconds.
+        const EXECUTION_TIMEOUT_MS = 10000;
+        const executionPromise = this.pluginHost.plugin_execute(stage.handler, stage.parameters, command, args, dataDir);
+        
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`EXECUTION TIMEOUT: Stage [${stage.id}] exceeded ${EXECUTION_TIMEOUT_MS/1000}s limit.`)), EXECUTION_TIMEOUT_MS);
+        });
+
+        // Invoke the Plugin Host (The VM) with timeout
+        let result: PluginResult;
+        try {
+            result = await Promise.race([executionPromise, timeoutPromise]);
+        } catch (e: unknown) {
+            return this.response_create(`>> ERROR: ${e instanceof Error ? e.message : String(e)}`, [], false, CalypsoStatusCode.ERROR);
+        }
 
         // If plugin succeeded, handle automated materialization and context advancement
         if (result.statusCode === CalypsoStatusCode.OK) {
+            // v10.2: Realign again in case the plugin changed the project name
+            await this.session_realign();
+
             this.workflowAdapter.stage_complete(stage.id);
             
             // AUTOMATED MATERIALIZATION (The Merkle Engine)
@@ -548,12 +609,23 @@ export class CalypsoCore {
                 timestamp: new Date().toISOString(),
                 result: true 
             };
-            await this.merkleEngine.artifact_materialize(stage.id, content);
+            await this.merkleEngine.artifact_materialize(stage.id, content, result.materialized);
 
-            // Advance the session context to the NEXT logical stage
-            const pos: WorkflowPosition = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
-            if (pos.currentStage) {
-                this.workflowSession.advance_force(pos.currentStage.id);
+            // v10.2: Re-sync the session pointer from the VFS ground truth.
+            // This implicitly handles advancement if the manifest rules allow it.
+            await this.workflowSession.sync();
+
+            // v10.2: Only force-advance if the command is the "closing" command
+            // for the stage (e.g. 'gather' for stage 'gather'). 
+            // Iterative commands (like 'add') stay in the current stage.
+            const isClosingCommand = command === stage.id;
+            const hasAdvanceAction = result.actions?.some(a => a.type === 'stage_advance');
+
+            if (isClosingCommand || hasAdvanceAction) {
+                const pos: WorkflowPosition = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+                if (pos.currentStage && pos.currentStage.id !== stage.id) {
+                    this.workflowSession.advance_force(pos.currentStage.id);
+                }
             }
         }
 
@@ -568,6 +640,23 @@ export class CalypsoCore {
 
     // ─── Internal Utilities ────────────────────────────────────────────────
 
+    /**
+     * Re-calculate and propagate the physical session path based on active project.
+     */
+    private async session_realign(): Promise<void> {
+        const username: string = this.shell.env_get('USER') || 'user';
+        const activeProject = this.storeActions.project_getActive();
+        const projectName = activeProject?.name || 'DRAFT';
+        
+        const newPath = `/home/${username}/projects/${projectName}/data`;
+        if (newPath === this.sessionPath) return;
+
+        this.sessionPath = newPath;
+        this.workflowSession.sessionPath_set(this.sessionPath);
+        this.merkleEngine.session_setPath(this.sessionPath);
+        this.storeActions.session_setPath(this.sessionPath);
+    }
+
     private response_create(
         message: string, 
         actions: CalypsoAction[], 
@@ -581,15 +670,12 @@ export class CalypsoCore {
     private reset(): void {
         this.vfs.reset();
         this.storeActions.reset();
-        this.federation.state_reset();
 
-        // Re-initialize session path with a new timestamp
-        const username: string = this.shell.env_get('USER') || 'user';
-        const workflowId: string = this.workflowAdapter.workflowId;
-        const sessionId: string = `session-${Date.now()}`;
-        this.sessionPath = `/home/${username}/sessions/${workflowId}/${sessionId}`;
+        // Re-initialize session path from active project
+        this.session_realign();
+
         try {
-            this.vfs.dir_create(`${this.sessionPath}/data`);
+            this.vfs.dir_create(this.sessionPath);
         } catch { /* exists */ }
 
         // Notify store adapter if it supports session path tracking
@@ -598,12 +684,6 @@ export class CalypsoCore {
         // Re-initialize workflow session
         this.workflowSession = new WorkflowSession(this.vfs, this.workflowAdapter, this.sessionPath);
         this.merkleEngine.session_setPath(this.sessionPath);
-
-        // Re-sync federation with new session path
-        const fedPath: StagePath | undefined = this.workflowAdapter.stagePaths.get('federate-brief');
-        if (fedPath) {
-            this.federation.session_set(`${this.sessionPath}/${fedPath.artifactFile}`);
-        }
     }
 
     private workflow_nextStep(): string {
@@ -624,31 +704,6 @@ export class CalypsoCore {
 
     private workflow_checkTransition(cmd: string): TransitionResult {
         return this.workflowAdapter.transition_check(cmd, this.vfs, this.sessionPath);
-    }
-
-    private runtimeMaterialization_resolve(config: CalypsoCoreConfig): RuntimeMaterializationMode {
-        if (config.runtimeMaterialization) {
-            return config.runtimeMaterialization;
-        }
-        const env: string = (this.shell.env_get('ARGUS_RUNTIME_MODEL') || '').toLowerCase();
-        if (env === 'legacy') {
-            return 'legacy';
-        }
-        return 'store';
-    }
-
-    private runtimeJoinMaterialization_resolve(config: CalypsoCoreConfig): boolean {
-        if (config.runtimeJoinMaterialization !== undefined) {
-            return config.runtimeJoinMaterialization;
-        }
-        const env: string = (this.shell.env_get('ARGUS_RUNTIME_JOIN_MATERIALIZE') || '').toLowerCase();
-        if (env === '0' || env === 'false' || env === 'off' || env === 'no') {
-            return false;
-        }
-        if (env === '1' || env === 'true' || env === 'on' || env === 'yes') {
-            return true;
-        }
-        return true;
     }
 
     private async controlIntent_dispatch(intent: ControlPlaneIntent): Promise<CalypsoResponse | null> {
@@ -681,17 +736,27 @@ export class CalypsoCore {
                 // Clear the intent before executing to avoid recursion
                 const clearIntentState: Partial<AppState> = { lastIntent: null };
                 this.storeActions.state_set(clearIntentState);
-                const res: CommandResolution = this.workflowSession.resolveCommand(originalInput);
+                // v10.2.1: Use the known stage directly. Strict re-resolution
+                // fails when position hasn't advanced yet (e.g. 'add' didn't
+                // close gather, but gather artifact exists).
+                const res: CommandResolution = {
+                    stage,
+                    isJump: true,
+                    requiresConfirmation: false,
+                };
                 return await this.workflow_dispatch(originalInput, res, true);
             }
         }
 
         // Standard workflow confirmation (e.g. approve)
-        // If we are in a confirmation state, the 'approve' command should be valid in the manifest.
-        // We resolve 'approve' against the current session context.
-        const res: CommandResolution = this.workflowSession.resolveCommand('approve');
-        if (res.stage) {
-            return await this.workflow_dispatch('approve', res, true);
+        // v10.2: Only resolve 'approve' if it is VALID for the current stage.
+        // This prevents 'yes' from triggering federation blocks while in 'search'.
+        const pos = this.workflow_getPosition();
+        if (pos.availableCommands.includes('approve')) {
+            const res: CommandResolution = this.workflowSession.resolveCommand('approve', true);
+            if (res.stage) {
+                return await this.workflow_dispatch('approve', res, true);
+            }
         }
 
         return null;
@@ -706,7 +771,6 @@ export class CalypsoCore {
             return this.response_create(`Unsupported provider: ${provider}`, [], false, CalypsoStatusCode.ERROR);
         }
         this.activeProvider = normalizedProvider;
-        this.simulationMode = false;
         this.engine = new LCARSEngine(
             {
                 apiKey: key,

@@ -20,27 +20,22 @@ import type {
 /**
  * Session store implementation.
  *
- * Sessions live at `<basePath>/sessions/<persona>/session-<id>/`.
- * Each session has a `data/` directory for the root stage and a
- * `session.json` metadata file.
+ * Sessions live at `<basePath>/<project>/data/`.
+ * Each session has a `session.json` metadata file.
  */
 export class SessionStore implements SessionStoreInterface {
-    private readonly rootStageInOwnDirectory: boolean;
-
     constructor(
         private readonly backend: StorageBackend,
-        private readonly basePath: string = '/home/user/sessions',
-        options: { rootStageInOwnDirectory?: boolean } = {},
-    ) {
-        this.rootStageInOwnDirectory = options.rootStageInOwnDirectory ?? false;
-    }
+        private readonly basePath: string = '/home/user/projects',
+    ) {}
 
     async session_create(persona: string, manifestVersion: string): Promise<Session> {
-        const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const rootPath = `${this.basePath}/${persona}/${id}`;
+        // v10.2: Session ID is now 'data' to align with project-relative materialization
+        const id = 'data';
+        const rootPath = this.basePath === '/runtime-not-used' ? this.basePath : `${this.basePath}/DRAFT/data`;
 
-        // Create root directory and data/ subdirectory
-        await this.backend.dir_create(`${rootPath}/data`);
+        // Create root directory
+        await this.backend.dir_create(rootPath);
 
         const now = new Date().toISOString();
         const metadata: SessionMetadata = {
@@ -61,7 +56,8 @@ export class SessionStore implements SessionStoreInterface {
     }
 
     async session_resume(persona: string, sessionId: string): Promise<Session | null> {
-        const rootPath = `${this.basePath}/${persona}/${sessionId}`;
+        // v10.2: Resume expects sessionId to be the project name or full data path
+        const rootPath = sessionId.startsWith('/') ? sessionId : `${this.basePath}/${sessionId}/data`;
         const metaPath = `${rootPath}/session.json`;
 
         const raw = await this.backend.artifact_read(metaPath);
@@ -77,22 +73,24 @@ export class SessionStore implements SessionStoreInterface {
     }
 
     async sessions_list(persona: string): Promise<Session[]> {
-        const personaPath = `${this.basePath}/${persona}`;
-        const exists = await this.backend.path_exists(personaPath);
+        const exists = await this.backend.path_exists(this.basePath);
         if (!exists) return [];
 
-        const children = await this.backend.children_list(personaPath);
+        const projects = await this.backend.children_list(this.basePath);
         const sessions: Session[] = [];
 
-        for (const child of children) {
-            const metaPath = `${personaPath}/${child}/session.json`;
+        for (const project of projects) {
+            const rootPath = `${this.basePath}/${project}/data`;
+            const metaPath = `${rootPath}/session.json`;
             const raw = await this.backend.artifact_read(metaPath);
             if (raw) {
                 const metadata: SessionMetadata = JSON.parse(raw);
-                sessions.push({
-                    ...metadata,
-                    rootPath: `${personaPath}/${child}`,
-                });
+                if (metadata.persona === persona) {
+                    sessions.push({
+                        ...metadata,
+                        rootPath,
+                    });
+                }
             }
         }
 
@@ -103,24 +101,12 @@ export class SessionStore implements SessionStoreInterface {
 
     stagePath_resolve(session: Session, stagePath: string[]): string {
         if (stagePath.length === 0) {
-            return `${session.rootPath}/data`;
+            return session.rootPath;
         }
-        // Default layout:
-        //   Root stage: rootPath/data
-        //   Nested: rootPath/{path[1]}/{path[2]}/.../{path[N]}/data
-        // Compatibility layout:
-        //   Root stage: rootPath/{path[0]}/data
-        //   Nested: rootPath/{path[0]}/{path[1]}/.../{path[N]}/data
-        // This is used by runtime scaffolding to preserve bridge SessionPaths.
         if (stagePath.length === 1) {
-            if (this.rootStageInOwnDirectory) {
-                return `${session.rootPath}/${stagePath[0]}/data`;
-            }
-            return `${session.rootPath}/data`;
+            return `${session.rootPath}/${stagePath[0]}/data`;
         }
-        const nested = this.rootStageInOwnDirectory
-            ? stagePath.join('/')
-            : stagePath.slice(1).join('/');
+        const nested = stagePath.join('/');
         return `${session.rootPath}/${nested}/data`;
     }
 

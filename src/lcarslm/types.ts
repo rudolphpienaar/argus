@@ -8,9 +8,9 @@
 
 import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import type { Shell } from '../vfs/Shell.js';
-import type { Dataset, AppState, FederationState, Project } from '../core/models/types.js';
+import type { Dataset, AppState, Project } from '../core/models/types.js';
 import type { FileNode } from '../vfs/types.js';
-import type { FederationOrchestrator } from './federation/FederationOrchestrator.js';
+import type { SearchProvider } from './SearchProvider.js';
 
 // ─── LLM Types ─────────────────────────────────────────────────────────────
 
@@ -106,6 +106,9 @@ export interface PluginResult {
     /** Optional domain-specific payload for the Merkle artifact envelope. */
     artifactData?: unknown;
 
+    /** v10.2: List of relative paths materialized by this plugin (e.g. '.cohort'). */
+    materialized?: string[];
+
     /** v10.1 UI hints for explicit rendering control (animation, labels). */
     ui_hints?: ui_hints;
 }
@@ -155,17 +158,14 @@ export interface PluginContext {
     /** Ability to execute Shell builtins and scripts. */
     shell: Shell;
 
+    /** Access to dataset discovery and anaphora resolution. */
+    search: SearchProvider;
+
     /** Read/Write access to the centralized application store. */
     store: CalypsoStoreActions;
 
-    /** Access to the stateful federation handshake orchestrator. */
-    federation: FederationOrchestrator;
-
     /** v10.2 Live telemetry bus for streaming UI updates. */
     ui: PluginTelemetry;
-
-    /** Utility to sleep for N milliseconds (simulating compute). */
-    sleep(ms: number): Promise<void>;
 
     /** Configuration parameters provided in the Manifest YAML for this stage. */
     parameters: Record<string, unknown>;
@@ -175,6 +175,9 @@ export interface PluginContext {
 
     /** Arguments passed to the command. */
     args: string[];
+
+    /** v10.2: Physical directory for this stage's payload materialization. */
+    dataDir: string;
 }
 
 // ─── CalypsoCore Types ─────────────────────────────────────────────────────
@@ -184,7 +187,7 @@ export interface PluginContext {
  */
 export interface VfsSnapshotNode {
     name: string;
-    type: 'file' | 'folder';
+    type: 'file' | 'folder' | 'link';
     path: string;
     size?: string;
     content?: string;
@@ -263,23 +266,14 @@ export interface CalypsoIntent {
  * Configuration for CalypsoCore initialization.
  */
 export interface CalypsoCoreConfig {
-    /** Enable simulation mode (no real LLM calls) */
-    simulationMode?: boolean;
-
     /** Knowledge base content (filename -> content) */
     knowledge?: Record<string, string>;
 
-    /** LLM configuration (required if not in simulation mode) */
+    /** Optional LLM configuration. If omitted, AI conversational mode is offline. */
     llmConfig?: LCARSSystemConfig;
 
     /** Workflow ID to use (default: 'fedml') */
     workflowId?: string;
-
-    /** Runtime materialization mode (default: 'store'). */
-    runtimeMaterialization?: 'legacy' | 'store';
-
-    /** Enable runtime join-node writes (default: true). */
-    runtimeJoinMaterialization?: boolean;
 }
 
 // ─── Store Actions Interface ───────────────────────────────────────────────
@@ -327,12 +321,6 @@ export interface CalypsoStoreActions {
 
     /** Update the current session path */
     session_setPath(path: string | null): void;
-
-    /** Get current federation handshake state */
-    federation_getState(): FederationState | null;
-
-    /** Update federation handshake state */
-    federation_setState(state: FederationState | null): void;
 
     /** v10.2: Store recently mentioned datasets for anaphora resolution across turns. */
     lastMentioned_set(datasets: Dataset[]): void;

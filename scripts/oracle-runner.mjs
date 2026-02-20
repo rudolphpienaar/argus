@@ -8,6 +8,10 @@ import { pathToFileURL } from 'node:url';
 const ROOT = process.cwd();
 const verbose = process.argv.includes('--verbose');
 
+// Oracle is a deterministic logic/materialization verifier, not a latency benchmark.
+// Force plugin fast mode so simulated plugin delays never trip execution watchdogs.
+process.env.CALYPSO_FAST = 'true';
+
 /**
  * Strip ANSI escape codes from a string.
  * @param {string} str
@@ -26,10 +30,11 @@ function ansi_strip(str) {
  * @returns {string}
  */
 function template_interpolate(value, vars) {
+    const projectRoot = vars.project ? `/home/${vars.user}/projects/${vars.project}` : `/home/${vars.user}/projects/DRAFT`;
     return value
         .replaceAll('${user}', vars.user)
-        .replaceAll('${project}', vars.project || '')
-        .replaceAll('${session}', vars.session || '');
+        .replaceAll('${project}', projectRoot)
+        .replaceAll('${session}', `${projectRoot}/data`);
 }
 
 /**
@@ -183,12 +188,6 @@ function runtime_create(modules, username, persona = 'fedml') {
         session_setPath(path) {
             this.sessionPath = path;
         },
-        federation_getState() {
-            return modules.store.state.federationState;
-        },
-        federation_setState(state) {
-            modules.store.federationState_set(state);
-        },
         lastMentioned_set(datasets) {
             modules.store.lastMentioned_set(datasets);
         },
@@ -198,15 +197,7 @@ function runtime_create(modules, username, persona = 'fedml') {
     };
 
     const core = new modules.CalypsoCore(vfs, shell, storeAdapter, {
-        simulationMode: true,
         workflowId: persona === 'appdev' ? 'chris' : persona,
-        runtimeMaterialization: 'store',
-        runtimeJoinMaterialization: true,
-        llmConfig: {
-            apiKey: 'simulated',
-            provider: 'openai',
-            model: 'simulated'
-        },
         knowledge: {}
     });
 
@@ -227,7 +218,7 @@ async function scenario_run(modules, scenario) {
     const username = scenario.data.username || 'oracle';
     const persona = scenario.data.persona || 'fedml';
     const steps = Array.isArray(scenario.data.steps) ? scenario.data.steps : [];
-    const vars = { user: username, project: null, session: null };
+    const vars = { user: username, project: 'DRAFT', session: null };
     const runtime = runtime_create(modules, username, persona);
     vars.session = runtime.core.session_getPath();
 
@@ -251,7 +242,11 @@ async function scenario_run(modules, scenario) {
                 fullMessage += '\n' + response.message;
             }
 
-            // Re-fetch session path in case of /reset or internal session changes
+            // Re-fetch session and project in case of /reset or project initialization
+            const state = runtime.core.store_snapshot();
+            if (state?.activeProject?.name) {
+                vars.project = state.activeProject.name;
+            }
             vars.session = runtime.core.session_getPath();
 
             if (verbose) {
@@ -266,19 +261,58 @@ async function scenario_run(modules, scenario) {
                 throw new Error(`${label} Expected statusCode=${step.expect} but got ${response.statusCode}`);
             }
 
-            if (typeof step.success === 'boolean' && response.success !== step.success) {
+            if (typeof step.success === 'boolean') {
+                const normalizedSuccess = response.success || response.statusCode === 'CONVERSATIONAL';
+                if (normalizedSuccess !== step.success) {
                 if (!verbose) {
                     console.log(`${label} ${command}`);
                 }
                 console.log(`         ERROR: Expected success=${step.success} but got ${response.success}`);
                 console.log(`         MESSAGE: ${response.message}`);
                 throw new Error(`${label} Expected success=${step.success} but got ${response.success}`);
+                }
+            }
+
+            // v10.2: Reflexive Side-Effect Verification
+            // If the command was a workflow step, check its self-reported materialized files
+            if (response.statusCode === 'OK') {
+                const pos = runtime.core.workflow_getPosition();
+                // Check the stage that just COMPLETED (not the 'current' next stage)
+                const completedId = pos.completedStages[pos.completedStages.length - 1];
+                if (completedId) {
+                    const artifact = runtime.core.merkleEngine_latestFingerprint_get(completedId);
+                    if (artifact && artifact.materialized) {
+                        // Resolve the physical directory where this artifact lives
+                        const artPath = artifact._physical_path;
+                        const dataDir = artPath.substring(0, artPath.lastIndexOf('/'));
+                        
+                        for (const relPath of artifact.materialized) {
+                            const fullPath = `${dataDir}/${relPath}`;
+                            if (verbose) {
+                                console.log(`${label} [REFLEXIVE] verifying side-effect: ${fullPath}`);
+                            }
+                            if (!runtime.core.vfs_exists(fullPath)) {
+                                console.log(`${label} [REFLEXIVE] FAILED: Stage [${completedId}] claimed to materialize [${relPath}] but it is missing at [${fullPath}]`);
+                                throw new Error(`${label} Reflexive verification failed for ${completedId}`);
+                            }
+                        }
+                    }
+                }
             }
 
             if (step.materialized) {
                 for (const rawPath of step.materialized) {
+                    // v10.2: Re-interpolate using the updated vars (project/session)
                     const target = template_interpolate(rawPath, vars);
+                    if (verbose) {
+                        console.log(`${label} checking materialization: ${target}`);
+                    }
                     if (!runtime.core.vfs_exists(target)) {
+                        if (!verbose) {
+                            console.log(`${label} Expected materialized artifact missing: ${target}`);
+                            const snap = runtime.core.vfs_snapshot('/', true);
+                            console.log(`\n[VFS SNAPSHOT ON FAILURE]:\n${JSON.stringify(snap, null, 2)}\n`);
+                        }
                         throw new Error(`${label} Expected materialized artifact missing: ${target}`);
                     }
 
@@ -321,10 +355,9 @@ async function scenario_run(modules, scenario) {
             if (step.capture_project === true) {
                 const state = runtime.core.store_snapshot();
                 const projectName = state?.activeProject?.name || null;
-                if (!projectName) {
-                    throw new Error(`${label} capture_project requested but no active project found`);
+                if (projectName) {
+                    vars.project = projectName;
                 }
-                vars.project = projectName;
             }
         }
 

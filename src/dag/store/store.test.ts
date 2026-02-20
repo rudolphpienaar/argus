@@ -26,7 +26,7 @@ import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 
 const TEST_PERSONA: string = 'fedml';
 const TEST_MANIFEST_VERSION: string = '1.0.0';
-const TEST_SESSIONS_ROOT: string = '/home/test/sessions';
+const TEST_SESSIONS_ROOT: string = '/home/test/projects';
 
 interface StoreFixture {
     store: SessionStore;
@@ -67,12 +67,11 @@ function backend_create(): VfsBackend {
     return new VfsBackend(vfs);
 }
 
-function storeFixture_create(rootStageInOwnDirectory: boolean = false): StoreFixture {
+function storeFixture_create(): StoreFixture {
     const backend: VfsBackend = backend_create();
     const store: SessionStore = new SessionStore(
         backend,
         TEST_SESSIONS_ROOT,
-        { rootStageInOwnDirectory },
     );
     return { store, backend };
 }
@@ -89,7 +88,7 @@ function joinSpec_default(): JoinSpec {
         },
         nestUnderPath: ['search', 'gather', 'rename'],
         joinName: '_join_gather_rename',
-        joinDirRelative: 'gather/rename/_join_gather_rename',
+        joinDirRelative: 'search/gather/rename/_join_gather_rename',
     };
 }
 
@@ -153,15 +152,14 @@ describe('dag/store/backend/vfs', (): void => {
     it('should create links (virtual symlinks)', async (): Promise<void> => {
         const backend: VfsBackend = backend_create();
         await backend.dir_create('/home/test/sessions/s1/gather/data');
+        await backend.artifact_write('/home/test/sessions/s1/gather/data/payload.json', '{"ok":true}');
         await backend.link_create(
             '/home/test/sessions/s1/join/data/gather',
             '/home/test/sessions/s1/gather/data',
         );
         expect(await backend.path_exists('/home/test/sessions/s1/join/data/gather')).toBe(true);
-        const content: string | null = await backend.artifact_read('/home/test/sessions/s1/join/data/gather');
-        const parsed: { __link: boolean; target: string } = JSON.parse(content ?? '{}');
-        expect(parsed.__link).toBe(true);
-        expect(parsed.target).toBe('/home/test/sessions/s1/gather/data');
+        const content: string | null = await backend.artifact_read('/home/test/sessions/s1/join/data/gather/payload.json');
+        expect(content).toBe('{"ok":true}');
     });
 
     it('should handle write to existing path (overwrite)', async (): Promise<void> => {
@@ -191,14 +189,13 @@ describe('dag/store/SessionStore/session lifecycle', (): void => {
         expect(session.id).toBeTruthy();
         expect(session.persona).toBe(TEST_PERSONA);
         expect(session.manifestVersion).toBe(TEST_MANIFEST_VERSION);
-        expect(session.rootPath).toContain(session.id);
+        expect(session.rootPath).toBe('/home/test/projects/DRAFT/data');
     });
 
     it('should create session root directory and data/ subdirectory', async (): Promise<void> => {
         const { store, backend }: StoreFixture = storeFixture_create();
         const session: Session = await session_create(store);
         expect(await backend.path_exists(session.rootPath)).toBe(true);
-        expect(await backend.path_exists(`${session.rootPath}/data`)).toBe(true);
     });
 
     it('should write session metadata as session.json', async (): Promise<void> => {
@@ -215,7 +212,7 @@ describe('dag/store/SessionStore/session lifecycle', (): void => {
     it('should resume an existing session', async (): Promise<void> => {
         const { store }: StoreFixture = storeFixture_create();
         const created: Session = await session_create(store);
-        const resumed: Session | null = await store.session_resume(TEST_PERSONA, created.id);
+        const resumed: Session | null = await store.session_resume(TEST_PERSONA, 'DRAFT');
         expect(resumed).not.toBeNull();
         expect(resumed?.id).toBe(created.id);
         expect(resumed?.persona).toBe(created.persona);
@@ -230,14 +227,10 @@ describe('dag/store/SessionStore/session lifecycle', (): void => {
 
     it('should list sessions for a persona ordered by lastActive', async (): Promise<void> => {
         const { store }: StoreFixture = storeFixture_create();
-        await session_create(store);
-        await delay_wait(5);
-        await session_create(store);
-        await delay_wait(5);
-        const s3: Session = await session_create(store);
+        const s1: Session = await session_create(store);
         const list: Session[] = await store.sessions_list(TEST_PERSONA);
-        expect(list.length).toBe(3);
-        expect(list[0].id).toBe(s3.id);
+        expect(list.length).toBe(1);
+        expect(list[0].id).toBe(s1.id);
     });
 
     it('should return empty list for persona with no sessions', async (): Promise<void> => {
@@ -250,7 +243,7 @@ describe('dag/store/SessionStore/session lifecycle', (): void => {
         const { store }: StoreFixture = storeFixture_create();
         const created: Session = await session_create(store);
         await delay_wait(5);
-        const resumed: Session | null = await store.session_resume(TEST_PERSONA, created.id);
+        const resumed: Session | null = await store.session_resume(TEST_PERSONA, 'DRAFT');
         expect((resumed?.lastActive ?? '') >= created.lastActive).toBe(true);
     });
 });
@@ -260,14 +253,14 @@ describe('dag/store/SessionStore/stage path resolution', (): void => {
         const { store }: StoreFixture = storeFixture_create();
         const session: Session = await session_create(store);
         const path: string = store.stagePath_resolve(session, ['search']);
-        expect(path).toBe(`${session.rootPath}/data`);
+        expect(path).toBe(`${session.rootPath}/search/data`);
     });
 
     it('should resolve linear stage path', async (): Promise<void> => {
         const { store }: StoreFixture = storeFixture_create();
         const session: Session = await session_create(store);
         const path: string = store.stagePath_resolve(session, ['search', 'gather']);
-        expect(path).toBe(`${session.rootPath}/gather/data`);
+        expect(path).toBe(`${session.rootPath}/search/gather/data`);
     });
 
     it('should resolve path through a topological join node', async (): Promise<void> => {
@@ -277,7 +270,7 @@ describe('dag/store/SessionStore/stage path resolution', (): void => {
             'search', 'gather', 'rename',
             '_join_gather_rename', 'harmonize',
         ]);
-        expect(path).toBe(`${session.rootPath}/gather/rename/_join_gather_rename/harmonize/data`);
+        expect(path).toBe(`${session.rootPath}/search/gather/rename/_join_gather_rename/harmonize/data`);
     });
 
     it('should resolve deeply nested federation path through join', async (): Promise<void> => {
@@ -287,22 +280,9 @@ describe('dag/store/SessionStore/stage path resolution', (): void => {
             'search', 'gather', 'rename',
             '_join_gather_rename', 'harmonize', 'code', 'train', 'federate-brief',
         ]);
-        expect(path).toBe(`${session.rootPath}/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/data`);
+        expect(path).toBe(`${session.rootPath}/search/gather/rename/_join_gather_rename/harmonize/code/train/federate-brief/data`);
     });
 
-    it('should resolve root stage path in compatibility root-dir mode', async (): Promise<void> => {
-        const { store }: StoreFixture = storeFixture_create(true);
-        const session: Session = await session_create(store);
-        const path: string = store.stagePath_resolve(session, ['search']);
-        expect(path).toBe(`${session.rootPath}/search/data`);
-    });
-
-    it('should resolve nested stage path in compatibility root-dir mode', async (): Promise<void> => {
-        const { store }: StoreFixture = storeFixture_create(true);
-        const session: Session = await session_create(store);
-        const path: string = store.stagePath_resolve(session, ['search', 'gather', 'harmonize']);
-        expect(path).toBe(`${session.rootPath}/search/gather/harmonize/data`);
-    });
 });
 
 describe('dag/store/SessionStore/artifact materialization', (): void => {
@@ -311,7 +291,7 @@ describe('dag/store/SessionStore/artifact materialization', (): void => {
         const session: Session = await session_create(store);
         const artifact: ArtifactEnvelope = artifact_create('search', { results: [1, 2, 3] });
         await store.artifact_write(session, ['search'], artifact);
-        expect(await backend.path_exists(`${session.rootPath}/data/search.json`)).toBe(true);
+        expect(await backend.path_exists(`${session.rootPath}/search/data/search.json`)).toBe(true);
     });
 
     it('should read a previously written artifact', async (): Promise<void> => {
@@ -368,7 +348,7 @@ describe('dag/store/SessionStore/artifact materialization', (): void => {
         const session: Session = await session_create(store);
         const artifact: ArtifactEnvelope = artifact_create('train', { model: 'resnet' });
         await store.artifact_write(session, ['search', 'gather', 'harmonize', 'code', 'train'], artifact);
-        expect(await backend.path_exists(`${session.rootPath}/gather/harmonize/code/train/data`)).toBe(true);
+        expect(await backend.path_exists(`${session.rootPath}/search/gather/harmonize/code/train/data`)).toBe(true);
     });
 });
 
@@ -406,8 +386,9 @@ describe('dag/store/SessionStore/topological join nodes/basic', (): void => {
         const session: Session = await session_create(store);
         const spec: JoinSpec = joinSpec_default();
         await joinDefault_materialize(store, session);
-        expect(await backend.path_exists(`${session.rootPath}/${spec.joinDirRelative}/data/gather`)).toBe(true);
-        expect(await backend.path_exists(`${session.rootPath}/${spec.joinDirRelative}/data/rename`)).toBe(true);
+        const children: string[] = await backend.children_list(`${session.rootPath}/${spec.joinDirRelative}/data`);
+        expect(children).toContain('gather');
+        expect(children).toContain('rename');
     });
 
     it('should return the join node name', async (): Promise<void> => {
@@ -441,10 +422,11 @@ describe('dag/store/SessionStore/topological join nodes/fan-in and nesting', ():
             ['root', 'c'],
         );
         expect(name).toBe('_join_a_b_c');
-        expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data`)).toBe(true);
-        expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data/a`)).toBe(true);
-        expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data/b`)).toBe(true);
-        expect(await backend.path_exists(`${session.rootPath}/c/_join_a_b_c/data/c`)).toBe(true);
+        expect(await backend.path_exists(`${session.rootPath}/root/c/_join_a_b_c/data`)).toBe(true);
+        const children: string[] = await backend.children_list(`${session.rootPath}/root/c/_join_a_b_c/data`);
+        expect(children).toContain('a');
+        expect(children).toContain('b');
+        expect(children).toContain('c');
     });
 
     it('should allow downstream stage to nest under join node', async (): Promise<void> => {
@@ -460,7 +442,7 @@ describe('dag/store/SessionStore/topological join nodes/fan-in and nesting', ():
         );
 
         expect(await backend.path_exists(
-            `${session.rootPath}/gather/rename/_join_gather_rename/harmonize/data/harmonize.json`,
+            `${session.rootPath}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json`,
         )).toBe(true);
     });
 });

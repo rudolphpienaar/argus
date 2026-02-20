@@ -1,8 +1,8 @@
 # Current Project Status
 
 **Date:** 2026-02-20
-**Version:** v10.2.2
-**Focus:** Production-Pure Backend and Plugin-Owned Compute
+**Version:** v10.3.0
+**Focus:** Canonical Runtime Path (Post-Deletion)
 
 ## Recent Changes
 - **Plugin-Only Federation:** Replaced legacy federation orchestration with 8 stage-scoped plugins (`federate-*`) loaded by manifest handler.
@@ -13,12 +13,11 @@
 - **Test Health:** Full test suite is green (`355/355`), including prior store and MerkleEngine regressions.
 - **Release Cut:** Project version bumped to `10.2.2` as the hardening milestone for the 10.x line.
 
-## Release Messaging (v10.2.2)
-- **Theme:** Hardening release.
-- **Positioning:** `v10.2.2` is the stabilization checkpoint after the plugin-first federation/backend cleanup.
-- **Guarantee:** Backend remains production-pure (no synthetic compute delay in Host paths); any latency simulation is plugin-local and `CALYPSO_FAST`-gated.
+## Release Messaging (v10.3.0)
+- **Theme:** Deletion release.
+- **Positioning:** `v10.3.0` removes migration-era runtime scaffolding and locks the canonical store/join materialization path.
+- **Guarantee:** No legacy runtime materialization modes/toggles remain in active backend execution.
 - **Readiness:** Full unit suite and oracle suite pass on the release line.
 
 ## Next Steps
-- Begin `v10.3` deletion pass (remove remaining compatibility/migration scaffolding).
 - Define `v11.0` contract lock boundaries (Host kernel vs plugin compute vs UI adapters).

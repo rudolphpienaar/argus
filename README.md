@@ -166,7 +166,7 @@ New to the project? Read these in sequence. They build on each other — startin
 - [Visual Language](docs/visual_language.adoc): LCARS interaction and motion grammar.
 - [Development Context Timeline](docs/CONTEXT.md): versioned architecture trajectory.
 - [Active Design Work](docs/CURRENT.md): manifest-driven sequencing and DAG fingerprinting.
-- [Release Notes v10.2.2](docs/release-v10.2.2.md): hardening release positioning and messaging.
+- [Release Notes v10.3.0](docs/release-v10.3.0.md): deletion release positioning and messaging.
 - [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): coding and naming standards.
 
 ### Narrative Context

@@ -1,7 +1,7 @@
 = ARGUS Project History: The Forensic Chronicle of a State-Grounded Kernel
 :author: ATLAS Project Team
 :revdate: 2026-02-20
-:revnumber: 10.2.2
+:revnumber: 10.3.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -196,6 +196,19 @@ The v10.2.1 to v10.2.2 line hardens that boundary in three concrete ways:
 
 This release line is intentionally framed as a **hardening checkpoint**, not a terminal destination. `v10.2.2` marks the stabilization baseline before `v10.3` deletion work (compatibility scaffold removal) and `v11.0` contract lock (Host kernel vs plugin compute vs adapter rendering boundaries).
 
+=== Version 10.3.0: The Deletion Pass
+After hardening, the next engineering step is subtraction. The objective is to remove
+transitional runtime scaffolding so only one architecture path remains active.
+
+The first v10.3 wave removes three migration-era seams:
+
+1.  **Merkle runtime mode deletion:** Removed legacy materialization mode branching and join toggle wiring. Runtime materialization now follows one canonical store/join path.
+2.  **Calypso config surface reduction:** Removed runtime materialization/join env/config toggles from `CalypsoCore`, eliminating dual-mode behavior at boot.
+3.  **SessionStore compatibility deletion:** Removed flat-root compatibility (`rootStageInOwnDirectory`) and corresponding compatibility tests, leaving one deterministic stage-path contract.
+
+This release completes the architectural cleanup phase between hardening and contract
+lock: fewer toggles, fewer branches, stronger invariants.
+
 == Persistence and Integrity Matrix
 
 The following matrix summarizes the evolution of the system's grounding mechanisms across the major developmental phases of this sprint.
@@ -257,4 +270,4 @@ The evolution of ARGUS from January to February 2026 is a chronicle of the "Scie
 By grounding the entire system in a virtualized hardware substrate (VCS), a graph-based conscience (DAG Engine), and a Merkle provenance chain, ARGUS v10.2.2 provides the strongest integrity baseline yet for national-scale medical research. The project stands as a successful proof-of-concept for how agentic systems can be made structurally safe, transforming the "Hallucinating Agent" into a high-fidelity instrument of scientific discovery. The next arc is explicit: trim transitional scaffolding in v10.3 and lock contracts in v11.0.
 
 ---
-_Last updated: 2026-02-20 (v10.2.2)_
+_Last updated: 2026-02-20 (v10.3.0)_

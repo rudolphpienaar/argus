@@ -18,20 +18,10 @@ import { SessionStore } from '../dag/store/SessionStore.js';
 import { VfsBackend } from '../dag/store/backend/vfs.js';
 import type { Session } from '../dag/store/types.js';
 
-export type RuntimeMaterializationMode = 'legacy' | 'store';
-
-export interface MerkleEngineConfig {
-    runtimeMode?: RuntimeMaterializationMode;
-    joinMaterializationEnabled?: boolean;
-}
-
 /**
  * Orchestrates the creation and storage of Merkle-proven artifacts.
  */
 export class MerkleEngine {
-    private static legacyDeprecationShown: boolean = false;
-    private readonly runtimeMode: RuntimeMaterializationMode;
-    private readonly joinMaterializationEnabled: boolean;
     private readonly backend: VfsBackend;
     private readonly sessionStore: SessionStore;
 
@@ -39,24 +29,12 @@ export class MerkleEngine {
         private vfs: VirtualFileSystem,
         private workflowAdapter: WorkflowAdapter,
         private sessionPath: string,
-        config: MerkleEngineConfig = {},
     ) {
-        this.runtimeMode = config.runtimeMode ?? 'store';
-        this.joinMaterializationEnabled = config.joinMaterializationEnabled ?? true;
         this.backend = new VfsBackend(vfs);
         this.sessionStore = new SessionStore(
             this.backend,
             '/runtime-not-used',
-            { rootStageInOwnDirectory: true },
         );
-
-        if (this.runtimeMode === 'legacy' && !MerkleEngine.legacyDeprecationShown) {
-            MerkleEngine.legacyDeprecationShown = true;
-            console.warn(
-                '[ARGUS][DEPRECATION] runtimeMode=legacy write path is deprecated. ' +
-                'Use runtimeMode=store with join materialization enabled.',
-            );
-        }
     }
 
     /**
@@ -69,12 +47,58 @@ export class MerkleEngine {
     }
 
     /**
+     * Resolve the physical directory where a plugin should materialize its payload.
+     */
+    public async dataDir_resolve(stageId: string): Promise<string> {
+        const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
+        const stagePath: StagePath | undefined = this.workflowAdapter.stagePaths.get(stageId);
+        if (!stage || !stagePath) {
+            throw new Error(`Cannot resolve dataDir for unknown stage ${stageId}`);
+        }
+
+        const session: Session = this.session_resolve();
+        const stagePathSegments: string[] = this.stagePathSegments_resolve(stagePath);
+        const effectivePathSegments: string[] = await this.stagePathForWrite_resolve(
+            session,
+            stage,
+            stagePathSegments,
+        );
+        
+        const dataDir: string = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
+        const artifactName: string = stagePath.artifactFile.split('/').pop() || `${stage.id}.json`;
+        const basePath: string = `${dataDir}/${artifactName}`;
+        const finalArtifactPath: string = await this.artifactPath_storeResolve(basePath, stage.id, null);
+        
+        // The data directory is the parent of the final artifact path
+        return finalArtifactPath.substring(0, finalArtifactPath.lastIndexOf('/'));
+    }
+
+    /**
+     * Materialize a skip sentinel for an auto-declined optional stage.
+     *
+     * Used when a user proceeds past an optional stage (e.g. rename) without
+     * executing it. The sentinel enters the Merkle chain so the provenance
+     * records the explicit decision to skip.
+     *
+     * @param stageId - The optional stage being declined.
+     * @param reason - Human-readable reason for the skip.
+     */
+    public async skipSentinel_materialize(stageId: string, reason: string): Promise<void> {
+        await this.artifact_materialize(stageId, { skipped: true, reason });
+    }
+
+    /**
      * Materialize a workflow stage artifact with Merkle fingerprinting.
      *
      * @param stageId - The ID of the stage being materialized.
      * @param content - Domain-specific content block (artifactData from plugin).
+     * @param materialized - Optional list of side-effect files created by this stage.
      */
-    public async artifact_materialize(stageId: string, content: Record<string, unknown>): Promise<void> {
+    public async artifact_materialize(
+        stageId: string, 
+        content: Record<string, unknown>,
+        materialized?: string[]
+    ): Promise<void> {
         const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
         const stagePath: StagePath | undefined = this.workflowAdapter.stagePaths.get(stageId);
         if (!stage || !stagePath) {
@@ -99,24 +123,12 @@ export class MerkleEngine {
             timestamp,
             parameters_used,
             content,
+            materialized,
             _fingerprint,
             _parent_fingerprints: parentFingerprints
         };
 
-        if (this.runtimeMode === 'store') {
-            await this.artifact_storeWrite(stage, stagePath, envelope);
-            return;
-        }
-
-        const finalPath: string = this.artifactPath_resolve(stageId, stagePath, tsNow);
-
-        // Ensure parent directory exists
-        const parentDir: string = finalPath.substring(0, finalPath.lastIndexOf('/'));
-        try {
-            this.vfs.dir_create(parentDir);
-        } catch { /* exists */ }
-
-        this.vfs.file_create(finalPath, JSON.stringify(envelope, null, 2));
+        await this.artifact_storeWrite(stage, stagePath, envelope);
     }
 
     /**
@@ -133,22 +145,6 @@ export class MerkleEngine {
             }
         }
         return parentFingerprints;
-    }
-
-    /**
-     * Resolve the physical path for an artifact, creating a branch if needed.
-     */
-    private artifactPath_resolve(stageId: string, stagePath: StagePath, tsNow: Date): string {
-        const baseDir: string = `${this.sessionPath}/${stagePath.artifactFile}`;
-        if (this.vfs.node_stat(baseDir) !== null) {
-            const branchSuffix: string = tsNow.getTime().toString();
-            const branchPath: string = stagePath.artifactFile.replace(
-                `${stageId}/data/`, 
-                `${stageId}_BRANCH_${branchSuffix}/data/`
-            );
-            return `${this.sessionPath}/${branchPath}`;
-        }
-        return baseDir;
     }
 
     /**
@@ -178,7 +174,12 @@ export class MerkleEngine {
         const dataDir: string = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
         const artifactName: string = stagePath.artifactFile.split('/').pop() || `${stage.id}.json`;
         const basePath: string = `${dataDir}/${artifactName}`;
-        const finalPath: string = await this.artifactPath_storeResolve(basePath, stage.id);
+        const finalPath: string = await this.artifactPath_storeResolve(basePath, stage.id, envelope._fingerprint);
+        
+        if (process.env.CALYPSO_VERBOSE === 'true') {
+            console.log(`[MerkleEngine] Materializing ${stage.id} -> ${finalPath}`);
+        }
+
         await this.backend.artifact_write(
             finalPath,
             JSON.stringify(envelope, null, 2),
@@ -198,8 +199,11 @@ export class MerkleEngine {
     }
 
     private stagePathSegments_resolve(stagePath: StagePath): string[] {
-        const stageDir: string = stagePath.dataDir.replace(/\/data$/, '');
-        return stageDir.split('/').filter(Boolean);
+        // stagePath.artifactFile is e.g. "search/gather/data/gather.json"
+        // We want ["search", "gather"]
+        const parts = stagePath.artifactFile.split('/');
+        // Remove the filename and the 'data' directory
+        return parts.filter(p => p !== 'data' && !p.endsWith('.json')).filter(Boolean);
     }
 
     private async stagePathForWrite_resolve(
@@ -207,9 +211,6 @@ export class MerkleEngine {
         stage: DAGNode,
         stagePath: string[],
     ): Promise<string[]> {
-        if (!this.joinMaterializationEnabled) {
-            return stagePath;
-        }
         const cache = new Map<string, string[]>();
         const resolved: string[] | null = await this.stagePathWithJoins_resolve(
             session,
@@ -252,15 +253,42 @@ export class MerkleEngine {
 
         const parentPaths: Record<string, string[]> = {};
         const sortedParentIds = [...node.previous].sort();
+        const activeParentPaths = new Set<string>();
+        const activeParentIds: string[] = [];
+
         for (const parentId of sortedParentIds) {
-            const parentPath = await this.stagePathWithJoins_resolve(session, parentId, cache);
-            if (!parentPath) {
+            const parentNode = this.workflowAdapter.dag.nodes.get(parentId);
+            
+            // v10.2.1: Optional parents don't affect physical nesting.
+            // They are resolved via JOIN semantics (real artifact or skip sentinel)
+            // but don't create join nodes in the session tree.
+            if (parentNode?.optional) continue;
+
+            // Check if parent actually has an artifact.
+            const parentFp = this.fingerprint_get(parentId);
+            if (!parentFp) {
                 return null;
             }
+
+            const parentPath = await this.stagePathWithJoins_resolve(session, parentId, cache);
+            if (!parentPath) return null;
+            
+            const pathKey = parentPath.join('/');
+            if (activeParentPaths.has(pathKey)) continue;
+
             parentPaths[parentId] = parentPath;
+            activeParentIds.push(parentId);
+            activeParentPaths.add(pathKey);
         }
 
-        const anchorParentId = this.joinAnchorParent_resolve(sortedParentIds, parentPaths);
+        // If only one parent path is active after filtering, don't create a join node
+        if (activeParentIds.length === 1) {
+            const resolved = [...parentPaths[activeParentIds[0]], stageId];
+            cache.set(stageId, resolved);
+            return resolved;
+        }
+
+        const anchorParentId = this.joinAnchorParent_resolve(activeParentIds, parentPaths);
         const nestUnderPath = parentPaths[anchorParentId];
         const joinName = await this.sessionStore.joinNode_materialize(
             session,
@@ -290,9 +318,28 @@ export class MerkleEngine {
         return anchorId;
     }
 
-    private async artifactPath_storeResolve(basePath: string, stageId: string): Promise<string> {
+    private async artifactPath_storeResolve(basePath: string, stageId: string, newFingerprint: string | null): Promise<string> {
         const exists: boolean = await this.backend.path_exists(basePath);
         if (!exists) {
+            return basePath;
+        }
+
+        // v10.2: Root stages (no parents) update in-place instead of branching.
+        // This keeps the base of the tree predictable for the developer.
+        const node = this.workflowAdapter.dag.nodes.get(stageId);
+        if (!node || !node.previous || node.previous.length === 0) {
+            return basePath;
+        }
+
+        // v10.2: Only branch if the stage has ALREADY been completed (has a fingerprint)
+        // AND the new content is actually different.
+        const currentFp = this.fingerprint_get(stageId);
+        if (!currentFp) {
+            return basePath;
+        }
+
+        // If we have a new fingerprint and it matches the current one, don't branch.
+        if (newFingerprint && newFingerprint === currentFp) {
             return basePath;
         }
 
