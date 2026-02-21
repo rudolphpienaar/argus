@@ -107,10 +107,53 @@ position providers remain synchronized after project renames. Backend synthetic
 latency paths were removed, leaving delay ownership entirely in plugins and
 controlled for tests through `CALYPSO_FAST=true`.
 
+## 2026-02-21: Release Closure and Operator Handoff (v10.3.2)
+
+With runtime hardening complete, the remaining risk surface moved from execution
+semantics to operator ambiguity. The system could execute correctly, but
+handoff/debug loops still required reconstructing stage materialization paths
+from source. The `v10.3.2` cut closes that gap by publishing a single
+code-current FEDML pipeline map and aligning release chronology to that map.
+
+This release is intentionally a closure patch, not a behavior branch. Host/Guest
+contracts remain unchanged relative to late `v10.3.1` stabilization: backend
+paths stay simulation-free, plugin compute owns optional delay, and verification
+continues to assert on physical artifacts instead of conversational output.
+
+## Handoff Anchors
+
+The following files now define the operational handoff baseline and should be
+treated as canonical entry points for new maintainers:
+
+1. `FEDML.md` — stage-by-stage FEDML execution map with explicit end-state
+   trees for renamed and non-renamed project trajectories, plus `~/searches`
+   snapshot examples.
+2. `docs/release-v10.3.2.md` — release narrative for documentation closure and
+   path-contract clarification.
+3. `docs/history.adoc` — historical chronology updated through `v10.3.2`.
+4. `docs/CURRENT.md` — active status framing for post-cut operations.
+
+## Verification Snapshot at Handoff
+
+At release cut, validation was rerun from the updated `10.3.2` version line.
+Both quality gates passed without regression:
+
+```text
+npm test                         -> 370/370 tests passing
+node scripts/oracle-runner.mjs  -> 9/9 scenarios passing
+```
+
+The release commit and tag are both published:
+
+```text
+commit: 19507d7
+tag:    v10.3.2
+branch: main (pushed to origin)
+```
+
 ## Current Posture
 
-The hardening line is currently stable under unit and oracle pressure, including
-rename/anaphora scenarios that previously deadlocked. Remaining cleanup work is
-evolutionary rather than corrective: release cut hygiene, continued script-runtime
-parity alignment with workflow dispatch semantics, and optional future
-consolidation of per-stage skip artifacts into a JOIN-scoped resolution envelope.
+The v10 line is now in a stable pre-v11 handoff state. The principal debt class
+that remains is contract formalization, not runtime firefighting: codify and
+freeze the Host/Guest boundary surface for `v11.0`, using the `v10.3.2`
+documentation baseline as the operator truth source.
