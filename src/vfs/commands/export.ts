@@ -23,6 +23,9 @@ type ExportParseResult =
     | { ok: true; options: ExportOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `export` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'export',
     create: () => async (args, shell) => {
@@ -55,6 +58,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse export flags and KEY=VALUE assignments.
+ *
+ * @param args - Raw command arguments after `export`.
+ * @returns Parsed export operations or usage/error metadata.
+ */
 function exportArgs_parse(args: string[]): ExportParseResult {
     const options: ExportOptions = { print: false, unsetKeys: [], assignments: [] };
     let parseOptions = true;

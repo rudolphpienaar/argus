@@ -22,6 +22,9 @@ type CatParseResult =
     | { ok: true; options: CatOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `cat` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'cat',
     create: ({ vfs }) => async (args) => {
@@ -49,6 +52,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `cat` CLI flags and positional file operands.
+ *
+ * @param args - Raw command arguments after `cat`.
+ * @returns Parsed options on success, or usage/error metadata on failure.
+ */
 function catArgs_parse(args: string[]): CatParseResult {
     const options: CatOptions = {
         numberLines: false,
@@ -118,6 +127,14 @@ function catArgs_parse(args: string[]): CatParseResult {
     return { ok: true, options };
 }
 
+/**
+ * Render cat output for one file payload according to active flags.
+ *
+ * @param content - File payload read from VFS.
+ * @param options - Parsed `cat` options.
+ * @param lineCounterStart - Starting display line number for `-n`.
+ * @returns Rendered output block and next line number seed.
+ */
 function catContent_render(
     content: string,
     options: CatOptions,

@@ -21,6 +21,9 @@ type DateParseResult =
     | { ok: true; options: DateOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `date` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'date',
     create: () => async (args) => {
@@ -47,6 +50,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `date` flags and normalize output mode selection.
+ *
+ * @param args - Raw command arguments after `date`.
+ * @returns Parsed date-output options or usage/error metadata.
+ */
 function dateArgs_parse(args: string[]): DateParseResult {
     let parseOptions = true;
     const options: DateOptions = { utc: false, rfc2822: false, iso8601: null };

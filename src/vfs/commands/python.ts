@@ -39,6 +39,9 @@ type PythonParseResult =
     | { ok: true; options: PythonOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `python` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'python',
     create: ({ vfs }) => async (args, shell) => {
@@ -83,6 +86,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse interpreter-like flags and script operands for VFS python execution.
+ *
+ * @param args - Raw command arguments after `python`.
+ * @returns Parsed runtime options or usage/error metadata.
+ */
 function pythonArgs_parse(args: string[]): PythonParseResult {
     let parseOptions = true;
     let showVersion = false;
@@ -143,6 +152,15 @@ function pythonArgs_parse(args: string[]): PythonParseResult {
     };
 }
 
+/**
+ * Build the canonical execution context used by simulated python workflows.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param scriptPath - Script operand as typed by the user.
+ * @param resolvedPath - Absolute resolved script path.
+ * @param shell - Active shell state.
+ * @returns Normalized python run context for downstream execution helpers.
+ */
 function pythonContext_build(
 vfs: VirtualFileSystem,
 scriptPath: string,
@@ -172,6 +190,13 @@ shell: Shell): PythonRunContext {
     };
 }
 
+/**
+ * Execute simulated ChRIS plugin validation path and materialize `.test_pass`.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param context - Prepared python execution context.
+ * @returns Shell-style command result payload.
+ */
 function pythonValidation_run(vfs: VirtualFileSystem, context: PythonRunContext) {
     let output: string = `<span class="highlight">[LOCAL EXECUTION: ${context.scriptPath}]</span>\n`;
     output += '○ Validating ChRIS plugin entrypoint...\n○ Parsing argument contract and runtime hooks...\n○ Checking input/output filesystem compliance...\n\n--- TEST LOG ---\n[PASS] plugin metadata loaded\n[PASS] argument parser initialized\n[PASS] input/output bindings valid\n\n';
@@ -180,6 +205,13 @@ function pythonValidation_run(vfs: VirtualFileSystem, context: PythonRunContext)
     return { stdout: output, stderr: '', exitCode: 0 };
 }
 
+/**
+ * Execute simulated training path and materialize local model artifacts.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param context - Prepared python execution context.
+ * @returns Promise resolving to shell-style command result payload.
+ */
 async function pythonTraining_run(vfs: VirtualFileSystem, context: PythonRunContext) {
     let output: string = `<span class="highlight">[LOCAL EXECUTION: ${context.scriptPath}]</span>\n`;
     output += `○ Loading torch and meridian.data...\n○ Found 1,240 images in ${context.inputDisplayPath}\n○ Model: ResNet50 (Pretrained=True)\n○ Device: NVIDIA A100-SXM4\n\n--- TRAINING LOG ---\n`;
@@ -194,6 +226,13 @@ async function pythonTraining_run(vfs: VirtualFileSystem, context: PythonRunCont
     return { stdout: output, stderr: '', exitCode: 0 };
 }
 
+/**
+ * Best-effort materialization of simulated training outputs.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param context - Prepared python execution context.
+ * @returns `void`; errors are intentionally swallowed.
+ */
 function trainingArtifacts_materialize(vfs: VirtualFileSystem, context: PythonRunContext): void {
     try {
         vfs.dir_create(context.outputDirPath);
@@ -208,6 +247,13 @@ function trainingArtifacts_materialize(vfs: VirtualFileSystem, context: PythonRu
     }
 }
 
+/**
+ * Best-effort marker write helper used by validation/training paths.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param path - Marker file path to create/update.
+ * @returns `void`; errors are intentionally swallowed.
+ */
 function marker_writeSafe(vfs: VirtualFileSystem, path: string): void {
     try {
         vfs.file_create(path, new Date().toISOString());
@@ -216,6 +262,14 @@ function marker_writeSafe(vfs: VirtualFileSystem, path: string): void {
     }
 }
 
+/**
+ * Resolve the effective project root for python artifact materialization.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param pathHint - Absolute path hint (typically script path).
+ * @param shell - Active shell state.
+ * @returns Absolute project/data root path, or `null` when no project root can be inferred.
+ */
 function projectRoot_resolve(vfs: VirtualFileSystem, pathHint: string, shell: Shell): string | null {
     const dataDirFromEnv: string | undefined = shell.env_get('DATA_DIR');
     if (dataDirFromEnv) {
@@ -248,6 +302,13 @@ function projectRoot_resolve(vfs: VirtualFileSystem, pathHint: string, shell: Sh
     return null;
 }
 
+/**
+ * Convert an absolute path to a cwd-relative path string.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param absolutePath - Absolute path to relativize against current cwd.
+ * @returns Relative path string (or `.` when already at target).
+ */
 function path_relativeToCwd(vfs: VirtualFileSystem, absolutePath: string): string {
     const cwdParts: string[] = vfs.cwd_get().split('/').filter(Boolean);
     const targetParts: string[] = absolutePath.split('/').filter(Boolean);

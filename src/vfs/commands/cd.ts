@@ -21,6 +21,9 @@ type CdParseResult =
     | { ok: true; options: CdOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `cd` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'cd',
     create: ({ vfs }) => async (args, shell) => {
@@ -48,6 +51,13 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `cd` flags/arguments and resolve `cd -` semantics.
+ *
+ * @param args - Raw command arguments after `cd`.
+ * @param oldPwd - Current shell `OLDPWD` value, if defined.
+ * @returns Parsed target semantics or usage/error metadata.
+ */
 function cdArgs_parse(args: string[], oldPwd: string | undefined): CdParseResult {
     let parseOptions = true;
     const positionals: string[] = [];

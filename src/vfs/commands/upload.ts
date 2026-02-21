@@ -19,6 +19,9 @@ type UploadParseResult =
     | { ok: true; options: UploadOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `upload` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'upload',
     create: ({ vfs }) => async (args) => {
@@ -59,6 +62,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse upload destination flags and positional operands.
+ *
+ * @param args - Raw command arguments after `upload`.
+ * @returns Parsed upload options or usage/error metadata.
+ */
 function uploadArgs_parse(args: string[]): UploadParseResult {
     let parseOptions = true;
     let destination: string | undefined;

@@ -25,6 +25,9 @@ type RmParseResult =
     | { ok: true; options: RmOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `rm` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'rm',
     create: ({ vfs }) => async (args) => {
@@ -75,6 +78,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `rm` flags and positional target operands.
+ *
+ * @param args - Raw command arguments after `rm`.
+ * @returns Parsed remove options or usage/error metadata.
+ */
 function rmArgs_parse(args: string[]): RmParseResult {
     let parseOptions = true;
     let recursive = false;

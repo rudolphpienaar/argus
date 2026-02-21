@@ -25,6 +25,9 @@ type MvParseResult =
     | { ok: true; options: MvOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `mv` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'mv',
     create: ({ vfs }) => async (args) => {
@@ -75,6 +78,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `mv` flags and SOURCE/DEST operands.
+ *
+ * @param args - Raw command arguments after `mv`.
+ * @returns Parsed move options or usage/error metadata.
+ */
 function mvArgs_parse(args: string[]): MvParseResult {
     let parseOptions = true;
     let force = false;
@@ -148,6 +157,14 @@ function mvArgs_parse(args: string[]): MvParseResult {
     };
 }
 
+/**
+ * Resolve move destination path, appending source basename when destination is a directory.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param destRaw - Raw destination operand from CLI input.
+ * @param srcNode - Resolved source node metadata.
+ * @returns Absolute destination path where the source should be moved.
+ */
 function mvDestination_resolve(
     vfs: VirtualFileSystem,
     destRaw: string,

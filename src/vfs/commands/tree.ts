@@ -23,6 +23,9 @@ type TreeParseResult =
     | { ok: true; options: TreeOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `tree` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'tree',
     create: ({ vfs }) => async (args) => {
@@ -101,6 +104,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `tree` flags and optional target operand.
+ *
+ * @param args - Raw command arguments after `tree`.
+ * @returns Parsed tree rendering options or usage/error metadata.
+ */
 function treeArgs_parse(args: string[]): TreeParseResult {
     let parseOptions = true;
     let showAll = false;

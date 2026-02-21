@@ -10,6 +10,9 @@
  *
  * Builtins catch broad `unknown` errors from VFS/system APIs and normalize them
  * into shell stderr output through this helper.
+ *
+ * @param error - Unknown thrown value from a catch boundary.
+ * @returns Human-readable error message safe for stderr emission.
  */
 export function errorMessage_get(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -17,6 +20,9 @@ export function errorMessage_get(error: unknown): string {
 
 /**
  * Return the basename segment from an absolute or relative path string.
+ *
+ * @param path - Input path string that may contain trailing separators.
+ * @returns Final non-separator path segment.
  */
 export function pathBasename_get(path: string): string {
     const normalized: string = path.replace(/\/+$/, '');
@@ -28,6 +34,10 @@ export function pathBasename_get(path: string): string {
  * Test whether an argument should be treated as an option token.
  *
  * A lone '-' is considered a positional operand, not an option.
+ *
+ * @param arg - Raw CLI token.
+ * @param parseOptions - Whether option parsing is still enabled.
+ * @returns `true` when the token should be parsed as an option.
  */
 export function argIsOption_check(arg: string, parseOptions: boolean): boolean {
     return parseOptions && arg.startsWith('-') && arg !== '-';

@@ -28,6 +28,9 @@ type CpParseResult =
     | { ok: true; options: CpOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `cp` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'cp',
     create: ({ vfs }) => async (args) => {
@@ -82,6 +85,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `cp` flags and enforce SOURCE/DEST positional form.
+ *
+ * @param args - Raw command arguments after `cp`.
+ * @returns Parsed copy options or usage/error metadata.
+ */
 function cpArgs_parse(args: string[]): CpParseResult {
     let parseOptions = true;
     let recursive = false;
@@ -172,6 +181,14 @@ function cpArgs_parse(args: string[]): CpParseResult {
     };
 }
 
+/**
+ * Resolve copy destination path, appending source basename when target is a directory.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param destRaw - Raw destination operand from CLI input.
+ * @param srcNode - Resolved source node metadata.
+ * @returns Absolute destination path where the source should be copied.
+ */
 function cpDestination_resolve(vfs: VirtualFileSystem, destRaw: string, srcNode: FileNode): string {
     const destResolved: string = vfs.path_resolve(destRaw);
     const destNode: FileNode | null = vfs.node_stat(destResolved);

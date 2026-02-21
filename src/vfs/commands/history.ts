@@ -21,6 +21,9 @@ type HistoryParseResult =
     | { ok: true; options: HistoryOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `history` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'history',
     create: () => async (args, shell) => {
@@ -51,6 +54,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse history flags and count operands.
+ *
+ * @param args - Raw command arguments after `history`.
+ * @returns Parsed history options or usage/error metadata.
+ */
 function historyArgs_parse(args: string[]): HistoryParseResult {
     let parseOptions = true;
     let clear = false;

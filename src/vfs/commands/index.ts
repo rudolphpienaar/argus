@@ -41,6 +41,12 @@ const COMMANDS = [
     upload
 ];
 
+/**
+ * Build builtin command handler registry for shell dispatch.
+ *
+ * @param deps - Shared dependencies injected into each builtin factory.
+ * @returns Command-name keyed handler registry.
+ */
 export function registry_create(deps: BuiltinDeps): Record<string, BuiltinHandler> {
     const registry: Record<string, BuiltinHandler> = {};
     for (const command of COMMANDS) {

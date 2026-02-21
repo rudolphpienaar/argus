@@ -22,6 +22,9 @@ type MkdirParseResult =
     | { ok: true; options: MkdirOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `mkdir` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'mkdir',
     create: ({ vfs }) => async (args) => {
@@ -66,6 +69,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse mkdir options and directory path operands.
+ *
+ * @param args - Raw command arguments after `mkdir`.
+ * @returns Parsed mkdir options or usage/error metadata.
+ */
 function mkdirArgs_parse(args: string[]): MkdirParseResult {
     let parseOptions = true;
     let parents = false;
@@ -138,6 +147,12 @@ function mkdirArgs_parse(args: string[]): MkdirParseResult {
     return { ok: true, options: { parents, verbose, paths } };
 }
 
+/**
+ * Resolve a parent directory path string from a normalized absolute path.
+ *
+ * @param path - Candidate absolute path.
+ * @returns Absolute parent directory path.
+ */
 function parentPath_get(path: string): string {
     const trimmed: string = path.replace(/\/+$/, '');
     if (trimmed === '' || trimmed === '/') {

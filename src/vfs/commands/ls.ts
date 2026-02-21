@@ -32,6 +32,9 @@ type LsRenderResult =
     | { ok: true; output: string }
     | { ok: false; error: string };
 
+/**
+ * Register the `ls` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'ls',
     create: ({ vfs }) => async (args) => {
@@ -79,6 +82,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `ls` options and collect target operands.
+ *
+ * @param args - Raw command arguments after `ls`.
+ * @returns Parsed listing options or usage/error metadata.
+ */
 function lsArgs_parse(args: string[]): LsArgsParseResult {
     let longFormat = false;
     let showAll = false;
@@ -147,6 +156,18 @@ function lsArgs_parse(args: string[]): LsArgsParseResult {
     return { ok: true, longFormat, showAll, almostAll, directoryOnly, forceOnePerLine, targets };
 }
 
+/**
+ * Render one `ls` target (single file/link or directory listing).
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param target - Raw target operand from CLI.
+ * @param longFormat - Whether long-list format is enabled.
+ * @param showAll - Whether hidden entries plus `.`/`..` are included.
+ * @param almostAll - Whether hidden entries are included excluding `.`/`..`.
+ * @param directoryOnly - Whether to render directory entries instead of children.
+ * @param _forceOnePerLine - Reserved parity flag for one-entry-per-line mode.
+ * @returns Rendered target output or an error payload.
+ */
 function lsTarget_render(
     vfs: VirtualFileSystem,
     target: string,
@@ -185,6 +206,14 @@ function lsTarget_render(
     return { ok: true, output: lines.join('\n') };
 }
 
+/**
+ * Render one `ls` entry in short or long format.
+ *
+ * @param vfs - Active virtual filesystem instance.
+ * @param entry - Node metadata to render.
+ * @param longFormat - Whether to render long listing fields.
+ * @returns HTML/plain-text compatible listing line for one entry.
+ */
 function lsEntry_render(
     vfs: VirtualFileSystem,
     entry: FileNode,

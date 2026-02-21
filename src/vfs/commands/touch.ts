@@ -20,6 +20,9 @@ type TouchParseResult =
     | { ok: true; options: TouchOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `touch` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'touch',
     create: ({ vfs }) => async (args) => {
@@ -43,6 +46,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `touch` flags and file path operands.
+ *
+ * @param args - Raw command arguments after `touch`.
+ * @returns Parsed touch options or usage/error metadata.
+ */
 function touchArgs_parse(args: string[]): TouchParseResult {
     let parseOptions = true;
     let noCreate = false;

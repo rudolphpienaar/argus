@@ -39,6 +39,9 @@ const HELP_TOPICS: Record<string, string> = {
     whoami: 'whoami [-u]'
 };
 
+/**
+ * Register the `help` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'help',
     create: ({ listCommands }) => async (args) => {
@@ -78,6 +81,12 @@ type HelpParseResult =
     | { ok: true; options: HelpOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Parse help flags and optional topic operands.
+ *
+ * @param args - Raw command arguments after `help`.
+ * @returns Parsed help options or usage/error metadata.
+ */
 function helpArgs_parse(args: string[]): HelpParseResult {
     const options: HelpOptions = { short: false, topics: [] };
     let parseOptions = true;

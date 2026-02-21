@@ -25,6 +25,9 @@ type EnvParseResult =
     | { ok: true; options: EnvOptions }
     | { ok: false; stderr: string; exitCode: number };
 
+/**
+ * Register the `env` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'env',
     create: () => async (args, shell) => {
@@ -53,6 +56,12 @@ export const command: BuiltinCommand = {
     }
 };
 
+/**
+ * Parse `env` flags and variable assignment operands.
+ *
+ * @param args - Raw command arguments after `env`.
+ * @returns Parsed environment projection options or usage/error metadata.
+ */
 function envArgs_parse(args: string[]): EnvParseResult {
     let parseOptions = true;
     const options: EnvOptions = {

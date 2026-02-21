@@ -10,6 +10,9 @@
 
 import type { BuiltinCommand } from './types.js';
 
+/**
+ * Register the `echo` builtin handler.
+ */
 export const command: BuiltinCommand = {
     name: 'echo',
     create: () => async (args) => {
@@ -33,6 +36,12 @@ type EchoParseResult =
     | { ok: true; words: string[]; enableEscapes: boolean }
     | { ok: false; message: string; exitCode: number };
 
+/**
+ * Parse `echo` option flags and collect payload words.
+ *
+ * @param args - Raw command arguments after `echo`.
+ * @returns Parsed echo options and payload tokens.
+ */
 function echoArgs_parse(args: string[]): EchoParseResult {
     const words: string[] = [];
     let parseOptions = true;
@@ -80,6 +89,12 @@ function echoArgs_parse(args: string[]): EchoParseResult {
     return { ok: true, words, enableEscapes };
 }
 
+/**
+ * Resolve supported backslash escape sequences.
+ *
+ * @param input - Unescaped payload string.
+ * @returns String with supported escape sequences resolved.
+ */
 function echoEscapes_resolve(input: string): string {
     return input.replace(/\\([ntr0\\])/g, (_match: string, code: string): string => {
         if (code === 'n') return '\n';
