@@ -1,11 +1,32 @@
+/**
+ * `ls` builtin implementation.
+ *
+ * Supported flags:
+ * - `-l`, `--long`: long-list format.
+ * - `-a`, `--all`: include hidden entries and synthetic `.`/`..`.
+ * - `-A`, `--almost-all`: include hidden entries, excluding `.` and `..`.
+ * - `-d`, `--directory`: list directory entries themselves, not their contents.
+ * - `-1`: force one-entry-per-line output.
+ * - `-h`, `--human-readable`: accepted for compatibility (sizes are already humanized).
+ * - `-h` is overloaded by GNU `ls`; here use `--help` for usage output.
+ */
+
 import type { FileNode } from '../types.js';
 import type { VirtualFileSystem } from '../VirtualFileSystem.js';
 import type { BuiltinCommand } from './types.js';
 import { errorMessage_get } from './_shared.js';
 
 type LsArgsParseResult =
-    | { ok: true; longFormat: boolean; showAll: boolean; targets: string[] }
-    | { ok: false; error: string };
+    | {
+        ok: true;
+        longFormat: boolean;
+        showAll: boolean;
+        almostAll: boolean;
+        directoryOnly: boolean;
+        forceOnePerLine: boolean;
+        targets: string[];
+    }
+    | { ok: false; error: string; exitCode: number };
 
 type LsRenderResult =
     | { ok: true; output: string }
@@ -16,7 +37,11 @@ export const command: BuiltinCommand = {
     create: ({ vfs }) => async (args) => {
         const parsed: LsArgsParseResult = lsArgs_parse(args);
         if (!parsed.ok) {
-            return { stdout: '', stderr: parsed.error, exitCode: 1 };
+            return {
+                stdout: parsed.exitCode === 0 ? parsed.error : '',
+                stderr: parsed.exitCode === 0 ? '' : parsed.error,
+                exitCode: parsed.exitCode
+            };
         }
 
         const targets: string[] = parsed.targets.length > 0 ? parsed.targets : [vfs.cwd_get()];
@@ -25,7 +50,15 @@ export const command: BuiltinCommand = {
         try {
             for (let i = 0; i < targets.length; i++) {
                 const target: string = targets[i];
-                const listing: LsRenderResult = lsTarget_render(vfs, target, parsed.longFormat, parsed.showAll);
+                const listing: LsRenderResult = lsTarget_render(
+                    vfs,
+                    target,
+                    parsed.longFormat,
+                    parsed.showAll,
+                    parsed.almostAll,
+                    parsed.directoryOnly,
+                    parsed.forceOnePerLine
+                );
                 if (!listing.ok) {
                     return { stdout: '', stderr: listing.error, exitCode: 1 };
                 }
@@ -49,6 +82,9 @@ export const command: BuiltinCommand = {
 function lsArgs_parse(args: string[]): LsArgsParseResult {
     let longFormat = false;
     let showAll = false;
+    let almostAll = false;
+    let directoryOnly = false;
+    let forceOnePerLine = false;
     const targets: string[] = [];
     let parseOptions = true;
 
@@ -67,7 +103,21 @@ function lsArgs_parse(args: string[]): LsArgsParseResult {
                 showAll = true;
                 continue;
             }
-            return { ok: false, error: `ls: unrecognized option '${arg}'` };
+            if (arg === '--almost-all') {
+                almostAll = true;
+                continue;
+            }
+            if (arg === '--directory') {
+                directoryOnly = true;
+                continue;
+            }
+            if (arg === '--human-readable') {
+                continue;
+            }
+            if (arg === '--help') {
+                return { ok: false, error: 'usage: ls [-1Aadhl] [--] [FILE...]', exitCode: 0 };
+            }
+            return { ok: false, error: `ls: unrecognized option '${arg}'`, exitCode: 1 };
         }
 
         if (parseOptions && arg.startsWith('-') && arg.length > 1) {
@@ -76,8 +126,16 @@ function lsArgs_parse(args: string[]): LsArgsParseResult {
                     longFormat = true;
                 } else if (flag === 'a') {
                     showAll = true;
+                } else if (flag === 'A') {
+                    almostAll = true;
+                } else if (flag === 'd') {
+                    directoryOnly = true;
+                } else if (flag === '1') {
+                    forceOnePerLine = true;
+                } else if (flag === 'h') {
+                    continue;
                 } else {
-                    return { ok: false, error: `ls: invalid option -- '${flag}'` };
+                    return { ok: false, error: `ls: invalid option -- '${flag}'`, exitCode: 1 };
                 }
             }
             continue;
@@ -86,14 +144,17 @@ function lsArgs_parse(args: string[]): LsArgsParseResult {
         targets.push(arg);
     }
 
-    return { ok: true, longFormat, showAll, targets };
+    return { ok: true, longFormat, showAll, almostAll, directoryOnly, forceOnePerLine, targets };
 }
 
 function lsTarget_render(
     vfs: VirtualFileSystem,
     target: string,
     longFormat: boolean,
-    showAll: boolean
+    showAll: boolean,
+    almostAll: boolean,
+    directoryOnly: boolean,
+    _forceOnePerLine: boolean
 ): LsRenderResult {
     const resolvedPath: string = vfs.path_resolve(target);
     const targetNode: FileNode | null = vfs.node_stat(resolvedPath);
@@ -101,7 +162,7 @@ function lsTarget_render(
         return { ok: false, error: `ls: cannot access '${target}': No such file or directory` };
     }
 
-    if (targetNode.type === 'file' || targetNode.type === 'link') {
+    if (targetNode.type === 'file' || targetNode.type === 'link' || directoryOnly) {
         return { ok: true, output: lsEntry_render(vfs, targetNode, longFormat) };
     }
 
@@ -111,7 +172,9 @@ function lsTarget_render(
         .sort((a: FileNode, b: FileNode): number => a.name.localeCompare(b.name));
 
     if (!showAll) {
-        children = children.filter((child: FileNode): boolean => !child.name.startsWith('.'));
+        if (!almostAll) {
+            children = children.filter((child: FileNode): boolean => !child.name.startsWith('.'));
+        }
     } else {
         const selfRef: FileNode = { ...targetNode, name: '.' };
         const parentRef: FileNode = { ...(vfs.node_stat(`${resolvedPath}/..`) || targetNode), name: '..' };

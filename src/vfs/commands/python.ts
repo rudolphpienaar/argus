@@ -1,7 +1,21 @@
+/**
+ * `python` builtin implementation.
+ *
+ * This command simulates local Python execution for ARGUS workflows.
+ * It does not spawn a real interpreter; instead it materializes deterministic
+ * artifacts used by the stage runtime.
+ *
+ * Supported interpreter-like flags:
+ * - `-V`, `--version`: print simulated interpreter version.
+ * - `-u`: accepted for parity (unbuffered mode no-op).
+ * - `-B`: accepted for parity (bytecode suppression no-op).
+ * - `-h`, `--help`: print usage.
+ */
+
 import type { BuiltinCommand } from './types.js';
 import type { Shell } from '../Shell.js';
 import type { VirtualFileSystem } from '../VirtualFileSystem.js';
-import { errorMessage_get } from './_shared.js';
+import { argIsOption_check, errorMessage_get } from './_shared.js';
 
 interface PythonRunContext {
     scriptPath: string;
@@ -14,14 +28,40 @@ interface PythonRunContext {
     isChrisValidation: boolean;
 }
 
+interface PythonOptions {
+    showVersion: boolean;
+    showHelp: boolean;
+    scriptPath: string | null;
+    scriptArgs: string[];
+}
+
+type PythonParseResult =
+    | { ok: true; options: PythonOptions }
+    | { ok: false; stderr: string; exitCode: number };
+
 export const command: BuiltinCommand = {
     name: 'python',
     create: ({ vfs }) => async (args, shell) => {
-        if (args.length === 0) {
+        const parsed: PythonParseResult = pythonArgs_parse(args);
+        if (!parsed.ok) {
+            return {
+                stdout: parsed.exitCode === 0 ? parsed.stderr : '',
+                stderr: parsed.exitCode === 0 ? '' : parsed.stderr,
+                exitCode: parsed.exitCode
+            };
+        }
+
+        if (parsed.options.showVersion) {
+            return { stdout: 'Python 3.12.0 (ARGUS VFS)', stderr: '', exitCode: 0 };
+        }
+        if (parsed.options.showHelp) {
+            return { stdout: 'usage: python [-uB] [-V] script.py [args ...]', stderr: '', exitCode: 0 };
+        }
+        if (!parsed.options.scriptPath) {
             return { stdout: '', stderr: 'python: missing file operand', exitCode: 1 };
         }
 
-        const scriptPath: string = args[0];
+        const scriptPath: string = parsed.options.scriptPath;
         const resolvedPath: string = vfs.path_resolve(scriptPath);
         if (!vfs.node_stat(resolvedPath)) {
             return {
@@ -42,6 +82,66 @@ export const command: BuiltinCommand = {
         }
     }
 };
+
+function pythonArgs_parse(args: string[]): PythonParseResult {
+    let parseOptions = true;
+    let showVersion = false;
+    let showHelp = false;
+    const positionals: string[] = [];
+
+    for (const arg of args) {
+        if (parseOptions && arg === '--') {
+            parseOptions = false;
+            continue;
+        }
+
+        if (argIsOption_check(arg, parseOptions)) {
+            if (arg === '--version') {
+                showVersion = true;
+                continue;
+            }
+            if (arg === '-h' || arg === '--help') {
+                showHelp = true;
+                continue;
+            }
+            if (arg === '-m' || arg.startsWith('-m')) {
+                return { ok: false, stderr: 'python: -m module execution is not supported in VFS mode', exitCode: 1 };
+            }
+            if (arg.startsWith('--')) {
+                return { ok: false, stderr: `python: unrecognized option '${arg}'`, exitCode: 1 };
+            }
+
+            for (const flag of arg.slice(1)) {
+                if (flag === 'u' || flag === 'B') {
+                    continue;
+                }
+                if (flag === 'V') {
+                    showVersion = true;
+                    continue;
+                }
+                if (flag === 'h') {
+                    showHelp = true;
+                    continue;
+                }
+                return { ok: false, stderr: `python: invalid option -- '${flag}'`, exitCode: 1 };
+            }
+            continue;
+        }
+
+        positionals.push(arg);
+        parseOptions = false;
+    }
+
+    return {
+        ok: true,
+        options: {
+            showVersion,
+            showHelp,
+            scriptPath: positionals[0] || null,
+            scriptArgs: positionals.slice(1)
+        }
+    };
+}
 
 function pythonContext_build(
 vfs: VirtualFileSystem,

@@ -159,6 +159,15 @@ describe('Shell', () => {
             await shell.command_execute('cd ~');
             expect(count).toBe(1);
         });
+
+        it('should support cd - using OLDPWD', async () => {
+            vfs.dir_create('/home/fedml/src');
+            await shell.command_execute('cd ~/src');
+            const result: ShellResult = await shell.command_execute('cd -');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toBe('/home/fedml');
+            expect(vfs.cwd_get()).toBe('/home/fedml');
+        });
     });
 
     // ─── Builtin: pwd ───────────────────────────────────────────
@@ -233,6 +242,13 @@ describe('Shell', () => {
             expect(result.exitCode).toBe(1);
             expect(result.stderr).toContain("invalid option -- 'z'");
         });
+
+        it('should list directory entry itself with -d', async () => {
+            vfs.dir_create('/home/fedml/demo');
+            const result: ShellResult = await shell.command_execute('ls -d demo');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('demo/');
+        });
     });
 
     // ─── Builtin: cat ───────────────────────────────────────────
@@ -259,6 +275,14 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('cat nope.txt');
             expect(result.exitCode).toBe(1);
         });
+
+        it('should support numbering and blank squeeze flags', async () => {
+            vfs.file_create('/home/fedml/multi.txt', 'alpha\n\n\nbeta\n');
+            const result: ShellResult = await shell.command_execute('cat -ns multi.txt');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('alpha');
+            expect(result.stdout).toContain('beta');
+        });
     });
 
     // ─── Builtin: mkdir ─────────────────────────────────────────
@@ -274,6 +298,12 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('mkdir');
             expect(result.exitCode).toBe(1);
         });
+
+        it('should create nested paths with -p', async () => {
+            const result: ShellResult = await shell.command_execute('mkdir -p a/b/c');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/fedml/a/b/c')).not.toBeNull();
+        });
     });
 
     // ─── Builtin: touch ─────────────────────────────────────────
@@ -288,6 +318,12 @@ describe('Shell', () => {
         it('should return error for missing operand', async () => {
             const result: ShellResult = await shell.command_execute('touch');
             expect(result.exitCode).toBe(1);
+        });
+
+        it('should support --no-create / -c', async () => {
+            const result: ShellResult = await shell.command_execute('touch -c ghost.txt');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/fedml/ghost.txt')).toBeNull();
         });
     });
 
@@ -306,7 +342,7 @@ describe('Shell', () => {
             vfs.file_create('/home/fedml/full/inner.txt');
             const result: ShellResult = await shell.command_execute('rm full');
             expect(result.exitCode).toBe(1);
-            expect(result.stderr).toContain('not empty');
+            expect(result.stderr).toContain('Is a directory');
         });
 
         it('should remove non-empty dir with -r', async () => {
@@ -315,6 +351,18 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('rm -r full');
             expect(result.exitCode).toBe(0);
             expect(vfs.node_stat('/home/fedml/full')).toBeNull();
+        });
+
+        it('should ignore missing targets with -f', async () => {
+            const result: ShellResult = await shell.command_execute('rm -f missing.txt');
+            expect(result.exitCode).toBe(0);
+        });
+
+        it('should remove empty directory with -d', async () => {
+            vfs.dir_create('/home/fedml/empty');
+            const result: ShellResult = await shell.command_execute('rm -d empty');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/fedml/empty')).toBeNull();
         });
     });
 
@@ -332,6 +380,16 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('cp src.txt');
             expect(result.exitCode).toBe(1);
         });
+
+        it('should require -r for directory copy', async () => {
+            vfs.dir_create('/home/fedml/dirsrc');
+            vfs.file_create('/home/fedml/dirsrc/a.txt', 'x');
+            const fail: ShellResult = await shell.command_execute('cp dirsrc dirdst');
+            const pass: ShellResult = await shell.command_execute('cp -r dirsrc dirdst');
+            expect(fail.exitCode).toBe(1);
+            expect(pass.exitCode).toBe(0);
+            expect(vfs.node_stat('/home/fedml/dirdst')).not.toBeNull();
+        });
     });
 
     // ─── Builtin: mv ────────────────────────────────────────────
@@ -348,6 +406,15 @@ describe('Shell', () => {
         it('should return error for missing operand', async () => {
             const result: ShellResult = await shell.command_execute('mv old.txt');
             expect(result.exitCode).toBe(1);
+        });
+
+        it('should support no-clobber with -n', async () => {
+            vfs.file_create('/home/fedml/src.txt', 'left');
+            vfs.file_create('/home/fedml/dst.txt', 'right');
+            const result: ShellResult = await shell.command_execute('mv -n src.txt dst.txt');
+            expect(result.exitCode).toBe(0);
+            expect(vfs.node_read('/home/fedml/dst.txt')).toBe('right');
+            expect(vfs.node_stat('/home/fedml/src.txt')).not.toBeNull();
         });
     });
 
@@ -368,6 +435,11 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('echo $UNDEFINED');
             expect(result.stdout).toBe('$UNDEFINED');
         });
+
+        it('should process escape sequences with -e', async () => {
+            const result: ShellResult = await shell.command_execute('echo -e hello\\nworld');
+            expect(result.stdout).toContain('\n');
+        });
     });
 
     // ─── Builtin: env ───────────────────────────────────────────
@@ -378,6 +450,12 @@ describe('Shell', () => {
             expect(result.stdout).toContain('HOME=/home/fedml');
             expect(result.stdout).toContain('USER=fedml');
             expect(result.stdout).toContain('PWD=');
+        });
+
+        it('should support env -i with assignments', async () => {
+            const result: ShellResult = await shell.command_execute('env -i FOO=bar');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toBe('FOO=bar');
         });
     });
 
@@ -394,6 +472,13 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('export invalid');
             expect(result.exitCode).toBe(1);
         });
+
+        it('should unset variable with -n', async () => {
+            await shell.command_execute('export TEMP=value');
+            const result: ShellResult = await shell.command_execute('export -n TEMP');
+            expect(result.exitCode).toBe(0);
+            expect(shell.env_get('TEMP')).toBeUndefined();
+        });
     });
 
     // ─── Builtin: whoami ────────────────────────────────────────
@@ -402,6 +487,12 @@ describe('Shell', () => {
         it('should print username', async () => {
             const result: ShellResult = await shell.command_execute('whoami');
             expect(result.stdout).toBe('fedml');
+        });
+
+        it('should print simulated uid with -u', async () => {
+            const result: ShellResult = await shell.command_execute('whoami -u');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toBe('1000');
         });
     });
 
@@ -412,6 +503,14 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('date');
             expect(result.exitCode).toBe(0);
             expect(result.stdout.length).toBeGreaterThan(0);
+        });
+
+        it('should support UTC and ISO flags', async () => {
+            const utc: ShellResult = await shell.command_execute('date -u');
+            const iso: ShellResult = await shell.command_execute('date -I=seconds');
+            expect(utc.exitCode).toBe(0);
+            expect(iso.exitCode).toBe(0);
+            expect(iso.stdout).toContain('T');
         });
     });
 
@@ -426,6 +525,15 @@ describe('Shell', () => {
             expect(result.stdout).toContain('ls');
             expect(result.stdout).toContain('history');
         });
+
+        it('should clear history with -c', async () => {
+            await shell.command_execute('pwd');
+            const clear: ShellResult = await shell.command_execute('history -c');
+            const after: ShellResult = await shell.command_execute('history');
+            expect(clear.exitCode).toBe(0);
+            expect(after.stdout).toContain('history');
+            expect(after.stdout).not.toContain('pwd');
+        });
     });
 
     // ─── Builtin: help ──────────────────────────────────────────
@@ -439,6 +547,12 @@ describe('Shell', () => {
             expect(result.stdout).toContain('rm');
             expect(result.stdout).toContain('cp');
             expect(result.stdout).toContain('mv');
+        });
+
+        it('should show command topic help', async () => {
+            const result: ShellResult = await shell.command_execute('help ls');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('ls');
         });
     });
 
@@ -550,6 +664,12 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('python missing.py');
             expect(result.exitCode).toBe(2);
             expect(result.stderr).toContain('No such file');
+        });
+
+        it('should print python version with -V', async () => {
+            const result: ShellResult = await shell.command_execute('python -V');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('Python');
         });
     });
 

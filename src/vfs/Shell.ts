@@ -175,6 +175,13 @@ export class Shell {
     }
 
     /**
+     * Removes an environment variable from shell state.
+     */
+    public env_unset(key: string): void {
+        this.env.delete(key);
+    }
+
+    /**
      * Returns all environment variables as a Map.
      */
     public env_all(): Map<string, string> {
@@ -245,6 +252,13 @@ export class Shell {
      */
     public history_get(): string[] {
         return [...this.commandHistory];
+    }
+
+    /**
+     * Clears the shell command history buffer.
+     */
+    public history_clear(): void {
+        this.commandHistory = [];
     }
 
     // ─── Internal Helpers ───────────────────────────────────────
