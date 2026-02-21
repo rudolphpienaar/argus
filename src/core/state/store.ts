@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { AppState, Project, Dataset, CostEstimate, TrainingJob, FederationState } from '../models/types.js';
+import type { AppState, Project, Dataset, CostEstimate, TrainingJob } from '../models/types.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { events, Events } from './events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../data/marketplace.js';
@@ -37,7 +37,6 @@ const initialState: ExtendedState = {
     marketplaceOpen: false,
     installedAssets: [],
     lastIntent: null,
-    federationState: null,
     lastMentionedDatasets: []
 };
 
@@ -273,16 +272,6 @@ class Store {
         if (touchesProject) {
             events.emit(Events.PROJECT_LOADED, this._state.activeProject);
         }
-        events.emit(Events.STATE_CHANGED, this._state);
-    }
-
-    /**
-     * Sets federation handshake state through a dedicated store action.
-     *
-     * @param federationState - New federation state.
-     */
-    public federationState_set(federationState: FederationState | null): void {
-        this._state.federationState = federationState;
         events.emit(Events.STATE_CHANGED, this._state);
     }
 

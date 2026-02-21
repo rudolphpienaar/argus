@@ -4,8 +4,7 @@
   "steps": [
     {
       "send": "search pathology",
-      "expect": "OK",
-      "materialized": ["${session}/search/data/search.json"]
+      "expect": "OK"
     },
     {
       "send": "add ds-006",
@@ -20,17 +19,17 @@
     {
       "send": "harmonize",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json"]
+      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
     },
     {
       "send": "proceed",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json"]
+      "materialized": ["${session}/search/gather/harmonize/code/data/code.json"]
     },
     {
       "send": "python train.py",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/rename/_join_gather_rename/harmonize/code/train/data/train.json"]
+      "materialized": ["${session}/search/gather/harmonize/code/train/data/train.json"]
     }
   ]
 }

@@ -251,6 +251,25 @@ export class VirtualFileSystem {
         this.event_emit(resolved, 'mount');
     }
 
+    public tree_clone(srcPath: string, destPath: string): void {
+        const srcResolved: string = this.path_resolve(srcPath);
+        const destResolved: string = this.path_resolve(destPath);
+        const srcNode: FileNode | null = this.node_at(srcResolved);
+        if (!srcNode) throw new Error(`tree_clone: ${srcPath}: No such file or directory`);
+
+        if (srcNode.type === 'folder' && srcNode.children) {
+            this.dir_create(destResolved);
+            for (const child of srcNode.children) {
+                const childDestPath = `${destResolved}/${child.name}`;
+                const childClone = node_cloneDeep(child, childDestPath);
+                this.tree_mount(childDestPath, childClone);
+            }
+        } else {
+            const clone = node_cloneDeep(srcNode, destResolved);
+            this.tree_mount(destResolved, clone);
+        }
+    }
+
     public tree_unmount(path: string): void {
         const resolved: string = this.path_resolve(path);
         const parent: FileNode | null = this.node_at(path_parent(resolved));
@@ -259,18 +278,41 @@ export class VirtualFileSystem {
         this.event_emit(resolved, 'unmount');
     }
 
-    private node_at(absolutePath: string): FileNode | null {
+    public link_create(path: string, target: string): void {
+        const resolved: string = this.path_resolve(path);
+        const parentPath: string = path_parent(resolved);
+        this.dir_create(parentPath);
+        const parent: FolderNode = this.node_folderRequire(parentPath, `ln: ${path}: Parent directory not found`);
+
+        parent.children = parent.children.filter((c: FileNode): boolean => c.path !== resolved);
+        
+        const node: FileNode = node_create(path_basename(resolved), 'link', resolved);
+        node.target = target;
+        parent.children.push(node);
+        this.event_emit(resolved, 'link');
+    }
+
+    private node_at(absolutePath: string, followLinks: boolean = true, depth: number = 0): FileNode | null {
+        if (depth > 10) throw new Error('Too many symbolic links');
         if (absolutePath === '/') return this.root;
+        
         const segments: string[] = absolutePath.split('/').filter(Boolean);
         let current: FileNode = this.root;
-        for (const seg of segments) {
-            if (!current.children) {
-                return null;
+
+        for (let i = 0; i < segments.length; i++) {
+            const seg = segments[i];
+            if (!current.children) return null;
+
+            let child: FileNode | undefined = current.children.find((c: FileNode): boolean => c.name === seg);
+            if (!child) return null;
+
+            if (child.type === 'link' && (followLinks || i < segments.length - 1)) {
+                const target = child.target!;
+                const remaining = segments.slice(i + 1).join('/');
+                const nextPath = remaining ? `${target}/${remaining}` : target;
+                return this.node_at(this.path_resolve(nextPath), followLinks, depth + 1);
             }
-            const child: FileNode | undefined = current.children.find((c: FileNode): boolean => c.name === seg);
-            if (!child) {
-                return null;
-            }
+
             current = child;
         }
         return current;
@@ -314,13 +356,36 @@ export class VirtualFileSystem {
     }
 }
 
-function node_create(name: string, type: 'file' | 'folder', path: string): FileNode {
-    return { name, type, path, size: type === 'folder' ? '-' : '0 B', content: null, contentGenerator: null, permissions: 'rw', modified: new Date(), children: type === 'folder' ? [] : null, metadata: {} };
+function node_create(name: string, type: 'file' | 'folder' | 'link', path: string): FileNode {
+    return { 
+        name, 
+        type, 
+        path, 
+        size: type === 'file' ? '0 B' : '-', 
+        content: null, 
+        contentGenerator: null, 
+        permissions: 'rw', 
+        modified: new Date(), 
+        children: type === 'folder' ? [] : null, 
+        metadata: {},
+        target: undefined
+    };
 }
 
 function node_cloneDeep(node: FileNode, newPath: string): FileNode {
-    const clone: FileNode = { ...node, path: newPath, name: path_basename(newPath), modified: new Date(), metadata: { ...node.metadata }, children: null };
-    if (node.children) clone.children = node.children.map((child: FileNode): FileNode => node_cloneDeep(child, newPath + '/' + child.name));
+    const clone: FileNode = { 
+        ...node, 
+        path: newPath, 
+        name: path_basename(newPath), 
+        modified: new Date(), 
+        metadata: { ...node.metadata }, 
+        children: null 
+    };
+    if (node.children) {
+        clone.children = node.children.map((child: FileNode): FileNode => 
+            node_cloneDeep(child, newPath + '/' + child.name)
+        );
+    }
     return clone;
 }
 

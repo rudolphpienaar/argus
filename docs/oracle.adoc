@@ -1,98 +1,119 @@
-= ORACLE: State-First Reflexive Verification
+= ORACLE: Reflexive Verification by Materialized Evidence
 :author: ATLAS Project Team
-:revdate: 2026-02-17
-:revnumber: 2.0.0
+:revdate: 2026-02-20
+:revnumber: 2.2.0
 :toc: macro
 :toclevels: 4
 :sectnums:
 :icons: font
 
-[.lead]
-_A methodology for verifying AI-mediated systems by asserting on materialized data-state transformations rather than natural language output._
-
 toc::[]
 
 == Abstract
 
-ORACLE (Observational Reflexive Agentic Confirmation of Logical Execution) is the reflexive verification methodology of the ARGUS system. It addresses the fundamental challenge of testing AI-driven interfaces: the inherent non-determinism of natural language output. By utilizing the system's own conversational interface as the test driver and the internal system state as the verification oracle, ORACLE ensures that cognitive operations result in correct, verifiable data mutations. This document specifies the ORACLE v2.0 **State-First Verification** strategy, detailing the "Contractual Walk" protocol and the mechanics of artifact-based state proofs within the Virtual File System (VFS).
+ORACLE is the verification discipline used by ARGUS to test AI-mediated workflows
+without depending on conversational phrasing. The method drives the system through
+its normal command surface and asserts outcomes against protocol status and
+artifact materialization in the virtual filesystem. This converts verification from
+language matching to state-proof validation.
 
-== Introduction: The Case for State-First Testing
+The current specification reflects join-aware workflow semantics and fast-mode test
+operation under plugin-owned latency policy.
 
-=== The Problem: Surface Ambiguity
-In the early development of ARGUS (v1.0 through v9.0), verification relied on "Conversational Matching"—the process of asserting that the AI's English response contained specific keywords (e.g., `expect(msg).toContain("successfully")`). This approach proved fundamentally brittle. Minor adjustments to the system's persona, subtle variations in LLM token prediction, or changes to the LCARS visual language (CSS) would trigger false-positive test failures, even when the underlying system logic was correct.
+== Historical Context
 
-=== The Resolution: The Truth of State
-We learned that for high-integrity scientific workflows, what an AI *says* is less important than what it *does*. The resolution was the implementation of **State-First Verification** in ORACLE v2.0. The methodology shifts the focus of testing from the "Surface Form" (the text) to the "Ground Truth" (the filesystem). In v2.0, a test is only considered successful if the system transitions to the correct logical state and materializes the required Merkle-proven artifacts in the VFS. This ensures that the system's logical state machine is verified independently of its linguistic posture.
+Pre-v10 testing emphasized English-response expectations. That model was brittle by
+construction because harmless narrative changes could fail tests while real
+regressions escaped when output phrasing happened to match. As ARGUS moved toward
+Merkle-grounded execution, testing had to move with it.
 
-== ORACLE Walk Figure
+ORACLE emerged from that pressure as a reflexive method: the same conversational
+entry surface is used to trigger behavior, but correctness is judged by deterministic
+state transitions and physical artifact evidence.
+
+== Oracle Walk Figure
 
 [source,text]
 ----
-┌─────────────────────┐
-│ send command        │
-└──────────┬──────────┘
-           ▼
-┌─────────────────────┐
-│ receive response    │
-│ (statusCode/actions)│
-└──────────┬──────────┘
-           ▼
-┌─────────────────────┐
-│ assert statusCode   │
-└──────────┬──────────┘
-           ▼
-┌─────────────────────┐
-│ assert materialized │
-│ artifact paths      │
-└──────────┬──────────┘
-           ▼
-┌─────────────────────┐
-│ next step in walk   │
-└──────────┬──────────┘
-           └─────────────── loop until scenario complete
+┌──────────────────────────┐
+│ SEND COMMAND             │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ RECEIVE RESPONSE         │
+│ statusCode + actions     │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ ASSERT STATUS CODE       │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ ASSERT ARTIFACT PATHS    │
+│ filesystem existence     │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ ADVANCE TO NEXT STEP     │
+└────────────┬─────────────┘
+             └──────────────▶ loop until scenario complete
 ----
 
-== The Methodology: The Contractual Walk
+== Contractual Walk Model
 
-A "Contractual Walk" is a formal verification scenario that exercises a specific topological path through a workflow DAG. Unlike unit tests, a Walk is an end-to-end integration of the 4-stage pipeline.
+A walk is a topological scenario that issues commands in sequence and validates
+each step against status protocol and materialization evidence. The runner sends a
+command, reads the structured response, checks the status contract, and then checks
+filesystem evidence for the expected artifacts. The loop continues until scenario
+completion, ensuring end-to-end coherence across interpretation, dispatch, and
+materialization layers.
 
-=== Intent Resolution Verification
-Each step in a Walk begins with a natural language command (e.g., "harmonize the cohort"). ORACLE verifies that the `IntentParser` correctly "compiles" this fuzzy input into the canonical protocol command defined in the manifest.
+Variable interpolation allows one scenario definition to remain portable across
+sessions and project renames. Session and project placeholders are re-resolved from
+runtime state after each step, so path assertions remain anchored to current
+context.
 
-=== Protocol-First Assertions
-The primary target for ORACLE assertions is the `CalypsoStatusCode`. This enum (defined in `src/lcarslm/types.ts`) represents the machine-verifiable outcome of an operation.
-- **`OK`**: Confirms that prerequisites were met and the plugin executed successfully.
-- **`BLOCKED_MISSING`**: Confirms that safety gates correctly prevent out-of-order execution.
-- **`BLOCKED_STALE`**: Confirms that the system correctly detects Merkle-proven data drift.
+== Runner Semantics
 
-=== Materialization Proofs (The Artifact Oracle)
-The ultimate proof of work in ARGUS is the materialization of a physical artifact. Every successful step in a Walk must produce a JSON envelope at a topology-aware path. ORACLE performs recursive VFS existence checks to verify these proofs. A step is only verified if the Host returns an `OK` status *and* the artifact (e.g., `.../gather/harmonize/data/harmonize.json`) appears on the virtual disk.
+The oracle runner operates in fast mode by setting `CALYPSO_FAST=true`. This keeps
+plugin behavior logically equivalent while removing plugin-side delay for stable and
+deterministic throughput. Backend runtime contains no synthetic sleep paths, so fast
+mode is applied exactly where simulation can exist.
 
-== The ORACLE Runner: Automated Session Driver
+When workflow policy emits blocked states requiring confirmation, the runner handles
+that handshake within the same scenario so policy enforcement and continuation logic
+are both tested. Conversational success states remain valid for steps explicitly
+defined as non-mutating guidance interactions.
 
-The `oracle-runner.mjs` is an in-process driver designed to simulate a human operator interacting with the Calypso Host.
+== JOIN-Aware Verification
 
-=== Automated Phase Jump Handling
-Agentic workflows often involve "Phase Jumps"—attempts to skip non-essential stages. The ARGUS Host correctly blocks these jumps and requests confirmation. The ORACLE runner detects these `BLOCKED` responses and automatically injects the required `confirm` command. This verifies both the system's ability to detect jumps and its ability to maintain session continuity after confirmation.
+With join materialization semantics, optional-parent bypass is no longer an
+invisible controller choice. When a walk advances past an optional stage, runtime
+may materialize skip evidence and then continue execution. ORACLE validates the same
+artifact-grounded contract used by regular stage completion, which means optional
+resolution is now testable lineage behavior rather than implicit control flow.
 
-=== Dynamic Variable Interpolation
-To remain environment-agnostic, ORACLE test scripts use dynamic variables:
-- **`${session}`**: Interpolates the unique, timestamped session path.
-- **`${project}`**: Interpolates the active project name.
-The runner re-fetches these paths from the system Store after every command, allowing a single script to verify persistence across project renames and system resets.
+This distinction is critical for rename-sensitive workflows. Linear walks and
+rename-explicit walks now diverge intentionally in artifact paths and ordering
+semantics, and ORACLE captures that divergence as expected behavior rather than as
+test fragility.
 
-== Systematic Testing Scenarios
+== Scenario Coverage Posture
 
-The ORACLE suite comprises specialized walks designed to stress the system's architectural limits:
+The suite is organized as pressure walks across canonical progression, branching,
+out-of-order safety, staleness propagation, and anaphora-sensitive command
+resolution. Coverage is designed to stress the exact surfaces where language,
+topology, and provenance can diverge.
 
-*   **Linear Path Walks:** Verifies the "Golden Path" from discovery to publication.
-*   **Branching Path Walks:** Verifies that optional stages (e.g., `rename`) correctly fork the session tree without breaking downstream logic.
-*   **Stress Walks:** Intentionally executes steps out-of-order to verify the robustness of the DAG Engine's safety gates.
-*   **Merkle Staleness Walks:** Modifies upstream artifacts to verify that the system correctly flags the entire downstream pipeline as stale.
+By asserting on status and physical artifacts together, ORACLE can detect both
+false-positive language success and silent data-state regressions.
 
-== Conclusion
+== Architectural Outcome
 
-ORACLE v2.0 represents the formalization of "Reflexive Verification." By using the AI layer to test the deterministic system it controls, ARGUS ensures that its intelligence is always grounded in verifiable truth. The methodology provides the mathematical rigor required for national-scale medical research, transforming "Conversational AI" into a robust, auditable, and scientifically valid research instrument.
+ORACLE turns conversational execution into scientifically auditable verification.
+Its value is not that it speaks to the system like a user; its value is that it
+refuses to trust language without materialized proof. This makes it the primary
+integrity backstop for ARGUS release hardening.
 
 ---
-_Last updated: 2026-02-17 (v2.0.0)_
+_Last updated: 2026-02-20 (v2.2.0)_

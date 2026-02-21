@@ -1,7 +1,7 @@
 = ARGUS Project History: The Forensic Chronicle of a State-Grounded Kernel
 :author: ATLAS Project Team
-:revdate: 2026-02-20
-:revnumber: 10.3.1
+:revdate: 2026-02-21
+:revnumber: 10.3.2
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -18,13 +18,13 @@ Each section details the specific technical pressures—such as monolithic drift
 
 [source,text]
 ----
-2026-01-23                                                            2026-02-20
+2026-01-23                                                            2026-02-21
     │                                                                      │
     ├── Phase I   v1.0  .. v1.4      SeaGaP codification
     ├── Phase II  v1.4.1.. v3.4      Intelligence console + agentic pivot
     ├── Phase III v4.0  .. v4.7      VCS substrate + slot refactor
     ├── Phase IV  v5.0  .. v8.0      Headless Calypso + ORACLE + scripts
-    └── Phase V   v9.0  .. v10.3.1   DAG + Merkle + plugin runtime hardening
+    └── Phase V   v9.0  .. v10.3.2   DAG + Merkle + plugin runtime hardening
 
 arc: monolithic UI prototype  ─────────────────────────▶  state-grounded kernel
 ----
@@ -163,7 +163,7 @@ These releases aligned the Federation Orchestrator's internal command protocol w
 
 v7.3.0 eliminated these custom paths, forcing all orchestrator commands through the standard manifest-driven pipeline. This made the federalization handshake as verifiable and auditable as any other SeaGaP stage. It was the final "Cleanup" before the move to the v9.0 DAG revolution.
 
-== Phase V: The v10.x Plugin Revolution and Hardening Line (v9.0 - v10.3.1)
+== Phase V: The v10.x Plugin Revolution and Hardening Line (v9.0 - v10.3.2)
 _Period: February 14 – February 20, 2026_
 
 === Version 9.0.0: Manifest-Driven DAG Engine
@@ -259,6 +259,30 @@ interpolation to bind to runtime session state. That patch closed a false-negati
 verification seam and restored full oracle green status without reintroducing backend
 simulation behavior.
 
+A follow-on stabilization addendum on February 21 removed the remaining fixed host
+execution watchdog (`10s` timeout in workflow dispatch) and corrected CLI telemetry
+rendering semantics so progress updates rewrite one active row with glyph bars
+instead of printing one line per tick. This closed a user-visible observability bug
+without relaxing Host/Guest boundaries or provenance guarantees.
+
+=== Version 10.3.2: Documentation Closure and Operator Clarity Patch
+After runtime hardening, a final gap remained between code-current behavior and
+operator-facing documentation. The issue was not compute correctness; it was path
+clarity. Operators and test authors still needed a single canonical reference that
+showed exactly how the manifest pipeline materializes into `~/projects` and where
+cross-root side effects are written.
+
+`10.3.2` addresses that gap by publishing an explicit FEDML pipeline map (`FEDML.md`)
+that enumerates each manifest stage, handler, artifact envelope, and resulting tree
+shape. The release includes complete end-state trees for both renamed and non-renamed
+project trajectories and codifies the external `~/searches` snapshot namespace used
+by `search` stage materialization.
+
+The result is a documentation patch that reduces operator ambiguity without changing
+Host/Guest execution semantics. In practical terms, this narrows release friction:
+investigation, oracle authoring, and manual verification now anchor against a single
+code-aligned directory contract.
+
 == Persistence and Integrity Matrix
 
 The following matrix summarizes the evolution of the system's grounding mechanisms across the major developmental phases of this sprint.
@@ -316,13 +340,18 @@ The following matrix summarizes the evolution of the system's grounding mechanis
 |v10.3.1
 |Runtime Path Correctness
 |Preserves upstream artifact lineage during project-switch and aligns oracle assertions with active session roots.
+
+|**FEDML Materialization Documentation Closure**
+|v10.3.2
+|Operator Contract Clarity
+|Publishes explicit stage-by-stage and end-state trees so runtime evidence paths remain unambiguous for testing and operations.
 |===
 
 == Conclusion: The Arc of Integrity
 
 The evolution of ARGUS from January to February 2026 is a chronicle of the "Scientific Hardening" of AI. Each major version was a response to a specific failure mode where human trust in the system was compromised by AI-mediated ambiguity. From the early "Gutter Flash" regressions to the final "Merkle Staleness" proofs, the project has consistently prioritized "Evidence over Assertion."
 
-By grounding the entire system in a virtualized hardware substrate (VCS), a graph-based conscience (DAG Engine), and a Merkle provenance chain, ARGUS `v10.3.1` now represents the stabilized hardening baseline at the end of the v10 deletion line. The project stands as a successful proof-of-concept for how agentic systems can be made structurally safe, transforming the "Hallucinating Agent" into a high-fidelity instrument of scientific discovery. The next arc is explicit: complete residual debt removal and lock Host/Guest contracts in `v11.0`.
+By grounding the entire system in a virtualized hardware substrate (VCS), a graph-based conscience (DAG Engine), and a Merkle provenance chain, ARGUS `v10.3.2` now represents the stabilized hardening baseline at the end of the v10 deletion line. The project stands as a successful proof-of-concept for how agentic systems can be made structurally safe, transforming the "Hallucinating Agent" into a high-fidelity instrument of scientific discovery. The next arc is explicit: complete residual debt removal and lock Host/Guest contracts in `v11.0`.
 
 ---
-_Last updated: 2026-02-20 (v10.3.1)_
+_Last updated: 2026-02-21 (v10.3.2)_

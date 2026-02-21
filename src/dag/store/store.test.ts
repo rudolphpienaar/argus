@@ -189,7 +189,7 @@ describe('dag/store/SessionStore/session lifecycle', (): void => {
         expect(session.id).toBeTruthy();
         expect(session.persona).toBe(TEST_PERSONA);
         expect(session.manifestVersion).toBe(TEST_MANIFEST_VERSION);
-        expect(session.rootPath).toBe('/home/test/projects/DRAFT/data');
+        expect(session.rootPath).toBe('/home/test/projects/fedml/data');
     });
 
     it('should create session root directory and data/ subdirectory', async (): Promise<void> => {
@@ -212,7 +212,7 @@ describe('dag/store/SessionStore/session lifecycle', (): void => {
     it('should resume an existing session', async (): Promise<void> => {
         const { store }: StoreFixture = storeFixture_create();
         const created: Session = await session_create(store);
-        const resumed: Session | null = await store.session_resume(TEST_PERSONA, 'DRAFT');
+        const resumed: Session | null = await store.session_resume(TEST_PERSONA, TEST_PERSONA);
         expect(resumed).not.toBeNull();
         expect(resumed?.id).toBe(created.id);
         expect(resumed?.persona).toBe(created.persona);
@@ -243,7 +243,7 @@ describe('dag/store/SessionStore/session lifecycle', (): void => {
         const { store }: StoreFixture = storeFixture_create();
         const created: Session = await session_create(store);
         await delay_wait(5);
-        const resumed: Session | null = await store.session_resume(TEST_PERSONA, 'DRAFT');
+        const resumed: Session | null = await store.session_resume(TEST_PERSONA, TEST_PERSONA);
         expect((resumed?.lastActive ?? '') >= created.lastActive).toBe(true);
     });
 });

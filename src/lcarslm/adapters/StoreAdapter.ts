@@ -8,7 +8,7 @@
  */
 
 import type { CalypsoStoreActions } from '../types.js';
-import type { Dataset, AppState, FederationState, Project } from '../../core/models/types.js';
+import type { Dataset, AppState, Project } from '../../core/models/types.js';
 import { store } from '../../core/state/store.js';
 import { DATASETS } from '../../core/data/datasets.js';
 
@@ -124,20 +124,6 @@ export class StoreAdapter implements CalypsoStoreActions {
      */
     public session_setPath(path: string | null): void {
         this.sessionPath = path;
-    }
-
-    /**
-     * Get current federation handshake state from global store.
-     */
-    public federation_getState(): FederationState | null {
-        return store.state.federationState;
-    }
-
-    /**
-     * Update federation handshake state in global store.
-     */
-    public federation_setState(fedState: FederationState | null): void {
-        store.federationState_set(fedState);
     }
 
     /**

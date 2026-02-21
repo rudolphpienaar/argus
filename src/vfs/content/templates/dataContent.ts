@@ -51,7 +51,7 @@ function imageContent_generate(context: ContentContext): string {
   Dims:     512 × 512 px (typical)
 ──────────────────────────────────────
 
-  This is a simulated medical imaging file.
+  This is a synthetic medical imaging file.
   In a production environment this would contain
   pixel data from the federated data source.
 

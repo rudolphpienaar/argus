@@ -23,22 +23,12 @@ export class VfsBackend implements StorageBackend {
     constructor(private readonly vfs: VirtualFileSystem) {}
 
     async artifact_write(path: string, data: string): Promise<void> {
-        // Ensure parent directory exists
-        const parentPath = path.substring(0, path.lastIndexOf('/'));
-        if (parentPath) {
-            this.vfs.dir_create(parentPath);
-        }
-        // Create file if it doesn't exist, then write content
-        const stat = this.vfs.node_stat(path);
-        if (!stat) {
-            this.vfs.file_create(path);
-        }
-        this.vfs.node_write(path, data);
+        this.vfs.file_create(path, data);
     }
 
     async artifact_read(path: string): Promise<string | null> {
         const stat = this.vfs.node_stat(path);
-        if (!stat || stat.type !== 'file') return null;
+        if (!stat || (stat.type !== 'file' && stat.type !== 'link')) return null;
         return this.vfs.node_read(path);
     }
 
@@ -47,9 +37,7 @@ export class VfsBackend implements StorageBackend {
     }
 
     async link_create(source: string, target: string): Promise<void> {
-        // VFS has no symlinks — write a JSON reference file
-        const linkContent = JSON.stringify({ __link: true, target });
-        await this.artifact_write(source, linkContent);
+        this.vfs.link_create(source, target);
     }
 
     async children_list(path: string): Promise<string[]> {

@@ -1,7 +1,7 @@
-= Manifest-Driven DAG Engine: The Core of Workflow Orchestration
+= Manifest-Driven DAG Engine: Topology as Execution Truth
 :author: ATLAS Project Team
-:revdate: 2026-02-17
-:revnumber: 10.0.0
+:revdate: 2026-02-20
+:revnumber: 10.3.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -10,81 +10,166 @@ toc::[]
 
 == Abstract
 
-The ARGUS DAG Engine is the declarative heart of the system's workflow orchestration. It models scientific processes as Directed Acyclic Graphs (DAGs) defined in YAML manifests, ensuring that every user interaction is governed by strict procedural rules and cryptographically anchored by Merkle fingerprints. This document serves as the formal specification for the DAG engine, detailing the mechanics of topological position resolution, the branch-aware Merkle provenance model, and the engineering rationale for grounding graph transitions in physical filesystem artifacts.
+The DAG engine is the workflow conscience of ARGUS. It transforms declarative
+manifest topology into deterministic execution constraints and resolves current
+position from materialized evidence rather than conversational state. In this
+model, progression is granted only when prerequisite artifacts exist and lineage
+integrity remains valid under Merkle parentage.
 
-== Introduction: The Case for a Graph-Based Model
+This specification reflects the post-hardening state in which optional-parent JOIN
+resolution is materialized as data evidence and command vocabulary is bound to
+active manifest declarations.
 
-=== The Failure of Linear State Machines
-In early iterations of ARGUS (v1.0 through v8.0), workflow progress was managed through hardcoded linear state machines. This approach was structurally incapable of supporting the complex realities of federated research. A scientific workflow is rarely a straight line; it involves branching (e.g., renaming a project), re-execution (e.g., changing search parameters), and parallel dependencies (e.g., merging cohorts from multiple sites). Linear models inevitably suffer from "State Drift," where the system's belief about its position diverges from the actual project data.
+== Historical Context
 
-=== The Resolution: Topological Grounding
-We learned that a scientific workflow must be modeled as a graph, not a list. The resolution was the implementation of a **Manifest-Driven DAG Engine**. In the v10.0 architecture, this engine has been enhanced with **Merkle-Proven Fingerprinting**. Every node in the graph is now grounded in a physical VFS artifact, and every transition is verified against a cryptographic chain of parentage. This ensures that the system's logical position is always a direct reflection of the physical evidence on the virtual disk.
+Early workflow logic used linear state progression and implicit controller rules.
+That approach failed once workflows required branching, re-execution, and
+multi-parent convergence. The immediate symptom was state drift, where runtime
+position and filesystem evidence diverged. The deeper issue was representational:
+control decisions were not encoded as artifacts.
 
-== DAG Topology Figure
+The DAG transition corrected topology representation, and later hardening work
+closed remaining semantic gaps by converting JOIN control into materialized
+resolution evidence.
+
+== Topology Figure
 
 [source,text]
 ----
-manifest DAG (example):
+Main topology with optional JOIN:
 
-┌────────┐     ┌────────┐     ┌───────────┐     ┌─────────┐
-│ search │────▶│ gather │────▶│ harmonize │────▶│ proceed │
-└────────┘     └────────┘     └───────────┘     └─────────┘
+┌────────────┐     ┌────────────┐
+│ SEARCH     │───▶│ GATHER     │──────────────┐
+└────────────┘     └────────────┘              │
+                                               ▼
+                                        ┌────────────┐
+                                        │ JOIN GATE  │───▶┌────────────┐───▶┌────────────┐
+                                        │ parents ok │    │ HARMONIZE  │    │ PROCEED    │
+                                        └─────┬──────┘    └────────────┘    └────────────┘
+                                              │
+                             optional path    │
+                                              ▼
+                                        ┌────────────┐
+                                        │ RENAME opt │
+                                        └────────────┘
 
-re-execution branch:
-┌────────┐
-│ search │  (new fingerprint)
-└────┬───┘
-     │
-     └──────────────▶ downstream lineage marked stale until re-materialized
-                      ┌────────┐     ┌───────────┐     ┌─────────┐
-                      │ gather │────▶│ harmonize │────▶│ proceed │
-                      └────────┘     └───────────┘     └─────────┘
+Re-execution pressure:
+
+┌────────────┐
+│ SEARCH     │ (new fingerprint)
+└─────┬──────┘
+      │
+      └──────────────▶ downstream descendants marked [STALE]
 ----
 
-== The Workflow Manifest: Declarative Process Specification
+== Manifest as Runtime Contract
 
-Workflows in ARGUS are defined externally in YAML manifests (`src/dag/manifests/`). These files serve as the "Scientific Schema" for the system.
+Workflows are declared in YAML manifests under `src/dag/manifests/`. Stage
+declarations define parentage, command vocabulary, and produced artifacts. At
+runtime, the adapter compiles manifest data into graph nodes and treats that graph
+as the only valid orchestration surface for command dispatch and position
+resolution.
 
-=== Node Identity and Topological Constraints
-Each node in the DAG defines a discrete stage of the workflow.
-*   **Previous (Prerequisites):** Defines the parent stages that must be completed before the current stage can execute. This creates the "Directed" and "Acyclic" properties of the graph.
-*   **Commands:** Lists the canonical protocol commands (e.g., `harmonize`, `train`) that the stage handles.
-*   **Produces (The Artifact Contract):** This is the most critical field. It defines the specific artifact file (e.g., `harmonize.json`) that must be materialized in the VFS for the stage to be considered complete.
+Because command ownership is now manifest-derived, parser acceptance and dispatch
+routing are constrained to active workflow verbs. This prevents backend vocabulary
+drift from introducing persona-specific hidden behavior.
 
-=== Polymorphism and Persona Selection
-The DAG Engine supports multiple active manifests. At system boot, the user (or the system persona) selects a manifest (e.g., `fedml.manifest.yaml` or `chris.manifest.yaml`). The DAG Engine then compiles this YAML into a runtime graph of `DAGNode` objects, providing a specialized execution environment tailored to that specific scientific persona.
+== Position Resolution
 
-== Topological Position Resolution: Determining "Where We Are"
+Current stage is resolved through artifact inventory and topological readiness
+evaluation. The engine inspects materialized stage evidence, verifies parent
+availability and lineage validity, and identifies the first unresolved stage in
+topological order that is eligible for execution.
 
-In a non-linear graph, determining the "current stage" is a non-trivial operation. The `WorkflowAdapter` class implements a "Check-Then-Crawl" algorithm to resolve the system's topological position.
+This method keeps runtime position reconstructible from filesystem state at any
+time. No controller-local pointer can claim advancement without corresponding
+artifact evidence.
 
-=== The Check-Then-Crawl Algorithm
-1.  **VFS Inventory:** The engine first performs a deep walk of the VFS session tree, identifying all existing artifact envelopes.
-2.  **Readiness Mapping:** For each node in the DAG, the engine evaluates its "Readiness" based on the inventory. A node is considered "Ready" if and only if:
-    - All of its parent nodes have materialized valid artifacts.
-    - Its own artifact is either missing or marked as stale.
-3.  **Kahn's Leaf Identification:** The engine uses a modified version of Kahn's algorithm to perform a topological sort of the ready nodes. The first node in this order that lacks a completed artifact is identified as the authoritative `currentStage`.
+== Merkle-Coupled Staleness
 
-This process ensures that Calypso's guidance and command routing are always grounded in the physical reality of the project tree, making the system immune to "context drift."
+Stage artifacts are fingerprinted with parent lineage context, which means upstream
+re-materialization changes descendant validity even when descendant files still
+exist. The DAG engine therefore marks downstream stages stale when parent
+fingerprints diverge from recorded lineage. Staleness is not a user-interface
+warning; it is a topological validity condition that blocks unsafe continuation.
 
-== Merkle Fingerprinting: The Chain of Evidence
+== JOIN Semantics: Control Materialized as Data
 
-To ensure the integrity of the scientific process over time, the DAG Engine utilizes a Merkle Provenance Chain. This mechanism cryptographically anchors every stage's data to its specific lineage.
+Multi-parent stages represent convergence points where control choices must be
+resolved before execution. Prior implementations used alias-style completion
+semantics that treated optional parents as implicitly satisfied. This removed
+explicit evidence of the decision and created dispatch ambiguity under later
+commands.
 
-=== The SHA-256 Recursive Fingerprint
-When a stage completes, the `MerkleEngine` calculates a SHA-256 fingerprint for the resulting artifact.
-$$H_{current} = \text{SHA-256}(Content_{current} + \text{ParentFingerprints})$$
-This calculation ensures that an artifact's identity is inextricably linked to the specific versions of the data that preceded it.
+The corrected model treats JOIN resolution as data-state. Required parents must
+materialize standard evidence. Optional parents must also resolve, either through
+executed artifacts or explicit decline artifacts. Only after all parent statuses are
+materialized does execution enter the target stage.
 
-=== Branch-Aware Staleness Detection
-If a user re-executes an upstream stage (e.g., changing the search query), the `MerkleEngine` creates a new timestamped branch in the session tree.
-*   **Fingerprint Invalidation:** The new upstream artifact receives a new fingerprint.
-*   **Topological Ripple:** The DAG Engine immediately detects that all downstream artifacts (e.g., the gathered cohort) now point to an outdated parent hash.
-*   **State Flagging:** These downstream stages are flagged as `[STALE]`. This informs the user—and the AI Kernel—that the scientific validity of the downstream data has been compromised and requires re-verification.
+The current runtime writes optional-decline evidence as skip artifacts in normal
+stage paths. This keeps resolver behavior uniform because completion checks consume
+the same artifact contract regardless of whether the parent was executed or
+declined.
 
-== Conclusion
+[source,text]
+----
+Advance while optional parent is unresolved:
 
-The ARGUS DAG Engine transforms scientific processes from abstract ideas into verifiable, graph-based protocols. By grounding all workflow transitions in Merkle-proven materialization and topological resolution, the engine provides the "Scientific Conscience" of the system. It ensures that every step taken by a researcher is documented, auditable, and cryptographically anchored to its provenance, providing the rigorous foundation required for high-stakes federated medical research.
+┌────────────────────────────────────┐
+│ command("harmonize")               │
+└───────────────┬────────────────────┘
+                ▼
+┌────────────────────────────────────┐
+│ transition check: pending rename   │
+└───────────────┬────────────────────┘
+                ▼
+┌────────────────────────────────────┐
+│ auto-decline policy resolves true  │
+└───────────────┬────────────────────┘
+                ▼
+┌────────────────────────────────────┐
+│ materialize skip evidence: rename  │
+└───────────────┬────────────────────┘
+                ▼
+┌────────────────────────────────────┐
+│ re-sync topological position       │
+└───────────────┬────────────────────┘
+                ▼
+┌────────────────────────────────────┐
+│ dispatch harmonize                 │
+└────────────────────────────────────┘
+----
+
+== Auto-Decline and Phase Progression
+
+When a user advances to a downstream stage while optional parents remain unresolved,
+transition logic evaluates whether the unresolved set is auto-declinable under
+manifest policy. If so, decline artifacts are materialized and the resolver
+re-synchronizes position before dispatching the requested stage. Mandatory-parent
+gaps remain blocking and cannot be auto-declined.
+
+This behavior removed recursive loop surfaces previously triggered by strict-lock
+rejection followed by conversational fallthrough, because workflow intents now
+remain inside workflow dispatch semantics even when the command targets a different
+stage than the current pointer.
+
+== Pointer Integrity and Session Realignment
+
+Hardening also addressed stale-pointer behavior by ensuring fast verification paths
+detect self-completed stages and force slow-path advancement. Session-path updates
+after project renames are propagated through all consumers so status providers and
+resolver scans continue to inspect the active lineage root.
+
+These corrections preserve a single invariant: stage position is always derived from
+current artifact truth in the active session context.
+
+== Architectural Outcome
+
+The DAG engine now expresses orchestration as a fully materialized graph contract.
+Manifests declare topology and verbs, adapter logic enforces parent-state validity,
+and Merkle lineage anchors temporal consistency. JOIN decisions are no longer
+controller folklore. They are filesystem evidence subject to the same verification
+discipline as compute outputs.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-20 (v10.3.0)_

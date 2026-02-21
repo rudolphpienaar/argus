@@ -106,6 +106,16 @@ describe('IntentParser', (): void => {
         expect(intent.isModelResolved).toBe(false);
     });
 
+    it('resolves deterministic rename commands with "as" phrasing', async (): Promise<void> => {
+        const parser: IntentParser = parser_create();
+        const intent = await parser.intent_resolve('rename this as histo-exp');
+
+        expect(intent.type).toBe('workflow');
+        expect(intent.command).toBe('rename');
+        expect(intent.args).toEqual(['histo-exp']);
+        expect(intent.isModelResolved).toBe(false);
+    });
+
     it('compiles model-resolved workflow intents from JSON payloads', async (): Promise<void> => {
         const parser: IntentParser = parser_create();
         const model: LCARSEngine = modelStub_create(

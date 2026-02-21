@@ -18,10 +18,6 @@ interface ModelIntentPayload {
     args?: unknown;
 }
 
-const MODEL_WORKFLOW_COMMANDS: ReadonlySet<string> = new Set<string>([
-    'search', 'add', 'gather', 'harmonize', 'federate', 'dispatch', 'status', 'publish', 'proceed', 'rename'
-]);
-
 export class IntentParser {
     constructor(
         private searchProvider: SearchProvider,
@@ -29,6 +25,7 @@ export class IntentParser {
         private workflowContext?: {
             activeStageId_get: () => string | null;
             stage_forCommand: (cmd: string) => { id: string; commands: string[] } | null;
+            commands_list?: () => string[];
         }
     ) {}
 
@@ -56,17 +53,14 @@ export class IntentParser {
      * @returns The resolved CalypsoIntent.
      */
     public async intent_resolve(input: string, model?: LCARSEngine | null): Promise<CalypsoIntent> {
+        // v10.2: GROUNDED PRE-PROCESSING (Anaphora Resolution)
+        // Before matching, ground common pronouns ('this', 'it') into the input string
+        // using the Host's persistent dataset memory.
+        const groundedInput = this.inputGrounded_resolve(input);
+
         // 1. FAST PATH: Check for exact deterministic matches first.
-        // If the user typed the exact protocol command, we don't need a model to guess.
-        const deterministic = this.deterministicIntent_resolve(input);
+        const deterministic = this.deterministicIntent_resolve(groundedInput);
         if (deterministic) {
-            // v10.2: Even deterministic intents must be grounded (anaphora resolution)
-            if (deterministic.type === 'workflow' && deterministic.command) {
-                const resolutionVerbs = ['add', 'remove', 'deselect', 'gather', 'review', 'rename'];
-                if (resolutionVerbs.includes(deterministic.command)) {
-                    deterministic.args = this.modelArgs_resolve(deterministic.args || []);
-                }
-            }
             return deterministic;
         }
 
@@ -92,8 +86,8 @@ export class IntentParser {
     private deterministicIntent_resolve(input: string): CalypsoIntent | null {
         const trimmed: string = input.trim().toLowerCase();
         
-        // Match 'rename [to] <name>'
-        const renameMatch: RegExpMatchArray | null = trimmed.match(/^rename\s+(?:to\s+)?(.+)$/);
+        // Match 'rename [this] [to] <name>'
+        const renameMatch: RegExpMatchArray | null = trimmed.match(/^rename\s+(?:this\s+)?(?:(?:to|as)\s+)?(.+)$/);
         if (renameMatch) {
             return {
                 type: 'workflow',
@@ -128,11 +122,7 @@ export class IntentParser {
         }
 
         // Match exact workflow verbs
-        const workflowVerbs: string[] = [
-            'search', 'add', 'remove', 'deselect', 'gather', 'review', 'mount', 
-            'rename', 'harmonize', 'proceed', 'code', 'train', 'python', 
-            'federate', 'approve', 'show', 'config', 'dispatch', 'status', 'publish'
-        ];
+        const workflowVerbs: string[] = this.workflowCommands_resolve();
         const firstWord: string = trimmed.split(/\s+/)[0];
         if (workflowVerbs.includes(firstWord)) {
             let args: string[] = trimmed.split(/\s+/).slice(1);
@@ -165,12 +155,16 @@ export class IntentParser {
      * @returns Compiled intent.
      */
     private async modelIntent_resolve(input: string, model: LCARSEngine): Promise<CalypsoIntent> {
+        const workflowCommands: string[] = this.workflowCommands_resolve();
+        const workflowLine: string = workflowCommands.length > 0
+            ? workflowCommands.join(', ')
+            : '(none)';
         const prompt: string = `
             You are the ARGUS Intent Compiler. Your job is to translate noisy natural language
             into a strictly-typed JSON intent object for the ARGUS Operating System.
 
             AVAILABLE COMMANDS: 
-            - Workflow: search, add, gather, harmonize, federate, dispatch, status, publish, proceed, rename.
+            - Workflow: ${workflowLine}.
             - Shell: ls, cd, cat, mkdir, pwd, touch, rm, cp, mv, tree.
 
             FORMAT:
@@ -220,7 +214,6 @@ export class IntentParser {
         this.workflowAdvance_extract(text, actions);
         this.datasetRender_extract(text, actions);
         this.projectRename_extract(text, actions);
-        this.harmonization_extract(text, actions);
 
         // 3. Clean up text markers
         const cleanText: string = this.actionMarkers_strip(text);
@@ -238,7 +231,7 @@ export class IntentParser {
 
     /** Extract [ACTION: PROCEED] workflow advance intents. */
     private workflowAdvance_extract(text: string, actions: CalypsoAction[]): void {
-        const match: RegExpMatchArray | null = text.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
+        const match: RegExpMatchArray | null = text.match(/\[ACTION: PROCEED(?:\s+([a-z0-9_-]+))?\]/i);
         if (match) {
             actions.push({
                 type: 'stage_advance',
@@ -273,22 +266,14 @@ export class IntentParser {
         }
     }
 
-    /** Extract [ACTION: HARMONIZE] intents. */
-    private harmonization_extract(text: string, actions: CalypsoAction[]): void {
-        if (text.includes('[ACTION: HARMONIZE]')) {
-            // Future: resolve to workflow intent
-        }
-    }
-
     /** Strip all [ACTION: ...] and control markers from conversational text. */
     private actionMarkers_strip(text: string): string {
         return text
             .replace(/\[SELECT: ds-[0-9]+\]/g, '')
-            .replace(/\[ACTION: PROCEED(?:\s+(?:fedml|chris))?\]/gi, '')
+            .replace(/\[ACTION: PROCEED(?:\s+[a-z0-9_-]+)?\]/gi, '')
             .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
             .replace(/\[FILTER:.*?\]/g, '')
             .replace(/\[ACTION: RENAME.*?\]/g, '')
-            .replace(/\[ACTION: HARMONIZE\]/g, '')
             .trim();
     }
 
@@ -331,7 +316,8 @@ export class IntentParser {
         }
 
         const command: string | undefined = this.command_fromUnknown(payload.command);
-        if (!command || !MODEL_WORKFLOW_COMMANDS.has(command)) {
+        const workflowCommands: Set<string> = new Set<string>(this.workflowCommands_resolve());
+        if (!command || workflowCommands.size === 0 || !workflowCommands.has(command)) {
             return this.intent_modelFallback(input);
         }
 
@@ -445,5 +431,46 @@ export class IntentParser {
     private workflow_parseFromProceedMatch(match: RegExpMatchArray): string | undefined {
         const workflowRaw: string | undefined = match[1];
         return workflowRaw ? workflowRaw.toLowerCase() : undefined;
+    }
+
+    /**
+     * Resolve active workflow command verbs from the runtime workflow context.
+     */
+    private workflowCommands_resolve(): string[] {
+        if (!this.workflowContext?.commands_list) {
+            return [];
+        }
+
+        const commandsRaw: string[] = this.workflowContext.commands_list();
+        const commands: string[] = commandsRaw
+            .map((cmd: string): string => cmd.trim().toLowerCase())
+            .filter((cmd: string): boolean => /^[a-z][a-z0-9_-]*$/.test(cmd));
+
+        return Array.from(new Set(commands));
+    }
+
+    /**
+     * Replace common anaphora/pronouns in the raw input string with concrete IDs.
+     */
+    private inputGrounded_resolve(input: string): string {
+        const words = input.trim().split(/\s+/);
+        if (words.length === 0) return input;
+
+        // v10.2: Never ground the first word (it's the verb/command).
+        // Also skip grounding for 'rename' as it uses raw text for names.
+        const verb = words[0].toLowerCase();
+        if (verb === 'rename') return input;
+
+        const groundedWords = words.map((word, index) => {
+            if (index === 0) return word;
+
+            const normalized = word.toLowerCase().replace(/[^a-z0-9-]/g, '');
+            const resolved = this.searchProvider.resolveAnaphora(normalized);
+            if (resolved.length > 0) {
+                return resolved.map(ds => ds.id).join(' ');
+            }
+            return word;
+        });
+        return groundedWords.join(' ');
     }
 }

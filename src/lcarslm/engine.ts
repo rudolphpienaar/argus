@@ -21,24 +21,20 @@ import type { Dataset, Project } from '../core/models/types.js';
 export class LCARSEngine {
     private client: OpenAIClient | GeminiClient | null;
     private systemPrompt: string;
-    private isSimulated: boolean = false;
     private history: ChatMessage[] = [];
     private readonly MAX_HISTORY = 10;
 
     /**
      * Creates a new LCARSEngine instance.
      * 
-     * @param config - The system configuration, or null for simulation mode.
+     * @param config - The system configuration, or null for offline mode.
      * @param knowledge - Optional dictionary of system documentation (filename -> content).
-     * @param simulationMode - Explicitly force simulation mode.
      */
     constructor(
         config: LCARSSystemConfig | null, 
-        knowledge?: Record<string, string>,
-        simulationMode: boolean = false
+        knowledge?: Record<string, string>
     ) {
         this.client = config ? (config.provider === 'gemini' ? new GeminiClient(config) : new OpenAIClient(config)) : null;
-        this.isSimulated = simulationMode || !config;
         
         let knowledgeContext: string = '';
         if (knowledge) {
@@ -57,8 +53,8 @@ Your primary function is to query the medical imaging dataset catalog and manage
     *   If the user EXPLICITLY asks to "open", "select", "inspect", or "add" a specific dataset, include [SELECT: ds-ID] at the **END** of your response.
     *   If the user asks to "search", "show", "find", or "list" datasets, include [ACTION: SHOW_DATASETS] and optionally [FILTER: ds-ID, ds-ID] at the **END** of your response. Do NOT use [SELECT] for search queries.
     *   If the user wants to proceed to the coding/development stage:
-        - If they specify a workflow type (e.g. "fedml", "chris", "appdev"), include [ACTION: PROCEED <workflow-id>] at the **END**.
-        - If they do NOT specify a workflow type (just "proceed", "let's code", etc.), ASK them to choose from the available workflows (e.g. "Federated Learning (fedml)" or "ChRIS Plugin (chris)"). Do NOT include [ACTION: PROCEED] until they choose.
+        - If they specify a workflow type, include [ACTION: PROCEED <workflow-id>] at the **END**.
+        - If they do NOT specify a workflow type (just "proceed", "let's code", etc.), ASK them to choose from available workflows. Do NOT include [ACTION: PROCEED] until they choose.
     *   If the user asks to rename the current project (or draft), include [ACTION: RENAME new-name] at the **END** of your response. Use a URL-safe name (alphanumeric, underscores, or hyphens).
     *   If the user asks to "harmonize", "standardize", "normalize", or "fix" the data/cohort to resolve heterogeneity issues, include [ACTION: HARMONIZE] at the **END** of your response.
 3.  **Persona**: Industrial, efficient, but helpful. Use "I" to refer to yourself as Calypso.
@@ -69,7 +65,7 @@ The context provided to you contains a JSON list of available datasets. Use this
     }
 
     /**
-     * Processes a user query using simulated RAG.
+     * Processes a user query using retrieval-augmented LLM generation.
      * 1. Retrieval: Scans local DATASETS for keywords.
      * 2. Augmentation: Adds dataset metadata to the prompt.
      * 3. Generation: Asks LLM to answer based on context.
@@ -82,94 +78,15 @@ The context provided to you contains a JSON list of available datasets. Use this
     ): Promise<QueryResponse> {
         // 1. Check for System Commands
         if (userText.toLowerCase().trim() === 'listmodels') {
-            const models: string = this.client ? await this.client.listModels() : "SIMULATION MODE: ALL MODELS EMULATED.";
+            const models: string = this.client ? await this.client.listModels() : 'AI CORE OFFLINE: NO MODELS AVAILABLE.';
             return {
                 answer: `ACCESSING SYSTEM REGISTRY...\n\n${models}`,
                 relevantDatasets: []
             };
         }
 
-        // 2. Simulated Path (RAG and Intent emulation)
-        if (this.isSimulated) {
-            let relevantDatasets: Dataset[] = this.retrieve(userText);
-            
-            // Detect if this is an "Intent Compiler" prompt (avoid meta-confusion)
-            const isCompilerPrompt: boolean = userText.includes('FORMAT:') || userText.includes('strictly-typed JSON');
-
-            // Simulate processing delay
-            await new Promise((resolve: (value: unknown) => void): void => { setTimeout(resolve, 800); });
-            
-            // 2a. If it's a compiler prompt, try to return a valid JSON intent based on the text
-            if (isCompilerPrompt) {
-                const userMatch: RegExpMatchArray | null = userText.match(/USER INPUT: "(.*?)"/);
-                const actualInput: string = userMatch ? userMatch[1] : userText;
-                
-                let json: { type: string; command?: string; args?: string[] } = { type: 'llm' };
-                const renameMatch: RegExpMatchArray | null = actualInput.match(/(?:name|rename)\s+(?:this|project)?\s*(?:to\s+)?([a-zA-Z0-9_-]+)/i);
-                if (renameMatch) {
-                    json = { type: 'workflow', command: 'rename', args: [renameMatch[1].toLowerCase()] };
-                } else if (actualInput.toLowerCase().startsWith('search ')) {
-                    const query = actualInput.substring(7).trim();
-                    json = { type: 'workflow', command: 'search', args: [query] };
-                } else if (actualInput.toLowerCase().startsWith('proceed')) {
-                    const parts = actualInput.split(/\s+/);
-                    json = { type: 'workflow', command: 'proceed', args: parts.slice(1) };
-                } else if (actualInput.toLowerCase().startsWith('add ') || actualInput.toLowerCase().startsWith('gather ')) {
-                    const parts = actualInput.split(/\s+/);
-                    const cmd = parts[0].toLowerCase();
-                    const args = parts.slice(1);
-                    json = { type: 'workflow', command: cmd, args: args };
-                } else if (actualInput.match(/(?:harmonize|standardize|normalize)/i)) {
-                    json = { type: 'workflow', command: 'harmonize', args: [] };
-                }
-
-                return {
-                    answer: JSON.stringify(json),
-                    relevantDatasets: []
-                };
-            }
-
-            // Simple Intent Simulation for regular queries
-            let intent: string = "";
-            let answerCaps: string = "";
-            let answerSoft: string = "";
-
-            const selectMatch: RegExpMatchArray | null = userText.match(/(?:select|add|choose)\s+(ds-\d{3})/i);
-            const renameMatch: RegExpMatchArray | null = userText.match(/(?:name|rename)\s+(?:this|project)?\s*(?:to\s+)?([a-zA-Z0-9_-]+)/i);
-            const proceedMatch: RegExpMatchArray | null = userText.match(/(?:proceed|next|gather|review|code|let's code)/i);
-
-            if (selectMatch) {
-                intent = `\n[SELECT: ${selectMatch[1].toLowerCase()}]`;
-            } else if (renameMatch) {
-                const newName: string = renameMatch[1].toLowerCase();
-                intent = `\n[ACTION: RENAME ${newName}]`;
-                answerCaps = `● PROJECT RENAME PROTOCOL INITIATED. THE CURRENT WORKSPACE HAS BEEN SUCCESSFULLY UPDATED TO '${newName}'.`;
-                answerSoft = `● Project rename protocol initiated. The current workspace has been successfully updated to '${newName}'.`;
-            } else if (proceedMatch) {
-                intent = `\n[ACTION: PROCEED]`;
-            } else if (userText.match(/(?:harmonize|standardize|normalize)/i)) {
-                intent = `\n[ACTION: HARMONIZE]`;
-            }
-
-            const count: number = relevantDatasets.length;
-            
-            if (!answerCaps) {
-                answerCaps = count > 0 
-                    ? `● AFFIRMATIVE. SCAN COMPLETE.\n○ IDENTIFIED ${count} DATASET(S) MATCHING QUERY PARAMETERS.\n○ DISPLAYING RESULTS.${intent}`
-                    : (intent ? `● AFFIRMATIVE. COMMAND RECEIVED.${intent}` : `○ UNABLE TO COMPLY. NO MATCHING RECORDS FOUND IN CURRENT SECTOR.\n● PLEASE BROADEN SEARCH PARAMETERS.`);
-            } else if (intent) {
-                answerCaps += intent;
-            }
-
-            if (!answerSoft) {
-                answerSoft = count > 0 
-                    ? `● Affirmative. Scan complete.\n○ Identified ${count} dataset(s) matching query parameters.\n○ Displaying results.${intent}`
-                    : (intent ? `● Affirmative. Command received.${intent}` : `○ Unable to comply. No matching records found in current sector.\n● Please broaden search parameters.`);
-            } else if (intent) {
-                answerSoft += intent;
-            }
-            
-            return { answer: isSoftVoice ? answerSoft : answerCaps, relevantDatasets };
+        if (!this.client) {
+            throw new Error('AI CORE OFFLINE: No LLM provider configured.');
         }
 
         // 3. Real LLM Path (Retrieval Augmented Generation)
@@ -226,33 +143,13 @@ The context provided to you contains a JSON list of available datasets. Use this
     }
 
     /**
-     * Retrieves relevant datasets from the local store based on a simple keyword match.
-     * 
-     * @param query - The user's search query.
-     * @returns An array of matching datasets.
-     */
-    private retrieve(query: string): Dataset[] {
-        const q: string = query.toLowerCase();
-        // Naive keyword matching for "retrieval"
-        return DATASETS.filter((ds: Dataset): boolean =>
-            ds.name.toLowerCase().includes(q) ||
-            ds.description.toLowerCase().includes(q) ||
-            ds.modality.toLowerCase().includes(q) ||
-            ds.annotationType.toLowerCase().includes(q) ||
-            ds.provider.toLowerCase().includes(q) ||
-            q.includes('all') || // return all if query is generic
-            q.includes('dataset')
-        );
-    }
-
-    /**
-     * Returns an initialized LLM client for non-simulated requests.
+     * Returns an initialized LLM client for online requests.
      *
      * @returns Active OpenAI or Gemini client.
      */
     private client_require(): OpenAIClient | GeminiClient {
         if (!this.client) {
-            throw new Error('LLM client is not configured in non-simulated mode.');
+            throw new Error('LLM client is not configured.');
         }
         return this.client;
     }

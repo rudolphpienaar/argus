@@ -166,7 +166,9 @@ New to the project? Read these in sequence. They build on each other — startin
 - [Visual Language](docs/visual_language.adoc): LCARS interaction and motion grammar.
 - [Development Context Timeline](docs/CONTEXT.md): versioned architecture trajectory.
 - [Active Design Work](docs/CURRENT.md): manifest-driven sequencing and DAG fingerprinting.
+- [FEDML Pipeline Map](FEDML.md): stage-by-stage artifact and directory materialization map.
 - [Release Notes v10.3.0](docs/release-v10.3.0.md): deletion release positioning and messaging.
+- [Release Notes v10.3.2](docs/release-v10.3.2.md): documentation closure and operator path clarity.
 - [TypeScript Style Guide](TYPESCRIPT-STYLE-GUIDE.md): coding and naming standards.
 
 ### Narrative Context

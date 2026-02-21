@@ -1,7 +1,7 @@
-= CALYPSO: The Architecture of an Intelligence Kernel
+= CALYPSO: Intelligence Kernel and Dispatch Integrity
 :author: ATLAS Project Team
-:revnumber: 10.0.0
-:revdate: 2026-02-17
+:revnumber: 10.3.1
+:revdate: 2026-02-21
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -10,95 +10,140 @@ toc::[]
 
 == Abstract
 
-CALYPSO (Cognitive Algorithms & Logic Yielding Predictive Scientific Outcomes) is the high-integrity Intelligence Kernel of the ARGUS system. It functions as the authoritative mediation layer between the high-entropy domain of natural language and the deterministic world of scientific plugins and Merkle-proven artifacts. This document specifies the architectural design of Calypso v10.0, detailing the "Interpretation-First" execution pipeline, the strictly-typed communication protocol, and the engineering mechanisms that prevent procedural drift and agentic hallucination.
+CALYPSO is the execution kernel that mediates between human language and
+deterministic workflow mutation in ARGUS. The kernel does not own domain compute.
+It owns interpretation constraints, topological validation, plugin dispatch, and
+artifact anchoring through Merkle materialization. This separation is the
+mechanism that prevents conversational fluency from masquerading as scientific
+completion.
 
-== Introduction: The Evolution of the Kernel
+The current version reflects post-hardening policy: backend layers remain
+production-pure, federation behavior is plugin materialized, and workflow commands
+are constrained to manifest-derived vocabulary.
 
-=== The Failure of the "Chatbot" Model
-In early iterations of ARGUS (v5.0 through v9.0), Calypso was envisioned as an "AI Assistant"—a conversational wrapper around a collection of API calls. This design proved structurally inadequate for federated medical research. Because the AI was responsible for both interpreting the user and deciding when to execute code, the system suffered from "Instructional Decay." The LLM would often bypass mandatory safety checks or claim that a stage was complete (e.g., "I've harmonized your data") based solely on its own internal reasoning, even if the underlying execution failed.
+== Historical Context
 
-=== The Resolution: The Intelligence Host
-The v10.0 refactor redefined Calypso as a **System Host**. It moved from a decision-making agent to a generic execution kernel. Calypso no longer "knows" how to perform domain-specific work; it only knows how to:
-1.  **Compile** noisy natural language into a strictly-typed Intent.
-2.  **Verify** that Intent against a deterministic workflow manifest.
-3.  **Dispatch** the Intent to a sandboxed Guest Plugin.
-4.  **Materialize** the result into a Merkle-proven provenance chain.
+Earlier generations treated Calypso as a general assistant that both interpreted
+intent and made action decisions. That model failed under multi-step protocols
+because language confidence could drift away from state evidence. The v10 refactor
+converted Calypso into a host kernel, and the 10.2 to 10.3 line hardened that
+conversion by deleting residual internalized behavior.
 
-This Host/Guest separation ensures that the system's "Intelligence" is an interface layer, while its "Integrity" is an architectural property of the Kernel.
+The core lesson was structural: if intent compilation, execution permission, and
+state materialization are not separated, provenance cannot be trusted in long
+running scientific flows.
 
-== Kernel Flow Figure
+== Kernel Flow
 
 [source,text]
 ----
-┌─────────┐    ┌─────────────┐    ┌──────────────┐    ┌──────────────┐
-│ Surface │───▶│ Fast-Path   │───▶│ IntentParser │───▶│ Workflow     │
-└─────────┘    │ (/ + shell) │    └──────────────┘    │ Gatekeeping  │
-               └─────────────┘                         └──────┬───────┘
-                                                               │
-                                                               ▼
-                                                        ┌─────────────┐
-                                                        │ PluginHost  │
-                                                        └──────┬──────┘
-                                                               │
-                                                               ▼
-                                                        ┌─────────────┐
-                                                        │ MerkleEngine│
-                                                        └──────┬──────┘
-                                                               │
-                                                               ▼
-┌─────────┐    ◀──────────── status / actions / message ─────┌─────────────┐
-│ Surface │                                                   │ CalypsoCore │
-└─────────┘                                                   └─────────────┘
+                            ┌──────────────────────────┐
+                            │        USER INPUT        │
+                            └────────────┬─────────────┘
+                                         │
+                                         ▼
+                            ┌──────────────────────────┐
+                            │       CALYPSO CORE       │
+                            └────────────┬─────────────┘
+                                         │
+                  ┌──────────────────────┴──────────────────────┐
+                  │                                             │
+                  ▼                                             ▼
+       ┌──────────────────────────┐                ┌──────────────────────────┐
+       │ FAST-PATH DISPATCH       │                │ INTENT COMPILATION       │
+       │ (/cmd + shell builtins)  │                │ (deterministic + model)  │
+       └────────────┬─────────────┘                └────────────┬─────────────┘
+                    │                                           │
+                    └──────────────────────┬────────────────────┘
+                                           │
+                                           ▼
+                            ┌──────────────────────────┐
+                            │ WORKFLOW GATEKEEPER      │
+                            │ topology + policy checks │
+                            └────────────┬─────────────┘
+                                         │
+                                         ▼
+                            ┌──────────────────────────┐
+                            │ PLUGINHOST DISPATCH      │
+                            └────────────┬─────────────┘
+                                         │
+                                         ▼
+                            ┌──────────────────────────┐
+                            │ MERKLE MATERIALIZER      │
+                            └────────────┬─────────────┘
+                                         │
+                                         ▼
+                            ┌──────────────────────────┐
+                            │ PROTOCOL RESPONSE        │
+                            │ status + actions + msg   │
+                            └──────────────────────────┘
 ----
 
-== The Interpretation-First Pipeline: The Logic of Execution
+The fast path handles explicit kernel verbs and shell operations without involving
+language synthesis. Non-fast-path input is compiled into typed intent. If
+deterministic resolution is unavailable, model synthesis remains constrained by the
+active manifest command set. Execution permission is decided only after topology
+checks. Completion claims become valid only when artifact evidence is written.
 
-To ensure absolute procedural safety, `CalypsoCore` enforces a rigid 4-stage execution pipeline. Every user input must traverse these stages in sequence, with no possibility of bypassing the deterministic gates.
+If no model provider is available, conversational fallbacks are reported as offline
+without backend simulation surrogates. Deterministic workflow and shell paths remain
+operational.
 
-=== Stage 1: Fast-Path Kernel Dispatch
-The pipeline begins with a low-latency check for built-in system commands.
-*   **System Verbs:** Commands prefixed with `/` (e.g., `/reset`, `/status`, `/greet`) are intercepted here.
-*   **Shell Builtins:** Standard POSIX operations (e.g., `ls`, `cat`, `cd`) are dispatched directly to the VCS Shell.
-By handling these "Kernel" operations first, Calypso ensures that basic system control remains responsive and deterministic, regardless of the state of the LLM or the complexity of the current research workflow.
+== Response Contract
 
-=== Stage 2: Intent Compilation (`IntentParser`)
-If the command is not a fast-path operation, it is passed to the `IntentParser`. This component acts as a compiler that translates natural language into a canonical `CalypsoIntent` object.
-*   **Deterministic Regex Mapping:** High-priority workflow verbs (e.g., `search`, `add`, `harmonize`) are matched against a registry of regex patterns. This ensures zero-latency resolution for common expert-user commands.
-*   **LLM Synthesis Protocol:** If deterministic matching fails, the LLM is invoked with a "Compiler Prompt." The LLM is instructed to map the user's utterance to a specific command and argument list defined in the workflow manifest. The output must be a strictly-typed JSON intent; any natural language "chitchat" is discarded at this stage.
+Calypso communicates through a categorical status protocol rather than boolean
+success signaling.
 
-=== Stage 3: Action Execution (The Runtime)
-Once an intent is resolved, it enters the Action Execution phase, managed by the `WorkflowSession` and `PluginHost`.
-1.  **Topological Validation:** The `WorkflowAdapter` verifies the command against the active DAG manifest. If the user attempts to jump to a future stage without meeting prerequisites, the Host blocks the action and returns a `BLOCKED_MISSING` status.
-2.  **Guest Dispatch:** The `PluginHost` dynamically loads the Guest plugin and executes it. The plugin is provided with a strictly-typed `PluginContext`, giving it agency over the VFS and the Project Store, but isolating it from the system Kernel and the session tree.
+[cols="1,3",options="header"]
+|===
+|Code |Meaning
+|`OK` |Intent valid, prerequisites satisfied, and plugin execution anchored.
+|`BLOCKED` |Intent recognized but blocked by workflow policy.
+|`BLOCKED_MISSING` |Required parent evidence absent.
+|`BLOCKED_STALE` |Parent lineage changed and descendant evidence is stale.
+|`CONVERSATIONAL` |Input handled as non-mutating guidance.
+|===
 
-=== Stage 4: LLM Fallback (The Communicator)
-If the input cannot be resolved to a deterministic intent (e.g., "What is federated learning?"), the pipeline falls back to the LLM for conversational guidance. In this stage, the LLM is restricted to providing explanations and suggestions. It is explicitly prohibited from performing any state mutations or asserting that workflow stages are complete.
+This contract allows adapters and verification runners to assert behavior
+independently of narrative phrasing.
 
-== The CalypsoResponse Protocol: Deterministic Feedback
+== Integrity Boundary
 
-Calypso communicates with its adapters (Browser, CLI, Oracle) through the `CalypsoResponse` protocol. This protocol ensures that the system's logical state is machine-verifiable.
+Plugins produce domain output; Calypso witnesses and records completion. The host
+therefore owns Merkle anchoring and session-tree writes, while plugin code remains
+unprivileged compute. This prevents guest logic from self-certifying completion and
+preserves one authoritative provenance path.
 
-=== The `CalypsoStatusCode` Enum
-The binary `success` boolean is replaced by a categorical status code that defines the logical outcome of the execution:
-*   **`OK`**: The intent was valid, prerequisites were met, and the plugin successfully materialized an artifact.
-*   **`BLOCKED`**: The intent was recognized but prevented by a safety gate (e.g., phase jump).
-*   **`BLOCKED_MISSING`**: A mandatory parent artifact is missing from the VFS.
-*   **`BLOCKED_STALE`**: Upstream data has changed, rendering the current stage's prerequisites invalid.
-*   **`CONVERSATIONAL`**: The input was resolved as a query rather than an action.
+Latency policy follows the same boundary. Backend components do not inject
+synthetic compute sleep. Optional realism delay is plugin-local and can be
+disabled for oracle throughput with `CALYPSO_FAST=true`.
 
-=== Data-State Synchronization
-Every response includes a list of `actions` (UI mutations like `project_rename` or `workspace_render`) and an `artifactData` payload. This ensures that the visual interface and the materialized ground truth in the VFS remain perfectly synchronized with the Kernel's logical state.
+Execution policy now follows the same doctrine: host runtime no longer applies a
+fixed-duration plugin kill watchdog during workflow execution. A stage runs until
+plugin completion or plugin failure, and any future cancellation semantics must be
+explicitly modeled rather than encoded as hidden time limits inside kernel dispatch.
 
-== Integrity and Safety: The "Merkle Conscience"
+== Telemetry Rendering Contract
 
-The ultimate responsibility of Calypso is the cryptographic anchoring of the scientific process.
+Telemetry event ownership is split by layer:
 
-*   **Host-Controlled Materialization:** Guest plugins never write to the session tree. They return their result to the Host, which invokes the `MerkleEngine`. This ensures that the provenance ledger is managed exclusively by the high-integrity Kernel.
-*   **Procedural Evidence:** Calypso ensures that "Truth" is never an assertion. A stage is only marked as complete if its artifact exists in the VFS and its Merkle fingerprint matches its parentage. If an AI or a plugin attempts to claim success without this evidence, the Kernel correctly identifies the stage as incomplete.
+1. Plugins emit primitive events (`log`, `progress`, `phase_start`, `frame_open`,
+   `frame_close`, `status`).
+2. Host/server transport events without reinterpreting narrative content.
+3. Surface adapters own rendering geometry.
 
-== Conclusion
+For the CLI/TUI adapter, progress semantics are now stateful by design: one active
+progress row is rewritten in place instead of appending one line per event. This
+prevents the historical "progress triangle" artifact during long compute loops.
+Progress bars render with glyph blocks (`█` and `░`) for fast visual scanning in
+dense terminal sessions.
 
-CALYPSO v10.0 represents the formalization of the "Intelligence Kernel." By enforcing an Interpretation-First pipeline and a strict Host/Guest execution model, it provides a safe and auditable environment for federated medical research. Calypso ensures that the "Intelligence" layer remains a flexible interface while the "Integrity" of the scientific workflow is governed by the deterministic, Merkle-proven rules of the Kernel.
+== Architectural Outcome
+
+Calypso now operates as a deterministic integrity kernel with constrained language
+compilation at the boundary and artifact proof at the core. This keeps interaction
+natural for operators while maintaining strict scientific state semantics for every
+mutation-bearing step in the workflow lifecycle.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-21 (v10.3.1)_

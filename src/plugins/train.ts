@@ -10,6 +10,7 @@
 import type { PluginContext, PluginResult } from '../lcarslm/types.js';
 import { CalypsoStatusCode } from '../lcarslm/types.js';
 import type { ShellResult } from '../vfs/types.js';
+import { simDelay_wait } from './simDelay.js';
 
 /**
  * Execute the training logic via shell.
@@ -18,43 +19,51 @@ import type { ShellResult } from '../vfs/types.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { command, args, shell, ui, parameters } = context;
-    
-    // Map 'train' alias to the actual simulator command
-    const executable: string = command === 'train' ? 'python' : command;
-    const executableArgs: string[] = command === 'train' && args.length === 0 ? ['train.py'] : args;
-    const input: string = executable + (executableArgs.length > 0 ? ' ' + executableArgs.join(' ') : '');
+    return context.comms.execute(async (): Promise<PluginResult> => {
+        const { command, args, shell, ui, parameters } = context;
+        
+        // Map 'train' alias to the actual simulator command
+        const executable: string = command === 'train' ? 'python' : command;
+        const executableArgs: string[] = command === 'train' && args.length === 0 ? ['train.py'] : args;
+        const input: string = executable + (executableArgs.length > 0 ? ' ' + executableArgs.join(' ') : '');
 
-    // 1. Resolve hyperparameters
-    const epochs: number = (parameters.epochs as number) || 5;
+        // 1. Resolve hyperparameters
+        const epochs: number = (parameters.epochs as number) || 5;
 
-    // 2. Perform Simulated Training (The Live Feed)
-    ui.status('CALYPSO: INITIATING LOCAL VALIDATION...');
-    ui.log('● [PHANTOM SIMULATOR] LOADING SOURCE: train.py');
-    
-    await training_animate(context, epochs);
+        // 2. Perform Simulated Training (The Live Feed)
+        ui.status('CALYPSO: INITIATING LOCAL VALIDATION...');
+        ui.log('● [PHANTOM SIMULATOR] LOADING SOURCE: train.py');
+        
+        await training_animate(context, epochs);
 
-    // 3. Delegate to the shell capability (The Deterministic Logic)
-    const result: ShellResult = await shell.command_execute(input);
+        // 3. Delegate to the shell capability (The Deterministic Logic)
+        // v10.2: Pass physical provenance dataDir to the shell for marker materialization
+        const originalDataDir = shell.env_get('DATA_DIR');
+        shell.env_set('DATA_DIR', context.dataDir);
+        const result: ShellResult = await shell.command_execute(input);
+        if (originalDataDir) shell.env_set('DATA_DIR', originalDataDir);
+        else shell.env_all().delete('DATA_DIR');
 
-    return {
-        message: result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout,
-        statusCode: result.exitCode === 0 ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR,
-        artifactData: { 
-            command: input,
-            exitCode: result.exitCode,
-            stdout: result.stdout
-        }
-    };
+        return {
+            message: result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout,
+            statusCode: result.exitCode === 0 ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR,
+            artifactData: { 
+                command: input,
+                exitCode: result.exitCode,
+                stdout: result.stdout
+            },
+            materialized: ['.local_pass']
+        };
+    });
 }
 
 /**
  * Simulated training loop with epoch telemetry.
  */
 async function training_animate(context: PluginContext, epochs: number): Promise<void> {
-    const { ui, sleep } = context;
+    const { ui } = context;
     
-    await sleep(400); // Loader lag
+    await simDelay_wait(400); // Loader lag
     ui.log('--- TRAINING LOG ---');
 
     for (let e = 1; e <= epochs; e++) {
@@ -68,7 +77,7 @@ async function training_animate(context: PluginContext, epochs: number): Promise
         for (let batch = 1; batch <= 10; batch++) {
             const percent = Math.round((batch / 10) * 100);
             ui.progress(`Epoch ${e} training: batch ${batch}/10`, percent);
-            await sleep(100);
+            await simDelay_wait(100);
         }
     }
     

@@ -5,13 +5,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { Dataset, AppState, FederationState, Project } from '../core/models/types.js';
+import type { Dataset, AppState, Project } from '../core/models/types.js';
 import { DATASETS } from '../core/data/datasets.js';
 import { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import { Shell } from '../vfs/Shell.js';
-import { FederationOrchestrator } from './federation/FederationOrchestrator.js';
 import { PluginHost } from './PluginHost.js';
 import { TelemetryBus } from './TelemetryBus.js';
+import { SearchProvider } from './SearchProvider.js';
 import type { CalypsoStoreActions, PluginResult } from './types.js';
 import { CalypsoStatusCode } from './types.js';
 
@@ -24,7 +24,6 @@ function storeFixture_create(): StoreFixture {
         selectedDatasets: [],
         currentStage: 'search',
         activeProject: null,
-        federationState: null,
     };
     let sessionPath: string | null = null;
 
@@ -40,7 +39,6 @@ function storeFixture_create(): StoreFixture {
         reset(): void {
             state.selectedDatasets = [];
             state.activeProject = null;
-            state.federationState = null;
             sessionPath = null;
         },
 
@@ -95,14 +93,6 @@ function storeFixture_create(): StoreFixture {
             sessionPath = path;
         },
 
-        federation_getState(): FederationState | null {
-            return state.federationState ?? null;
-        },
-
-        federation_setState(nextState: FederationState | null): void {
-            state.federationState = nextState;
-        },
-
         lastMentioned_set(datasets: Dataset[]): void {
             state.lastMentionedDatasets = datasets;
         },
@@ -120,34 +110,36 @@ describe('PluginHost', (): void => {
         const fixture: StoreFixture = storeFixture_create();
         const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
         const shell: Shell = new Shell(vfs, 'tester');
-        const federation: FederationOrchestrator = new FederationOrchestrator(vfs, fixture.actions);
+        const search: SearchProvider = new SearchProvider(vfs, shell, fixture.actions);
         const telemetryBus: TelemetryBus = new TelemetryBus();
-        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, federation, telemetryBus);
+        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, search, telemetryBus);
 
         const result: PluginResult = await host.plugin_execute(
             '../search',
             {},
             'search',
             ['ct'],
+            '/tmp/test-data'
         );
 
         expect(result.statusCode).toBe(CalypsoStatusCode.ERROR);
         expect(result.message).toContain("Unknown plugin handler '../search'");
     });
 
-    it('executes known handlers through the static loader registry', async (): Promise<void> => {
+    it('executes known handlers through dynamic handler module resolution', async (): Promise<void> => {
         const fixture: StoreFixture = storeFixture_create();
         const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
         const shell: Shell = new Shell(vfs, 'tester');
-        const federation: FederationOrchestrator = new FederationOrchestrator(vfs, fixture.actions);
+        const search: SearchProvider = new SearchProvider(vfs, shell, fixture.actions);
         const telemetryBus: TelemetryBus = new TelemetryBus();
-        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, federation, telemetryBus);
+        const host: PluginHost = new PluginHost(vfs, shell, fixture.actions, search, telemetryBus);
 
         const result: PluginResult = await host.plugin_execute(
             'search',
             { query: 'ct' },
             'search',
             [],
+            '/tmp/test-data'
         );
 
         expect(result.statusCode).toBe(CalypsoStatusCode.OK);

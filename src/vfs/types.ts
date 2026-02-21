@@ -15,8 +15,9 @@ import type { Dataset, Project } from '../core/models/types.js';
  */
 export interface FileNode {
     name: string;
-    type: 'file' | 'folder';
+    type: 'file' | 'folder' | 'link';
     path: string;
+    target?: string; // For symlinks
     size: string;
     content: string | null;
     contentGenerator: string | null;
@@ -59,7 +60,7 @@ export interface ContentGenerator {
  */
 export interface VfsChangeEvent {
     path: string;
-    operation: 'write' | 'remove' | 'mkdir' | 'touch' | 'copy' | 'move' | 'mount' | 'unmount';
+    operation: 'write' | 'remove' | 'mkdir' | 'touch' | 'copy' | 'move' | 'mount' | 'unmount' | 'link';
 }
 
 /**

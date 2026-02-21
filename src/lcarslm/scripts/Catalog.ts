@@ -58,51 +58,41 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
         structured: {
             script: 'harmonize',
             version: 1,
-            description: 'Search -> select -> add -> rename -> harmonize.',
+            description: 'Search -> add -> rename -> harmonize.',
             defaults: {
                 project_name: 'histo-exp1'
             },
             steps: [
                 {
                     id: 's1_search',
-                    action: 'search',
+                    action: 'command',
                     params: {
-                        query: 'histology'
-                    },
-                    outputs: {
-                        alias: 'search_results'
+                        query: 'histology',
+                        command: 'search ${query}'
                     }
                 },
                 {
-                    id: 's2_select_dataset',
-                    action: 'select_dataset',
+                    id: 's2_add',
+                    action: 'command',
                     params: {
-                        from: '${search_results}',
-                        strategy: 'by_id',
-                        id: 'ds-006'
-                    },
-                    outputs: {
-                        alias: 'selected_dataset'
+                        dataset: 'ds-006',
+                        command: 'add ${dataset}'
                     }
                 },
                 {
-                    id: 's3_add',
-                    action: 'add',
+                    id: 's3_rename',
+                    action: 'command',
                     params: {
-                        dataset: '${selected_dataset.id}'
+                        project: '${answers.project_name ?? defaults.project_name}',
+                        command: 'rename ${project}'
                     }
                 },
                 {
-                    id: 's4_rename',
-                    action: 'rename',
+                    id: 's4_harmonize',
+                    action: 'command',
                     params: {
-                        project: '${answers.project_name ?? defaults.project_name}'
+                        command: 'harmonize'
                     }
-                },
-                {
-                    id: 's5_harmonize',
-                    action: 'harmonize',
-                    params: {}
                 }
             ]
         }
@@ -129,289 +119,33 @@ const BUILTIN_SCRIPTS: ReadonlyArray<CalypsoScript> = [
             steps: [
                 {
                     id: 's1_search',
-                    action: 'search',
-                    params: {
-                        query: 'histology'
-                    },
-                    outputs: {
-                        alias: 'search_results'
-                    }
-                },
-                {
-                    id: 's2_select_dataset',
-                    action: 'select_dataset',
-                    params: {
-                        from: '${search_results}',
-                        strategy: 'by_id',
-                        id: 'ds-006'
-                    },
-                    outputs: {
-                        alias: 'selected_dataset'
-                    }
-                },
-                {
-                    id: 's3_add',
-                    action: 'add',
-                    params: {
-                        dataset: '${selected_dataset.id}'
-                    }
-                },
-                {
-                    id: 's4_rename',
-                    action: 'rename',
-                    params: {
-                        project: '${defaults.project_name}'
-                    }
-                },
-                {
-                    id: 's5_harmonize',
-                    action: 'harmonize',
-                    params: {}
-                }
-            ]
-        }
-    },
-    {
-        id: 'fedml-quickstart',
-        description: 'Histology fast path through local training',
-        aliases: ['quickstart', 'fedml_quickstart'],
-        requires: [],
-        target: 'train',
-        steps: [
-            'search histology',
-            'add ds-006',
-            'rename histo-exp1',
-            'harmonize',
-            'proceed',
-            'python train.py'
-        ],
-        structured: {
-            script: 'fedml-quickstart',
-            version: 1,
-            description: 'Harmonize plus scaffold and local train.',
-            defaults: {
-                project_name: 'histo-exp1'
-            },
-            steps: [
-                {
-                    id: 's1_search',
-                    action: 'search',
-                    params: {
-                        query: 'histology'
-                    },
-                    outputs: {
-                        alias: 'search_results'
-                    }
-                },
-                {
-                    id: 's2_select_dataset',
-                    action: 'select_dataset',
-                    params: {
-                        from: '${search_results}',
-                        strategy: 'by_id',
-                        id: 'ds-006'
-                    },
-                    outputs: {
-                        alias: 'selected_dataset'
-                    }
-                },
-                {
-                    id: 's3_add',
-                    action: 'add',
-                    params: {
-                        dataset: '${selected_dataset.id}'
-                    }
-                },
-                {
-                    id: 's4_rename',
-                    action: 'rename',
-                    params: {
-                        project: '${answers.project_name ?? defaults.project_name}'
-                    }
-                },
-                {
-                    id: 's5_harmonize',
-                    action: 'harmonize',
-                    params: {}
-                },
-                {
-                    id: 's6_proceed',
-                    action: 'proceed',
-                    params: {}
-                },
-                {
-                    id: 's7_local_train',
-                    action: 'run_python',
-                    params: {
-                        script: 'train.py'
-                    }
-                }
-            ]
-        }
-    },
-    {
-        id: 'fedml-fullrun',
-        description: 'Histology fast path through federated dispatch',
-        aliases: ['fullrun', 'fedml_fullrun'],
-        requires: [],
-        target: 'federate',
-        steps: [
-            'search histology',
-            'add ds-006',
-            'rename histo-exp1',
-            'harmonize',
-            'proceed',
-            'python train.py',
-            'federate',
-            'transcompile',
-            'containerize',
-            'config name histo-exp1',
-            'config org atlas',
-            'config visibility public',
-            'publish-config',
-            'publish-execute',
-            'dispatch',
-            'status',
-            'publish model'
-        ],
-        structured: {
-            script: 'fedml-fullrun',
-            version: 1,
-            description: 'From search through full federated model publication.',
-            defaults: {
-                project_name: 'histo-exp1',
-                app_name: 'histo-exp1',
-                org: 'atlas'
-            },
-            steps: [
-                {
-                    id: 's1_search',
-                    action: 'search',
-                    params: {
-                        query: 'histology'
-                    },
-                    outputs: {
-                        alias: 'search_results'
-                    }
-                },
-                {
-                    id: 's2_select_dataset',
-                    action: 'select_dataset',
-                    params: {
-                        from: '${search_results}',
-                        strategy: 'by_id',
-                        id: 'ds-006'
-                    },
-                    outputs: {
-                        alias: 'selected_dataset'
-                    }
-                },
-                {
-                    id: 's3_add',
-                    action: 'add',
-                    params: {
-                        dataset: '${selected_dataset.id}'
-                    }
-                },
-                {
-                    id: 's4_rename',
-                    action: 'rename',
-                    params: {
-                        project: '${answers.project_name ?? defaults.project_name}'
-                    }
-                },
-                {
-                    id: 's5_harmonize',
-                    action: 'harmonize',
-                    params: {}
-                },
-                {
-                    id: 's6_proceed',
-                    action: 'proceed',
-                    params: {}
-                },
-                {
-                    id: 's7_local_train',
-                    action: 'run_python',
-                    params: {
-                        script: 'train.py'
-                    }
-                },
-                {
-                    id: 's8_federate_brief',
                     action: 'command',
                     params: {
-                        command: 'federate'
+                        query: 'histology',
+                        command: 'search ${query}'
                     }
                 },
                 {
-                    id: 's9_federate_transcompile',
+                    id: 's2_add',
                     action: 'command',
                     params: {
-                        command: 'transcompile'
+                        dataset: 'ds-006',
+                        command: 'add ${dataset}'
                     }
                 },
                 {
-                    id: 's10_federate_containerize',
+                    id: 's3_rename',
                     action: 'command',
                     params: {
-                        command: 'containerize'
+                        project: '${defaults.project_name}',
+                        command: 'rename ${project}'
                     }
                 },
                 {
-                    id: 's11_publish_config_name',
+                    id: 's4_harmonize',
                     action: 'command',
                     params: {
-                        command: 'config name ${answers.app_name ?? defaults.app_name}'
-                    }
-                },
-                {
-                    id: 's12_publish_config_org',
-                    action: 'command',
-                    params: {
-                        command: 'config org ${answers.org ?? defaults.org}'
-                    }
-                },
-                {
-                    id: 's13_publish_config_visibility',
-                    action: 'command',
-                    params: {
-                        command: 'config visibility public'
-                    }
-                },
-                {
-                    id: 's14_publish_config_finalize',
-                    action: 'command',
-                    params: {
-                        command: 'publish-config'
-                    }
-                },
-                {
-                    id: 's15_federate_publish_execute',
-                    action: 'command',
-                    params: {
-                        command: 'publish-execute'
-                    }
-                },
-                {
-                    id: 's16_federate_dispatch',
-                    action: 'command',
-                    params: {
-                        command: 'dispatch'
-                    }
-                },
-                {
-                    id: 's17_federate_execute',
-                    action: 'command',
-                    params: {
-                        command: 'status'
-                    }
-                },
-                {
-                    id: 's18_federate_model_publish',
-                    action: 'command',
-                    params: {
-                        command: 'publish model'
+                        command: 'harmonize'
                     }
                 }
             ]

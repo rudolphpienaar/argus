@@ -9,8 +9,7 @@
     },
     {
       "send": "search brain",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
       "vfs_exists": "${session}/search/data/search.json"
@@ -18,36 +17,32 @@
     {
       "send": "add ds-001",
       "success": true,
-      "capture_project": false
+      "capture_project": true
     },
     {
       "send": "gather",
-      "success": true,
-      "capture_project": true
+      "success": true
     },
     {
       "vfs_exists": "${session}/search/gather/data/gather.json"
     },
     {
       "send": "proceed chris",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
       "vfs_exists": "${session}/search/gather/code/data/code.json"
     },
     {
       "send": "python main.py",
-      "success": true,
-      "capture_project": false
+      "success": true
     },
     {
       "vfs_exists": "${session}/search/gather/code/test/data/test.json"
     },
     {
       "send": "publish",
-      "success": true,
-      "capture_project": false
+      "success": true
     }
   ]
 }

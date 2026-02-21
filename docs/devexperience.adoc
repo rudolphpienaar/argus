@@ -1,0 +1,114 @@
+= The ARGUS Developer Experience: Physical Provenance as Daily Practice
+:author: ATLAS Project Team
+:revdate: 2026-02-20
+:revnumber: 1.1.0
+:toc: macro
+:icons: font
+
+toc::[]
+
+== Abstract
+
+This document specifies the developer-experience contract used by ARGUS after the
+v10 hardening line. The contract resolves a long-standing tension in scientific
+software between mutable engineering workspaces and immutable provenance
+requirements. Conventional platforms usually force a binary choice: either strict,
+platform-managed pipelines with limited intervention, or unconstrained shell work
+with weak lineage guarantees. ARGUS rejects that tradeoff and encodes both demands
+inside one filesystem-native model.
+
+The result is a two-zone operating structure in which active development remains
+fast and local while every computational milestone remains materially preserved as a
+Merkle-addressable path lineage under `data/`. This specification explains why that
+model was necessary, how copy-on-write refinement preserves history without blocking
+manual intervention, and how the resulting directory graph functions as executable
+proof rather than passive storage.
+
+== Introduction: Historical Context and Pressure
+
+Earlier iterations of the stack treated developer convenience and scientific
+integrity as neighboring concerns rather than a single design problem. During
+high-velocity workflow execution this separation failed in predictable ways. Manual
+edits to generated artifacts improved practical progress but blurred lineage,
+because ad hoc edits could overwrite machine outputs in place. At the same time,
+fully locking generated paths prevented real-world adaptation and pushed developers
+outside the platform, where provenance disappeared entirely.
+
+The hardening-era objective was therefore not interface polish but structural
+unification. The filesystem itself had to become the shared language between human
+intervention and machine execution. Once that requirement was accepted, the project
+model converged on a simple but strict doctrine: mutable work occurs in a workshop
+zone, immutable history accumulates in a vault zone, and transitions between the
+two are mediated by deterministic copy-on-write semantics.
+
+== The Two-Zone Filesystem Contract
+
+ARGUS projects encode this contract directly in path layout.
+
+[source,text]
+----
+/home/user/projects/my-model/
+|-- src/                         <-- workshop code and scripts
+|-- input                        <-- active portal to current data context
+`-- data/                        <-- immutable provenance graph
+    `-- search/
+        |-- data/search.json
+        `-- gather/
+            |-- data/gather.json
+            `-- harmonize/
+                |-- data/harmonize.json
+                `-- refine_human/
+                    `-- Dockerfile
+----
+
+The `src/` and `input` surfaces provide the mutable room where developers inspect
+artifacts, iterate on implementations, and run local tooling without ceremony. The
+`data/` tree is the immutable room in which each directory boundary records a
+causal execution step with its own control metadata and payload artifacts. This
+partition is not metaphorical decoration. It is the core mechanism that lets ARGUS
+behave like both an engineering workstation and a scientific instrument.
+
+== Copy-on-Write Refinement Through `input/`
+
+The `input/` symlink is the operational boundary object between mutable and
+immutable zones. It always resolves to the active leaf context that downstream
+commands should consume. If a user opens a generated file through `input/` and
+saves a modification, ARGUS does not reject the write and does not mutate the
+sealed source node. Instead, the runtime performs deterministic copy-on-write
+refinement by materializing a sibling refinement node, cloning prior contents,
+repointing `input/` to the new node, and committing the new bytes there.
+
+This sequence preserves two properties that were historically in conflict. Human
+intervention remains immediate and tool-compatible because editors can write through
+normal filesystem operations. Provenance integrity remains intact because machine
+generated output is never rewritten in place. The intervention itself becomes a
+first-class lineage event that can be audited, reproduced, and reasoned about
+later.
+
+== Path-as-Proof Semantics
+
+In ARGUS, lineage is encoded in physical path structure rather than external
+database joins. A path such as `data/search/gather/harmonize/` states directly that
+`harmonize` consumed artifacts produced by `gather`, which in turn consumed
+artifacts from `search`. A convergent path such as
+`data/.../rename/_join_gather_rename/harmonize/` states multi-parent consumption in
+the same way. The path graph is therefore not only storage topology; it is the
+executable causal record.
+
+This model removes a significant class of synchronization failures where metadata
+claims diverge from payload reality. Because control envelopes and data artifacts
+co-reside at each node, any project archive contains code, outputs, and the proof
+structure that explains how those outputs came to exist.
+
+== Architectural Outcome
+
+The developer experience contract now aligns directly with the v10 hardening
+mission. Mutable workflows remain practical for daily engineering, while scientific
+history remains cryptographically and structurally inspectable without hidden
+side-channels. The legacy session-tree distinction is no longer needed as a
+separate conceptual store; operational memory is reconstructed from the active
+project graph itself.
+
+This outcome closes a core integrity gap before v11 contract lock. ARGUS no longer
+asks operators to choose between speed and proof. It encodes both as native
+filesystem behavior under one deterministic runtime model.

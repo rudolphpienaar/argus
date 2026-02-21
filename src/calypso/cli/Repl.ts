@@ -22,7 +22,10 @@ import {
     spinnerMinDuration_resolve,
     rendererFrame_open,
     rendererFrame_close,
+    rendererLog,
+    rendererProgress,
     rendererPhase_start,
+    rendererStatus,
     response_renderAnimated,
     message_style,
     stepAnimation_render,
@@ -308,16 +311,27 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
 
     banner_print(host, port);
 
+    let commandInFlight: boolean = false;
+    let activeSpinnerStop: (() => void) | null = null;
+    let spinnerSuppressedByTelemetry: boolean = false;
+
     // v10.2: Live Telemetry Listener
-    client.onTelemetry = async (event) => {
+    client.onTelemetry = (event) => {
+        if (!commandInFlight) {
+            return;
+        }
+        if (activeSpinnerStop) {
+            activeSpinnerStop();
+            activeSpinnerStop = null;
+            spinnerSuppressedByTelemetry = true;
+        }
+
         switch (event.type) {
             case 'log':
-                console.log(message_style(event.message));
+                rendererLog(event.message);
                 break;
             case 'progress':
-                // In TUI, we handle high-frequency progress via carriage return
-                process.stdout.write(`\r${COLORS.dim}   » ${event.label}: ${event.percent}%${COLORS.reset}`);
-                if (event.percent === 100) console.log();
+                rendererProgress(event.label, event.percent);
                 break;
             case 'frame_open':
                 rendererFrame_open(event.title, event.subtitle);
@@ -329,7 +343,7 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
                 rendererPhase_start(event.name);
                 break;
             case 'status':
-                // Update persistent status line if TUI supports it
+                rendererStatus(event.message);
                 break;
         }
     };
@@ -390,11 +404,14 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
 
     // Command execution with TUI rendering
     const command_executeAndRender = async (input: string, options: CommandExecuteOptions = {}): Promise<boolean> => {
+        commandInFlight = true;
+        spinnerSuppressedByTelemetry = false;
         try {
             const spinnerLabel: string = spinnerLabel_resolve(input, options);
             const minSpinnerMs: number = spinnerMinDuration_resolve(input, options);
             const startedAt: number = Date.now();
             const stopSpinner: () => void = spinner_start(spinnerLabel);
+            activeSpinnerStop = stopSpinner;
             const response = await client.command_send(input);
             const elapsed: number = Date.now() - startedAt;
 
@@ -402,10 +419,13 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
             // but we can ensure future ones use it. 
             // Actually, for now, we just pass hints to the render phase.
             
-            if (elapsed < minSpinnerMs) {
+            if (!spinnerSuppressedByTelemetry && elapsed < minSpinnerMs) {
                 await sleep_ms(minSpinnerMs - elapsed);
             }
-            stopSpinner();
+            if (activeSpinnerStop) {
+                activeSpinnerStop();
+                activeSpinnerStop = null;
+            }
 
             if (response.ui_hints?.animation === 'harmonization' && response.ui_hints.animation_config) {
                 await stepAnimation_render(response.ui_hints.animation_config);
@@ -422,9 +442,20 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
             rl.setPrompt(currentPrompt);
             return response.success;
         } catch (e: unknown) {
+            if (activeSpinnerStop) {
+                activeSpinnerStop();
+                activeSpinnerStop = null;
+            }
             const error = e instanceof Error ? e.message : 'Unknown error';
             console.log(`${COLORS.red}>> ERROR: ${error}${COLORS.reset}`);
             return false;
+        } finally {
+            commandInFlight = false;
+            spinnerSuppressedByTelemetry = false;
+            if (activeSpinnerStop) {
+                activeSpinnerStop();
+                activeSpinnerStop = null;
+            }
         }
     };
 

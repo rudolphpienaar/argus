@@ -1,37 +1,31 @@
 # Generic harmonization script.
-# Prompts for search query and dataset selection at runtime.
+# Uses explicit command templates (no host-side action handlers).
 
 script: harmonize
 version: 1
-description: Search -> select -> add -> rename -> harmonize.
+description: Search -> add -> rename -> harmonize.
 defaults:
   project_name: histo-exp1
 steps:
   - id: s1_search
-    action: search
+    action: command
     params:
-      query: "?"
-    outputs:
-      alias: search_results
+      query: histology
+      command: "search ${query}"
 
-  - id: s2_select_dataset
-    action: select_dataset
+  - id: s2_add
+    action: command
     params:
-      from: "${search_results}"
-      strategy: ask
-    outputs:
-      alias: selected_dataset
+      dataset: ds-006
+      command: "add ${dataset}"
 
-  - id: s3_add
-    action: add
-    params:
-      dataset: "${selected_dataset.id}"
-
-  - id: s4_rename
-    action: rename
+  - id: s3_rename
+    action: command
     params:
       project: "${answers.project_name ?? defaults.project_name}"
+      command: "rename ${project}"
 
-  - id: s5_harmonize
-    action: harmonize
-    params: {}
+  - id: s4_harmonize
+    action: command
+    params:
+      command: harmonize

@@ -16,7 +16,7 @@ import type { Socket } from 'net';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { CalypsoCore } from '../../lcarslm/CalypsoCore.js';
 import type { CalypsoStoreActions } from '../../lcarslm/types.js';
-import type { Dataset, AppState, FederationState, Project } from '../../core/models/types.js';
+import type { Dataset, AppState, Project } from '../../core/models/types.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import { ContentRegistry } from '../../vfs/content/ContentRegistry.js';
@@ -176,14 +176,6 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
         return this.sessionPath;
     }
 
-    public federation_getState(): FederationState | null {
-        return store.state.federationState;
-    }
-
-    public federation_setState(state: FederationState | null): void {
-        store.federationState_set(state);
-    }
-
     public lastMentioned_set(datasets: Dataset[]): void {
         store.lastMentioned_set(datasets);
     }
@@ -234,12 +226,11 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
     if (hasApiKey) {
         console.log(`AI Core: ${openaiKey ? 'OpenAI' : 'Gemini'} API key detected`);
     } else {
-        console.log('AI Core: No API key found (simulation mode)');
+        console.log('AI Core: No API key found (offline mode)');
         console.log('  Set OPENAI_API_KEY or GEMINI_API_KEY via environment or .env file');
     }
 
     const core: CalypsoCore = new CalypsoCore(vfs, shell, storeAdapter, {
-        simulationMode: !hasApiKey,
         llmConfig: hasApiKey ? {
             provider: openaiKey ? 'openai' : 'gemini',
             apiKey: (openaiKey || geminiKey) as string,

@@ -1,7 +1,7 @@
-= ARGUS Plugin System: The VM for Guest Logic
+= ARGUS Plugin System: Guest Compute Under Host Integrity
 :author: ATLAS Project Team
-:revdate: 2026-02-18
-:revnumber: 10.0.1
+:revdate: 2026-02-21
+:revnumber: 10.3.1
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -10,148 +10,111 @@ toc::[]
 
 == Abstract
 
-The ARGUS Plugin System is a virtualized execution environment for domain-specific workflow logic. By bifurcating the system into a generic Host kernel (`CalypsoCore`) and atomic, stateless Guest modules (Plugins), ARGUS achieves high levels of procedural extensibility and mathematical verifiability. This document specifies the architectural design of the Plugin Virtual Machine (VM), the mechanics of dynamic loading, and the strictly-typed "Standard Library" (the `PluginContext`) provided to Guest programs. By isolating domain-specific logic from the core state management system, ARGUS ensures that scientific protocols can be extended without compromising the system's structural integrity.
+The plugin system is the compute layer of ARGUS. It isolates domain behavior from
+kernel orchestration by executing workflow logic as stateless guest modules loaded
+through manifest handlers. This architecture allows persona evolution without
+kernel rewrites and keeps provenance control centralized in host runtime.
 
-== Introduction: The Evolution of Guest Logic
+This specification captures the post-hardening state in which federation phases are
+also plugin materialized, backend latency simulation is removed, and handler
+ownership is resolved through dynamic convention rather than static backend tables.
 
-=== The Case Against Monolithic Dispatch
-In earlier versions of ARGUS (v9.x and below), domain-specific logic was hardcoded directly into the system's core orchestrator. This "Monolithic Dispatch" model suffered from structural fragility; a change in the dataset discovery logic (Search) could inadvertently corrupt the state of the model publication stage (Post), as all stages shared the same in-memory classes and global variables. This coupling made it impossible to verify the system's components in isolation and hindered the rapid adoption of new research personas.
+== Historical Context
 
-=== The Resolution: The Plugin Virtual Machine
-We learned that for ARGUS to scale as a robust platform for federated research, domain-specific logic must be treated as unprivileged "Guest" code. The resolution was the implementation of the **Plugin Virtual Machine** in v10.0. Logic is no longer a part of the system kernel; it is a discrete transformation that runs inside a sandboxed environment (`src/plugins/`). Plugins are prohibited from managing their own state or touching the Merkle session tree directly. Instead, they consume a strictly defined "Standard Library" and return a `PluginResult` that the Host materializes into the provenance chain.
+Before the plugin VM boundary stabilized, workflow logic lived in shared core
+paths. That coupling made behavior difficult to reason about because stage-specific
+changes could affect unrelated flows. It also weakened verification boundaries by
+mixing compute decisions with orchestration control.
+
+The v10 pivot moved logic into plugins, and the 10.2 to 10.3 hardening passes
+removed remaining internalized surfaces so plugin ownership became real rather than
+partial.
 
 == Plugin Boundary Figure
 
 [source,text]
 ----
-                     ┌──────────────────────────────────────────┐
-                     │ PluginContext                            │
-                     │ vfs | shell | store | federation (opt)  │
-                     └─────────────────────┬────────────────────┘
-                                           │
-                                           ▼
-                                    ┌──────────────┐
-                                    │ src/plugins/*│
-                                    │ plugin_execute
-                                    └──────┬───────┘
-                                           │ PluginResult
-                                           ▼
-                                    ┌──────────────┐
-                                    │ Calypso Host │
-                                    └──────┬───────┘
-                                           ▼
-                                    ┌──────────────┐
-                                    │ MerkleEngine │
-                                    └──────────────┘
+                    ┌────────────────────────────────────┐
+                    │           PLUGIN CONTEXT           │
+                    │ vfs | shell | store | ui telemetry│
+                    └─────────────────┬──────────────────┘
+                                      │
+                                      ▼
+                             ┌────────────────┐
+                             │ PLUGIN VM      │
+                             │ src/plugins/*  │
+                             └───────┬────────┘
+                                     │ PluginResult
+                                     ▼
+                             ┌────────────────┐
+                             │ CALYPSO HOST   │
+                             └───────┬────────┘
+                                     ▼
+                             ┌────────────────┐
+                             │ MERKLE ENGINE  │
+                             └────────────────┘
 
-forbidden dependency direction:
+forbidden import direction:
 src/plugins/*  ─X─▶  src/core/stages/*, src/core/logic/*
 ----
 
-== The Plugin Host (The VM Kernel)
+== Host and Guest Contract
 
-The `PluginHost` class (located in `src/lcarslm/PluginHost.ts`) implements the runtime environment for Guest logic.
+`PluginHost` loads handler modules dynamically according to manifest-declared
+handler names and validates runtime exports before execution. The host constructs a
+typed `PluginContext`, invokes `plugin_execute`, receives a typed `PluginResult`,
+and then performs host-owned materialization through Merkle layers.
 
-=== Dynamic Module Loading
-ARGUS plugins are stored as individual ECMAScript modules. The `PluginHost` uses dynamic imports (`import()`) to load these modules at runtime, based on the `handler` property defined in the active workflow manifest. This architecture ensures:
-*   **Memory Efficiency:** Only the logic required for the current stage is loaded into memory.
-*   **Hot-Swapping:** New plugins can be added to the `src/plugins/` directory and immediately utilized by the system without requiring a re-compilation of the Host kernel.
+This lifecycle keeps guest modules transient and stateless from the kernel
+perspective. Plugins do work. Hosts witness and record outcomes.
 
-=== Atomic Execution Lifecycle
-Every plugin must export a single entry point: `plugin_execute`.
-1.  **Instantiation:** The Host loads the module and verifies the existence of the execution entry point.
-2.  **Context Injection:** The Host assembles a fresh `PluginContext` (the Standard Library) tailored to the current session and project.
-3.  **Execution:** The `plugin_execute` function is invoked. This is a synchronous or asynchronous transformation that performs the required domain logic (e.g., scanning metadata or generating code).
-4.  **Teardown:** Once the plugin returns its result, the VM discards the plugin instance, ensuring that no transient state persists between command executions.
+== Capability Surface
 
-== The Standard Library: `PluginContext`
+Guest code receives only bounded capabilities through `PluginContext`, including
+project-scoped VFS and shell access, store interaction surfaces, and telemetry
+primitives. Plugins do not import browser-stage modules or core orchestration
+internals. Boundary enforcement is automated by dependency checks in the standard
+build and test gates.
 
-Guest logic interacts with the ARGUS system exclusively through the `PluginContext`. This interface represents the totality of the plugin's capabilities.
-
-=== VFS Capability (`vfs`)
-Access to the `VirtualFileSystem` allows plugins to perform POSIX-compliant mutations. However, plugins are restricted to the project-scoped directory tree (`~/projects/$PROJECT/`). They are physically prevented from accessing the session ledger or other users' data, ensuring cross-project security.
-
-=== Execution Capability (`shell`)
-The `shell` property provides access to the VCS Shell singleton. This allows plugins to execute POSIX builtins (e.g., `mkdir`, `cp`) and simulators (e.g., `python`). For example, the `Train` plugin uses this capability to run the `python` simulator against the `train.py` scaffold, capturing the resulting logs and validation markers.
-
-=== State Capability (`store`)
-Plugins can read application state (e.g., the currently selected datasets) and emit specific UI actions (e.g., `project_rename`). This ensures that the visual interface remains synchronized with the plugin's internal logic without the plugin needing direct access to the LCARS framework or the DOM.
-
-=== Telemetry and UI Primitives (`ui`)
-Argus v10.2 introduces the live telemetry bus, allowing plugins to function as streaming computation sources. The `ui` property in the `PluginContext` provides a set of high-integrity primitives for emitting real-time feedback to the user without the plugin needing knowledge of the underlying transport or surface.
+Telemetry follows the same separation doctrine. Plugins emit primitive progress and
+message events; host/server layers transport those events; adapters render them in
+surface-specific form. Narrative ownership remains with plugins, while geometry and
+presentation remain adapter concerns.
 
 [source,text]
 ----
-  PLUGIN (Guest)          CALYPSO HOST (Kernel)        CALYPSO SERVER          CLIENT (Adapter)
-┌────────────────┐      ┌────────────────────┐      ┌────────────────┐      ┌────────────────┐
-│ ui.log()       │───┐  │                    │      │                │      │                │
-│ ui.progress()  │───┼─▶│ TelemetryBus       │─────▶│ WebSocket      │─────▶│ TUI Renderer   │
-│ ui.animation() │───┘  │ (Internal Events)  │      │ Broadcast      │      │ WUI Renderer   │
-└────────────────┘      └────────────────────┘      └────────────────┘      └────────────────┘
+┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+│ PLUGIN (guest)   │──▶│ TELEMETRY BUS    │──▶│ CALYPSO SERVER   │──▶│ SURFACE ADAPTERS │
+│ ui.progress(...) │   │ host-local pipe  │   │ websocket frames │   │ tui / web render │
+└──────────────────┘   └──────────────────┘   └──────────────────┘   └──────────────────┘
 ----
 
-The telemetry flow ensures a strict separation between **Lore** (owned by the plugin) and **Geometry** (owned by the host/adapter):
-*   **The Emitter (Plugin):** Calls primitives like `ui.progress(45, "Scanning")`. It owns the narrative and the timing of updates.
-*   **The Pipe (TelemetryBus):** Captures these local function calls and turns them into system-wide events within the Calypso Host.
-*   **The Transport (WebSocket):** The `CalypsoServer` subscribes to the bus and serializes events into JSON-RPC frames for all connected clients.
-*   **The Sink (Renderer):** The TUI or WUI receives the raw primitive and decides how to draw it (e.g., ASCII box-drawing vs. CSS animations).
+Operationally this means plugin code should emit monotonic progress percentages for
+long loops and avoid UI-specific assumptions. The CLI adapter rewrites a single
+active progress row using glyph bars (`█`/`░`) and the web adapter renders equivalent
+state through its own view model. Plugins describe work; adapters choose geometry.
 
-This model enables "tqdm-style" live updates for long-running scientific processes, ensuring that the user is never disconnected from the state of the virtual machine.
+== Materialization and Provenance
 
-== Surface-Neutral Contract: Plugins Do Logic, Adapters Do Rendering
+Plugins return result payloads containing status and optional artifact data. They do
+not self-certify completion by writing session ledger artifacts directly. Calypso
+captures result payloads, applies lineage hashing, and writes materialized evidence
+through the Merkle path. This preserves one authoritative provenance witness and
+prevents guest code from bypassing integrity rules.
 
-Plugins are developer-facing workflow entry points. Their contract is intentionally surface-neutral so the same logic can run in browser, TUI, or headless validation paths.
+== Latency Ownership Policy
 
-*   **Input:** A typed `PluginContext` (`command`, `args`, `parameters`, `vfs`, `shell`, `store`, optional `federation`).
-*   **Output:** A typed `PluginResult` (`statusCode`, `message`, optional `actions`, optional `artifactData`).
-*   **Invariant:** Plugins return data and intents, not DOM behavior. Surface adapters decide how to render.
+Compute realism delay, when desired, belongs to plugin implementations. Backend
+runtime layers do not contain synthetic sleeps. Test and oracle runs enforce stable
+throughput by setting `CALYPSO_FAST=true`, which disables plugin-local delay while
+leaving command semantics unchanged.
 
-This boundary keeps business behavior portable while allowing Web UI and TUI clients to present results differently.
+== Architectural Outcome
 
-=== Search/Gather Demarcation (SeaGaP Spine)
-
-Search and Gather are adjacent but distinct stages and must not be conflated:
-
-*   **Search plugin (`src/plugins/search.ts`):** Resolves catalog queries and materializes search snapshot content.
-*   **Gather plugin (`src/plugins/gather.ts`):** Applies cohort selection/mount mutations and materializes gather-stage outcomes.
-*   **UI adapters (`src/core/stages/*`):** Project plugin outputs into surface-specific interaction patterns (cards, overlays, terminal echoes).
-
-When behavior changes, update the stage owner. Do not leak Gather mutations into Search plugin behavior, and do not move UI rendering concerns into plugins.
-
-=== Hard Boundary Rule
-
-Files under `src/plugins/` must remain independent of browser-stage and core orchestration modules.
-
-*   **Forbidden:** Importing `src/core/stages/*` or `src/core/logic/*` into plugins.
-*   **Why:** This couples headless runtime logic to browser adapter code and app orchestration internals, breaking Host/Guest separation.
-*   **Enforcement:** `npm run check:boundaries` (also invoked by `npm run build` and `npm test`).
-
-=== Terminal Message and Syntax Boundary
-
-Plugin messages are runtime outputs, not rendering implementations.
-
-*   Plugins may return human-readable message text and code blocks.
-*   Syntax-language detection is not owned by plugins.
-*   Browser/TUI adapters apply final styling from a shared registry.
-
-Canonical language mapping lives in `src/core/syntax/languageRegistry.ts`. Surface renderers consume that single registry:
-
-*   Browser: `src/core/logic/commands.ts` + `src/ui/syntaxHighlight.ts`
-*   TUI: `src/calypso/ui/tui/TuiRenderer.ts` + `src/calypso/ui/tui/SyntaxHighlight.ts`
-
-== The Materialization Contract: `PluginResult`
-
-The interaction between the Host and the Guest is governed by a strict materialization contract. A plugin does not "mark" a stage as complete; it returns the evidence required for the Host to do so.
-
-*   **`message`**: The human-readable string (Markdown or environment-aware ANSI/HTML) to be displayed in the terminal.
-*   **`statusCode`**: The protocol code (e.g., `OK`, `ERROR`) used for machine verification.
-*   **`artifactData`**: The domain-specific payload (e.g., a list of harmonized modalities).
-
-The Host kernel (Calypso) captures this result, wraps it in a SHA-256 fingerprint, and invokes the `MerkleEngine` to materialize the artifact in the VFS session tree. This ensures that the provenance chain is managed exclusively by the high-integrity Kernel, providing an immutable audit trail of the Guest's work.
-
-== Conclusion
-
-The ARGUS Plugin System represents the formalization of "Separated Logic." By treating domain-specific work as sandboxed Guest code, ARGUS achieves the robustness of an operating system. The system remains stable and verifiable at its core while offering researchers an infinitely extensible environment for scientific innovation. This VM-based architecture is the key to ARGUS's scalability, ensuring that as the platform's capabilities grow, its fundamental integrity remains absolute.
+The plugin system now expresses the intended Host/Guest architecture without major
+exceptions. Manifest declarations select behavior, plugins execute compute, and host
+layers preserve deterministic orchestration and provenance integrity. This division
+is the foundation for v11 contract lock.
 
 ---
-_Last updated: 2026-02-18 (v10.0.1)_
+_Last updated: 2026-02-21 (v10.3.1)_

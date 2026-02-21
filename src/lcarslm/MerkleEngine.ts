@@ -97,7 +97,8 @@ export class MerkleEngine {
     public async artifact_materialize(
         stageId: string, 
         content: Record<string, unknown>,
-        materialized?: string[]
+        materialized?: string[],
+        dataDirOverride?: string,
     ): Promise<void> {
         const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
         const stagePath: StagePath | undefined = this.workflowAdapter.stagePaths.get(stageId);
@@ -128,7 +129,7 @@ export class MerkleEngine {
             _parent_fingerprints: parentFingerprints
         };
 
-        await this.artifact_storeWrite(stage, stagePath, envelope);
+        await this.artifact_storeWrite(stage, stagePath, envelope, dataDirOverride);
     }
 
     /**
@@ -163,15 +164,21 @@ export class MerkleEngine {
         stage: DAGNode,
         stagePath: StagePath,
         envelope: ArtifactEnvelope,
+        dataDirOverride?: string,
     ): Promise<void> {
-        const session: Session = this.session_resolve();
-        const stagePathSegments: string[] = this.stagePathSegments_resolve(stagePath);
-        const effectivePathSegments: string[] = await this.stagePathForWrite_resolve(
-            session,
-            stage,
-            stagePathSegments,
-        );
-        const dataDir: string = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
+        let dataDir: string;
+        if (dataDirOverride) {
+            dataDir = dataDirOverride;
+        } else {
+            const session: Session = this.session_resolve();
+            const stagePathSegments: string[] = this.stagePathSegments_resolve(stagePath);
+            const effectivePathSegments: string[] = await this.stagePathForWrite_resolve(
+                session,
+                stage,
+                stagePathSegments,
+            );
+            dataDir = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
+        }
         const artifactName: string = stagePath.artifactFile.split('/').pop() || `${stage.id}.json`;
         const basePath: string = `${dataDir}/${artifactName}`;
         const finalPath: string = await this.artifactPath_storeResolve(basePath, stage.id, envelope._fingerprint);

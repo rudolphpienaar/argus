@@ -1,7 +1,7 @@
-= Federation Orchestrator: The Multi-Phase State Machine
+= Federation Workflow: Plugin-Materialized Phase Execution
 :author: ATLAS Project Team
-:revdate: 2026-02-18
-:revnumber: 10.0.0
+:revdate: 2026-02-20
+:revnumber: 10.3.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -10,86 +10,104 @@ toc::[]
 
 == Abstract
 
-The Federation Orchestrator is the specialized service within ARGUS responsible for the multi-stage "Federalization Handshake." It manages the transition from local training code to distributed network execution, ensuring that all procedural and security gates required for medical data handling are strictly enforced. This specification details the architectural design of the federated state machine, the mechanics of the 8-step handshake protocol, and the engineering rationale for grounding each step in persistent, Merkle-proven materialization. By providing a structured "Dispatch Pipeline," the Orchestrator ensures that no model is ever deployed to clinical partners without undergoing formal transcompilation, containerization, publication, dispatch, and execution verification.
+This document specifies federation behavior after the backend purification passes
+in the late v10 line. Federation is no longer represented by a backend
+orchestrator, hidden handshake controller, or dedicated in-memory federation state.
+It is represented by manifest topology plus stage-local plugin compute, with
+progress derived from artifacts and DAG position resolution.
 
-== Introduction: The Complexity of Federalization
+The practical consequence is a stronger Host/Guest contract. Federation sequencing
+remains explicit and auditable, while backend layers remain workflow-agnostic and
+ready for storage substrate changes.
 
-=== The Failure of Single-Step Dispatch
-In early prototypes of ARGUS, federalization was envisioned as a single "Dispatch" command. This approach proved dangerous for real-world healthcare environments. A single command lacked the granular "Approval Gates" necessary for Institutional Review Board (IRB) and security compliance. There was no opportunity for a human researcher to review the transcompiled code or verify the container security layer before the model reached the distributed trusted domains.
+== Historical Catalyst
 
-=== The Resolution: The Multi-Phase Handshake
-The resolution was the implementation of the `FederationOrchestrator` (located in `src/lcarslm/federation/`). This service decomposes the federalization process into eight discrete, sequential steps aligned to the FedML manifest. Critical steps require explicit human approval or configuration before the next can begin. This shift from "Automation" to "Orchestration" ensures that the human researcher remains the authoritative pilot while the system handles the complex machinery of the ATLAS network.
+Earlier implementations retained internalized federation coordination in runtime
+code. That transitional design was useful during migration, but it violated the
+declared v10 architecture because orchestration semantics existed in two places:
+partly in manifests/plugins and partly in backend logic. The duplication created
+drift risk and made it difficult to claim that plugin boundaries were fully real.
 
-== Handshake Figure
+The hardening objective was to remove this duality before v11 contract lock. If a
+federation phase existed, it needed to exist as a plugin module selected by a
+manifest handler, not as a backend branch.
+
+== Federation Spine Figure
 
 [source,text]
 ----
-┌───────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ brief │─▶│ transcompile │─▶│ containerize │─▶│ publish config│
-└───────┘  └──────────────┘  └──────────────┘  └──────┬───────┘
-                                                       │ approve/config
-                                                       ▼
-                                                ┌──────────────┐
-                                                │ publish exec │
-                                                └──────┬───────┘
-                                                       │ approve
-                                                       ▼
-                                                ┌──────────────┐
-                                                │ dispatch     │
-                                                └──────┬───────┘
-                                                       │
-                                                       ▼
-                                                ┌──────────────┐
-                                                │ execute      │
-                                                └──────┬───────┘
-                                                       │
-                                                       ▼
-                                                ┌──────────────┐
-                                                │ model publish│
-                                                └──────────────┘
+┌──────────────────────────┐
+│ FEDERATE BRIEF           │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ FEDERATE TRANSCOMPILE    │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ FEDERATE CONTAINERIZE    │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ FEDERATE PUBLISH CONFIG  │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ FEDERATE PUBLISH EXEC    │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ FEDERATE DISPATCH        │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ FEDERATE EXECUTE         │
+└────────────┬─────────────┘
+             ▼
+┌──────────────────────────┐
+│ FEDERATE MODEL PUBLISH   │
+└──────────────────────────┘
 ----
 
-== The 8-Step Handshake Protocol
+== Stage Pipeline as Declared Compute
 
-The federated workflow is implemented as a linear sub-graph within the broader SeaGaP-MP process.
+The active FedML lineage now materializes federation as eight stage handlers:
+`federate-brief`, `federate-transcompile`, `federate-containerize`,
+`federate-publish-config`, `federate-publish-execute`, `federate-dispatch`,
+`federate-execute`, and `federate-model-publish`. Each stage is implemented as a
+single plugin file in `src/plugins/` and loaded through standard host handler
+resolution. Shared helper logic exists in `src/plugins/federationShared.ts`,
+without reintroducing backend orchestration ownership.
 
-=== Step 1: The Briefing (`federate-brief`)
-Initializes federation context and presents a deterministic summary of what will happen next: transcompilation, containerization, registry publication, dispatch, execution, and model publication.
+Because each phase is now regular stage compute, federation behavior is governed by
+the same contracts used by all other workflow stages: typed context input,
+status-coded plugin result, and host-controlled Merkle materialization.
 
-=== Step 2: Transcompilation (`federate-transcompile`)
-Converts local training code into a Flower-compatible federated execution shape and materializes transcompile artifacts for review.
+== Persistence and State Semantics
 
-=== Step 3: Containerization (`federate-containerize`)
-Builds a MERIDIAN-compliant OCI container from the transcompiled payload and records build artifacts.
+Federation progress is reconstructed from artifacts and workflow position.
+Dedicated store-level `federationState` has been removed. Publication configuration
+persists in project scope via `.federation-config.json`, making it portable with
+the project and inspectable under normal filesystem tooling.
 
-=== Step 4: Publication Configuration (`federate-publish-config`)
-Collects and validates publish metadata (name, organization, visibility) before registry operations.
+This model avoids controller-side shadow state and ensures compatibility with
+future host backends where project data may live on real filesystems instead of
+in-memory simulation.
 
-=== Step 5: Registry Publication (`federate-publish-execute`)
-Publishes the container artifact to the registry and records publication receipts.
+== Command Contract
 
-=== Step 6: Network Dispatch (`federate-dispatch`)
-Commits the prepared artifact to the federation network and starts coordinated execution.
+Legacy shortcut surfaces that encoded implicit approvals, such as
+`federate --yes`, are no longer part of the federation contract. Advancement is
+expressed through explicit stage commands declared in manifest context and resolved
+through normal workflow dispatch. Structured scripts follow the same policy:
+federation automation uses explicit command steps, not backend translation tables.
 
-=== Step 7: Federated Execution (`federate-execute`)
-Tracks rounds, site participation, and aggregate metrics while training executes across federated domains.
+== Architectural Outcome
 
-=== Step 8: Model Publication (`federate-model-publish`)
-Publishes the final aggregated model and provenance summary for downstream discovery and reuse.
-
-== State Persistence and Materialized Gates
-
-A critical requirement of the Orchestrator is its ability to maintain session continuity across system resets or remote re-attachments.
-
-=== Global Store Persistence
-Unlike stateless plugins, the `FederationOrchestrator` utilizes the global `AppState` (via `store.ts`) to persist the active handshake step and its configuration parameters (e.g., the application name). This ensures that if a user disconnects during the containerization phase, the system returns them to the exact logical position upon reconnection.
-
-=== Materialization as Approval
-The Orchestrator is grounded in the **Merkle Engine** (see `docs/merkle-engine.adoc`). Each phase of the handshake produces a physical artifact. The `federate-execute` stage—where the actual training occurs—is topologically blocked until the `dispatch.json` artifact exists in the VFS. This provides a hard deterministic gate: the network cannot be touched until the provenance of the briefing, code, and container is physically recorded on the disk.
-
-== Conclusion
-
-The Federation Orchestrator is the primary engine of procedural integrity for distributed research. By enforcing a multi-phase handshake grounded in physical artifact materialization, the system transforms the high-risk operation of network dispatch into a safe, auditable, and human-led process. This architecture ensures that ARGUS v10.0 meets the rigorous governance standards required for national-scale medical imaging research, providing absolute confidence in the scientific validity of every federated model.
+Federation is now an instance of the general ARGUS runtime model, not an exception
+to it. Manifests declare the sequence, plugins execute compute, and the host
+anchors results. This closes a key transitional debt surface and aligns federation
+execution with the production-pure backend doctrine established in v10.2 and v10.3.
 
 ---
-_Last updated: 2026-02-18 (v10.0.0)_
+_Last updated: 2026-02-20 (v10.3.0)_

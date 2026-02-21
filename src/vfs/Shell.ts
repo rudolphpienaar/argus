@@ -90,6 +90,13 @@ export class Shell {
         this.cwdChangeHandler = handler;
     }
 
+    /**
+     * Whether a command string corresponds to a registered shell builtin.
+     */
+    public isBuiltin(command: string): boolean {
+        return !!this.builtins.REGISTRY[command.toLowerCase()];
+    }
+
     // ─── Command Execution ──────────────────────────────────────
 
     /**

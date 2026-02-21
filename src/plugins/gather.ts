@@ -20,13 +20,14 @@ interface GatherDeps {
     store: CalypsoStoreActions;
     vfs: PluginContext['vfs'];
     shell: PluginContext['shell'];
-    search: PluginContext['search'];
+    comms: PluginContext['comms'];
     ui: PluginContext['ui'];
     sleep: (ms: number) => Promise<void>;
 }
 
 interface GatherMutationResult {
     project: Project;
+    dataDir: string;
 }
 
 /**
@@ -36,27 +37,29 @@ interface GatherMutationResult {
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { command, args, vfs, shell, search, store, ui, dataDir } = context;
-    const sleep = simDelay_wait;
-    const deps: GatherDeps = { store, vfs, shell, search, ui, sleep };
+    return context.comms.execute(async (): Promise<PluginResult> => {
+        const { command, args, vfs, shell, store, ui, dataDir, comms } = context;
+        const sleep = simDelay_wait;
+        const deps: GatherDeps = { store, vfs, shell, comms, ui, sleep };
 
-    switch (command) {
-        case 'add':
-            return plugin_add(args, deps, dataDir);
-        case 'remove':
-        case 'deselect':
-            return plugin_remove(args, store, ui);
-        case 'gather':
-        case 'review':
-            return plugin_review(args, deps, dataDir);
-        case 'mount':
-            return plugin_mount(ui);
-        default:
-            return {
-                message: `>> ERROR: UNKNOWN GATHER VERB '${command}'.`,
-                statusCode: CalypsoStatusCode.ERROR
-            };
-    }
+        switch (command) {
+            case 'add':
+                return plugin_add(args, deps, dataDir);
+            case 'remove':
+            case 'deselect':
+                return plugin_remove(args, store, ui);
+            case 'gather':
+            case 'review':
+                return plugin_review(args, deps, dataDir);
+            case 'mount':
+                return plugin_mount(ui);
+            default:
+                return {
+                    message: `>> ERROR: UNKNOWN GATHER VERB '${command}'.`,
+                    statusCode: CalypsoStatusCode.ERROR
+                };
+        }
+    });
 }
 
 /**
@@ -74,9 +77,8 @@ async function plugin_add(
         };
     }
 
-    // v10.2: Use SearchProvider to resolve IDs or fuzzy terms
-    const datasets: Dataset[] = ids
-        .flatMap(id => deps.search.resolve(id));
+    const resolution = await deps.comms.datasetTargets_resolve(ids);
+    const datasets: Dataset[] = resolution.datasets;
 
     if (datasets.length === 0) {
         return {
@@ -86,7 +88,6 @@ async function plugin_add(
     }
 
     const mutation: GatherMutationResult = await gatherMutations_apply(datasets, deps, dataDir);
-    const username: string = deps.shell.env_get('USER') || 'user';
     const idsStr: string = datasets.map((dataset: Dataset): string => dataset.id).join(', ');
 
     const selected: Dataset[] = deps.store.datasets_getSelected();
@@ -94,11 +95,12 @@ async function plugin_add(
     return {
         message: CalypsoPresenter.success_format(`DATASET(S) GATHERED: ${idsStr}`) +
                  `\n${CalypsoPresenter.info_format(`MOUNTED TO PROJECT [${mutation.project.name}]`)}` +
-                 `\n${CalypsoPresenter.info_format(`PROVENANCE PATH: ${dataDir}`)}`,
+                 `\n${CalypsoPresenter.info_format(`PROVENANCE PATH: ${mutation.dataDir}`)}`,
         statusCode: CalypsoStatusCode.OK,
         actions: datasets.map((dataset: Dataset) => ({ type: 'dataset_select', id: dataset.id })),
         artifactData: { cohort: selected.map((d: Dataset): string => d.id) },
-        materialized: ['.cohort']
+        materialized: ['.cohort'],
+        physicalDataDir: mutation.dataDir,
     };
 }
 
@@ -149,13 +151,15 @@ async function plugin_review(
     deps: GatherDeps,
     dataDir: string
 ): Promise<PluginResult> {
+    let physicalDataDir: string = dataDir;
     if (ids.length > 0) {
         const datasets: Dataset[] = ids
             .map(id => deps.store.dataset_getById(id))
             .filter((ds): ds is Dataset => !!ds);
         
         if (datasets.length > 0) {
-            await gatherMutations_apply(datasets, deps, dataDir);
+            const mutation = await gatherMutations_apply(datasets, deps, dataDir);
+            physicalDataDir = mutation.dataDir;
         }
     }
 
@@ -167,13 +171,20 @@ async function plugin_review(
         };
     }
 
+    const markerPath: string = `${physicalDataDir}/.cohort`;
+    deps.vfs.file_create(
+        markerPath,
+        `COHORT ASSEMBLED: DETERMINISTIC_SIMULATION\nDATASETS: ${selected.map((d: Dataset): string => d.id).join(',')}\n`,
+    );
+
     return {
         message: CalypsoPresenter.success_format(`COHORT REVIEW: ${selected.length} SELECTED:`) + 
                  `\n${selected.map((d: Dataset): string => `  [${d.id}] ${d.name}`).join('\n')}`,
         statusCode: CalypsoStatusCode.OK,
         actions: [{ type: 'stage_advance', stage: 'gather' }],
         artifactData: { cohort: selected.map((d: Dataset): string => d.id) },
-        materialized: ['.cohort']
+        materialized: ['.cohort'],
+        physicalDataDir,
     };
 }
 
@@ -231,6 +242,7 @@ async function gatherMutations_apply(datasets: Dataset[], deps: GatherDeps, data
 
     return {
         project: hydratedProject,
+        dataDir: effectiveDataDir,
     };
 }
 

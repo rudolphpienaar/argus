@@ -11,6 +11,7 @@ import type { PluginContext, PluginResult } from '../lcarslm/types.js';
 import { CalypsoStatusCode } from '../lcarslm/types.js';
 import type { Dataset } from '../core/models/types.js';
 import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
+import { simDelay_wait } from './simDelay.js';
 
 /**
  * Execute the harmonization logic.
@@ -19,53 +20,67 @@ import { CalypsoPresenter } from '../lcarslm/CalypsoPresenter.js';
  * @returns Standard plugin result.
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
-    const { store, ui, parameters } = context;
+    return context.comms.execute(async (): Promise<PluginResult> => {
+        const { store, ui, parameters } = context;
 
-    const active: { id: string; name: string } | null = store.project_getActive();
-    if (!active) {
-        return {
-            message: CalypsoPresenter.error_format('PREREQUISITE NOT MET: COHORT NOT ASSEMBLED'),
-            statusCode: CalypsoStatusCode.BLOCKED_MISSING
-        };
-    }
-
-    // 1. Start the Orchestration Narrative
-    ui.log(CalypsoPresenter.success_format('INITIATING COHORT HARMONIZATION PROTOCOL...'));
-    
-    // Derive modality from first dataset if not in parameters
-    const selected: Dataset[] = store.datasets_getSelected();
-    const modality: string = (parameters.modality as string) || (selected.length > 0 ? selected[0].modality : 'unknown');
-
-    // 2. Perform Simulated Compute Steps (The Live Feed)
-    ui.frame_open('CALYPSO HARMONIZATION ENGINE', `Standardizing ${modality.toUpperCase()} cohort for federated learning`);
-    
-    await dicom_headerAnalysis(context, 300);
-    await imageGeometry_check(context, 150);
-    await intensity_normalization(context, 200);
-    await qualityMetrics_generate(context, 100);
-
-    // 3. Materialize VFS proof-of-work
-    const username: string = context.shell.env_get('USER') || 'user';
-    const markerPath: string = `/home/${username}/projects/${active.name}/input/.harmonized`;
-    context.vfs.file_create(markerPath, `HARMONIZED: ${new Date().toISOString()}\nMODALITY: ${modality}\n`);
-
-    ui.frame_close([
-        'Images processed:     1,247',
-        'Metadata fields:      18,705',
-        'Format conversions:   312',
-        'Quality score:        94.7%',
-        'Federation ready:     YES'
-    ]);
-
-    return {
-        message: '● COHORT HARMONIZATION COMPLETE. DATA STANDARDIZED.',
-        statusCode: CalypsoStatusCode.OK,
-        artifactData: {
-            success: true,
-            modality,
-            timestamp: new Date().toISOString()
+        const active: { id: string; name: string } | null = store.project_getActive();
+        if (!active) {
+            return {
+                message: CalypsoPresenter.error_format('PREREQUISITE NOT MET: COHORT NOT ASSEMBLED'),
+                statusCode: CalypsoStatusCode.BLOCKED_MISSING
+            };
         }
-    };
+
+        // 1. Start the Orchestration Narrative
+        ui.log(CalypsoPresenter.success_format('INITIATING COHORT HARMONIZATION PROTOCOL...'));
+        
+        // Derive modality from first dataset if not in parameters
+        const selected: Dataset[] = store.datasets_getSelected();
+        const modality: string = (parameters.modality as string) || (selected.length > 0 ? selected[0].modality : 'unknown');
+
+        // 2. Perform Simulated Compute Steps (The Live Feed)
+        ui.frame_open('CALYPSO HARMONIZATION ENGINE', `Standardizing ${modality.toUpperCase()} cohort for federated learning`);
+        
+        await dicom_headerAnalysis(context, 300);
+        await imageGeometry_check(context, 150);
+        await intensity_normalization(context, 200);
+        await qualityMetrics_generate(context, 100);
+
+        // 3. Materialize VFS proof-of-work
+        // v10.2: Physical Provenance - Materialize actual files into our physical leaf.
+        // We clone from input/ (our parent context) into ourselves (dataDir).
+        const projectRoot = context.dataDir.substring(0, context.dataDir.indexOf('/data'));
+        const symlinkPath = `${projectRoot}/input`;
+        
+        try {
+            // Clone the input view (parent) into our physical leaf
+            context.vfs.tree_clone(symlinkPath, context.dataDir);
+        } catch (e) {
+            // Fallback or ignore if input is missing/unresolved
+        }
+
+        const markerPath: string = `${context.dataDir}/.harmonized`;
+        context.vfs.file_create(markerPath, `HARMONIZED: DETERMINISTIC_SIMULATION\nMODALITY: ${modality}\n`);
+
+        ui.frame_close([
+            'Images processed:     1,247',
+            'Metadata fields:      18,705',
+            'Format conversions:   312',
+            'Quality score:        94.7%',
+            'Federation ready:     YES'
+        ]);
+
+        return {
+            message: '● COHORT HARMONIZATION COMPLETE. DATA STANDARDIZED.',
+            statusCode: CalypsoStatusCode.OK,
+            artifactData: {
+                success: true,
+                modality,
+                cohort: selected.map(ds => ds.id)
+            },
+            materialized: ['.harmonized']
+        };
+    });
 }
 
 /**
@@ -73,7 +88,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
  * Simulates reading DICOM tags from a cohort of files.
  */
 async function dicom_headerAnalysis(context: PluginContext, fileCount: number): Promise<void> {
-    const { ui, sleep } = context;
+    const { ui } = context;
     ui.phase_start('DICOM HEADER ANALYSIS');
     
     for (let i = 1; i <= fileCount; i++) {
@@ -84,7 +99,7 @@ async function dicom_headerAnalysis(context: PluginContext, fileCount: number): 
         }
         
         // Simulated I/O latency: 10ms per file
-        await sleep(10);
+        await simDelay_wait(10);
     }
     ui.log('  ● Header validation complete.');
 }
@@ -94,7 +109,7 @@ async function dicom_headerAnalysis(context: PluginContext, fileCount: number): 
  * Simulates pixel spacing and orientation matrix validation.
  */
 async function imageGeometry_check(context: PluginContext, volumeCount: number): Promise<void> {
-    const { ui, sleep } = context;
+    const { ui } = context;
     ui.phase_start('IMAGE GEOMETRY VALIDATION');
 
     for (let i = 1; i <= volumeCount; i++) {
@@ -103,7 +118,7 @@ async function imageGeometry_check(context: PluginContext, volumeCount: number):
             ui.progress(`  » Checking spacing: vol ${i}/${volumeCount}`, percent);
         }
         // Simulated Compute: 20ms per volume
-        await sleep(20);
+        await simDelay_wait(20);
     }
     ui.log('  ● Orientation matrices synchronized.');
 }
@@ -113,7 +128,7 @@ async function imageGeometry_check(context: PluginContext, volumeCount: number):
  * Simulates histogram equalization and bit-depth conversion.
  */
 async function intensity_normalization(context: PluginContext, sliceCount: number): Promise<void> {
-    const { ui, sleep } = context;
+    const { ui } = context;
     ui.phase_start('INTENSITY NORMALIZATION');
 
     for (let i = 1; i <= sliceCount; i++) {
@@ -122,7 +137,7 @@ async function intensity_normalization(context: PluginContext, sliceCount: numbe
             ui.progress(`  » Normalizing slices: ${i}/${sliceCount}`, percent);
         }
         // Simulated Compute: 15ms per slice
-        await sleep(15);
+        await simDelay_wait(15);
     }
 }
 
@@ -131,7 +146,7 @@ async function intensity_normalization(context: PluginContext, sliceCount: numbe
  * Simulates SNR calculation and artifact detection.
  */
 async function qualityMetrics_generate(context: PluginContext, sampleCount: number): Promise<void> {
-    const { ui, sleep } = context;
+    const { ui } = context;
     ui.phase_start('QUALITY METRICS GENERATION');
 
     const metrics = ['SNR Calculation', 'Artifact Detection', 'Contrast Resolution', 'Noise Floor'];
@@ -141,7 +156,7 @@ async function qualityMetrics_generate(context: PluginContext, sampleCount: numb
         // Internal loop for samples
         const stepSamples = Math.floor(sampleCount / metrics.length);
         for (let s = 1; s <= stepSamples; s++) {
-            await sleep(20);
+            await simDelay_wait(20);
         }
     }
     ui.log('  ● Final quality score: 94.7%');

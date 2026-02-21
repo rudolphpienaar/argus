@@ -88,42 +88,6 @@ export interface CostEstimate {
 }
 
 /**
- * Federation visibility levels.
- */
-export type FederationVisibility = 'public' | 'private';
-
-/**
- * Federation step IDs — aligned 1:1 with fedml.manifest.yaml stage IDs.
- */
-export type FederationStep =
-    | 'federate-brief'
-    | 'federate-transcompile'
-    | 'federate-containerize'
-    | 'federate-publish-config'
-    | 'federate-publish-execute'
-    | 'federate-dispatch'
-    | 'federate-execute'
-    | 'federate-model-publish';
-
-/**
- * Publication metadata for federated models.
- */
-export interface FederationPublishConfig {
-    appName: string | null;
-    org: string | null;
-    visibility: FederationVisibility;
-}
-
-/**
- * Handshake state for the multi-phase federation protocol.
- */
-export interface FederationState {
-    projectId: string;
-    step: FederationStep;
-    publish: FederationPublishConfig;
-}
-
-/**
  * Application state for the SeaGaP-MP workflow.
  */
 export interface AppState {
@@ -136,7 +100,6 @@ export interface AppState {
     marketplaceOpen: boolean;
     installedAssets: string[];
     lastIntent: string | null;
-    federationState: FederationState | null;
     /** v10.2: Persistent memory of recently searched/mentioned datasets. */
     lastMentionedDatasets: Dataset[];
 }

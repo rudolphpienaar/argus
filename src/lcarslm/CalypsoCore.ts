@@ -28,7 +28,7 @@ import type {
     PluginResult
 } from './types.js';
 import { CalypsoStatusCode } from './types.js';
-import type { Dataset, AppState, Project } from '../core/models/types.js';
+import type { AppState, Project } from '../core/models/types.js';
 import { ScriptRuntime } from './scripts/ScriptRuntime.js';
 import { SearchProvider } from './SearchProvider.js';
 import { StatusProvider } from './StatusProvider.js';
@@ -130,7 +130,6 @@ export class CalypsoCore {
             storeActions,
             this.workflowAdapter,
             (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd),
-            (): Dataset[] => this.storeActions.lastMentioned_get(),
         );
     }
 
@@ -586,19 +585,10 @@ export class CalypsoCore {
         // v10.2: Resolve physical data directory for this execution node
         const dataDir = await this.merkleEngine.dataDir_resolve(stage.id);
 
-        // v10.2: Execution Watchdog (Runaway Guard)
-        // Ensure no plugin or engine operation exceeds 10 seconds.
-        const EXECUTION_TIMEOUT_MS = 10000;
-        const executionPromise = this.pluginHost.plugin_execute(stage.handler, stage.parameters, command, args, dataDir);
-        
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error(`EXECUTION TIMEOUT: Stage [${stage.id}] exceeded ${EXECUTION_TIMEOUT_MS/1000}s limit.`)), EXECUTION_TIMEOUT_MS);
-        });
-
-        // Invoke the Plugin Host (The VM) with timeout
         let result: PluginResult;
         try {
-            result = await Promise.race([executionPromise, timeoutPromise]);
+            // Execute plugin to completion; execution pacing belongs to plugin compute.
+            result = await this.pluginHost.plugin_execute(stage.handler, stage.parameters, command, args, dataDir);
         } catch (e: unknown) {
             return this.response_create(`>> ERROR: ${e instanceof Error ? e.message : String(e)}`, [], false, CalypsoStatusCode.ERROR);
         }
@@ -616,7 +606,12 @@ export class CalypsoCore {
                 timestamp: new Date().toISOString(),
                 result: true 
             };
-            await this.merkleEngine.artifact_materialize(stage.id, content, result.materialized);
+            await this.merkleEngine.artifact_materialize(
+                stage.id,
+                content,
+                result.materialized,
+                result.physicalDataDir,
+            );
 
             // v10.2: Re-sync the session pointer from the VFS ground truth.
             // This implicitly handles advancement if the manifest rules allow it.

@@ -9,6 +9,7 @@
 
 import type { WebSocket } from 'ws';
 import type { CalypsoCore } from '../../lcarslm/CalypsoCore.js';
+import type { TelemetryEvent } from '../../lcarslm/types.js';
 import type {
     ClientMessage,
     ServerMessage
@@ -30,11 +31,18 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
         }
     };
 
-    // v10.2: Subscribe to live telemetry and broadcast to client
-    const calypso = deps.calypso_get();
-    const unsubscribe = calypso.telemetry_subscribe((event) => {
+    // v10.2: Subscribe to live telemetry and broadcast to client.
+    // Rebind on login because core is reinitialized per authenticated user.
+    const telemetryForward = (event: TelemetryEvent): void => {
         send({ type: 'telemetry', payload: event });
-    });
+    };
+    let unsubscribe: () => void = (): void => {};
+    const telemetry_bind = (): void => {
+        unsubscribe();
+        unsubscribe = deps.calypso_get().telemetry_subscribe(telemetryForward);
+    };
+
+    telemetry_bind();
 
     ws.on('message', async (data: Buffer | string) => {
         let msg: ClientMessage;
@@ -57,6 +65,7 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
                 case 'login': {
                     const sanitized = msg.username.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'developer';
                     deps.calypso_reinitialize(sanitized);
+                    telemetry_bind();
                     const calypso = deps.calypso_get();
                     console.log(`WS Login: User "${sanitized}" authenticated`);
                     send({

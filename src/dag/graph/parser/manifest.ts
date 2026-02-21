@@ -15,7 +15,6 @@ import type {
     DAGDefinition,
     ManifestHeader,
 } from '../types.js';
-import { pluginHandler_isKnown } from '../../../plugins/registry.js';
 import {
     yaml_parse,
     previous_normalize,
@@ -132,7 +131,6 @@ function node_parse(raw: Record<string, unknown>): DAGNode {
         instruction: String(raw['instruction'] ?? ''),
         commands: Array.isArray(raw['commands']) ? raw['commands'].map(String) : [],
         handler: handler_parse(id, raw['handler']),
-        completes_with: raw['completes_with'] === null ? null : (raw['completes_with'] != null ? String(raw['completes_with']) : undefined),
         skip_warning: skipWarning_parse(raw['skip_warning']),
         narrative: raw['narrative'] != null ? String(raw['narrative']) : null,
         blueprint: Array.isArray(raw['blueprint']) ? raw['blueprint'].map(String) : [],
@@ -152,9 +150,6 @@ function handler_parse(stageId: string, rawHandler: unknown): string | null {
     const handlerPattern: RegExp = /^[a-z][a-z0-9_-]*$/;
     if (!handlerPattern.test(handlerName)) {
         throw new Error(`Stage '${stageId}': handler '${handlerName}' has invalid format`);
-    }
-    if (!pluginHandler_isKnown(handlerName)) {
-        throw new Error(`Stage '${stageId}': unknown handler '${handlerName}'`);
     }
     return handlerName;
 }

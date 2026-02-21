@@ -8,17 +8,17 @@
     },
     {
       "send": "search histology",
-      "expect": "OK",
-      "materialized": ["${session}/search/data/search.json"]
+      "expect": "OK"
     },
     {
       "send": "add ds-006",
-      "expect": "OK"
+      "expect": "OK",
+      "capture_project": true
     },
     {
       "send": "harmonize",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json"]
+      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
     },
     {
       "send": "search pathology",

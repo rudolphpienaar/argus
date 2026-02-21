@@ -45,6 +45,90 @@ export function ansi_strip(str: string): string {
     return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
+interface FrameState {
+    open: boolean;
+    innerWidth: number;
+    progressLineActive: boolean;
+}
+
+const FRAME_STATE: FrameState = {
+    open: false,
+    innerWidth: 0,
+    progressLineActive: false,
+};
+
+let INLINE_PROGRESS_ACTIVE: boolean = false;
+
+function number_clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+}
+
+function text_truncate(visibleText: string, maxChars: number): string {
+    if (maxChars <= 0) return '';
+    const chars: string[] = Array.from(visibleText);
+    if (chars.length <= maxChars) {
+        return visibleText;
+    }
+    if (maxChars <= 3) {
+        return '.'.repeat(maxChars);
+    }
+    return `${chars.slice(0, maxChars - 3).join('')}...`;
+}
+
+function frameInnerWidth_resolve(): number {
+    // Keep 1 column of headroom to avoid hard-wrap artifacts in narrow terminals.
+    const columns: number = terminalWidth_get();
+    const maxTotalWidth: number = number_clamp(Math.min(columns - 1, 120), 42, 120);
+    return maxTotalWidth - 2; // account for left/right borders
+}
+
+function boxRule_print(left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void {
+    const innerWidth: number = FRAME_STATE.innerWidth || frameInnerWidth_resolve();
+    console.log(`${COLORS.cyan}${left}${'═'.repeat(innerWidth)}${right}${COLORS.reset}`);
+}
+
+function boxRow_print(content: string = ''): void {
+    const innerWidth: number = FRAME_STATE.innerWidth || frameInnerWidth_resolve();
+    const visible: string = ansi_strip(content);
+    const renderedContent: string = Array.from(visible).length > innerWidth
+        ? text_truncate(visible, innerWidth)
+        : content;
+    const visibleLength: number = Array.from(ansi_strip(renderedContent)).length;
+    const paddingLength: number = Math.max(0, innerWidth - visibleLength);
+    console.log(`${COLORS.cyan}║${COLORS.reset}${renderedContent}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
+}
+
+function boxRow_render(content: string = ''): string {
+    const innerWidth: number = FRAME_STATE.innerWidth || frameInnerWidth_resolve();
+    const visible: string = ansi_strip(content);
+    const renderedContent: string = Array.from(visible).length > innerWidth
+        ? text_truncate(visible, innerWidth)
+        : content;
+    const visibleLength: number = Array.from(ansi_strip(renderedContent)).length;
+    const paddingLength: number = Math.max(0, innerWidth - visibleLength);
+    return `${COLORS.cyan}║${COLORS.reset}${renderedContent}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`;
+}
+
+function inlineProgress_flushIfNeeded(): void {
+    if (!INLINE_PROGRESS_ACTIVE) return;
+    process.stdout.write('\n');
+    INLINE_PROGRESS_ACTIVE = false;
+}
+
+function progressLine_format(label: string, percent: number, innerWidth: number): string {
+    const boundedPercent: number = number_clamp(Math.round(percent), 0, 100);
+    const barWidth: number = number_clamp(Math.floor(innerWidth * 0.2), 12, 22);
+    const filled: number = Math.round((boundedPercent / 100) * barWidth);
+    const bar: string = `▕${'█'.repeat(filled)}${'░'.repeat(barWidth - filled)}▏`;
+    const fixedSuffix: string = `${bar} ${String(boundedPercent).padStart(3)}%`;
+
+    const normalizedLabel: string = label.replace(/\s+/g, ' ').trim();
+    const fixedSuffixLength: number = Array.from(fixedSuffix).length;
+    const labelBudget: number = Math.max(6, innerWidth - fixedSuffixLength - 5);
+    const compactLabel: string = text_truncate(normalizedLabel, labelBudget);
+    return `  » ${compactLabel.padEnd(labelBudget)} ${fixedSuffix}`;
+}
+
 // ─── Spinner ────────────────────────────────────────────────────────────────
 
 const SPINNER_FRAMES: readonly string[] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -112,18 +196,8 @@ export interface ScriptStepPlan {
  * Build command-like hint for spinner/telemetry based on structured action.
  */
 export function stepCommandHint_build(action: string, params: Record<string, unknown>): string {
-    switch (action) {
-        case 'search':
-            return `search ${String(params.query || '')}`.trim();
-        case 'add':
-            return `add ${String(params.dataset || '')}`.trim();
-        case 'rename':
-            return `rename ${String(params.project || '')}`.trim();
-        case 'run_python':
-            return `python ${String(params.script || 'train.py')}`.trim();
-        default:
-            return action;
-    }
+    const explicitCommand: string = String(params.command || '').trim();
+    return explicitCommand || action;
 }
 
 // ─── Reactive UI Primitives ────────────────────────────────────────────────
@@ -132,17 +206,10 @@ export function stepCommandHint_build(action: string, params: Record<string, unk
  * Open a styled UI frame (box start).
  */
 export function rendererFrame_open(title: string, subtitle?: string): void {
-    const width: number = terminalWidth_get();
-    
-    const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
-        console.log(`${COLORS.cyan}${left}${'═'.repeat(width)}${right}${COLORS.reset}`);
-    };
-
-    const boxRow_print = (content: string = ''): void => {
-        const visibleLength: number = Array.from(ansi_strip(content)).length;
-        const paddingLength: number = Math.max(0, width - visibleLength);
-        console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
-    };
+    inlineProgress_flushIfNeeded();
+    FRAME_STATE.open = true;
+    FRAME_STATE.innerWidth = frameInnerWidth_resolve();
+    FRAME_STATE.progressLineActive = false;
 
     process.stdout.write(COLORS.hideCursor);
     console.log();
@@ -158,18 +225,6 @@ export function rendererFrame_open(title: string, subtitle?: string): void {
  * Close a styled UI frame (box end) and print summary.
  */
 export function rendererFrame_close(summary?: string[]): void {
-    const width: number = terminalWidth_get();
-
-    const boxRule_print = (left: '╔' | '╠' | '╚', right: '╗' | '╣' | '╝'): void => {
-        console.log(`${COLORS.cyan}${left}${'═'.repeat(width)}${right}${COLORS.reset}`);
-    };
-
-    const boxRow_print = (content: string = ''): void => {
-        const visibleLength: number = Array.from(ansi_strip(content)).length;
-        const paddingLength: number = Math.max(0, width - visibleLength);
-        console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
-    };
-
     if (summary && summary.length > 0) {
         boxRow_print();
         boxRow_print(`  ${COLORS.bright}EXECUTION SUMMARY${COLORS.reset}`);
@@ -183,22 +238,84 @@ export function rendererFrame_close(summary?: string[]): void {
     boxRule_print('╚', '╝');
     console.log();
     process.stdout.write(COLORS.showCursor);
+    FRAME_STATE.open = false;
+    FRAME_STATE.innerWidth = 0;
+    FRAME_STATE.progressLineActive = false;
 }
 
 /**
  * Mark the start of a sub-phase within an open frame.
  */
 export function rendererPhase_start(name: string): void {
-    const width: number = terminalWidth_get();
-
-    const boxRow_print = (content: string = ''): void => {
-        const visibleLength: number = Array.from(ansi_strip(content)).length;
-        const paddingLength: number = Math.max(0, width - visibleLength);
-        console.log(`${COLORS.cyan}║${COLORS.reset}${content}${' '.repeat(paddingLength)}${COLORS.cyan}║${COLORS.reset}`);
-    };
-
+    inlineProgress_flushIfNeeded();
+    FRAME_STATE.progressLineActive = false;
+    if (!FRAME_STATE.open) {
+        console.log(`${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${name}${COLORS.reset}`);
+        return;
+    }
     boxRow_print();
     boxRow_print(`  ${COLORS.green}▶${COLORS.reset} ${COLORS.bright}${name}${COLORS.reset}`);
+}
+
+/**
+ * Render a telemetry log line.
+ * If a frame is open, it is rendered inside the frame body.
+ */
+export function rendererLog(message: string): void {
+    inlineProgress_flushIfNeeded();
+    FRAME_STATE.progressLineActive = false;
+    const styled: string = message_style(message);
+    if (!FRAME_STATE.open) {
+        console.log(styled);
+        return;
+    }
+    const lines: string[] = styled.split('\n');
+    for (const line of lines) {
+        boxRow_print(`  ${line}`);
+    }
+}
+
+/**
+ * Render telemetry progress as a visible ASCII progress bar.
+ */
+export function rendererProgress(label: string, percent: number): void {
+    const innerWidth: number = FRAME_STATE.open ? FRAME_STATE.innerWidth : frameInnerWidth_resolve();
+    const line: string = progressLine_format(label, percent, innerWidth);
+
+    if (FRAME_STATE.open) {
+        const row: string = boxRow_render(line);
+        if (FRAME_STATE.progressLineActive) {
+            process.stdout.write('\x1b[1A');
+            process.stdout.write('\x1b[2K');
+            process.stdout.write(`${row}\n`);
+        } else {
+            process.stdout.write(`${row}\n`);
+            FRAME_STATE.progressLineActive = true;
+        }
+        if (percent >= 100) {
+            FRAME_STATE.progressLineActive = false;
+        }
+        return;
+    }
+    process.stdout.write(`\r\x1b[2K${COLORS.dim}${line}${COLORS.reset}`);
+    INLINE_PROGRESS_ACTIVE = true;
+    if (percent >= 100) {
+        inlineProgress_flushIfNeeded();
+    }
+}
+
+/**
+ * Render a status update line.
+ */
+export function rendererStatus(message: string): void {
+    inlineProgress_flushIfNeeded();
+    FRAME_STATE.progressLineActive = false;
+    const styled: string = `${COLORS.dim}${message}${COLORS.reset}`;
+    if (FRAME_STATE.open) {
+        boxRow_print(`  ${styled}`);
+        return;
+    }
+    console.log(styled);
 }
 
 /**
@@ -340,9 +457,10 @@ function terminalWidth_get(): number {
     const override: string | undefined = process.env.CALYPSO_COLS;
     if (override) {
         const parsed = parseInt(override, 10);
-        if (!isNaN(parsed)) return parsed;
+        if (!isNaN(parsed)) return Math.max(parsed, 42);
     }
-    return Math.max(process.stdout.columns || 120, 80);
+    const detected: number = process.stdout.columns || 120;
+    return Math.max(detected, 42);
 }
 
 /**

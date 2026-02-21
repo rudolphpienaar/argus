@@ -120,4 +120,3 @@ stages:
       - publish
       - deploy
     handler: publish
-    completes_with: null

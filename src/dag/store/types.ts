@@ -57,7 +57,7 @@ export interface StorageBackend {
 /**
  * A session represents one execution of a persona workflow.
  *
- * Sessions live at ~/sessions/<persona>/session-<id>/. Each session
+ * Sessions live at ~/projects/<name>/data/. Each session
  * materializes a nested directory tree following the DAG topology.
  * Users can log out, come back, choose a session, and continue.
  *
@@ -111,8 +111,12 @@ export interface ArtifactEnvelope {
     timestamp: string;
     parameters_used: StageParameters;
     content: Record<string, unknown>;
+    /** v10.2: Side-effect files materialized by this stage (e.g. '.cohort'). */
+    materialized?: string[];
     _fingerprint: string;
     _parent_fingerprints: Record<string, string>;
+    /** Internal: Physical path in the VFS (not persisted). */
+    _physical_path?: string;
 }
 
 // ─── Skip Sentinel ──────────────────────────────────────────────

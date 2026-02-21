@@ -6,5 +6,3 @@
 
 export { WorkflowAdapter } from './WorkflowAdapter.js';
 export type { WorkflowSummary, TransitionResult } from './WorkflowAdapter.js';
-export type { CompletionMapper, CompletionCheck } from './CompletionMapper.js';
-export { completionMapper_create, manifestMapper_create } from './CompletionMapper.js';

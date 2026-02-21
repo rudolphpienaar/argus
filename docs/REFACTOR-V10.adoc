@@ -1,108 +1,118 @@
-= ARGUS v10.0 Refactor Specification: The Plugin Runtime & Intent-First Pipeline
+= ARGUS v10 Refactor Specification: Host/Guest Contract Formation
 :author: ARGUS Collaborative Development
-:revdate: 2026-02-17
-:revnumber: 10.0.0
+:revdate: 2026-02-20
+:revnumber: 10.3.0
 :toc: macro
 :toclevels: 3
 :sectnums:
 
 toc::[]
 
-== Core Philosophy: The Operating System Metaphor
+== Abstract
 
-The v10.0 architecture moves ARGUS from a monolithic command switchboard to a decoupled **Operating System (Host)** and **Workflow (Program)** model.
+This specification records the v10 refactor as an architectural separation event
+rather than a feature increment. The pre-v10 system still contained
+workflow-specific assumptions inside core orchestration paths, which created
+coupling between persona evolution and kernel stability. The v10 program resolves
+that coupling by establishing a formal Host/Guest boundary: Calypso operates as a
+deterministic integrity kernel, while domain compute is executed as unprivileged
+plugins selected by manifest contracts.
 
-The "Core" (Calypso) shall no longer contain idiosyncratic knowledge of specific workflows (e.g., FedML, Histology). Instead, it provides a generic runtime environment—a "Virtual Machine"—that executes atomic capabilities defined in external manifests.
+The same transition also redefined intent handling as protocol compilation and
+verification, replacing legacy waterfall dispatch with a constrained
+interpretation-first pipeline. The key result is that natural language remains a
+control surface, but state mutation authority remains in deterministic,
+verifiable runtime layers.
 
-== The Intent-First Pipeline (Interpretation as Compilation)
+== Historical Pressure
 
-The system shall replace the current "Waterfall" regex matcher with an **Interpretation-First** pipeline.
+Before v10, introducing or modifying workflow behavior required touching core
+dispatch logic. That made correctness fragile because unrelated stage changes could
+alter global execution behavior. Verification effort also drifted toward
+conversation matching because protocol semantics were mixed with narrative output.
+As workflows became more branched and provenance-sensitive, this model could no
+longer defend reproducibility claims.
 
-1.  **Interpretation (LLM as Compiler):** The LLM receives noisy natural language and "compiles" it into a **Deterministic Protocol** (a Canonical Intent object).
-2.  **Graceful Degradation:** Without an LLM, the system accepts the raw protocol directly (e.g., `rename target-name`).
-3.  **Validation (Gatekeeper):** The Core verifies the Protocol against the current DAG state (WorkflowAdapter) and Merkle fingerprints.
-4.  **Execution (Plugin Host):** If allowed, the Core dispatches to a specific plugin module.
-5.  **Materialization (Host):** The Core captures the result, wraps it in a Merkle-proven artifact, and materializes it into the Session Tree.
+The refactor objective was therefore to align architecture with scientific
+requirements: command interpretation may be probabilistic, but command execution
+and state transitions must be deterministic and materialized.
 
-== Protocol Definition (`src/lcarslm/types.ts`)
+== Refactor Shift Figure
 
-=== CalypsoStatusCode (Verification Enum)
+[source,text]
+----
+v9 monolithic dispatch:
 
-The binary `success` boolean is replaced by a categorical status for machine-verifiable logic:
+┌────────────────────────────────────────────────────┐
+│ CORE ORCHESTRATOR                                  │
+│ intent + workflow logic + compute + state writes   │
+└────────────────────────────────────────────────────┘
 
-[cols="1,3"]
-|===
-| Code | Meaning
+v10 host/guest contract:
 
-| `OK` | Intent matched, prerequisites met, execution succeeded.
-| `BLOCKED_MISSING` | Denied; prerequisites (parent artifacts) are missing.
-| `BLOCKED_STALE` | Denied; data-state is stale (Merkle mismatch).
-| `CONVERSATIONAL` | Resolved to a chat/fallback intent (no state mutation).
-| `ERROR` | Deterministic handler/plugin crashed during execution.
-| `UNKNOWN` | Input could not be resolved to any intent.
-|===
+┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
+│ INTENT PARSE   │──▶│ DAG VALIDATE   │──▶│ PLUGIN EXECUTE │──▶│ MERKLE WRITE   │
+└────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘
+      (HOST)               (HOST)                (GUEST)              (HOST)
+----
 
-=== Plugin Context & Result
+== Refactor Resolution
 
-Every plugin receives a strictly-typed **PluginContext** (the "Standard Library") and must return a **PluginResult**.
+The v10 line introduced a five-layer runtime sequence that remains active in the
+current codebase. User language is compiled into a canonical intent, validated
+against active workflow topology, dispatched to a plugin selected by manifest
+handler, and materialized by host-controlled Merkle anchoring. Graceful
+degradation remains available when no model provider is configured, but that path
+still uses the same deterministic execution contract for workflow commands.
+
+The resulting protocol contract replaced binary success signaling with categorical
+status outcomes, allowing machine-verifiable assertion against blocked, stale,
+conversational, and successful branches.
+
+== Runtime Contract Surface
+
+The plugin boundary is now enforced through a typed context/result interface.
+Plugins receive only project-scoped capabilities and return evidence payloads.
+They do not own provenance writes, and they do not mutate kernel configuration.
+The host captures plugin output, computes Merkle lineage, and materializes session
+artifacts as the sole witness of completion.
 
 [source,typescript]
 ----
 interface PluginContext {
-    vfs: VirtualFileSystem;      // Project Tree access
-    shell: Shell;               // POSIX builtins
-    store: CalypsoStoreActions;  // App state access
-    parameters: Record<string, any>; // Manifest-provided config
+    vfs: VirtualFileSystem;
+    shell: Shell;
+    store: CalypsoStoreActions;
+    parameters: Record<string, unknown>;
 }
 
 interface PluginResult {
-    message: string;             // User feedback
+    message: string;
     statusCode: CalypsoStatusCode;
-    artifactData?: any;          // Payload for Merkle envelope
+    artifactData?: unknown;
 }
 ----
 
-== The Plugin Runtime (`src/plugins/`)
+This contract made it possible to externalize domain logic without sacrificing
+execution rigor. It also established the basis for later hardening work in which
+federation phases were materialized as individual plugins and backend simulation
+paths were deleted.
 
-Idiosyncratic logic is moved to standalone modules in `src/plugins/`.
+== Verification Consequence: Oracle v2
 
-1.  **Naming Convention:** Module filenames must match the `handler` field in the Manifest YAML.
-2.  **Isolation:** Plugins are prohibited from touching the Session Tree (`~/sessions/`). They only mutate the Project Tree (`~/projects/`).
-3.  **Merkle Responsibility:** The Host (CalypsoCore) is solely responsible for hashing `artifactData` and writing to the Session Tree.
+Refactor completion required verification strategy change. Oracle scenarios moved
+from conversational assertions to contractual walks that validate status outcomes
+and artifact existence. That shift closed a major blind spot from pre-v10 tests:
+a fluent response can no longer mask missing materialization.
 
-== Oracle v2: Data-State Grounding
+== Architectural Outcome
 
-Verification shifts from conversational output to **materialized side effects**.
-
-1.  **Atomic Step Schema:**
-    [source,json]
-    {
-      "send": "harmonize",
-      "expect": "OK",
-      "materialized": [
-        "${session}/.../harmonize/data/harmonize.json",
-        "${project}/input/.harmonized"
-      ]
-    }
-2.  **Verification:** The runner confirms the `statusCode` and checks the VFS for the physical existence of every path in the `materialized` list.
-
-== Coding Mandates (The Argus Standard)
-
-All changes must strictly adhere to these four pillars:
-
-[horizontal]
-Strict Typing:: No usage of `any`. Every variable, parameter, and return must be explicitly typed.
-RPN Naming:: Methods must follow `<subject>_<verb>` (e.g., `intent_resolve`, `plugin_load`).
-Atomic Responsibility:: Functions must be single-purpose and decoupled.
-JSDoc Documentation:: Complete documentation for every interface, type, and exported function.
-
-== Implementation Roadmap
-
-1.  **Phase 1: Foundation.** Establish `types.ts` and `ArtifactEnvelope` updates.
-2.  **Phase 2: Intent Infrastructure.** Refactor `IntentParser` and `CalypsoCore` for Interpretation-First flow.
-3.  **Phase 3: Plugin Host.** Implement the dynamic loader and the Merkle materialization engine.
-4.  **Phase 4: The Great Purge.** Move `harmonize`, `gather`, and `federation` logic into `src/plugins/`.
-5.  **Phase 5: Oracle v2.** Update the runner and rewrite `fedml-smoke` for atomic verification.
+The v10 refactor created the foundation for the subsequent hardening and deletion
+releases. By relocating workflow compute into manifest-selected plugins and
+restricting kernel responsibility to validation and provenance, ARGUS moved from a
+monolithic orchestrator to a composable execution kernel. Later releases in the
+10.2 and 10.3 line should be understood as contract purification of this same
+design, not as a separate architectural direction.
 
 ---
-_Last updated: 2026-02-17 (v10.0.0)_
+_Last updated: 2026-02-20 (v10.3.0)_

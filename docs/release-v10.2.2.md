@@ -1,19 +1,39 @@
 # ARGUS v10.2.2 Release Notes
 
-**Date:** 2026-02-20  
-**Type:** Hardening release
+## Abstract
+Version `10.2.2`, released on February 20, 2026, formalizes the hardening boundary
+for the late v10 line. The release does not expand features. It resolves a
+structural inconsistency discovered during post-overhaul cleanup: federation logic
+had moved toward plugins in principle, yet residual backend pathways and simulation
+surrogates still represented transitional behavior.
 
-## Summary
-`v10.2.2` is the stabilization checkpoint for the v10 line.  
-This release finalizes the backend purity pass and confirms plugin-first federation execution.
+The release therefore frames stabilization as architectural purification. Backend
+runtime now behaves as a production-pure host substrate, while latency simulation
+belongs exclusively to plugin compute paths where domain behavior is declared and
+testable.
 
-## Key Messages
-- Federation compute is plugin-only (`federate-*` stage plugins).
-- Backend runtime paths are production-pure (no synthetic compute sleeps).
-- Latency simulation, when desired, is plugin-local and can be disabled with `CALYPSO_FAST=true`.
-- Full verification baseline is green (unit tests + oracle scenarios).
+## Introduction: Catalyst and Investigation
+The catalyst for `10.2.2` was the recognition that migration-era seams can survive
+major refactors without immediately breaking tests. In this case, synthetic delay
+and federation coupling traces in backend code represented hidden policy surfaces
+that would become debt once real filesystem and network substrates are connected.
 
-## Architectural Positioning
-- `v10.2.2`: hardening baseline.
-- `v10.3`: deletion release (remove compatibility/migration scaffolding).
-- `v11.0`: contract lock (Host kernel vs plugin compute vs adapter rendering boundaries).
+Investigation of runtime flow showed that the intended Host/Guest boundary had to be
+made absolute. Host responsibilities were constrained to deterministic orchestration,
+state grounding, and typed dispatch. Compute realism and staged latency effects were
+re-centered in plugins, where they can be switched off for verification throughput
+via `CALYPSO_FAST=true` without contaminating kernel behavior.
+
+## Resolution
+The `10.2.2` hardening pass materializes federation steps as explicit
+`federate-*` plugins and removes backend synthetic compute delay paths. Verification
+pressure was then reapplied across unit and oracle suites under fast-mode policy to
+confirm that deterministic semantics remain intact while the backend contract is
+simplified.
+
+## Architectural Outcome
+`10.2.2` is the stabilization baseline immediately preceding deletion work. The
+release establishes a stricter interpretation of the v10 architecture: manifests
+declare workflow intent, plugins own compute behavior and optional simulation, and
+the backend remains a production-pure integrity kernel. This state defines the
+starting condition for `10.3.x` subtraction and the eventual `11.0` contract lock.

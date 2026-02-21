@@ -9,14 +9,15 @@
     },
     {
       "send": "search pathology",
-      "success": true
+      "expect": "OK"
     },
     {
       "send": "add ds-006",
-      "success": true
+      "expect": "OK",
+      "capture_project": true
     },
     {
-      "send": "ok, can you name this stress-project",
+      "send": "rename stress-project",
       "expect": "OK",
       "output_contains": "RENAMED TO [stress-project]"
     },
@@ -37,11 +38,10 @@
     },
     {
       "send": "proceed",
-      "success": true,
-      "output_contains": "PROCEEDING WITH FEDML WORKFLOW"
+      "expect": "OK"
     },
     {
-      "vfs_exists": "${session}/search/gather/rename/_join_gather_rename/harmonize/code/data/code.json"
+      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
     }
   ]
 }

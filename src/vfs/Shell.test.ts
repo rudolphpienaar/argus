@@ -201,6 +201,38 @@ describe('Shell', () => {
             expect(result.stdout).toContain('node.py');
             expect(result.stderr).toBe('');
         });
+
+        it('should support long format with -l', async () => {
+            vfs.file_create('/home/fedml/alpha.txt', 'hello');
+            const result: ShellResult = await shell.command_execute('ls -l');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('alpha.txt');
+            expect(result.stdout).toMatch(/[-dl]r/);
+        });
+
+        it('should hide dotfiles by default and include them with -a', async () => {
+            vfs.file_create('/home/fedml/.secret', 'x');
+            const normal: ShellResult = await shell.command_execute('ls');
+            const withAll: ShellResult = await shell.command_execute('ls -a');
+            expect(normal.stdout).not.toContain('.secret');
+            expect(withAll.stdout).toContain('.secret');
+            expect(withAll.stdout).toContain('.');
+            expect(withAll.stdout).toContain('..');
+        });
+
+        it('should render link target in long format', async () => {
+            vfs.file_create('/home/fedml/target.txt', 'x');
+            vfs.link_create('/home/fedml/input', '/home/fedml/data/search/gather/data');
+            const result: ShellResult = await shell.command_execute('ls -l');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('input -> /home/fedml/data/search/gather/data');
+        });
+
+        it('should reject unknown ls options', async () => {
+            const result: ShellResult = await shell.command_execute('ls -z');
+            expect(result.exitCode).toBe(1);
+            expect(result.stderr).toContain("invalid option -- 'z'");
+        });
     });
 
     // ─── Builtin: cat ───────────────────────────────────────────

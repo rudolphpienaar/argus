@@ -1,4 +1,18 @@
-# CURRENT STATE — 2026-02-18
+# CURRENT STATE — 2026-02-21
+
+## Latest Runtime Stabilization (Post-10.3.1)
+
+1. Removed legacy fixed `10s` execution timeout in host workflow dispatch (`CalypsoCore.workflow_execute`).
+2. Hardened CLI telemetry rendering:
+   - in-place progress row rewrites (no multi-line progress triangle),
+   - glyph progress bars (`█`/`░`),
+   - frame width capping/clipping for terminal-fit output.
+3. Added REPL telemetry gating:
+   - telemetry ignored when no command is active,
+   - active spinner is suppressed once telemetry stream starts.
+4. Validation status after patch:
+   - Unit tests: `370/370` passing.
+   - ORACLE scenarios: `9/9` passing.
 
 ## What Just Happened (Chronological)
 
@@ -11,9 +25,10 @@ requires adding a `.manifest.yaml` file to `src/dag/manifests/`.
 1. **Dynamic Manifest Registry**: Replaced hardcoded `MANIFEST_REGISTRY` in `WorkflowAdapter.ts`
    with a dynamic scanning mechanism that reads all `*.manifest.yaml` files from the
    manifests directory.
-2. **Generic Completion Mapping**: Completion aliases (`completes_with`) are now read
-   directly from the manifest YAML. The `fedmlMapper_create` and `chrisMapper_create`
-   factories have been deleted in favor of a generic `manifestMapper_create`.
+2. **Generic Completion Mapping**: Completion resolution is read
+   directly from topology-aware manifest stage artifacts. Legacy
+   persona-specific mapper factories were deleted as topology-aware
+   artifact discovery became the single completion contract.
 3. **Generic Dispatch & Handlers**: `CalypsoCore.workflow_execute` now dispatches via each
    stage's manifest-defined `handler` into `PluginHost`, replacing persona-specific dispatch.
 4. **Workflow Context Routing**: `WorkflowSession` now resolves commands in context using the

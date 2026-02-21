@@ -26,7 +26,7 @@ export class StatusProvider {
     /**
      * Generate a system status block.
      */
-    public status_generate(simulationMode: boolean, provider: string | null, model: string | null): string {
+    public status_generate(aiOnline: boolean, provider: string | null, model: string | null): string {
         const lines: string[] = [
             '╔══════════════════════════════════════╗',
             '║  CALYPSO SYSTEM STATUS               ║',
@@ -34,13 +34,13 @@ export class StatusProvider {
             ''
         ];
 
-        const coreStatus: string = simulationMode ? '○ AI CORE: SIMULATION MODE' : '● AI CORE: ONLINE';
+        const coreStatus: string = aiOnline ? '● AI CORE: ONLINE' : '○ AI CORE: OFFLINE';
         lines.push(coreStatus);
-        if (!simulationMode) {
+        if (aiOnline) {
             lines.push(`  Provider: ${provider?.toUpperCase() || 'UNKNOWN'}`);
             lines.push(`  Model: ${model || 'default'}`);
         } else {
-            lines.push('  No API key configured.');
+            lines.push('  No provider configured.');
         }
 
         lines.push('');

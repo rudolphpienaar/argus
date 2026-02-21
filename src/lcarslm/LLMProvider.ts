@@ -28,8 +28,7 @@ export class LLMProvider {
      * Query the LLM with system context.
      */
     public async query(input: string, sessionPath: string): Promise<CalypsoResponse> {
-        // We only block if there is NO engine at all. 
-        // LCARSEngine handles the simulationMode internal logic.
+        // We only block if there is NO engine at all.
         if (!this.engine) {
             return this.responseCreator('>> WARNING: AI CORE OFFLINE. USE WORKFLOW COMMANDS.', [], false);
         }
@@ -64,7 +63,7 @@ export class LLMProvider {
         }
 
         // 2. Check for [ACTION: PROCEED]
-        const proceedMatch: RegExpMatchArray | null = response.answer.match(/\[ACTION: PROCEED(?:\s+(fedml|chris))?\]/i);
+        const proceedMatch: RegExpMatchArray | null = response.answer.match(/\[ACTION: PROCEED(?:\s+([a-z0-9_-]+))?\]/i);
         if (proceedMatch) {
             const type: string = proceedMatch[1] || '';
             const cmd: string = `proceed ${type}`.trim();
@@ -80,10 +79,10 @@ export class LLMProvider {
             await this.commandExecutor(`rename ${newName}`);
         }
 
-        // Special case: if harmonize action was detected (implied by side effect in parser),
-        // we need to return the animation marker.
+        // 4. Check for [ACTION: HARMONIZE]
         if (response.answer.includes('[ACTION: HARMONIZE]')) {
-            return this.responseCreator('__HARMONIZE_ANIMATE__', [], true);
+            const result = await this.commandExecutor('harmonize');
+            if (result) return result;
         }
 
         return this.responseCreator(cleanText, actions, true);

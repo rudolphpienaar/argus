@@ -28,7 +28,7 @@ export function core_get(): CalypsoCore | null {
 
 /**
  * Rebuild CalypsoCore from current browser auth/runtime context.
- * Call this after auth/provider/simulation mode changes.
+ * Call this after auth/provider mode changes.
  *
  * @returns Reinitialized CalypsoCore instance, or null if shell is not ready.
  */
@@ -57,7 +57,6 @@ function config_resolveFromBrowser(): CalypsoCoreConfig {
 
     if (hasLlmConfig && (provider === 'openai' || provider === 'gemini')) {
         return {
-            simulationMode: false,
             llmConfig: {
                 provider,
                 apiKey: apiKey as string,
@@ -68,7 +67,6 @@ function config_resolveFromBrowser(): CalypsoCoreConfig {
     }
 
     return {
-        simulationMode: true,
         knowledge: SYSTEM_KNOWLEDGE
     };
 }
@@ -83,4 +81,3 @@ function storage_get(key: string): string | null {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(key);
 }
-

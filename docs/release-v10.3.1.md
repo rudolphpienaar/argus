@@ -41,3 +41,16 @@ The release was validated with full local gates:
 truthful session lineage across project transitions and keeping oracle assertions
 bound to runtime state rather than template assumptions. It is a corrective patch,
 not a feature branch, and tightens confidence ahead of v11 contract lock.
+
+## Post-Release Stabilization Addendum (2026-02-21)
+Two additional runtime stabilizations landed immediately after the release cut:
+
+- Removed the legacy fixed `10s` host execution timeout from workflow plugin dispatch.
+- Hardened CLI telemetry rendering to:
+  - update progress in place (no line-per-tick "progress triangle"),
+  - render glyph bars (`█`/`░`),
+  - suppress spinner once telemetry begins and ignore late telemetry outside active command windows.
+
+Validation remained green after this addendum:
+- `npm test` (`370` tests passing)
+- `node scripts/oracle-runner.mjs` (`9` scenarios passing)

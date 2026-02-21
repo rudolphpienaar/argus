@@ -32,11 +32,6 @@ export function training_launch(): void {
         return;
     }
 
-    if (!simulationPass_check()) {
-        launchDenied_render();
-        return;
-    }
-
     federationSequence_run();
 }
 
@@ -45,32 +40,6 @@ export function training_launch(): void {
  */
 function trainingRunning_isActive(): boolean {
     return Boolean(store.state.trainingJob && store.state.trainingJob.status === 'running');
-}
-
-/**
- * Check for simulation-pass marker in the active project output path.
- */
-function simulationPass_check(): boolean {
-    const projectName: string | undefined = store.globals.shell?.env_get('PROJECT');
-    if (!projectName) {
-        return true;
-    }
-
-    const username: string = store.globals.shell?.env_get('USER') || 'user';
-    const passPath: string = `/home/${username}/projects/${projectName}/output/.simulation_pass`;
-    return store.globals.vcs.node_stat(passPath) !== null;
-}
-
-/**
- * Render launch-denied messaging when simulation pass is absent.
- */
-function launchDenied_render(): void {
-    const terminal: LCARSTerminal | null = store.globals.terminal;
-    if (!terminal) {
-        return;
-    }
-    terminal.println('<span class="error">>> ERROR: FEDERALIZATION LOCKED.</span>');
-    terminal.println('<span class="warn">>> YOU MUST RUN "simulate federation" AND PASS VERIFICATION FIRST.</span>');
 }
 
 /**

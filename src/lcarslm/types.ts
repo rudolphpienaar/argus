@@ -109,6 +109,9 @@ export interface PluginResult {
     /** v10.2: List of relative paths materialized by this plugin (e.g. '.cohort'). */
     materialized?: string[];
 
+    /** Optional physical dataDir where plugin side-effects were materialized. */
+    physicalDataDir?: string;
+
     /** v10.1 UI hints for explicit rendering control (animation, labels). */
     ui_hints?: ui_hints;
 }
@@ -145,6 +148,52 @@ export interface PluginTelemetry {
     status(message: string): void;
 }
 
+export type CommsPath = 'primary' | 'fallback';
+
+export interface CommsPlan<T> {
+    /** Preferred deterministic path. */
+    primary: () => Promise<T> | T;
+    /** Optional secondary path, launched in parallel with primary. */
+    fallback?: () => Promise<T> | T;
+    /** Predicate that decides whether the primary result is sufficient. */
+    preferPrimary?: (value: T) => boolean;
+}
+
+export interface CommsResolution<T> {
+    value: T;
+    path: CommsPath;
+    primaryValue?: T;
+}
+
+export interface DatasetSearchResolution {
+    /** Final selected search results. */
+    results: Dataset[];
+    /** Path that produced the final results. */
+    mode: 'lexical' | 'semantic';
+}
+
+export interface DatasetTargetResolution {
+    /** Resolved datasets across all target tokens. */
+    datasets: Dataset[];
+    /** Inputs that could not be resolved by either path. */
+    unresolved: string[];
+    /** Whether any target required semantic fallback. */
+    usedSemanticFallback: boolean;
+}
+
+/**
+ * Shared plugin communication resolver exposed by the host.
+ *
+ * Owns primary/fallback policy so plugins call one entrypoint and do not
+ * implement lexical/semantic branching directly.
+ */
+export interface PluginComms {
+    execute<T>(primary: () => Promise<T> | T): Promise<T>;
+    resolve<T>(plan: CommsPlan<T>): Promise<CommsResolution<T>>;
+    datasetSearch_resolve(query: string): Promise<DatasetSearchResolution>;
+    datasetTargets_resolve(targets: string[]): Promise<DatasetTargetResolution>;
+}
+
 /**
  * Standard context injected into every plugin.
  *
@@ -160,6 +209,9 @@ export interface PluginContext {
 
     /** Access to dataset discovery and anaphora resolution. */
     search: SearchProvider;
+
+    /** Shared primary/fallback communications resolver. */
+    comms: PluginComms;
 
     /** Read/Write access to the centralized application store. */
     store: CalypsoStoreActions;
@@ -272,8 +324,11 @@ export interface CalypsoCoreConfig {
     /** Optional LLM configuration. If omitted, AI conversational mode is offline. */
     llmConfig?: LCARSSystemConfig;
 
-    /** Workflow ID to use (default: 'fedml') */
+    /** Optional workflow ID to use. Falls back to runtime persona/workflow registry. */
     workflowId?: string;
+
+    /** Optional project name for session path grounding. */
+    projectName?: string;
 }
 
 // ─── Store Actions Interface ───────────────────────────────────────────────

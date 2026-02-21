@@ -1,7 +1,7 @@
 = ARGUS System Architecture: A Formal Specification for State-Grounded Orchestration
 :author: ARGUS Collaborative Development
-:revdate: 2026-02-18
-:revnumber: 10.2.0
+:revdate: 2026-02-21
+:revnumber: 10.3.1
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -81,6 +81,11 @@ Within this system, the **Calypso Host** acts as the Hardware Abstraction Layer 
 
 The rationale for this move is the enforcement of absolute **Visual and Logical Parity** across all ARGUS surfaces. Because both the TUI and the WUI consume the exact same telemetry stream from the server, they are guaranteed to present a synchronized view of the workflow. When a plugin signals a progress update, the TUI terminal triggers its ASCII renderer to draw a box, while the Web Terminal performs a real-time update of its DOM/CSS state to reflect the same progress. This eliminates "Telepathic Coupling," a failure mode where the UI previously attempted to guess the backend's state by eavesdropping on strings. Argus v10.2 ensures that every researcher, regardless of their preferred interface, is making decisions based on the same Merkle-proven evidence, grounded in the real-time state of the virtual machine.
 
+In current CLI rendering, progress updates are stateful and in-place. Each stream
+rewrites a single active progress row (glyph bar format) instead of printing a new
+line for every increment. This keeps long loops readable and prevents terminal-log
+explosion while preserving full telemetry fidelity.
+
 == The Interpretation-First Pipeline: The Logic of Intent
 
 The following figure illustrates the sequence of natural language resolution into deterministic execution.
@@ -112,7 +117,7 @@ The following figure illustrates the sequence of natural language resolution int
 
 The ARGUS pipeline treats natural language as a noisy input source that must be compiled into a deterministic protocol before execution. This "Interpretation-First" strategy ensures that the probabilistic nature of LLMs is never allowed to leak into the system's state-management layer. The sequence begins at the Surface Adapter, where user utterances are captured and forwarded to the Calypso Host. This approach acknowledges that while human communication is fluid and conversational, scientific computation must remain absolute and verifiable.
 
-Once an intent is received, the `IntentParser` performs a two-pass resolution. First, it checks for exact matches against a registry of high-priority workflow verbs (e.g., `search`, `harmonize`). If no deterministic match is found, the LLM is invoked as a semantic compiler, tasked with mapping the user's natural language to a strictly-typed JSON protocol. This process isolates the "Intelligence" of the AI to the translation layer only, ensuring that the AI has no direct power to mutate system state without a corresponding protocol definition.
+Once an intent is received, the `IntentParser` performs a two-pass resolution. First, it checks for exact matches against workflow verbs derived from the active manifest command set. If no deterministic match is found, the LLM is invoked as a semantic compiler, tasked with mapping the user's natural language to a strictly-typed JSON protocol constrained to those same active workflow commands. This process isolates the "Intelligence" of the AI to the translation layer only, ensuring that the AI has no direct power to mutate system state without a corresponding protocol definition.
 
 Following successful compilation, the resolved protocol is subjected to a rigorous Gatekeeping phase by the `WorkflowAdapter`. The system performs a topological walk of the active manifest to verify that all prerequisites for the target stage have been materialized in the session tree. If a parent artifact is missing or stale, the execution is blocked, preventing the agent from proceeding based on invalid premises. This gatekeeping is the primary mechanism for preventing "Instructional Decay" during complex multi-step protocols.
 
@@ -147,7 +152,7 @@ The following figure illustrates the sandboxed environment provided to Guest log
 ----
                   allowed via PluginContext
          ┌──────────────────────────────────────┐
-         │ vfs │ shell │ store │ federation(opt)│
+         │ vfs │ shell │ store │ ui telemetry   │
          └──────────────────┬───────────────────┘
                             │
                             ▼
@@ -174,13 +179,28 @@ A fundamental rule of the ARGUS architecture is the **Plugin Boundary**, which f
 
 The result of a plugin execution is always a `PluginResult` payload, which contains the evidence required for the Host to advance the workflow. This contract ensures that plugins do not "mark" stages as complete; they simply return the data that the high-integrity Kernel will then anchor into the provenance chain. This separation of "Doing the Work" from "Recording the Result" is the key to maintaining a mathematically verifiable audit trail. The Host acts as the authoritative witness to the Guest's execution, cryptographically signing the outcome before it is recorded in the session tree.
 
+== Backend Purity and Latency Boundaries
+
+ARGUS v10.2.1 enforces a strict runtime boundary: backend layers (`CalypsoCore`,
+`PluginHost`, `SessionStore`, `MerkleEngine`) do not inject synthetic compute latency.
+Any realism delay belongs inside the stage plugin itself, where it can be turned off
+deterministically with `CALYPSO_FAST=true` for testing.
+
+The same purity rule now applies to execution watchdog behavior. Backend workflow
+dispatch no longer enforces a fixed hard timeout (legacy `10s` kill path removed).
+Stage lifetime is determined by plugin completion/failure semantics, not hidden host
+timers.
+
+This policy keeps backend behavior production-pure and prevents "technical simulacrum
+debt" in core runtime paths as Host storage evolves from in-memory VFS to real FS backends.
+
 == Merkle Provenance Topology
 
-The following figure illustrates the physical mapping of the DAG into the session tree.
+The following figure illustrates the physical mapping of the DAG into the project's data directory.
 
 [source,text]
 ----
-/sessions/fedml/session-001/
+/projects/fedml-study-01/data/
 │
 ├── search/
 │   ├── data/search.json
@@ -194,12 +214,12 @@ The following figure illustrates the physical mapping of the DAG into the sessio
 │   ├── data/harmonize.json
 │   └── meta/fingerprint.json
 │
-└── search/gather/harmonize/proceed/
-    ├── data/proceed.json
+└── search/gather/harmonize/code/
+    ├── data/code.json
     └── meta/fingerprint.json
 ----
 
-The architectural "Conscience" of ARGUS is the Merkle session tree, which provides a physical ledger of the scientific process. The tree is structured as a direct mirror of the DAG manifest's topology, with each stage owning a specific directory in the VFS. This organization ensures that the provenance of every result is encoded in its filesystem path, making the lineage of any artifact immediately human-interpretable. This topological mapping transforms the abstract graph of the research protocol into a concrete physical reality on the virtual disk.
+The architectural "Conscience" of ARGUS is the project-relative Merkle provenance tree, which provides a physical ledger of the scientific process. The tree is structured as a direct mirror of the DAG manifest's topology, with each stage owning a specific directory in the project's `data/` root. This organization ensures that the provenance of every result is encoded in its filesystem path, making the lineage of any artifact immediately human-interpretable. This topological mapping transforms the abstract graph of the research protocol into a concrete physical reality on the virtual disk.
 
 Every artifact materialized within this tree is wrapped in a Merkle envelope containing a SHA-256 fingerprint. This fingerprint is a recursive hash that incorporates both the artifact's own data and the fingerprints of its parent nodes in the DAG. This cryptographic anchoring ensures that the integrity of an artifact is inextricably linked to its entire historical context, providing a mathematical guarantee of consistency across long-running sessions. If any upstream data is tampered with, the fingerprints of all subsequent descendants will immediately fail verification.
 
@@ -212,4 +232,4 @@ Furthermore, the session tree supports historical branching through timestamped 
 The ARGUS v10.2 architecture represents a fundamental departure from conversational AI interfaces. By refactoring the system into a high-integrity Streaming Unified Kernel and a deterministic Plugin Virtual Machine, ARGUS effectively grounds the probabilistic "Intelligence" of the LLM in the "Ground Truth" of a persistent filesystem and a live telemetry ledger. The resulting system is not merely an assistant, but a robust Operating System for federated medical research. The architecture's commitment to state-first verification ensures that every scientific result produced by ARGUS is backed by a verifiable chain of evidence, providing the trust and security required for high-stakes scientific investigation.
 
 ---
-_Last updated: 2026-02-18 (v10.2.0)_
+_Last updated: 2026-02-21 (v10.3.1)_

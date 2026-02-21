@@ -146,7 +146,7 @@ export function projects_mount(vfs: VirtualFileSystem, username: string, project
 }
 
 /**
- * Populates the `~/projects/{projectName}/src/` directory with project files.
+ * Populates the project directory with FedML project files.
  * Each file uses a contentGenerator key for lazy content via the ContentRegistry.
  *
  * Called when entering the Process stage.
@@ -154,9 +154,15 @@ export function projects_mount(vfs: VirtualFileSystem, username: string, project
  * @param vfs - The VirtualFileSystem instance.
  * @param username - The persona username (default: 'user').
  * @param projectName - The active project name (default: 'default').
+ * @param overridePath - Optional absolute path for materialization.
  */
-export function projectDir_populate(vfs: VirtualFileSystem, username: string = 'user', projectName: string = 'default'): void {
-    const projectPath: string = `/home/${username}/projects/${projectName}/src`;
+export function projectDir_populate(
+    vfs: VirtualFileSystem, 
+    username: string = 'user', 
+    projectName: string = 'default',
+    overridePath?: string
+): void {
+    const projectPath: string = overridePath || `/home/${username}/projects/${projectName}/src`;
 
     // Ensure project directory exists
     vfs.dir_create(projectPath);
@@ -183,19 +189,20 @@ export function projectDir_populate(vfs: VirtualFileSystem, username: string = '
 }
 
 /**
- * Populates the `~/projects/{projectName}/src/` directory with a ChRIS
- * plugin scaffold.
+ * Populates the project directory with a ChRIS plugin scaffold.
  *
  * @param vfs - The VirtualFileSystem instance.
  * @param username - The persona username (default: 'user').
  * @param projectName - The active project name (default: 'default').
+ * @param overridePath - Optional absolute path for materialization.
  */
 export function chrisProject_populate(
     vfs: VirtualFileSystem,
     username: string = 'user',
-    projectName: string = 'default'
+    projectName: string = 'default',
+    overridePath?: string
 ): void {
-    const projectPath: string = `/home/${username}/projects/${projectName}/src`;
+    const projectPath: string = overridePath || `/home/${username}/projects/${projectName}/src`;
 
     vfs.dir_create(projectPath);
 

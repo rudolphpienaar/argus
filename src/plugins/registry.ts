@@ -6,30 +6,14 @@
  * @module plugins/registry
  */
 
-/**
- * All supported plugin handler names.
- */
-export const PLUGIN_HANDLER_NAMES = [
-    'search',
-    'gather',
-    'rename',
-    'harmonize',
-    'scaffold',
-    'train',
-    'federation',
-    'publish',
-] as const;
+/** Valid plugin handler identifier. */
+export type PluginHandlerName = string;
 
 /**
- * Valid plugin handler identifier.
- */
-export type PluginHandlerName = (typeof PLUGIN_HANDLER_NAMES)[number];
-
-const HANDLER_NAMES_SET: ReadonlySet<string> = new Set<string>(PLUGIN_HANDLER_NAMES);
-
-/**
- * Type guard for known plugin handlers.
+ * Validate plugin handler identifier format.
+ *
+ * Runtime resolvability is checked by PluginHost dynamic import.
  */
 export function pluginHandler_isKnown(handlerName: string): handlerName is PluginHandlerName {
-    return HANDLER_NAMES_SET.has(handlerName);
+    return /^[a-z][a-z0-9_-]*$/.test(handlerName);
 }

@@ -4,7 +4,7 @@ import { SearchProvider } from '../SearchProvider.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import type { CalypsoStoreActions, QueryResponse } from '../types.js';
-import type { AppState, Dataset, FederationState, Project } from '../../core/models/types.js';
+import type { AppState, Dataset, Project } from '../../core/models/types.js';
 import { LCARSEngine } from '../engine.js';
 import { DATASETS } from '../../core/data/datasets.js';
 
@@ -44,10 +44,6 @@ function storeActions_create(): CalypsoStoreActions {
             return null;
         },
         session_setPath(): void {},
-        federation_getState(): FederationState | null {
-            return null;
-        },
-        federation_setState(): void {},
         dataset_getById(id: string): Dataset | undefined {
             return DATASETS.find(ds => ds.id === id);
         },
@@ -84,7 +80,8 @@ describe('Anaphora Resolution (Compiler Layer)', (): void => {
         searchProvider = new SearchProvider(vfs, shell, store);
         parser = new IntentParser(searchProvider, store, {
             activeStageId_get: () => null,
-            stage_forCommand: () => null
+            stage_forCommand: () => null,
+            commands_list: () => ['search', 'add', 'gather', 'rename', 'harmonize', 'proceed']
         });
     });
 

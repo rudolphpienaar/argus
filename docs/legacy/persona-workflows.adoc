@@ -9,7 +9,7 @@
 
 **Superseded by**: link:../dag-engine.adoc[DAG Engine Specification] (v9.0.0)
 
-**Reason for Supersession**: The "Workflow" logic has been fully merged into the **DAG Engine**. The old schema (using `intents` and `validation.condition` JS strings) was replaced by the more robust `handler` and `completes_with` model.
+**Reason for Supersession**: The "Workflow" logic has been fully merged into the **DAG Engine**. The old schema (using `intents` and `validation.condition` JS strings) was replaced by the more robust manifest `handler` model and explicit DAG JOIN resolution semantics.
 ====
 
 [... original content ...]

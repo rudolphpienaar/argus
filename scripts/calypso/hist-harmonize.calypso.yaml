@@ -1,4 +1,5 @@
 # Histology fast-path harmonization script.
+# Uses explicit command templates (no host-side action handlers).
 
 script: hist-harmonize
 version: 1
@@ -7,31 +8,24 @@ defaults:
   project_name: histo-exp1
 steps:
   - id: s1_search
-    action: search
+    action: command
     params:
       query: histology
-    outputs:
-      alias: search_results
+      command: "search ${query}"
 
-  - id: s2_select_dataset
-    action: select_dataset
+  - id: s2_add
+    action: command
     params:
-      from: "${search_results}"
-      strategy: by_id
-      id: ds-006
-    outputs:
-      alias: selected_dataset
+      dataset: ds-006
+      command: "add ${dataset}"
 
-  - id: s3_add
-    action: add
-    params:
-      dataset: "${selected_dataset.id}"
-
-  - id: s4_rename
-    action: rename
+  - id: s3_rename
+    action: command
     params:
       project: "${defaults.project_name}"
+      command: "rename ${project}"
 
-  - id: s5_harmonize
-    action: harmonize
-    params: {}
+  - id: s4_harmonize
+    action: command
+    params:
+      command: harmonize

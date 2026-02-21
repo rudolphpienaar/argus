@@ -32,7 +32,10 @@ export class SessionStore implements SessionStoreInterface {
     async session_create(persona: string, manifestVersion: string): Promise<Session> {
         // v10.2: Session ID is now 'data' to align with project-relative materialization
         const id = 'data';
-        const rootPath = this.basePath === '/runtime-not-used' ? this.basePath : `${this.basePath}/DRAFT/data`;
+        const personaProject: string = persona.trim();
+        const rootPath = this.basePath === '/runtime-not-used'
+            ? this.basePath
+            : `${this.basePath}/${personaProject}/data`;
 
         // Create root directory
         await this.backend.dir_create(rootPath);

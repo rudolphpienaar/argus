@@ -12,7 +12,6 @@
 
 import type { CalypsoResponse, CalypsoAction, CalypsoStoreActions } from '../types.js';
 import { CalypsoStatusCode } from '../types.js';
-import type { Dataset } from '../../core/models/types.js';
 import type {
     ScriptRuntimeContext,
     ScriptPendingInput,
@@ -57,8 +56,7 @@ export class ScriptRuntime {
     constructor(
         private storeActions: CalypsoStoreActions,
         private workflowAdapter: WorkflowAdapter,
-        private commandExecutor: CommandExecutor,
-        private lastMentionedDatasets_get: () => Dataset[]
+        private commandExecutor: CommandExecutor
     ) {}
 
     // ─── Public API ───────────────────────────────────────────────────────
@@ -193,7 +191,7 @@ export class ScriptRuntime {
             }
 
             let result: CalypsoResponse = await this.commandExecutor(trimmedStep);
-            
+
             // Handle automatic phase jump confirmation within scripts
             if (!result.success && /PHASE JUMP/i.test(result.message || '')) {
                 result = await this.commandExecutor('confirm');
@@ -208,7 +206,7 @@ export class ScriptRuntime {
                 lines.push(`[FAIL] [${i + 1}/${script.steps.length}] ${trimmedStep}`);
                 if (summary) lines.push(`  -> ${summary}`);
                 lines.push(`>> SCRIPT ABORTED AT STEP ${i + 1}.`);
-                if (result.message && result.message !== '__HARMONIZE_ANIMATE__' && !summary) {
+                if (result.message && !summary) {
                     lines.push(result.message);
                 }
                 return this.response_create(lines.join('\n'), actions, false);
@@ -349,7 +347,7 @@ export class ScriptRuntime {
             }
 
             // 2. Execute Step
-            const execution: ScriptStepExecutionResult = await this.scriptStructured_stepExecute(step, resolved.params, session);
+            const execution: ScriptStepExecutionResult = await this.scriptStructured_stepExecute(step, resolved.params);
             session.actions.push(...execution.actions);
 
             if (execution.success === 'pending') {
@@ -609,18 +607,17 @@ export class ScriptRuntime {
      */
     private async scriptStructured_stepExecute(
         step: CalypsoStructuredStep,
-        params: Record<string, unknown>,
-        session: ScriptRuntimeSession
+        params: Record<string, unknown>
     ): Promise<ScriptStepExecutionResult> {
         const runCommand = async (command: string): Promise<ScriptStepExecutionResult> => {
             let response: CalypsoResponse = await this.commandExecutor(command);
-            
+
             // Handle automatic phase jump confirmation within scripts
-            if (!response.success && /PHASE JUMP/i.test(response.message || '')) {
+            if (!this.scriptResponse_isSuccess(response) && /PHASE JUMP/i.test(response.message || '')) {
                 response = await this.commandExecutor('confirm');
             }
 
-            if (!response.success) {
+            if (!this.scriptResponse_isSuccess(response)) {
                 return {
                     success: false,
                     actions: response.actions,
@@ -634,145 +631,82 @@ export class ScriptRuntime {
             };
         };
 
-        if (step.action === 'search') return this.step_search(params, runCommand);
-        if (step.action === 'select_dataset') return this.step_selectDataset(step, params, session);
-        if (step.action === 'add') return this.step_add(params, runCommand);
-        if (step.action === 'rename') return this.step_rename(params, runCommand);
-        if (step.action === 'harmonize') return runCommand('harmonize');
-        if (step.action === 'proceed' || step.action === 'code') return runCommand(step.action);
-        if (step.action === 'run_python') return this.step_runPython(params, runCommand);
-        if (step.action === 'federate.transcompile') return this.step_federateTranscompile(runCommand);
-        if (step.action === 'federate.containerize' || step.action === 'federate.publish' || step.action === 'federate.dispatch_compute') return runCommand('federate --yes');
-        if (step.action === 'federate.publish_metadata') return this.step_federatePublishMetadata(params, runCommand);
-
-        return { success: false, actions: [], message: `unsupported script action: ${step.action}` };
-    }
-
-    private async step_search(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
-        const query: string = String(params.query || '').trim();
-        if (!query) return { success: false, actions: [], message: 'missing query for search step' };
-        
-        const run = await runCommand(`search ${query}`);
-        if (run.success !== true) return run;
-        
-        return {
-            success: true,
-            actions: run.actions,
-            summary: run.summary,
-            output: [...this.lastMentionedDatasets_get()]
-        };
-    }
-
-    private async step_add(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
-        const datasetId: string = String(params.dataset || '').trim();
-        if (!datasetId) return { success: false, actions: [], message: 'missing dataset id for add step' };
-        return runCommand(`add ${datasetId}`);
-    }
-
-    private async step_rename(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
-        const projectName: string = String(params.project || '').trim();
-        if (!projectName) return { success: false, actions: [], message: 'missing project name for rename step' };
-        return runCommand(`rename ${projectName}`);
-    }
-
-    private async step_runPython(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
-        const scriptName: string = String(params.script || 'train.py').trim() || 'train.py';
-        const args: string[] = Array.isArray(params.args) ? (params.args as unknown[]).map(String) : [];
-        return runCommand(['python', scriptName, ...args].join(' ').trim());
-    }
-
-    private async step_federateTranscompile(runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
-        const start = await runCommand('federate');
-        if (start.success !== true) return start;
-        const confirm = await runCommand('federate --yes');
-        if (confirm.success !== true) return confirm;
-        return {
-            success: true,
-            actions: [...start.actions, ...confirm.actions],
-            summary: confirm.summary || start.summary
-        };
-    }
-
-    private async step_federatePublishMetadata(params: Record<string, unknown>, runCommand: (cmd: string) => Promise<ScriptStepExecutionResult>): Promise<ScriptStepExecutionResult> {
-        const enter = await runCommand('federate --yes');
-        if (enter.success !== true) return enter;
-
-        const actions: CalypsoAction[] = [...enter.actions];
-        let summary = enter.summary;
-
-        if (params.app_name) {
-            const res = await runCommand(`federate --name ${String(params.app_name).trim()}`);
-            actions.push(...res.actions);
-            if (res.success !== true) return res;
-            summary = res.summary || summary;
-        }
-        if (params.org) {
-            const res = await runCommand(`federate --org ${String(params.org).trim()}`);
-            actions.push(...res.actions);
-            if (res.success !== true) return res;
-            summary = res.summary || summary;
-        }
-        if (params.visibility) {
-            const vis = String(params.visibility).trim().toLowerCase();
-            const res = await runCommand(vis === 'private' ? 'federate --private' : 'federate --public');
-            actions.push(...res.actions);
-            if (res.success !== true) return res;
-            summary = res.summary || summary;
+        const commandResolution = this.scriptStructured_commandResolve(step, params);
+        if (!commandResolution.ok) {
+            return { success: false, actions: [], message: commandResolution.message };
         }
 
-        return {
-            success: true,
-            actions,
-            summary,
-            output: { app_name: params.app_name, org: params.org, visibility: params.visibility }
-        };
+        return runCommand(commandResolution.command);
     }
 
-    private step_selectDataset(step: CalypsoStructuredStep, params: Record<string, unknown>, session: ScriptRuntimeSession): ScriptStepExecutionResult {
-        const candidates = Array.isArray(params.from) ? params.from as Dataset[] : [];
-        if (candidates.length === 0) return { success: false, actions: [], message: 'no dataset candidates available' };
-
-        const strategy = String(params.strategy || 'ask').toLowerCase();
-        let selected: Dataset | null = null;
-
-        if (strategy === 'first' || strategy === 'best_match') selected = candidates[0];
-        else if (strategy === 'by_id') {
-            const desired = String(params.id || params.dataset || '').trim().toLowerCase();
-            selected = candidates.find(ds => ds.id.toLowerCase() === desired) || null;
-        } else if (candidates.length === 1) {
-            selected = candidates[0];
-        } else {
-            const key = `${step.id}.selection`;
-            const choice = (session.context.answers[key] || '').trim();
-            if (!choice) {
-                return {
-                    success: 'pending', actions: [],
-                    pending: {
-                        kind: 'selection', key,
-                        prompt: `Select dataset for ${step.id} by number or id.`,
-                        options: candidates.map((ds, i) => `  ${i + 1}. [${ds.id}] ${ds.name} (${ds.modality})`)
-                    }
-                };
-            }
-            const idx = parseInt(choice, 10);
-            selected = (!isNaN(idx) && idx >= 1 && idx <= candidates.length)
-                ? candidates[idx - 1]
-                : candidates.find(ds => ds.id.toLowerCase() === choice.toLowerCase()) || null;
+    private scriptStructured_commandResolve(
+        step: CalypsoStructuredStep,
+        params: Record<string, unknown>
+    ): { ok: true; command: string } | { ok: false; message: string } {
+        const rawTemplate: unknown = params.command ?? step.action;
+        const commandTemplate: string = String(rawTemplate || '').trim();
+        if (!commandTemplate) {
+            return { ok: false, message: `missing command for step ${step.id}` };
         }
 
-        if (!selected) {
-            return {
-                success: 'pending', actions: [],
-                pending: {
-                    kind: 'selection', key: `${step.id}.selection`,
-                    prompt: `Invalid selection. Choose dataset for ${step.id}.`,
-                    options: candidates.map((ds, i) => `  ${i + 1}. [${ds.id}] ${ds.name}`)
+        const render = this.scriptStructured_commandTemplateRender(commandTemplate, params);
+        if (!render.ok) {
+            return { ok: false, message: `unresolved command placeholder "${render.placeholder}" in step ${step.id}` };
+        }
+
+        const command: string = render.command.trim();
+        if (!command) {
+            return { ok: false, message: `empty command for step ${step.id}` };
+        }
+
+        return { ok: true, command };
+    }
+
+    private scriptStructured_commandTemplateRender(
+        template: string,
+        scope: Record<string, unknown>
+    ): { ok: true; command: string } | { ok: false; placeholder: string } {
+        let missingPlaceholder: string | null = null;
+
+        const command: string = template.replace(/\$\{([^}]+)\}/g, (_match: string, expr: string): string => {
+            const resolved: unknown = this.scriptStructured_inlineExpressionResolve(expr.trim(), scope);
+            if (resolved === undefined || resolved === null) {
+                if (!missingPlaceholder) {
+                    missingPlaceholder = expr.trim();
                 }
-            };
+                return '';
+            }
+            return String(resolved);
+        });
+
+        if (missingPlaceholder) {
+            return { ok: false, placeholder: missingPlaceholder };
         }
 
-        session.context.answers.selected_dataset_id = selected.id;
-        return { success: true, actions: [], summary: `SELECTED DATASET: [${selected.id}] ${selected.name}`, output: selected };
+        return { ok: true, command };
+    }
+
+    private scriptStructured_inlineExpressionResolve(expr: string, scope: Record<string, unknown>): unknown {
+        if (expr.includes('??')) {
+            const parts: string[] = expr.split('??').map((part: string): string => part.trim());
+            for (const part of parts) {
+                const result: unknown = this.scriptStructured_inlinePathResolve(part, scope);
+                if (result !== undefined) return result;
+            }
+            return undefined;
+        }
+        return this.scriptStructured_inlinePathResolve(expr, scope);
+    }
+
+    private scriptStructured_inlinePathResolve(pathExpr: string, scope: Record<string, unknown>): unknown {
+        const trimmed: string = pathExpr.trim();
+        if (
+            (trimmed.startsWith('"') && trimmed.endsWith('"'))
+            || (trimmed.startsWith('\'') && trimmed.endsWith('\''))
+        ) {
+            return trimmed.slice(1, -1);
+        }
+        return this.scriptStructured_referenceResolve(trimmed, scope);
     }
 
     // ─── Requirement Checking ─────────────────────────────────────────────
@@ -883,10 +817,6 @@ export class ScriptRuntime {
     private scriptStep_summary(message: string): string | null {
         if (!message) return null;
 
-        if (message === '__HARMONIZE_ANIMATE__') {
-            return 'COHORT HARMONIZATION COMPLETE';
-        }
-
         const cleanedLines: string[] = message
             .split('\n')
             .map((line: string): string => line.replace(/<[^>]+>/g, '').trim())
@@ -896,16 +826,21 @@ export class ScriptRuntime {
         return cleanedLines[0];
     }
 
+    private scriptResponse_isSuccess(response: CalypsoResponse): boolean {
+        return response.statusCode === CalypsoStatusCode.OK
+            || response.statusCode === CalypsoStatusCode.CONVERSATIONAL;
+    }
+
     private response_create(
         message: string,
         actions: CalypsoAction[],
         success: boolean
     ): CalypsoResponse {
-        return { 
-            message, 
-            actions, 
-            success, 
-            statusCode: success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR 
+        return {
+            message,
+            actions,
+            success,
+            statusCode: success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR
         };
     }
 }
