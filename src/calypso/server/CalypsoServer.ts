@@ -25,6 +25,7 @@ import { homeDir_scaffold } from '../../vfs/providers/ProjectProvider.js';
 import { VERSION } from '../../generated/version.js';
 import { store } from '../../core/state/store.js';
 import { DATASETS } from '../../core/data/datasets.js';
+import { SYSTEM_KNOWLEDGE } from '../../core/data/knowledge.js';
 import { restRequest_handle } from './RestHandler.js';
 import { wsConnection_handle } from './WebSocketHandler.js';
 import type { RestHandlerDeps } from './rest/types.js';
@@ -245,7 +246,8 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
             provider: openaiKey ? 'openai' : 'gemini',
             apiKey: (openaiKey || geminiKey) as string,
             model: openaiKey ? 'gpt-4o-mini' : 'gemini-flash-latest'
-        } : undefined
+        } : undefined,
+        knowledge: SYSTEM_KNOWLEDGE
     });
 
     storeAdapter.session_setPath(core.session_getPath());

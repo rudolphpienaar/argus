@@ -24,7 +24,9 @@ import type {
     CalypsoStoreActions,
     VfsSnapshotNode,
     CalypsoIntent,
-    PluginResult
+    PluginResult,
+    BootPhase,
+    BootStatus,
 } from './types.js';
 import { CalypsoStatusCode } from './types.js';
 import type { AppState, Project } from '../core/models/types.js';
@@ -75,6 +77,10 @@ export class CalypsoCore {
     private pluginHost: PluginHost;
     private merkleEngine: MerkleEngine;
     private telemetryBus: TelemetryBus;
+    private bootSequenceByPhase: Record<BootPhase, number> = {
+        login_boot: 0,
+        workflow_boot: 0,
+    };
 
     constructor(
         private vfs: VirtualFileSystem,
@@ -106,7 +112,13 @@ export class CalypsoCore {
         this.sessionPath = this.sessionPath_resolve(projectName);
         
         this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
-        
+
+        this.intentParser = new IntentParser(this.searchProvider, storeActions, {
+            activeStageId_get: (): string | null => this.workflowSession.activeStageId_get(),
+            stage_forCommand: (cmd: string) => this.workflowAdapter.stage_forCommand(cmd),
+            commands_list: (): string[] => this.workflowAdapter.commandVerbs_list()
+        });
+
         this.llmProvider = this.llmProvider_create();
         this.pluginHost = new PluginHost(
             vfs, 
@@ -242,14 +254,33 @@ export class CalypsoCore {
     /**
      * Internal helper for standardized boot status telemetry.
      */
-    private async status_emit(id: string, message: string, status: string | null = null): Promise<void> {
+    private async status_emit(
+        id: string,
+        message: string,
+        status: BootStatus | null = null,
+        phase?: BootPhase,
+    ): Promise<void> {
+        const resolvedPhase: BootPhase = phase ?? this.bootPhase_resolve(id);
+        this.bootSequenceByPhase[resolvedPhase] += 1;
         this.telemetryBus.emit({ 
             type: 'boot_log', 
             id, 
             message, 
             status, 
+            phase: resolvedPhase,
+            seq: this.bootSequenceByPhase[resolvedPhase],
             timestamp: new Date().toISOString() 
         });
+    }
+
+    /**
+     * Resolve boot phase from milestone id prefix.
+     */
+    private bootPhase_resolve(id: string): BootPhase {
+        if (id.startsWith('sys_')) {
+            return 'login_boot';
+        }
+        return 'workflow_boot';
     }
 
     // ─── Command Execution ──────────────────────────────────────────────────
@@ -371,25 +402,41 @@ export class CalypsoCore {
     }
 
     public tab_complete(line: string): string[] {
-        const parts = line.split(/\s+/);
-        const last = parts[parts.length - 1] || '';
-        let dir = '.';
-        let prefix = last;
+        const parts: string[] = line.split(/\s+/);
+        const last: string = parts[parts.length - 1] || '';
+        const isCommandPosition: boolean = parts.length <= 1 && !line.endsWith(' ');
+
+        if (isCommandPosition) {
+            const builtinCommands: string[] = this.shell.builtins_list();
+            const workflowCommands: string[] = this.workflowAdapter.commandVerbs_list();
+            const sessionCommands: string[] = ['quit', 'exit'];
+            const allCommands: string[] = Array.from(
+                new Set<string>([...builtinCommands, ...workflowCommands, ...sessionCommands])
+            );
+            const commandPrefix: string = last.toLowerCase();
+            return allCommands
+                .filter((command: string): boolean => command.toLowerCase().startsWith(commandPrefix))
+                .sort((left: string, right: string): number => left.localeCompare(right));
+        }
+
+        let dir: string = '.';
+        let prefix: string = last;
         if (last.includes('/')) {
-            const lastSlash = last.lastIndexOf('/');
+            const lastSlash: number = last.lastIndexOf('/');
             dir = last.substring(0, lastSlash) || '/';
             prefix = last.substring(lastSlash + 1);
         }
         try {
-            const resolvedDir = this.vfs.path_resolve(dir);
-            const children = this.vfs.dir_list(resolvedDir);
+            const resolvedDir: string = this.vfs.path_resolve(dir);
+            const children: FileNode[] = this.vfs.dir_list(resolvedDir);
             return children
                 .filter((c: FileNode): boolean => c.name.toLowerCase().startsWith(prefix.toLowerCase()))
                 .map((c: FileNode): string => {
-                    const base = dir === '.' ? '' : (dir.endsWith('/') ? dir : dir + '/');
-                    const suffix = c.type === 'folder' ? '/' : '';
+                    const base: string = dir === '.' ? '' : (dir.endsWith('/') ? dir : dir + '/');
+                    const suffix: string = c.type === 'folder' ? '/' : '';
                     return base + c.name + suffix;
-                });
+                })
+                .sort((left: string, right: string): number => left.localeCompare(right));
         } catch {
             return [];
         }
@@ -440,6 +487,101 @@ export class CalypsoCore {
         if (confirmation) return confirmation;
 
         return await this.shell_handle(trimmed, primary);
+    }
+
+    /**
+     * Check whether the input is a generic affirmative reply and route it to
+     * either a pending phase-jump confirmation or the active stage's safe
+     * closing command. Returns null if input is not an affirmative.
+     *
+     * @param input - Raw trimmed command string.
+     * @returns Workflow response if the input was a confirmation, otherwise null.
+     */
+    private async confirmation_dispatch(input: string): Promise<CalypsoResponse | null> {
+        if (!/^(yes|y|affirmative|confirm|ok|go\s+ahead|approve)$/i.test(input)) {
+            return null;
+        }
+
+        const state: Partial<AppState> = this.storeActions.state_get();
+        if (state.lastIntent?.startsWith('CONFIRM_JUMP:')) {
+            const intentContent: string = state.lastIntent.substring('CONFIRM_JUMP:'.length);
+            const [stageId, originalInput] = intentContent.split('|');
+
+            const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
+            if (stage) {
+                const clearIntentState: Partial<AppState> = { lastIntent: null };
+                this.storeActions.state_set(clearIntentState);
+                // v10.2.1: Use the known stage directly. Strict re-resolution
+                // fails when position hasn't advanced yet (e.g. 'add' didn't
+                // close gather, but gather artifact exists).
+                const res: CommandResolution = {
+                    stage,
+                    isJump: true,
+                    requiresConfirmation: false,
+                };
+                return await this.workflow_dispatch(originalInput, res, true);
+            }
+        }
+
+        // Stage-local affirmative continuation.
+        // Resolve to the active stage's safe execution verb only; never global-jump.
+        const stageCommand: string | null = this.activeStageAffirmativeCommand_resolve();
+        if (stageCommand) {
+            const res: CommandResolution = this.workflowSession.resolveCommand(stageCommand, true);
+            if (res.stage) {
+                return await this.workflow_dispatch(stageCommand, res, true);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a safe active-stage command for generic affirmative replies.
+     *
+     * Meta verbs (show/config/status) and commands with required placeholders
+     * are excluded to keep short confirmations stage-local.
+     *
+     * @returns The first safe command for the current stage, or null if none.
+     */
+    private activeStageAffirmativeCommand_resolve(): string | null {
+        const activeStageId: string | null = this.workflowSession.activeStageId_get();
+        if (!activeStageId) return null;
+
+        const node: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(activeStageId);
+        if (!node) return null;
+
+        interface CommandCandidate {
+            command: string;
+            required: boolean;
+            base: string;
+        }
+
+        const candidates: CommandCandidate[] = node.commands
+            .map((raw: string): CommandCandidate => {
+                const normalized: string = raw.toLowerCase().trim();
+                const command: string = normalized.split(/[<\[]/)[0].trim();
+                const base: string = command.split(/\s+/)[0] || '';
+                const required: boolean = normalized.includes('<');
+                return { command, required, base };
+            })
+            .filter((entry: CommandCandidate): boolean => entry.command.length > 0);
+
+        const metaVerbs: Set<string> = new Set<string>(['show', 'config', 'status']);
+
+        const stageIdExact: CommandCandidate | undefined = candidates.find(
+            (entry: CommandCandidate): boolean =>
+                entry.command === activeStageId && !entry.required && !metaVerbs.has(entry.base),
+        );
+        if (stageIdExact) {
+            return stageIdExact.command;
+        }
+
+        const firstSafe: CommandCandidate | undefined = candidates.find(
+            (entry: CommandCandidate): boolean =>
+                !entry.required && !metaVerbs.has(entry.base),
+        );
+        return firstSafe?.command ?? null;
     }
 
     private async special_handle(input: string): Promise<CalypsoResponse> {
@@ -764,6 +906,14 @@ export class CalypsoCore {
                 success ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR,
             ),
             (command: string): Promise<CalypsoResponse> => this.command_execute(command),
+            {
+                status_emit: (message: string): void => {
+                    this.telemetryBus.emit({ type: 'status', message });
+                },
+                log_emit: (message: string): void => {
+                    this.telemetryBus.emit({ type: 'log', message });
+                },
+            },
         );
     }
 }

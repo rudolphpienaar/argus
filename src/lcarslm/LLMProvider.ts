@@ -13,6 +13,11 @@ import type { SearchProvider } from './SearchProvider.js';
 import type { CalypsoStoreActions, CalypsoResponse, CalypsoAction, QueryResponse } from './types.js';
 import { IntentParser } from './routing/IntentParser.js';
 
+interface LLMProviderTelemetryHooks {
+    status_emit?: (message: string) => void;
+    log_emit?: (message: string) => void;
+}
+
 export class LLMProvider {
     constructor(
         private readonly engine: LCARSEngine | null,
@@ -21,8 +26,23 @@ export class LLMProvider {
         private readonly store: CalypsoStoreActions,
         private readonly intentParser: IntentParser,
         private readonly responseCreator: (msg: string, actions: CalypsoAction[], success: boolean) => CalypsoResponse,
-        private readonly commandExecutor: (cmd: string) => Promise<CalypsoResponse | null>
+        private readonly commandExecutor: (cmd: string) => Promise<CalypsoResponse | null>,
+        private readonly telemetryHooks: LLMProviderTelemetryHooks = {},
     ) {}
+
+    /**
+     * Emit an optional status telemetry event.
+     */
+    private status_emit(message: string): void {
+        this.telemetryHooks.status_emit?.(message);
+    }
+
+    /**
+     * Emit an optional log telemetry event.
+     */
+    private log_emit(message: string): void {
+        this.telemetryHooks.log_emit?.(message);
+    }
 
     /**
      * Query the LLM with system context.
@@ -90,11 +110,20 @@ export class LLMProvider {
 
     /** Generate a personalized greeting */
     public async greeting_generate(username: string): Promise<CalypsoResponse> {
-        if (!this.engine) return this.responseCreator(`WELCOME, ${username}. AI CORE OFFLINE.`, [], true);
+        this.status_emit('CALYPSO: PREPARING GREETING CONTEXT');
+        if (!this.engine) {
+            this.log_emit('○ GREETING PATH: AI CORE OFFLINE. USING STATIC GREETING.');
+            return this.responseCreator(`WELCOME, ${username}. AI CORE OFFLINE.`, [], true);
+        }
         try {
+            this.status_emit('CALYPSO: QUERYING LANGUAGE MODEL FOR GREETING');
             const response = await this.engine.query(`The user "${username}" just logged in. Greet them as CALYPSO. Include one interesting fact about the current data catalog. Keep it brief.`, [], true);
+            this.status_emit('CALYPSO: GREETING SYNTHESIS COMPLETE');
+            this.log_emit('○ GREETING PATH: MODEL RESPONSE RECEIVED.');
             return this.responseCreator(response.answer, [], true);
         } catch {
+            this.status_emit('CALYPSO: GREETING FALLBACK ACTIVATED');
+            this.log_emit('○ GREETING PATH: MODEL QUERY FAILED. USING STATIC FALLBACK.');
             return this.responseCreator(`WELCOME, ${username}. READY FOR INPUT.`, [], true);
         }
     }
