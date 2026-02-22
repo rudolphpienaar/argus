@@ -121,6 +121,8 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 
     public state_get(): Partial<AppState> {
         return {
+            currentPersona: store.state.currentPersona,
+            currentSessionId: store.state.currentSessionId,
             currentStage: store.state.currentStage,
             selectedDatasets: [...store.state.selectedDatasets],
             activeProject: store.state.activeProject,
@@ -132,6 +134,10 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 
     public state_set(state: Partial<AppState>): void {
         store.state_patch(state);
+    }
+
+    public session_start(): void {
+        store.session_start();
     }
 
     public reset(): void {
@@ -174,6 +180,10 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 
     public session_getPath(): string | null {
         return this.sessionPath;
+    }
+
+    public sessionId_get(): string | null {
+        return store.sessionId_get();
     }
 
     public lastMentioned_set(datasets: Dataset[]): void {
@@ -284,6 +294,13 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
     server.on('upgrade', (req: http.IncomingMessage, socket: Socket, head: Buffer): void => {
         const url: URL = new URL(req.url || '/', `http://${host}:${port}`);
         if (url.pathname === '/calypso/ws') {
+            // Disable Nagle's algorithm so each WebSocket frame is flushed as
+            // its own TCP segment. Without this, consecutive small frames
+            // (e.g. boot_log WAIT followed by OK) can be coalesced by the
+            // kernel and arrive at the client in a single data event, causing
+            // both to be processed synchronously and the WAIT state to never
+            // render before being overwritten by OK.
+            socket.setNoDelay(true);
             wss.handleUpgrade(req, socket, head, (ws: WebSocket): void => {
                 wss.emit('connection', ws, req);
             });
