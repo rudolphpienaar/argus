@@ -28,8 +28,12 @@ stages:
       - search.json
     instruction: >
       Search for test datasets relevant to your plugin.
+      Add datasets to your selection buffer with 'add <id>'.
     commands:
       - search <keywords>
+      - add <dataset>
+      - remove <dataset>
+      - show cohort
     handler: search
 
   - id: gather
@@ -42,9 +46,8 @@ stages:
     parameters:
       auto_select: false
     instruction: >
-      Select test datasets for your cohort and assemble the workspace.
+      When your selection is complete, run 'gather' to assemble the workspace.
     commands:
-      - add <dataset>
       - gather
       - mount
     handler: gather

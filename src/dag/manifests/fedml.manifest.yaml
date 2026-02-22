@@ -41,8 +41,12 @@ stages:
       Search the ATLAS catalog for datasets matching your research criteria.
       Use keywords, modality filters, or anatomical region. Each search
       appends to the discovery log — you can search as many times as needed.
+      Add datasets to your selection buffer with 'add <id>'.
     commands:
       - search <keywords>
+      - add <dataset>
+      - remove <dataset>
+      - show cohort
     handler: search
     skip_warning:
       short: Dataset discovery not performed.
@@ -67,13 +71,10 @@ stages:
       - Mounting cohort tree into project input workspace.
       - Writing gather receipts and session provenance artifacts.
     instruction: >
-      Add datasets to your cohort from the search results. When your
-      selection is complete, run 'gather' to assemble the cohort and
-      create your project workspace.
+      When your selection is complete, run 'gather' to assemble the cohort and
+      create your project workspace. This will materialize the data into
+      the provenance tree.
     commands:
-      - add <dataset>
-      - remove <dataset>
-      - show cohort
       - gather
       - mount
     handler: gather
@@ -100,19 +101,37 @@ stages:
       - Applying VFS move and shell-context synchronization.
       - Updating project model and shell context.
     instruction: >
-      Your project was created with an auto-generated name (e.g. DRAFT-1234).
-      Rename it now if you'd like a meaningful identifier. You can skip this
-      step — the auto-generated name works fine.
+      Optionally rename your project to a meaningful identifier.
+      You can skip this step — the session ID and stage identifiers
+      provide sufficient context for causal navigation.
     commands:
       - rename <new-name>
     handler: rename
+
+  - id: join_gather_rename
+    name: Causal Convergence (Gather/Rename)
+    phase: search-and-gather
+    previous: [rename, gather]
+    structural: true
+    produces:
+      - join.json
+    handler: topological-join
+
+  - id: pre_harmonize
+    name: Harmonization View Resolver
+    phase: harmonize
+    previous: [join_gather_rename]
+    structural: true
+    produces:
+      - resolve.json
+    handler: pre-harmonize
 
   # ─── Phase 2: Harmonize ──────────────────────────────────────
 
   - id: harmonize
     name: Data Harmonization
     phase: harmonize
-    previous: [gather, rename]
+    previous: [pre_harmonize]
     optional: false
     produces:
       - harmonize.json
@@ -141,12 +160,21 @@ stages:
         (different resolutions, naming conventions, or label schemas).
       max_warnings: 2
 
+  - id: pre_code
+    name: Workspace Continuity (Pre-Code)
+    phase: code-and-validate
+    previous: [harmonize]
+    structural: true
+    produces:
+      - resolve.json
+    handler: workspace-commit
+
   # ─── Phase 3: Code & Validate ────────────────────────────────
 
   - id: code
     name: Code Development
     phase: code-and-validate
-    previous: harmonize
+    previous: pre_code
     optional: false
     produces:
       - code.json
@@ -175,10 +203,19 @@ stages:
         generates the required structure.
       max_warnings: 2
 
+  - id: pre_train
+    name: Workspace Continuity (Pre-Train)
+    phase: code-and-validate
+    previous: [code]
+    structural: true
+    produces:
+      - resolve.json
+    handler: workspace-commit
+
   - id: train
     name: Local Validation
     phase: code-and-validate
-    previous: code
+    previous: pre_train
     optional: false
     produces:
       - train.json

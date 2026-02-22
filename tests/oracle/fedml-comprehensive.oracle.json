@@ -12,6 +12,10 @@
       "capture_project": true
     },
     {
+      "send": "gather",
+      "expect": "OK"
+    },
+    {
       "send": "harmonize",
       "expect": "OK",
       "materialized": [
@@ -39,6 +43,10 @@
       "send": "add ds-006",
       "expect": "OK",
       "capture_project": true
+    },
+    {
+      "send": "gather",
+      "expect": "OK"
     },
     {
       "send": "rename branched-project",

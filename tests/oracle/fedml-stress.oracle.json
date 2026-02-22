@@ -18,6 +18,15 @@
     },
     {
       "send": "rename stress-project",
+      "success": false,
+      "output_contains": "Cohort not assembled"
+    },
+    {
+      "send": "gather",
+      "expect": "OK"
+    },
+    {
+      "send": "rename stress-project",
       "expect": "OK",
       "output_contains": "RENAMED TO [stress-project]"
     },
@@ -32,16 +41,7 @@
     {
       "send": "proceed",
       "success": false,
-      "output_contains": [
-        "REASON: Federated learning requires consistent data formats"
-      ]
-    },
-    {
-      "send": "proceed",
-      "expect": "OK"
-    },
-    {
-      "vfs_exists": "${session}/search/gather/harmonize/code/data/code.json"
+      "output_contains": "Cohort not harmonized"
     }
   ]
 }

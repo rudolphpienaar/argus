@@ -9,7 +9,7 @@
     {
       "send": "add this",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/data/gather.json"],
+      "materialized": ["${session}/search/output/add-ds-001.json"],
       "args_concrete": true,
       "capture_project": true
     },

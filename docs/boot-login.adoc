@@ -1,0 +1,256 @@
+= CALYPSO Boot/Login Stabilization: Incident Anatomy and Contract Repairs
+:author: ATLAS Project Team
+:revdate: 2026-02-22
+:revnumber: 10.3.6
+:toc: macro
+:toclevels: 4
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+This document specifies the boot and login stabilization work that followed the
+recent telemetry expansion in CALYPSO. The primary intent of that expansion was
+narrow and operationally valid: expose deterministic startup milestones so users
+no longer experience a single opaque spinner during system entry. The observed
+outcome, however, was broader instability across boot rendering, prompt timing,
+and test confidence. The mismatch between intent and result was not caused by an
+invalid product goal. It was caused by architectural coupling across transport,
+terminal rendering, and lifecycle ownership boundaries that were not formalized as
+contracts before the refactor pressure arrived.
+
+The remediation therefore focuses on contract repair rather than cosmetic output
+changes. Boot telemetry is now treated as a protocol with typed phase semantics,
+monotonic sequence ordering, and idempotent rendering requirements. Login and
+persona activation are treated as two explicit boot planes with independent
+lifecycles. Prompt visibility is tied to lifecycle truth instead of timing
+heuristics. The result is a deterministic startup narrative that remains stable
+under duplicate events, out-of-order arrivals, and asynchronous redraw pressure.
+
+This specification also records why the earlier churn was structurally likely,
+which hidden assumptions were violated, and which code-level repairs now enforce
+correctness. The document is intentionally historical and explanatory: future
+refactors should not rediscover these boundaries through regression.
+
+== Introduction: Historical and Scientific Context
+
+The pre-telemetry boot path in CALYPSO already contained a deterministic sequence
+of steps. System genesis, VFS readiness, and integrity engine readiness were
+executed in a fixed order inside the kernel. Persona activation similarly followed
+an ordered progression: manifest load, session-space generation, and viewport
+synchronization. The scientific requirement behind these steps was clear: startup
+must converge to a physically verifiable workspace state before interactive
+commands are accepted.
+
+What was missing was user-visible state narration at the same granularity. From
+the user perspective, long startup windows collapsed into ambiguous waiting. The
+telemetry expansion attempted to expose the true internal sequence. That goal was
+correct, and in isolation each milestone emission was straightforward. The
+instability emerged because startup is not a single subsystem. It is a cross-layer
+handshake among kernel events, WebSocket transport, and a readline-driven CLI
+surface that performs its own cursor and prompt management.
+
+In other words, the system had deterministic execution truth but only implicit
+rendering truth. Once telemetry volume increased, the implicit rendering contract
+fractured. The incident therefore belongs to architecture, not presentation.
+
+== Boot/Login State Machine in the Current Kernel
+
+The modern kernel exposes two startup planes through `boot_log` telemetry: login
+boot and workflow boot. Login boot corresponds to `sys_*` milestones emitted by
+`CalypsoCore.boot()`. Workflow boot corresponds to `user_*` milestones emitted by
+`CalypsoCore.workflow_set(...)` during persona activation.
+
+The ordering and content are deterministic by implementation. Login boot emits
+`sys_genesis`, `sys_vfs`, `sys_merkle`, and terminal `sys_ready`. Workflow boot
+emits `user_manifest`, `user_vfs`, `user_viewport`, and terminal `user_ready`.
+Each milestone emits `WAIT` before work and `OK` or `FAIL` after work; terminal
+readiness emits `DONE`. The status stream includes an intentional short yield
+between transitions to reduce transport coalescing that can collapse visible
+`WAIT -> OK` state changes.
+
+At the type layer, startup telemetry is formalized in `src/lcarslm/types.ts` as
+`BootLogEvent` with `phase`, `seq`, and `timestamp` fields. In
+`src/lcarslm/CalypsoCore.ts`, `status_emit(...)` now assigns phase by milestone
+namespace and increments per-phase sequence counters. This transforms startup from
+an informal log channel into a protocol with ordering semantics.
+
+== Why the Telemetry Refactor Produced Churn
+
+The churn was not random. It followed from four coupled boundaries that were
+previously under-specified.
+
+=== Boundary 1: Subscription Timing During Login
+
+The first structural failure was a classic subscribe-too-late race. Boot events
+for login were emitted during server-side login handling, but the full REPL
+after-login telemetry wiring occurred later in the startup path. This created a
+window where the server produced valid `boot_log` events and the client
+transported them, but no renderer consumed them.
+
+When telemetry volume was low, this was difficult to detect because startup still
+completed and prompt control resumed. When milestone narration was added, the race
+became visible as "missing boot lines" or apparent stalls where only final states
+were displayed.
+
+=== Boundary 2: Shared Terminal Surface Between Boot and Prompt
+
+The second failure involved cursor ownership. Boot rendering updates lines in
+place. Readline prompt management also rewrites terminal rows. Without explicit
+phase gating, both systems can write concurrently. This leads to prompt bleed,
+partial line overwrites, and out-of-order visual narratives even when the
+underlying event order is correct.
+
+The previous implementation relied on timing assumptions to avoid this overlap.
+Those assumptions do not survive transport jitter or asynchronous event bursts.
+
+=== Boundary 3: Monolithic REPL Responsibilities
+
+Before extraction, boot display logic, prompt loop, telemetry dispatch, script
+execution, and completion behavior all lived in one broad REPL surface. In that
+shape, narrow telemetry edits can unintentionally perturb unrelated behavior,
+including tab completion and spinner suppression. The tab-complete regression that
+surfaced during this period is an example of collateral damage from editing a
+heavily entangled file with multiple stateful concerns.
+
+This did not mean the refactor objective was wrong. It meant risk concentration was
+high because the module boundary was weak.
+
+=== Boundary 4: Protocol Ambiguity and Idempotency Gaps
+
+Startup events originally lacked explicit phase and sequence semantics at the
+consumption boundary. A renderer receiving retries, duplicates, or reordering had
+no contract-level basis to reject stale updates or prevent status regression.
+
+As soon as telemetry became more explicit and frequent, idempotency assumptions
+became critical. Without structured monotonic rules, display integrity depended on
+arrival luck.
+
+== Investigation Findings
+
+The investigation correlated behavior across kernel emission points,
+WebSocket forwarding, and CLI rendering transitions.
+
+At the kernel level, milestone generation order was deterministic and reproducible.
+At the transport level, the server correctly forwarded telemetry payloads after
+binding refresh during login reinitialization. At the CLI level, anomalies
+clustered around lifecycle transitions: pre-REPL login phase, first prompt draw,
+and late-arriving boot events competing with prompt redraw.
+
+The evidence showed that most "boot is broken" user-facing symptoms were not
+caused by incorrect step execution. They were caused by inconsistent rendering
+ownership at phase boundaries and lack of strict idempotent update rules.
+
+== Remediation Architecture and Code-Level Fixes
+
+The repair strategy addressed each boundary as a contract problem.
+
+=== Fix 1: Typed Boot Protocol With Phase and Sequence Semantics
+
+`BootLogEvent` now carries explicit `phase` and per-phase monotonic `seq`
+identifiers in `src/lcarslm/types.ts`. `CalypsoCore.status_emit(...)` in
+`src/lcarslm/CalypsoCore.ts` now resolves phase deterministically (`sys_*` as
+`login_boot`, others as `workflow_boot`) and increments a sequence counter for
+that phase before emission.
+
+This creates a strict ordering predicate that downstream consumers can use to
+reject stale events and preserve monotonic status transitions.
+
+=== Fix 2: Pre-Login Boot Subscription in REPL Entry
+
+`repl_start(...)` in `src/calypso/cli/Repl.ts` now binds a boot-only telemetry
+handler before `login_send(...)` is issued. This closes the pre-REPL race window.
+`bootDisplay_create()` receives `boot_log` events immediately, so login milestones
+render in real time instead of being dropped.
+
+After login completes, ownership is intentionally transferred to the main REPL
+telemetry handler.
+
+=== Fix 3: Extracted Idempotent Boot Timeline Renderer
+
+`src/calypso/cli/BootTimeline.ts` introduces `BootTimeline`, a stateful reducer
+that maps `(phase,id)` to exactly one row and applies monotonic update rules.
+It explicitly ignores stale sequence updates and status regression attempts.
+
+This extraction is crucial because rendering correctness is now encoded in a
+small testable module instead of open-coded cursor logic spread across the REPL.
+
+=== Fix 4: Explicit Boot Lifecycle Gating for Prompt Visibility
+
+`BootPhaseLifecycle` in `src/calypso/cli/BootTimeline.ts` tracks active phases
+from `WAIT` to terminal `DONE`/`FAIL`. `bootLog_render(...)` in
+`src/calypso/cli/Repl.ts` uses this lifecycle to decide whether prompt redraw is
+allowed. Prompt visibility is now lifecycle-derived, not timing-derived.
+
+The REPL also gates startup prompt behavior with `startupComplete`, preventing
+premature prompt display during greeting and persona-selection transitions.
+
+=== Fix 5: Operational Safety Toggle
+
+`replBootContractEnabled_resolve(...)` in `src/calypso/cli/Repl.ts` provides an
+operator toggle via `CALYPSO_BOOT_CONTRACT_V1`. This supports controlled rollout
+and emergency fallback while preserving default-on behavior for the repaired
+contract.
+
+== Verification and Regression Nets
+
+The remediation is backed by explicit tests across protocol, transport, and
+render-state layers.
+
+`src/lcarslm/CalypsoCore.test.ts` validates phase tagging and per-phase monotonic
+sequence emission for boot telemetry.
+
+`src/calypso/server/WebSocketHandler.test.ts` verifies telemetry rebinding after
+login reinitialization and confirms `phase`/`seq` fields are not dropped in
+forwarding.
+
+`src/calypso/cli/BootTimeline.test.ts` validates idempotent row behavior,
+stale-sequence rejection, status regression rejection, and independent phase
+lifecycle handling.
+
+In addition, the broader test suite and oracle scenarios now pass with updated
+workflow semantics, reducing the likelihood that startup and early-session
+contract changes silently drift from scenario expectations.
+
+== Why the Previous State Was Still "Not Fully Working"
+
+The residual instability reported during the transition period came from partial
+adoption: some paths were updated to emit richer telemetry while consumers still
+followed legacy assumptions. In distributed asynchronous boundaries, partial
+contract migration is often more unstable than either old or new steady state.
+
+Specifically, startup was vulnerable when one or more of the following held:
+pre-login event windows were unbound, row updates were not idempotent, prompt
+redraw remained timing-based, or test gates asserted stale status taxonomies.
+These are precisely the seams now repaired.
+
+== Remaining Risks and Forward Guidance
+
+The boot/login path is substantially more robust after contract repair, but two
+operational disciplines remain necessary.
+
+First, startup telemetry changes must be treated as protocol changes, not display
+copy edits. Any new status or milestone should carry sequence and lifecycle
+implications reviewed against both CLI and server tests.
+
+Second, REPL risk concentration should continue to be reduced. Boot handling
+extraction was a material step, but additional decomposition of unrelated REPL
+behaviors remains strategically useful for future refactors.
+
+== Conclusion: Architectural Outcome
+
+The startup telemetry effort initially produced broad churn because it activated
+implicit coupling that had not yet been formalized. The durable resolution was not
+to remove telemetry detail. The resolution was to define and enforce a boot/login
+contract with explicit phase identity, monotonic sequencing, idempotent row
+updates, and lifecycle-gated prompt rendering.
+
+CALYPSO startup now behaves as a deterministic narrative projection of kernel
+truth. Users see meaningful progress instead of opaque waiting, and the system
+retains scientific execution integrity by aligning rendering behavior with explicit
+protocol state rather than incidental timing. This is the correct architectural
+position for future boot/login evolution under the ARGUS integrity model.
+
+---
+_Last updated: 2026-02-22 (v10.3.6)_

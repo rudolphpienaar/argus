@@ -16,6 +16,10 @@
       "capture_project": true
     },
     {
+      "send": "gather",
+      "expect": "OK"
+    },
+    {
       "send": "harmonize",
       "expect": "OK",
       "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
@@ -26,7 +30,7 @@
     },
     {
       "send": "proceed",
-      "expect": "BLOCKED_STALE",
+      "expect": "BLOCKED",
       "output_contains": ["STALE PREREQUISITE"]
     },
     {

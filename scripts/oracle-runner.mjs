@@ -26,16 +26,36 @@ function ansi_strip(str) {
  * Replace known template variables in step text.
  *
  * @param {string} value
- * @param {{ user: string, project: string|null, session: string|null }} vars
+ * @param {{ user: string, persona: string, sessionId: string|null, project: string|null }} vars
  * @returns {string}
  */
 function template_interpolate(value, vars) {
-    const projectRoot = vars.project ? `/home/${vars.user}/projects/${vars.project}` : `/home/${vars.user}/projects/DRAFT`;
-    const sessionRoot = vars.session || `${projectRoot}/data`;
+    const sessionRoot = `/home/${vars.user}/projects/${vars.persona}/${vars.sessionId}`;
+    const provenanceRoot = `${sessionRoot}/provenance`;
+
     return value
         .replaceAll('${user}', vars.user)
-        .replaceAll('${project}', projectRoot)
-        .replaceAll('${session}', sessionRoot);
+        .replaceAll('${persona}', vars.persona)
+        .replaceAll('${project}', sessionRoot)
+        .replaceAll('${session}', provenanceRoot);
+}
+
+/**
+ * Resolve candidate materialization paths for backward compatibility.
+ *
+ * Legacy oracle specs used '/data/' while runtime now materializes to
+ * '/output/' (payloads) and '/meta/' (stage artifact envelopes).
+ *
+ * @param {string} path
+ * @returns {string[]}
+ */
+function materializedPath_candidates(path) {
+    const candidates = [path];
+    if (path.includes('/data/')) {
+        candidates.push(path.replace('/data/', '/output/'));
+        candidates.push(path.replace('/data/', '/meta/'));
+    }
+    return Array.from(new Set(candidates));
 }
 
 /**
@@ -136,12 +156,15 @@ function runtime_create(modules, username, persona = 'fedml') {
 
     modules.store.selection_clear();
     modules.store.project_unload();
+    modules.store.persona_set(persona); // v11.0: Triggers session_start
     modules.store.stage_set('search');
 
     const storeAdapter = {
         sessionPath: null,
         state_get() {
             return {
+                currentPersona: modules.store.state.currentPersona,
+                currentSessionId: modules.store.state.currentSessionId,
                 currentStage: modules.store.state.currentStage,
                 selectedDatasets: [...modules.store.state.selectedDatasets],
                 activeProject: modules.store.state.activeProject,
@@ -189,6 +212,12 @@ function runtime_create(modules, username, persona = 'fedml') {
         session_setPath(path) {
             this.sessionPath = path;
         },
+        sessionId_get() {
+            return modules.store.sessionId_get();
+        },
+        session_start() {
+            modules.store.session_start();
+        },
         lastMentioned_set(datasets) {
             modules.store.lastMentioned_set(datasets);
         },
@@ -219,9 +248,16 @@ async function scenario_run(modules, scenario) {
     const username = scenario.data.username || 'oracle';
     const persona = scenario.data.persona || 'fedml';
     const steps = Array.isArray(scenario.data.steps) ? scenario.data.steps : [];
-    const vars = { user: username, project: 'DRAFT', session: null };
+    
     const runtime = runtime_create(modules, username, persona);
-    vars.session = runtime.core.session_getPath();
+    const state = runtime.core.store_snapshot();
+    
+    const vars = { 
+        user: username, 
+        persona: persona,
+        sessionId: state.currentSessionId, 
+        project: 'DRAFT' 
+    };
 
     console.log(`\n[ORACLE] ${name}`);
 
@@ -248,7 +284,9 @@ async function scenario_run(modules, scenario) {
             if (state?.activeProject?.name) {
                 vars.project = state.activeProject.name;
             }
-            vars.session = runtime.core.session_getPath();
+            if (state?.currentSessionId) {
+                vars.sessionId = state.currentSessionId;
+            }
 
             if (verbose) {
                 console.log(`${label} ${command}`);
@@ -283,12 +321,20 @@ async function scenario_run(modules, scenario) {
                 if (completedId) {
                     const artifact = runtime.core.merkleEngine_latestFingerprint_get(completedId);
                     if (artifact && artifact.materialized) {
-                        // Resolve the physical directory where this artifact lives
-                        const artPath = artifact._physical_path;
-                        const dataDir = artPath.substring(0, artPath.lastIndexOf('/'));
+                        // Resolve the physical stage data directory from the Merkle engine.
+                        let dataDir = null;
+                        try {
+                            dataDir = await runtime.core.merkleEngine_dataDir_resolve(completedId);
+                        } catch {
+                            const artPath = artifact._physical_path || '';
+                            const metaDir = artPath.substring(0, artPath.lastIndexOf('/'));
+                            dataDir = metaDir.endsWith('/meta')
+                                ? `${metaDir.slice(0, -'/meta'.length)}/output`
+                                : metaDir;
+                        }
                         
                         for (const relPath of artifact.materialized) {
-                            const fullPath = `${dataDir}/${relPath}`;
+                            const fullPath = `${dataDir}/output/${relPath}`;
                             if (verbose) {
                                 console.log(`${label} [REFLEXIVE] verifying side-effect: ${fullPath}`);
                             }
@@ -303,23 +349,31 @@ async function scenario_run(modules, scenario) {
 
             if (step.materialized) {
                 for (const rawPath of step.materialized) {
-                    // v10.2: Re-interpolate using the updated vars (project/session)
+                    // v10.2: Re-interpolate using updated vars and allow legacy path aliases.
                     const target = template_interpolate(rawPath, vars);
+                    const candidatePaths = materializedPath_candidates(target);
+                    const resolvedTarget = candidatePaths.find((path) => runtime.core.vfs_exists(path)) || null;
                     if (verbose) {
-                        console.log(`${label} checking materialization: ${target}`);
+                        console.log(`${label} checking materialization: ${candidatePaths.join(' | ')}`);
                     }
-                    if (!runtime.core.vfs_exists(target)) {
+                    if (!resolvedTarget) {
                         if (!verbose) {
                             console.log(`${label} Expected materialized artifact missing: ${target}`);
-                            const snap = runtime.core.vfs_snapshot('/', true);
-                            console.log(`\n[VFS SNAPSHOT ON FAILURE]:\n${JSON.stringify(snap, null, 2)}\n`);
+                            const snap = await runtime.core.command_execute('/snapshot /');
+                            if (snap?.message) {
+                                console.log(`\n[VFS SNAPSHOT ON FAILURE]:\n${snap.message}\n`);
+                            }
                         }
                         throw new Error(`${label} Expected materialized artifact missing: ${target}`);
                     }
 
                     // v10.2: Concrete Protocol Assertion
                     if (step.args_concrete) {
-                        const content = JSON.parse(runtime.core.vfs_read(target));
+                        const rawContent = runtime.core.vfs_read(resolvedTarget);
+                        if (!rawContent) {
+                            throw new Error(`${label} Could not read materialized artifact: ${resolvedTarget}`);
+                        }
+                        const content = JSON.parse(rawContent);
                         // The Merkle Engine stores the command/args used to generate the artifact
                         const commandStr = (content.command || '').toLowerCase();
                         const args = Array.isArray(content.args) ? content.args.map(a => String(a).toLowerCase()) : [];
@@ -364,12 +418,13 @@ async function scenario_run(modules, scenario) {
 
         if (step.vfs_exists) {
             const target = template_interpolate(step.vfs_exists, vars);
-            const exists = runtime.core.vfs_exists(target);
+            const candidatePaths = materializedPath_candidates(target);
+            const exists = candidatePaths.some((path) => runtime.core.vfs_exists(path));
             if (!exists) {
                 throw new Error(`${label} Expected VFS path missing: ${target}`);
             }
             if (verbose) {
-                console.log(`${label} exists ${target}`);
+                console.log(`${label} exists ${candidatePaths.join(' | ')}`);
             }
         }
 
