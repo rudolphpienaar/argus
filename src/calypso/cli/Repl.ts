@@ -234,6 +234,87 @@ function prompt_colorize(rawPrompt: string): string {
     return `${COLORS.cyan}${rawPrompt}${COLORS.reset}`;
 }
 
+type ReplCompletionCallback = (err: null, result: [string[], string]) => void;
+
+export interface ReplTabCompleteClient {
+    tabComplete(line: string, cursor?: number): Promise<{ completions: string[]; partial: string }>;
+}
+
+const REPL_COMPLETION_FALLBACK_COMMANDS: string[] = [
+    'ls',
+    'cd',
+    'pwd',
+    'cat',
+    'echo',
+    'mkdir',
+    'touch',
+    'rm',
+    'cp',
+    'mv',
+    'ln',
+    'tree',
+    'env',
+    'export',
+    'whoami',
+    'date',
+    'history',
+    'help',
+    'python',
+    'upload',
+    'search',
+    'add',
+    'gather',
+    'rename',
+    'harmonize',
+    'train',
+    'code',
+    'federate',
+    'quit',
+    'exit',
+    '/scripts',
+    '/run'
+];
+
+/**
+ * Resolve local fallback completions for command-position tab completion.
+ */
+export function replCompletionFallback_resolve(line: string, last: string): string[] {
+    const isCommandPosition: boolean = line.trim().length === 0 || (!line.includes(' ') && !line.endsWith(' '));
+    if (!isCommandPosition) {
+        return [];
+    }
+
+    return REPL_COMPLETION_FALLBACK_COMMANDS
+        .filter((command: string): boolean => command.startsWith(last))
+        .sort((left: string, right: string): number => left.localeCompare(right));
+}
+
+/**
+ * Create the readline completer bound to a tab-complete client.
+ *
+ * The completer delegates to server-side completion first. If transport
+ * fails, or returns no completions, it falls back to local command hints.
+ */
+export function replCompleter_create(
+    client: ReplTabCompleteClient,
+): (line: string, callback: ReplCompletionCallback) => void {
+    return (line: string, callback: ReplCompletionCallback): void => {
+        const words: string[] = line.split(/\s+/);
+        const last: string = words[words.length - 1] || '';
+
+        void client.tabComplete(line)
+            .then((result: { completions: string[]; partial: string }): void => {
+                const fallback: string[] = replCompletionFallback_resolve(line, last);
+                const completions: string[] = result.completions.length > 0 ? result.completions : fallback;
+                callback(null, [completions, last]);
+            })
+            .catch((): void => {
+                const fallback: string[] = replCompletionFallback_resolve(line, last);
+                callback(null, [fallback, last]);
+            });
+    };
+}
+
 // ─── REPL Component ─────────────────────────────────────────────────────────
 
 export interface ReplOptions {
@@ -467,17 +548,8 @@ class CalypsoRepl {
         process.exit(0);
     }
 
-    private completer_create(): any {
-        return (line: string, callback: any) => {
-            const words = line.split(/\s+/);
-            const last = words[words.length - 1] || '';
-            if (words.length === 1 && !line.endsWith(' ')) {
-                const cmds = ['ls', 'cd', 'cat', 'mkdir', 'rm', 'search', 'add', 'gather', 'help', 'quit'];
-                callback(null, [cmds.filter(c => c.startsWith(last)), last]);
-            } else {
-                callback(null, [[], last]);
-            }
-        };
+    private completer_create(): (line: string, callback: ReplCompletionCallback) => void {
+        return replCompleter_create(this.client);
     }
 }
 
