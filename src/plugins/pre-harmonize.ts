@@ -30,11 +30,11 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         const joinedEntries = vfs.dir_list(joinOutputDir);
 
         // AUTHORITATIVE SELECTION:
-        // Prefer 'collect' output if it exists, otherwise 'gather'
+        // Prefer 'collect' output if it exists, otherwise 'gather-gate'
         const collectEntry = joinedEntries.find(e => e.name === 'collect');
-        const gatherEntry = joinedEntries.find(e => e.name === 'gather');
+        const gateEntry = joinedEntries.find(e => e.name === 'gather-gate');
 
-        const sourceId = collectEntry ? 'collect' : (gatherEntry ? 'gather' : null);
+        const sourceId = collectEntry ? 'collect' : (gateEntry ? 'gather-gate' : null);
 
         if (!sourceId) {
             throw new Error('No valid data source found in join');
