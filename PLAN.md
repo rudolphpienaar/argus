@@ -47,6 +47,15 @@
 - [x] **Verify**:
     - [x] Run `CalypsoCore.test.ts`.
 
+## 4. Registry Hardening (S-Tier)
+**Goal:** Refactor `SystemCommandRegistry` to use a disciplined enum-driven factory pattern.
+
+- [x] **Define `SystemCommand` Enum**: Model all OS-level verbs.
+- [x] **Decompose Handlers**: Move each registration into its own typed method in `SystemCommandHandlers`.
+- [x] **Implement Factory**: Create `SystemCommandFactory` to loop across enums and dispatch to the registry.
+- [x] **Verify**:
+    - [x] Run `CalypsoCore.test.ts` (all green).
+
 ---
 
 ## Validation Strategy

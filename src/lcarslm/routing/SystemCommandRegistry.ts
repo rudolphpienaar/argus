@@ -19,6 +19,23 @@ import { WorkflowAdapter, type WorkflowSummary, type DagRenderOptions } from '..
 import type { WorkflowSession } from '../../dag/bridge/WorkflowSession.js';
 import type { MerkleEngine } from '../MerkleEngine.js';
 
+/**
+ * Enumeration of all first-class system commands.
+ */
+export enum SystemCommand {
+    SNAPSHOT = 'snapshot',
+    STATE = 'state',
+    RESET = 'reset',
+    VERSION = 'version',
+    STATUS = 'status',
+    KEY = 'key',
+    WORKFLOWS = 'workflows',
+    SESSION = 'session',
+    SETTINGS = 'settings',
+    DAG = 'dag',
+    HELP = 'help'
+}
+
 interface DagCommandOptions {
     includeStructural: boolean;
     includeOptional: boolean;
@@ -115,21 +132,57 @@ export class SystemCommandRegistry {
  * Factory to populate a registry with the standard ARGUS system handlers.
  */
 export function register_defaultHandlers(registry: SystemCommandRegistry): void {
-    // /snapshot [path]
-    registry.register('snapshot', async (args, ctx) => {
+    SystemCommandFactory.defaultHandlers_register(registry);
+}
+
+/**
+ * Static Factory for standard ARGUS system handlers.
+ */
+export class SystemCommandFactory {
+    /**
+     * Map of command enums to their respective handler methods.
+     */
+    private static readonly HANDLER_MAP: Record<SystemCommand, SystemCommandHandler> = {
+        [SystemCommand.SNAPSHOT]: (args, ctx) => SystemCommandHandlers.snapshot_handle(args, ctx),
+        [SystemCommand.STATE]: (args, ctx) => SystemCommandHandlers.state_handle(args, ctx),
+        [SystemCommand.RESET]: (args, ctx) => SystemCommandHandlers.reset_handle(args, ctx),
+        [SystemCommand.VERSION]: (args, ctx) => SystemCommandHandlers.version_handle(args, ctx),
+        [SystemCommand.STATUS]: (args, ctx) => SystemCommandHandlers.status_handle(args, ctx),
+        [SystemCommand.KEY]: (args, ctx) => SystemCommandHandlers.key_handle(args, ctx),
+        [SystemCommand.WORKFLOWS]: (args, ctx) => SystemCommandHandlers.workflows_handle(args, ctx),
+        [SystemCommand.SESSION]: (args, ctx) => SystemCommandHandlers.session_handle(args, ctx),
+        [SystemCommand.SETTINGS]: (args, ctx) => SystemCommandHandlers.settings_handle(args, ctx),
+        [SystemCommand.DAG]: (args, ctx) => SystemCommandHandlers.dag_handle(args, ctx),
+        [SystemCommand.HELP]: (args, ctx) => SystemCommandHandlers.help_handle(args, ctx),
+    };
+
+    /**
+     * Register all default handlers by looping across the SystemCommand enum.
+     */
+    public static defaultHandlers_register(registry: SystemCommandRegistry): void {
+        Object.values(SystemCommand).forEach((command: SystemCommand): void => {
+            const handler = this.HANDLER_MAP[command];
+            registry.register(command, handler);
+        });
+    }
+}
+
+/**
+ * Isolated implementations for each system command.
+ */
+class SystemCommandHandlers {
+    public static async snapshot_handle(args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         const snap: VfsSnapshotNode | null = vfs_snapshot(ctx.vfs, args[0] || '/', true);
         return snap 
             ? ctx.response_create(JSON.stringify(snap, null, 2), [], true, CalypsoStatusCode.OK) 
             : ctx.response_create(`Path not found: ${args[0]}`, [], false, CalypsoStatusCode.ERROR);
-    });
+    }
 
-    // /state
-    registry.register('state', async (_args, ctx) => {
+    public static async state_handle(_args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         return ctx.response_create(JSON.stringify(ctx.storeActions.state_get(), null, 2), [], true, CalypsoStatusCode.OK);
-    });
+    }
 
-    // /reset
-    registry.register('reset', async (_args, ctx) => {
+    public static async reset_handle(_args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         ctx.vfs.reset();
         ctx.storeActions.reset();
         await ctx.session_realign();
@@ -139,33 +192,28 @@ export function register_defaultHandlers(registry: SystemCommandRegistry): void 
         await ctx.workflowSession.sync(); 
         ctx.merkleEngine.session_setPath(ctx.sessionPath);
         return ctx.response_create('System reset to clean state.', [], true, CalypsoStatusCode.OK);
-    });
+    }
 
-    // /version
-    registry.register('version', async (_args, ctx) => {
+    public static async version_handle(_args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         return ctx.response_create(ctx.statusProvider.version_get(), [], true, CalypsoStatusCode.OK);
-    });
+    }
 
-    // /status
-    registry.register('status', async (_args, ctx) => {
+    public static async status_handle(_args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         const msg = ctx.statusProvider.status_generate(ctx.engineAvailable, ctx.activeProvider, ctx.activeModel);
         return ctx.response_create(msg, [], true, CalypsoStatusCode.OK);
-    });
+    }
 
-    // /key <provider> <key>
-    registry.register('key', async (args, ctx) => {
+    public static async key_handle(args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         return ctx.key_register(args[0], args[1]);
-    });
+    }
 
-    // /workflows
-    registry.register('workflows', async (_args, ctx) => {
+    public static async workflows_handle(_args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         const workflows: WorkflowSummary[] = WorkflowAdapter.workflows_summarize();
         const list: string = workflows.map((w): string => `○ [${w.id}] ${w.name}: ${w.description}`).join('\n');
         return ctx.response_create(list, [], true, CalypsoStatusCode.OK);
-    });
+    }
 
-    // /session [list|new|resume <id>]
-    registry.register('session', async (args, ctx) => {
+    public static async session_handle(args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         const sub: string = (args[0] || 'list').toLowerCase();
         const username: string = ctx.username_resolve();
         const persona: string = ctx.shell.env_get('PERSONA') || 'fedml';
@@ -200,10 +248,9 @@ export function register_defaultHandlers(registry: SystemCommandRegistry): void 
             }
             default: return ctx.response_create('Usage: /session [list|new|resume <id>]', [], false, CalypsoStatusCode.ERROR);
         }
-    });
+    }
 
-    // /settings [show|set|unset]
-    registry.register('settings', async (args, ctx) => {
+    public static async settings_handle(args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         const sub: string = (args[0] || 'show').toLowerCase();
         const username: string = ctx.username_resolve();
         const usage: string = 'Usage: /settings [show|set convo_width <n>|unset convo_width]';
@@ -249,15 +296,10 @@ export function register_defaultHandlers(registry: SystemCommandRegistry): void 
             return ctx.response_create(`● UNSET convo_width for user ${username}`, [], true, CalypsoStatusCode.OK);
         }
 
-        if (sub === 'help') {
-            return ctx.response_create(usage, [], true, CalypsoStatusCode.OK);
-        }
+        return ctx.response_create(usage, [], sub === 'help', sub === 'help' ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR);
+    }
 
-        return ctx.response_create(usage, [], false, CalypsoStatusCode.ERROR);
-    });
-
-    // /dag show [...]
-    registry.register('dag', async (args, ctx) => {
+    public static async dag_handle(args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
         const usage: string = [
             'Usage: /dag show [--full] [--where] [--stale] [--compact] [--box] [--no-optional] [--manifest <id>]',
             'Aliases: dag show, dag, "show workflow", "show dag", "where am i in the workflow"',
@@ -293,13 +335,12 @@ export function register_defaultHandlers(registry: SystemCommandRegistry): void 
 
         const visualization: string = adapter.dag_render(ctx.vfs, ctx.sessionPath, renderOptions);
         return ctx.response_create(visualization, [], true, CalypsoStatusCode.OK);
-    });
+    }
 
-    // /help
-    registry.register('help', async (_args, ctx) => {
-        const verbs = registry.commands_list().map(v => `/${v}`).join(', ');
+    public static async help_handle(_args: string[], ctx: SystemCommandContext): Promise<CalypsoResponse> {
+        const verbs = Object.values(SystemCommand).map(v => `/${v}`).join(', ');
         return ctx.response_create(`SYSTEM COMMANDS:\n  ${verbs}\n\nType a command or ask a question.`, [], true, CalypsoStatusCode.OK);
-    });
+    }
 }
 
 /**
