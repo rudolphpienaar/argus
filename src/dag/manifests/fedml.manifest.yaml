@@ -412,6 +412,7 @@ stages:
       - Resolving participant endpoints and secure handshakes.
       - Pushing OCI image to site-local compute clusters.
       - Triggering federated training job across the network.
+      - "[ACTION: training_launch]"
     instruction: >
       Your application is being dispatched to the federation network.
       Select target sites or accept the default (all sites with matching
@@ -420,7 +421,7 @@ stages:
     commands:
       - dispatch
       - dispatch --sites <site1,site2>
-    handler: federate-dispatch
+    handler: federation-simulator
 
   - id: federate-execute
     name: Federated Training Execution

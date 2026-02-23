@@ -1,111 +1,125 @@
 /**
- * @file Process Federation Phases
- *
- * Time-based UI phase execution for build, distribution, and handshake.
- *
+ * @file Process Federation Observer
+ * 
+ * Passive telemetry listener for federation simulation events.
+ * Updates the LCARS overlay DOM based on plugin-emitted telemetry.
+ * 
  * @module core/stages/process/federation/phases
  */
 
-import type { LCARSTerminal } from '../../../../ui/components/Terminal.js';
-import type { TrustedDomainNode } from '../../../models/types.js';
+import { events, Events } from '../../../state/events.js';
+import type { TelemetryEvent } from '../../../../lcarslm/types.js';
+import type { FederationElements } from './elements.js';
 
 /**
- * Run build-phase status stream and progress updates.
+ * Orchestrator for reflecting federation telemetry onto the UI.
  */
-export function federationBuild_run(
-    terminal: LCARSTerminal | null,
-    factoryIcon: Element | null,
-    statusText: HTMLElement,
-    progressBar: HTMLElement,
-): void {
-    factoryIcon?.classList.add('building');
+export class FederationObserver {
+    private unsubscribe: (() => void) | null = null;
 
-    const buildSteps: readonly BuildStep[] = [
-        { msg: 'Resolving dependencies...', time: 500 },
-        { msg: 'Pulling base image: meridian/python:3.11-cuda11.8...', time: 1200 },
-        { msg: 'Compiling model architecture (ResNet50)...', time: 2000 },
-        { msg: 'Wrapping application logic...', time: 2800 },
-        { msg: 'Generating cryptographic signatures...', time: 3500 },
-        { msg: 'Building MERIDIAN container: chest-xray-v1:latest...', time: 4200 },
-        { msg: 'Pushing to internal registry...', time: 5000 },
-        { msg: 'BUILD COMPLETE. Digest: sha256:7f8a...', time: 5500 },
-    ];
+    constructor(
+        private readonly elements: FederationElements,
+        private readonly onComplete: () => void
+    ) {}
 
-    buildSteps.forEach((step: BuildStep): void => {
-        window.setTimeout((): void => {
-            terminal?.println(`> ${step.msg}`);
-            const progress: number = (step.time / 6000) * 50;
-            progressBar.style.width = `${progress}%`;
-            statusText.textContent = `FACTORY: ${step.msg.toUpperCase()}`;
-        }, step.time);
-    });
-}
-
-/**
- * Run distribution phase animations and terminal receipts.
- */
-export function federationDistribution_run(
-    terminal: LCARSTerminal | null,
-    factoryIcon: Element | null,
-    nodes: TrustedDomainNode[],
-    statusText: HTMLElement,
-): void {
-    window.setTimeout((): void => {
-        factoryIcon?.classList.remove('building');
-        statusText.textContent = 'DISPATCHING PAYLOADS TO TRUSTED DOMAINS...';
-        terminal?.println('\u25CF INITIATING SECURE DISTRIBUTION WAVE...');
-
-        nodes.forEach((node: TrustedDomainNode, index: number): void => {
-            window.setTimeout((): void => {
-                const line: HTMLElement | null = document.getElementById(`fed-line-${index}`);
-                if (line) {
-                    line.style.strokeDashoffset = '0';
-                }
-            }, index * 300);
-
-            window.setTimeout((): void => {
-                const nodeIcon: HTMLElement | null = document.getElementById(`node-icon-${index}`);
-                if (!nodeIcon) {
-                    return;
-                }
-                nodeIcon.classList.add('received');
-                terminal?.println(`\u25CB [${node.name}] >> PAYLOAD RECEIVED. VERIFIED.`);
-            }, 1000 + (index * 300));
+    /**
+     * Start observing telemetry events.
+     */
+    public start(): void {
+        this.unsubscribe = events.on(Events.TELEMETRY_EMITTED, (event: TelemetryEvent) => {
+            this.telemetry_handle(event);
         });
-    }, 6000);
-}
+    }
 
-/**
- * Schedule handshake completion and invoke completion callback.
- */
-export function federationHandshake_schedule(options: HandshakeOptions): void {
-    const handshakeDelay: number = 6000 + (options.nodes.length * 600) + 1000;
+    /**
+     * Stop observing telemetry.
+     */
+    public stop(): void {
+        this.unsubscribe?.();
+        this.unsubscribe = null;
+    }
 
-    window.setTimeout((): void => {
-        options.statusText.textContent = 'ALL NODES READY. STARTING FEDERATED SESSION.';
-        options.progressBar.style.width = '100%';
-        options.terminal?.println('\u25CF NETWORK SYNCHRONIZED. HANDING OFF TO MONITOR.');
+    /**
+     * Dispatch telemetry events to UI update methods.
+     */
+    private telemetry_handle(event: TelemetryEvent): void {
+        switch (event.type) {
+            case 'status':
+                this.status_update(event.message);
+                break;
+            case 'progress':
+                this.progress_update(event.percent);
+                break;
+            case 'phase_start':
+                this.phase_handle(event.name);
+                break;
+        }
+    }
 
+    /**
+     * Update the status text in the factory panel.
+     */
+    private status_update(message: string): void {
+        if (message.startsWith('FACTORY:')) {
+            this.elements.factoryIcon?.classList.add('building');
+        }
+        this.elements.statusText.textContent = message.toUpperCase();
+    }
+
+    /**
+     * Update the LCARS progress bar width.
+     */
+    private progress_update(percent: number): void {
+        this.elements.progressBar.style.width = `${percent}%`;
+    }
+
+    /**
+     * Handle phase-specific UI triggers (e.g. node received).
+     */
+    private phase_handle(phaseId: string): void {
+        // v10.4: Handle per-node received animations
+        if (phaseId.startsWith('fed_node_received:')) {
+            this.elements.factoryIcon?.classList.remove('building');
+            const index = parseInt(phaseId.split(':')[1], 10);
+            this.node_markReceived(index);
+        }
+
+        // Final completion trigger from plugin
+        if (phaseId === 'federation_complete') {
+            this.complete();
+        }
+    }
+
+    /**
+     * Trigger node-received animations on the map.
+     */
+    private node_markReceived(index: number): void {
+        const line: HTMLElement | null = document.getElementById(`fed-line-${index}`);
+        if (line) {
+            line.style.strokeDashoffset = '0';
+        }
+
+        const nodeIcon: HTMLElement | null = document.getElementById(`node-icon-${index}`);
+        if (nodeIcon) {
+            nodeIcon.classList.add('received');
+        }
+    }
+
+    /**
+     * Cleanup and trigger completion callback.
+     */
+    private complete(): void {
+        this.stop();
         window.setTimeout((): void => {
-            options.overlay.classList.add('hidden');
-            options.onComplete();
+            this.elements.overlay.classList.add('hidden');
+            this.onComplete();
         }, 2000);
-    }, handshakeDelay);
-}
-
-interface BuildStep {
-    msg: string;
-    time: number;
+    }
 }
 
 /**
- * Handshake scheduling dependencies.
+ * Handshake scheduling dependencies (retained for backward compatibility if needed).
  */
 export interface HandshakeOptions {
-    terminal: LCARSTerminal | null;
-    nodes: TrustedDomainNode[];
-    overlay: HTMLElement;
-    statusText: HTMLElement;
-    progressBar: HTMLElement;
     onComplete: () => void;
 }

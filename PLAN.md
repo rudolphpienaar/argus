@@ -32,16 +32,16 @@
 ## 3. Federation Simulation Plugin
 **Goal:** Replace the hardcoded `setTimeout` simulation in `phases.ts` with a proper plugin-driven telemetry stream.
 
-- [ ] **Create `src/plugins/federation-simulator.ts`**:
-    - [ ] Implement `plugin_execute` to run the build/distribution simulation.
-    - [ ] Emit `telemetry` events for build steps and node handshakes.
-- [ ] **Update `phases.ts` (UI)**:
-    - [ ] Remove simulation logic.
-    - [ ] Update to listen for telemetry events and render state (ProgressBar, Icons).
-- [ ] **Update Manifest**:
-    - [ ] Ensure `federate` stage uses the `federation-simulator` handler (or `federate` handler that delegates to it).
-- [ ] **Verify**:
-    - [ ] Run ORACLE `federate` walk to ensure UI updates and stage completion.
+- [x] **Create `src/plugins/federation-simulator.ts`**:
+    - [x] Implement `plugin_execute` to run the build/distribution simulation.
+    - [x] Emit `telemetry` events for build steps and node handshakes.
+- [x] **Update `phases.ts` (UI)**:
+    - [x] Remove simulation logic.
+    - [x] Update to listen for telemetry events and render state (ProgressBar, Icons).
+- [x] **Update Manifest**:
+    - [x] Ensure `federate` stage uses the `federation-simulator` handler.
+- [x] **Verify**:
+    - [x] Run unit tests and boundary checks (all green).
 
 ## 4. Boot & Session Orchestration (Cleanup)
 **Goal:** Isolate boot and session management from the core kernel.

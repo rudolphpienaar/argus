@@ -18,11 +18,7 @@ import {
     federationNodes_render,
     type FederationElements,
 } from './elements.js';
-import {
-    federationBuild_run,
-    federationDistribution_run,
-    federationHandshake_schedule,
-} from './phases.js';
+import { FederationObserver } from './phases.js';
 
 /**
  * Launch federated training from Process stage.
@@ -56,17 +52,11 @@ function federationSequence_run(): void {
 
     federationOverlay_initialize(elements, terminal);
     federationNodes_render(nodes, elements.spokesContainer);
-    federationBuild_run(terminal, elements.factoryIcon, elements.statusText, elements.progressBar);
-    federationDistribution_run(terminal, elements.factoryIcon, nodes, elements.statusText);
 
-    federationHandshake_schedule({
-        terminal,
-        nodes,
-        overlay: elements.overlay,
-        statusText: elements.statusText,
-        progressBar: elements.progressBar,
-        onComplete: federationCompletion_finalize,
-    });
+    // v10.4: The UI is now a passive observer. It listens for telemetry
+    // emitted by the federation-simulator plugin and updates the DOM.
+    const observer = new FederationObserver(elements, federationCompletion_finalize);
+    observer.start();
 }
 
 /**
