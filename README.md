@@ -198,21 +198,13 @@ ARGUS builds on established ideas in tool-using and agentic AI, but combines the
 - **ChRIS Intent-Action Service (IAS):** architectural proposal for bridging declarative hypermedia APIs and procedural client workflows through an external intent-action layer. CALYPSO's routing chain is a concrete instantiation of this principle at the UI layer.
   https://github.com/FNNDSC/intent-server
 
-### Landscape
+### Positioning and Landscape Analysis
 
-- **ReAct (Yao et al., 2022):** interleaves reasoning and actions in environment loops.
-  https://arxiv.org/abs/2210.03629
-- **Toolformer (Schick et al., 2023):** model-directed tool/API usage during generation.  
-  https://arxiv.org/abs/2302.04761
-- **SWE-agent (2024):** agent-computer interface for autonomous software task execution.  
-  https://arxiv.org/abs/2405.15793
-- **OpenHands:** open-source software agent platform with terminal/tool integration.  
-  https://github.com/OpenHands/OpenHands
-- **LangGraph:** stateful orchestration for long-running agent workflows.  
-  https://github.com/langchain-ai/langgraph
-- **OpenAI function calling (strict schema):** structured, deterministic tool invocation contracts.  
-  https://platform.openai.com/docs/guides/function-calling
-- **Model Context Protocol (MCP):** open protocol for standardized model-tool/context integration.  
-  https://github.com/modelcontextprotocol/modelcontextprotocol
+ARGUS sits at the intersection of three fields that rarely converge: **Formal Provenance** (Scientific Computing), **Operating System Design** (Microkernels), and **LLM Orchestration** (Agentic AI).
+
+- **Linguistic Compiler vs. Autonomous Agent:** Unlike Auto-GPT or SWE-agent, ARGUS does not give the LLM direct agency. It uses the LLM as a **Semantic Compiler** that maps noisy natural language to a strictly-typed protocol (Manifest).
+- **Conversational Provenance:** ARGUS is the evolutionary descendant of scientific batch engines like **Galaxy** or **Nextflow**. It brings their rigor (DAGs, physical materialization) to an interactive, assistant-mediated interface.
+- **The "Intent-Action" Kernel:** By providing a high-integrity substrate, ARGUS functions as the "Operating System" for protocols like Anthropic's **Model Context Protocol (MCP)**, providing hardware-level grounding that purely probabilistic frameworks (LangGraph, AutoGen) lack.
+- **Hardware-Enforced Honesty:** The unique "moat" of ARGUS is the **Merkle-DAG Link**. The AI cannot hallucinate progress because the Kernel only recognizes state changes "witnessed" as physical artifacts on the virtual disk.
 
 ARGUS is differentiating less by inventing a single new primitive and more by enforcing a strict combination: CALYPSO-centered interaction, deterministic intent-action execution, and artifact-proven workflow state.

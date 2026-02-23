@@ -148,6 +148,14 @@ Honest architecture documentation acknowledges what remains unresolved:
 
 **Offline and degraded-mode operation.** If the LLM backend is unavailable, CALYPSO's deterministic layers (shell commands, workflow dispatch, intent resolution) continue to work, but guidance and explanation degrade. The current architecture does not have a formal degraded-mode specification.
 
+== Architectural Lineage
+
+While ARGUS addresses modern AI safety, its technical roots extend to earlier paradigms of deterministic computing:
+
+- **Lisp Machines (Symbolics):** ARGUS echoes the "Integrated Environment" philosophy where the distinction between application and operating system is dissolved. In ARGUS, Natural Language replaces Lisp as the primary interface, and the Merkle-VFS replaces memory as the reactive state.
+- **Urbit:** ARGUS shares the "Principled NIH" approach, rejecting modern framework bloat (React/Redux) to build a purely functional, content-addressed system where state is a deterministic log of events.
+- **Galaxy/Nextflow:** From scientific computing, ARGUS inherits the "Path-as-Proof" doctrine, ensuring that every research finding is inextricably linked to its computational lineage.
+
 == Further Reading
 
 For the mathematical proof that agentic orchestration carries irreducible hallucination risk and why ARGUS's architecture is the necessary consequence, see `docs/agentic-safety.adoc`.
