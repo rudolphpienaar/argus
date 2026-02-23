@@ -2,158 +2,168 @@
 
 ## Abstract
 
-This context log captures the hardening period that closed the gap between the
-v10 architectural intent and the v10 runtime reality. The central pressure was
-not feature incompleteness. The pressure was semantic drift: workflow control
-decisions were still partly implicit while provenance contracts required every
-decision to be physically materialized.
+This handoff log captures the transition from late-v10 hardening into the
+`v11.0.0` contract-lock baseline. The critical theme is not incremental feature
+addition. The critical theme is contract consolidation: startup telemetry,
+manifest topology, provenance path semantics, shell interaction, and DAG
+visualization now operate under explicit, test-enforced rules.
 
-The entries below document the migration from partial state grounding to full
-data-state semantics. The outcome is a stricter model in which backend runtime
-stays production-pure, plugin compute owns optional simulation latency, and DAG
-control transitions are represented as artifacts rather than controller
-assumptions.
+The goal of this document is zero-shot continuity for the next agent. A new
+maintainer should be able to reconstruct why recent churn occurred, what was
+fixed, what contracts are now authoritative, where edge risk still exists, and
+how to validate the system without tribal context.
 
-## 2026-02-19 to 2026-02-20: Hardening Sequence
+## Current Release Snapshot
 
-During this window, ARGUS moved from a transitional session model to
-project-relative provenance. Session and Merkle paths are now resolved under the
-active project tree at `/home/${user}/projects/${projectName}/data/`, which
-eliminates the legacy split between transient session logs and project payload
-reality. This shift made provenance a physical property of the project itself,
-and forced path consumers to realign around project identity changes such as the
-`DRAFT` to named-project rename transition.
+- Version: `11.0.0`
+- Head commit: `df2c11a`
+- Branch: `main` (pushed to `origin/main`)
+- Date of cut: 2026-02-23
 
-At the same time, command interpretation was constrained to stage-valid verbs by
-default through strict contextual resolution in `WorkflowSession`. The immediate
-goal was to stop conversational spillover where generic confirmations or cross-
-stage language could be interpreted as workflow mutations in the wrong phase.
-This stage lock was necessary, but it exposed deeper gaps in control-flow
-materialization, which surfaced in oracle hangs.
+This major bump is SemVer-justified by contract-surface change:
 
-## Reflexive Verification Contract
+1. FEDML branch/join topology changed to readiness-first convergence.
+2. Boot/login behavior moved to a phase/sequence telemetry contract.
+3. Session/provenance and viewport behaviors were formalized and documented.
+4. DAG rendering introduced a new modular visualizer path with bounded fallback.
 
-Verification was re-grounded around plugin self-reporting. Instead of hardcoding
-expected artifact paths in test logic, plugins now report `materialized` paths
-that are embedded in Merkle envelopes and re-checked by ORACLE. This move
-aligned runtime and verification contracts: the same code path that produces side
-effects now declares them, and the runner validates those declarations against
-the virtual filesystem.
+## What Changed Since v10.3.2
 
-The result is a stronger claim than conversational correctness. A step is only
-accepted when the protocol status and filesystem evidence agree.
+### 1) Boot/Login Contract Repair
 
-## Instability Window and Failure Catalysts
+The prior user-visible failure was long startup delay with weak progress
+visibility, especially around connection/login boundaries. Investigation showed
+that milestone data existed but rendering semantics were not contract-tight:
+subscription timing, prompt redraw interleaving, and transport ordering produced
+missing or bursty boot lines.
 
-Hardening produced a short instability period with several interacting defects.
-Merkle branching logic produced redundant `_BRANCH_` path growth when equivalent
-stage states were represented by non-normalized artifact payloads. Pronoun
-grounding order also caused lexical collisions, where command arguments could be
-misread as referents. In parallel, simulated delay combined with resolver stalls
-inflated runtime variance and pushed oracle scenarios over timeout thresholds.
+Resolution:
 
-The most important failure, however, was recursive rename dispatch after gather
-completion. That defect was not a simple parser bug. It was a contract hole in
-how optional parents were represented at JOIN boundaries.
+- Introduced explicit boot phases (`login_boot`, `workflow_boot`) and ordered
+  `boot_log` milestones with monotonic `seq`.
+- Added dedicated timeline handling (`BootTimeline`) and phase lifecycle logic.
+- Enforced hard-failure semantics on boot failure during login.
+- Added/updated tests around boot telemetry ordering and failure behavior.
+- Documented protocol in `docs/boot-contract.adoc` and analysis in
+  `docs/boot-login.adoc`.
 
-## Infinite Loop Diagnosis
+### 2) FEDML Topology Shift to Readiness-First
 
-The failing path appeared in rename-containing oracle walks after gather
-materialization. The command entered deterministic workflow handling, strict stage
-resolution rejected the verb in the current stage context, and dispatch
-incorrectly fell through to conversational compilation. The model emitted an
-action frame that reissued rename, creating a fresh top-level command loop.
+The previous branch narrative around rename-centric optional behavior was
+scientifically weak for ML execution quality. The high-value gate is
+feasibility/readiness immediately after `gather`.
 
-```text
-rename command -> strict stage reject -> silent conversational fallback
--> [ACTION: RENAME ...] -> command executor -> rename command (again)
-```
+Current FEDML topology between gather and harmonize:
 
-Watchdog protection did not terminate this cycle because each iteration was a new
-top-level dispatch rather than a single long-lived plugin call.
+- `gather -> ml-readiness`
+- `ml-readiness -> collect` (optional reorganization branch)
+- `ml-readiness -> join_gather_collect` (direct branch)
+- `collect -> join_gather_collect`
+- `join_gather_collect -> pre_harmonize -> harmonize`
 
-## Architectural Root Cause
+Manifest source: `src/dag/manifests/fedml.manifest.yaml`
 
-The deeper cause was incomplete data-state semantics at DAG JOINs. Optional
-control decisions were encoded as resolver alias logic rather than
-as artifacts. That allowed the system to treat an optional stage as implicitly
-resolved without writing evidence. Later, when language requested explicit action
-for that optional stage, runtime had no materialized decision record to consult.
-The controller therefore oscillated between incompatible interpretations.
+### 3) Gather Semantics and Dataset Materialization
 
-## JOIN-as-State Resolution
+`gather` no longer repacks cohorts into assumed training/validation structures.
+It materializes selected cohort payloads as-is and leaves objective-specific
+reorganization to optional downstream stages (for example `collect`).
 
-The corrective model treats JOIN resolution as a first-class data state. Optional
-parents are resolved explicitly either by execution artifacts or by decline
-artifacts, and advancement occurs only after those states are materialized. In
-the current implementation this is represented by skip sentinels written as
-standard artifacts, allowing the position resolver to advance through the same
-artifact evidence path used by normal stage completion.
+This reduces hidden assumptions and keeps gather as acquisition/provenance,
+not training-shape enforcement.
 
-This removed the need for alias completion semantics and eliminated the recursion
-surface that caused rename loops.
+### 4) New Plugin Surface for the Readiness Pipeline
 
-## Implemented Runtime Changes
+New/active stage handlers include:
 
-The implemented hardening pass removed stage-alias completion from the
-FedML manifest lineage, eliminated stage-alias fingerprint resolution in adapter
-logic, and routed strict-lock workflow misses through manifest-global workflow
-dispatch rather than LLM fallback. `WorkflowSession.verify_fast()` was also
-corrected to detect self-completed stages and force advancement, which closed
-stalled-pointer behavior observed in federation execution transitions.
+- `src/plugins/ml-readiness.ts`
+- `src/plugins/collect.ts`
+- `src/plugins/topological-join.ts`
+- `src/plugins/pre-harmonize.ts`
+- `src/plugins/workspace-commit.ts`
 
-Session realignment now propagates path updates into store state so status and
-position providers remain synchronized after project renames. Backend synthetic
-latency paths were removed, leaving delay ownership entirely in plugins and
-controlled for tests through `CALYPSO_FAST=true`.
+These form the causal bridge from post-gather evidence to harmonize ingress.
 
-## 2026-02-21: Release Closure and Operator Handoff (v10.3.2)
+### 5) DAG CLI and Visualizer Evolution
 
-With runtime hardening complete, the remaining risk surface moved from execution
-semantics to operator ambiguity. The system could execute correctly, but
-handoff/debug loops still required reconstructing stage materialization paths
-from source. The `v10.3.2` cut closes that gap by publishing a single
-code-current FEDML pipeline map and aligning release chronology to that map.
+`dag show` gained deterministic routing and user-facing modes, including
+`dag show --box`.
 
-This release is intentionally a closure patch, not a behavior branch. Host/Guest
-contracts remain unchanged relative to late `v10.3.1` stabilization: backend
-paths stay simulation-free, plugin compute owns optional delay, and verification
-continues to assert on physical artifacts instead of conversational output.
+Important incident and fix:
 
-## Handoff Anchors
+- Initial Graphviz integration could hang under test/runtime conditions when
+  `dot` was fed via stdin synchronously.
+- Renderer was hardened by moving Graphviz execution into a localized module
+  (`src/dag/visualizer/graphvizBox.ts`) with bounded execution and fallback.
+- Invocation now uses a temp `.dot` file path and explicit fallback rendering.
+- Tests added at `src/dag/visualizer/graphvizBox.test.ts`.
 
-The following files now define the operational handoff baseline and should be
-treated as canonical entry points for new maintainers:
+### 6) Shell and QoL Contracts
 
-1. `FEDML.md` — stage-by-stage FEDML execution map with explicit end-state
-   trees for renamed and non-renamed project trajectories, plus `~/searches`
-   snapshot examples.
-2. `docs/release-v10.3.2.md` — release narrative for documentation closure and
-   path-contract clarification.
-3. `docs/history.adoc` — historical chronology updated through `v10.3.2`.
-4. `docs/CURRENT.md` — active status framing for post-cut operations.
+- Restored/fixed tab completion behavior for builtins and paths.
+- `ls` wildcard handling corrected for patterns like `ls IMG*`.
+- Added GNU-style `wc` builtin (`src/vfs/commands/wc.ts`).
+- Added user-scoped settings service and `/settings` integration.
+- Added conversational-width control (`convo_width`) and propagated width hints
+  to rendering paths.
 
-## Verification Snapshot at Handoff
+## v11.0.0 Baseline Contracts (Authoritative)
 
-At release cut, validation was rerun from the updated `10.3.2` version line.
-Both quality gates passed without regression:
+1. Workflow truth is manifest topology plus materialized artifact evidence.
+2. Optional control decisions are represented by artifacts/sentinels, not
+   controller folklore.
+3. Boot phases are protocolized telemetry sequences with deterministic prompt
+   gating.
+4. Gather is acquisition/provenance, not implicit ML task reorganization.
+5. Readiness and optional collection are distinct, explicit stage semantics.
+6. DAG visualization is non-authoritative UX: it must never block runtime
+   progression; fallback behavior is required.
+7. User preference state is scoped per user and surfaced through settings APIs.
+
+## Canonical Handoff Anchors
+
+Read these first in order:
+
+1. `docs/history.adoc` (now updated through `v11.0.0`)
+2. `FEDML.md` (current FEDML DAG and tree contract)
+3. `docs/dag-engine.adoc` (manifest/DAG execution semantics)
+4. `docs/boot-contract.adoc` and `docs/boot-login.adoc` (startup protocol)
+5. `docs/devexperience.adoc` (session/provenance + viewport model)
+6. `src/dag/manifests/fedml.manifest.yaml` (single source for stage topology)
+
+## Validation Snapshot at v11 Cut
+
+Quality gates at release cut:
 
 ```text
-npm test                         -> 370/370 tests passing
+npm test                         -> 415/415 passing
 node scripts/oracle-runner.mjs  -> 9/9 scenarios passing
 ```
 
-The release commit and tag are both published:
+Both suites are currently expected to pass on `main` at `df2c11a`.
 
-```text
-commit: 19507d7
-tag:    v10.3.2
-branch: main (pushed to origin)
-```
+## Known Residual Risk / Work Queue
 
-## Current Posture
+1. Some docs still intentionally preserve historical `v10.x` framing in their
+   own revision metadata; this is not runtime debt but can create reader
+   ambiguity if consumed out of order.
+2. ORACLE scenario labels still include legacy naming strings (for example
+   "v10 Protocol Verification") even though runtime is now `v11.0.0`.
+3. DAG box output quality depends on local Graphviz availability/version;
+   fallback is safe but less expressive.
+4. Boot telemetry now has strict contract framing, but additional fine-grained
+   substep telemetry can still be expanded in selected high-latency pathways.
 
-The v10 line is now in a stable pre-v11 handoff state. The principal debt class
-that remains is contract formalization, not runtime firefighting: codify and
-freeze the Host/Guest boundary surface for `v11.0`, using the `v10.3.2`
-documentation baseline as the operator truth source.
+## Zero-Shot Next-Agent Checklist
+
+1. Confirm working tree and branch: `git status`, `git log -1 --oneline`.
+2. Re-run gates before any behavioral change: `npm test` and
+   `node scripts/oracle-runner.mjs`.
+3. When touching workflow behavior, update all three together:
+   - manifest (`src/dag/manifests/*.manifest.yaml`)
+   - tests (`src/dag/bridge/bridge.test.ts`, relevant core tests)
+   - docs (`FEDML.md`, `docs/dag-engine.adoc`, `docs/history.adoc`)
+4. Preserve gather contract: no implicit dataset repacking in gather.
+5. Preserve boot contract: phase-ordered telemetry and deterministic failure.
+6. Preserve non-blocking DAG visualization behavior (never let rendering stall
+   command execution/tests).

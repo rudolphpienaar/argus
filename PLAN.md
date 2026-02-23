@@ -1,6 +1,65 @@
-# ARGUS Project Plan & Handoff Manifest
+# ARGUS Engineering Plan: The IAS Purity Refactor
 
-## Current Architectural Status (v12.0 "No-Magic")
+**Objective:** Transform `CalypsoCore` into a pure, domain-agnostic execution kernel and dissolve the `FederationOrchestrator` pattern. The system must adhere strictly to the **Intent-Action-State (IAS)** architecture, where the core logic resides in **Plugins** and **Manifests**, not the kernel.
+
+## 1. IntentParser & Compound Commands
+**Goal:** Enable `IntentParser` to resolve multi-word commands (e.g., `python train.py`, `show container`) from the manifest without kernel hacks.
+
+- [x] **Update `IntentParser.ts`**:
+    - [x] Modify `deterministicIntent_resolve` to match exact multi-word phrases from `WorkflowAdapter.declaredCommands`.
+    - [x] Remove the single-word regex restriction in `workflowCommands_resolve`.
+- [x] **Verify**:
+    - [x] Add unit test case for `python train.py` resolution.
+    - [x] Ensure existing single-word commands still resolve correctly.
+
+## 2. Purge Domain Logic from CalypsoCore
+**Goal:** Remove hardcoded command handling (the `python` hack) and "God Object" responsibilities from `CalypsoCore.ts`.
+
+- [x] **Refactor `CalypsoCore.ts`**:
+    - [x] Remove `shell_handle` special case for `python`.
+    - [x] Verify `train` plugin executes `python` via shell and handles artifact materialization.
+- [ ] **Extract System Commands**:
+    - [ ] Create `src/lcarslm/routing/SystemCommandRegistry.ts`.
+    - [ ] Move `/reset`, `/state`, `/snapshot`, `/version`, `/key`, `/session` handlers to the registry.
+    - [ ] Update `CalypsoCore` to delegate to this registry.
+- [ ] **Extract Guidance & Confirmation**:
+    - [ ] Move `guidance_handle` and `confirmation_dispatch` to `src/lcarslm/routing/WorkflowController.ts`.
+- [x] **Verify**:
+    - [x] Run ORACLE `train` walk to ensure `python train.py` still completes the stage and produces artifacts.
+
+## 3. Federation Simulation Plugin
+**Goal:** Replace the hardcoded `setTimeout` simulation in `phases.ts` with a proper plugin-driven telemetry stream.
+
+- [ ] **Create `src/plugins/federation-simulator.ts`**:
+    - [ ] Implement `plugin_execute` to run the build/distribution simulation.
+    - [ ] Emit `telemetry` events for build steps and node handshakes.
+- [ ] **Update `phases.ts` (UI)**:
+    - [ ] Remove simulation logic.
+    - [ ] Update to listen for telemetry events and render state (ProgressBar, Icons).
+- [ ] **Update Manifest**:
+    - [ ] Ensure `federate` stage uses the `federation-simulator` handler (or `federate` handler that delegates to it).
+- [ ] **Verify**:
+    - [ ] Run ORACLE `federate` walk to ensure UI updates and stage completion.
+
+## 4. Boot & Session Orchestration (Cleanup)
+**Goal:** Isolate boot and session management from the core kernel.
+
+- [ ] **Create `src/lcarslm/BootOrchestrator.ts`**:
+    - [ ] Move `boot()` and `workflow_set()` logic.
+- [ ] **Create `src/lcarslm/SessionManager.ts`**:
+    - [ ] Move `session_realign()` and related session logic.
+
+---
+
+## Validation Strategy
+- **ORACLE Suites:** Run `make test-oracle` after each major refactor step.
+- **Strict Typing:** Ensure no `any` types are introduced during refactoring.
+- **Boundary Checks:** Run `npm run check:boundaries` to ensure plugins do not import core logic.
+
+---
+
+## Previous Context (v12.0 "No-Magic")
+*Retained for reference regarding Viewport/Shell behavior.*
 
 ### 1. Causal Provenance & Viewport Portal
 - **Topology:** Full migration to a manifest-driven, session-based DAG. All physical work occurs in `~/projects/<persona>/<sessionId>/provenance/<topology>/output/`.
@@ -13,28 +72,3 @@
 - **Incremental Ledger:** `search.json` maintains a cumulative record of all queries in the session.
 - **Flat Gather:** The `gather` plugin materializes datasets into dedicated subdirectories named after their IDs (e.g., `gather/ds-001/`), preserving native data structures.
 - **No-Magic Materialization:** `gather` derives its work strictly from the physical `add-*.json` files in its input directory, ignoring the application Store.
-
----
-
-## The Fundamental Failure: Boot Telemetry Handshake
-
-Despite multiple refactoring passes, the **Initial System Boot Sequence** remains invisible or incorrectly sequenced in the CLI REPL.
-
-### Technical Discrepancies:
-1. **The Race Condition:** The `sys_*` milestones (Genesis, Merkle Calibration) are emitted during the initial connection/login phase. While the server is configured to `await calypso.boot()`, the CLI REPL often fails to render these events, or they arrive in a single "burst" after the handshake is already complete.
-2. **Phase Bifurcation:** The `user_*` milestones (Manifest Load, VFS Scaffolding) correctly appear *after* persona selection, confirming that the telemetry bus is functional but the timing of the initial connection is still misaligned.
-3. **CLI Rendering Conflict:** The interaction between Node.js `readline`, the cursor-overwrite logic, and the WebSocket stream has proved brittle. In-place status replacement works for the second phase but often stalls or clobbers the terminal during the first phase.
-
-### Known Issues & Regressions:
-- **Telemetry Silence:** System-level boot milestones are frequently missed by the CLI client.
-- **UI Latency:** The initial VFS scaffolding and Merkle walk cause a significant "cold start" delay that is not yet successfully masked by the informative boot sequence.
-- **Duplicate Logic:** Residual project-centric logic may still exist in older stages (Monitor/Post) that have not yet been refactored to the v12.0 "Flat Collection" model.
-
----
-
-## Handoff Directives
-
-1. **Stabilize Boot Sequence:** Resolve the race condition between the `CalypsoServer` boot-trigger and the `CalypsoRepl` telemetry subscription. Ensure `sys_genesis` is the first thing the user sees.
-2. **Validate DAG Continuity:** Verify that the `workspace-commit` and `topological-join` handlers correctly preserve the "Flat Collection" structure as the user moves into `harmonize` and `code`.
-3. **RPN Compliance:** Maintain the `object_method` naming convention and high-integrity JSDoc standards established in the v12.0 core.
-4. **Shell Consistency:** Ensure the `logicalPwd` in the Shell remains perfectly synced with the physical `cwd` in the VFS to prevent link-to-self recursion.

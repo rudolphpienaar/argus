@@ -146,27 +146,36 @@ export class IntentParser {
             };
         }
 
-        // Match exact workflow verbs
+        // Match exact workflow verbs or phrases
         const workflowVerbs: string[] = this.workflowCommands_resolve();
-        const firstWord: string = trimmed.split(/\s+/)[0];
-        if (workflowVerbs.includes(firstWord)) {
-            let args: string[] = trimmed.split(/\s+/).slice(1);
-            
-            // Special case for 'search for X' -> arg is X
-            if (firstWord === 'search' && args.length > 0 && args[0] === 'for') {
-                args = args.slice(1);
-            } else if (args.length > 0 && (args[0] === 'the' || args[0] === 'a')) {
-                // v10.1: Strip leading prepositions/filler from arguments (e.g. 'add the X')
-                args = args.slice(1);
-            }
+        const trimmedLower = trimmed.toLowerCase();
 
-            return {
-                type: 'workflow',
-                command: firstWord,
-                args: args,
-                raw: input,
-                isModelResolved: false
-            };
+        // 1. Try exact phrase match first (Longest Match First)
+        // Sort by length descending to ensure "show container" matches before "show"
+        const sortedVerbs = workflowVerbs.sort((a, b) => b.length - a.length);
+
+        for (const phrase of sortedVerbs) {
+            // Check if input matches phrase exactly or starts with "phrase "
+            if (trimmedLower === phrase || trimmedLower.startsWith(phrase + ' ')) {
+                const argsRaw = trimmed.slice(phrase.length).trim();
+                let args = argsRaw.length > 0 ? argsRaw.split(/\s+/) : [];
+
+                // Special case for 'search for X' -> arg is X (legacy support)
+                if (phrase === 'search' && args.length > 0 && args[0].toLowerCase() === 'for') {
+                    args = args.slice(1);
+                } else if (args.length > 0 && (args[0].toLowerCase() === 'the' || args[0].toLowerCase() === 'a')) {
+                    // v10.1: Strip leading prepositions/filler from arguments (e.g. 'add the X')
+                    args = args.slice(1);
+                }
+
+                return {
+                    type: 'workflow',
+                    command: phrase,
+                    args,
+                    raw: input,
+                    isModelResolved: false
+                };
+            }
         }
 
         return null;
@@ -489,7 +498,9 @@ export class IntentParser {
         const commandsRaw: string[] = this.workflowContext.commands_list();
         const commands: string[] = commandsRaw
             .map((cmd: string): string => cmd.trim().toLowerCase())
-            .filter((cmd: string): boolean => /^[a-z][a-z0-9_-]*$/.test(cmd));
+            // v10.4: Allow compound commands (e.g. "show container", "python train.py")
+            // Removed regex /^[a-z][a-z0-9_-]*$/ constraint.
+            .filter((cmd: string): boolean => cmd.length > 0);
 
         return Array.from(new Set(commands));
     }

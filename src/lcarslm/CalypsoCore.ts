@@ -681,19 +681,6 @@ export class CalypsoCore {
         const result = await this.shell.command_execute(input);
         if (result.exitCode === 127) return null;
 
-        if (result.exitCode === 0 && primary === 'python') {
-            const resolution = this.workflowSession.resolveCommand(input.trim());
-            if (resolution.stage) {
-                this.workflowAdapter.stage_complete(resolution.stage.id);
-                await this.merkleEngine.artifact_materialize(resolution.stage.id, {
-                    command: input.trim(),
-                    timestamp: new Date().toISOString(),
-                    result: true
-                });
-                const pos = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
-                if (pos.currentStage) this.workflowSession.advance_force(pos.currentStage.id);
-            }
-        }
         return this.response_create(
             result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout, 
             [], 
