@@ -14,6 +14,7 @@ import type { CalypsoIntent } from '../types.js';
  */
 export interface FastPathContext {
     workflowCommands_resolve: () => string[];
+    systemCommands_list: () => string[];
     workflowHandles_status: () => boolean;
 }
 
@@ -57,7 +58,7 @@ export class FastPathRouter {
         }
 
         // 3. System Commands (Special)
-        const systemVerbs = ['status', 'settings', 'workflows', 'version', 'reset', 'snapshot', 'state', 'session', 'help', 'key'];
+        const systemVerbs = ctx.systemCommands_list();
         const isSpecialPrefixed = trimmedLower.startsWith('/');
         const cleanVerb = isSpecialPrefixed ? trimmedLower.slice(1).split(/\s+/)[0] : trimmedLower.split(/\s+/)[0];
 

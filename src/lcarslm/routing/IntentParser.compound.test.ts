@@ -35,7 +35,8 @@ function parser_create(commands: string[]): IntentParser {
     return new IntentParser(searchProvider, storeActions_mock(), {
         activeStageId_get: () => 'train',
         stage_forCommand: (cmd) => ({ id: 'train', commands: ['python train.py', 'train'] }),
-        commands_list: () => commands
+        commands_list: () => commands,
+        systemCommands_list: () => ['status', 'settings', 'workflows', 'version', 'reset', 'snapshot', 'state', 'session', 'help', 'key']
     });
 }
 

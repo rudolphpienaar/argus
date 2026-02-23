@@ -135,10 +135,16 @@ export class CalypsoCore {
         
         const workflowSession = new WorkflowSession(this.vfs, workflowAdapter, sessionPath);
 
+        const systemCommands = new SystemCommandRegistry();
+        register_defaultHandlers(systemCommands);
+        
+        const workflowController = new WorkflowController();
+
         const intentParser = new IntentParser(searchProvider, this.storeActions, {
             activeStageId_get: () => workflowSession.activeStageId_get(),
             stage_forCommand: (cmd) => workflowAdapter.stage_forCommand(cmd),
-            commands_list: () => workflowAdapter.commandVerbs_list()
+            commands_list: () => workflowAdapter.commandVerbs_list(),
+            systemCommands_list: () => systemCommands.commands_list()
         });
 
         const pluginHost = new PluginHost(
@@ -158,11 +164,6 @@ export class CalypsoCore {
             workflowAdapter,
             (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd)
         );
-
-        const systemCommands = new SystemCommandRegistry();
-        register_defaultHandlers(systemCommands);
-        
-        const workflowController = new WorkflowController();
 
         const sessionManager = new SessionManager({
             vfs: this.vfs,

@@ -25,6 +25,7 @@ export class IntentParser {
             activeStageId_get: () => string | null;
             stage_forCommand: (cmd: string) => { id: string; commands: string[] } | null;
             commands_list?: () => string[];
+            systemCommands_list?: () => string[];
         }
     ) {
         this.fastPath = new FastPathRouter();
@@ -49,6 +50,7 @@ export class IntentParser {
         // 1. FAST PATH: Check for exact deterministic matches first.
         const deterministic = this.fastPath.intent_resolve(groundedInput, {
             workflowCommands_resolve: () => this.workflowCommands_resolve(),
+            systemCommands_list: () => this.workflowContext?.systemCommands_list?.() || [],
             workflowHandles_status: () => this.workflowHandles_status()
         });
         if (deterministic) {
