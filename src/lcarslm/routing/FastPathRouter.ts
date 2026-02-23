@@ -56,15 +56,26 @@ export class FastPathRouter {
             };
         }
 
-        // 3. Status
-        if (trimmedLower === '/status' || (trimmedLower === 'status' && !ctx.workflowHandles_status())) {
-            return {
-                type: 'special',
-                command: 'status',
-                args: [],
-                raw: input,
-                isModelResolved: false
-            };
+        // 3. System Commands (Special)
+        const systemVerbs = ['status', 'settings', 'workflows', 'version', 'reset', 'snapshot', 'state', 'session', 'help', 'key'];
+        const isSpecialPrefixed = trimmedLower.startsWith('/');
+        const cleanVerb = isSpecialPrefixed ? trimmedLower.slice(1).split(/\s+/)[0] : trimmedLower.split(/\s+/)[0];
+
+        if (systemVerbs.includes(cleanVerb)) {
+            // Special case for 'status' which might be handled by workflow
+            if (cleanVerb === 'status' && !isSpecialPrefixed && ctx.workflowHandles_status()) {
+                // Let workflow handle it (continue to next phase)
+            } else {
+                const parts = (isSpecialPrefixed ? trimmedLower.slice(1) : trimmedLower).split(/\s+/);
+                const args = parts.slice(1);
+                return {
+                    type: 'special',
+                    command: cleanVerb,
+                    args,
+                    raw: input,
+                    isModelResolved: false
+                };
+            }
         }
 
         // 4. DAG/Manifest Visualization

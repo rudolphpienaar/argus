@@ -69,4 +69,14 @@ describe('IntentParser Compound Commands', () => {
         expect(intent.args).toEqual([]);
         expect(intent.isModelResolved).toBe(false);
     });
+
+    it('should resolve system commands to special intent', async () => {
+        const parser = parser_create([]);
+        const intent = await parser.intent_resolve('/settings show');
+
+        expect(intent.type).toBe('special');
+        expect(intent.command).toBe('settings');
+        expect(intent.args).toEqual(['show']);
+        expect(intent.isModelResolved).toBe(false);
+    });
 });
