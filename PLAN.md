@@ -46,10 +46,12 @@
 ## 4. Boot & Session Orchestration (Cleanup)
 **Goal:** Isolate boot and session management from the core kernel.
 
-- [ ] **Create `src/lcarslm/BootOrchestrator.ts`**:
-    - [ ] Move `boot()` and `workflow_set()` logic.
-- [ ] **Create `src/lcarslm/SessionManager.ts`**:
-    - [ ] Move `session_realign()` and related session logic.
+- [x] **Create `src/lcarslm/BootOrchestrator.ts`**:
+    - [x] Move `boot()` and `workflow_set()` logic.
+- [x] **Create `src/lcarslm/SessionManager.ts`**:
+    - [x] Move `session_realign()` and related session logic.
+- [x] **Verify**:
+    - [x] Run unit tests (all green).
 
 ---
 

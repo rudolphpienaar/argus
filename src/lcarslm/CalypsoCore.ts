@@ -47,6 +47,8 @@ import { CalypsoPresenter } from './CalypsoPresenter.js';
 import { SettingsService } from '../config/settings.js';
 import { SystemCommandRegistry, register_defaultHandlers } from './routing/SystemCommandRegistry.js';
 import { WorkflowController } from './routing/WorkflowController.js';
+import { SessionManager } from './SessionManager.js';
+import { BootOrchestrator } from './BootOrchestrator.js';
 
 interface ParsedCommandInput {
     trimmed: string;
@@ -80,10 +82,8 @@ export class CalypsoCore {
     private settingsService: SettingsService;
     private systemCommands: SystemCommandRegistry;
     private workflowController: WorkflowController;
-    private bootSequenceByPhase: Record<BootPhase, number> = {
-        login_boot: 0,
-        workflow_boot: 0,
-    };
+    private sessionManager: SessionManager;
+    private bootOrchestrator: BootOrchestrator;
 
     constructor(
         private vfs: VirtualFileSystem,
@@ -97,6 +97,15 @@ export class CalypsoCore {
 
         this.telemetryBus = config.telemetryBus || new TelemetryBus();
         this.searchProvider = new SearchProvider(vfs, shell, storeActions);
+
+        this.sessionManager = new SessionManager({
+            vfs: this.vfs,
+            shell: this.shell,
+            storeActions: this.storeActions,
+            workflowSession: null as any, // Bootstrapping
+            merkleEngine: null as any,
+            pluginHost: null as any
+        });
 
         const workflowId: string = this.workflowId_resolve(config);
         this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
@@ -114,6 +123,7 @@ export class CalypsoCore {
         
         // v10.2: Physical Provenance - sessionPath is now project/provenance
         this.sessionPath = this.sessionPath_resolve(projectName);
+        this.sessionManager.session_init(this.sessionPath);
         
         this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
 
@@ -145,10 +155,27 @@ export class CalypsoCore {
             (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd),
         );
 
+        // Finalize managers with full context
+        (this.sessionManager as any).ctx.workflowSession = this.workflowSession;
+        (this.sessionManager as any).ctx.merkleEngine = this.merkleEngine;
+        (this.sessionManager as any).ctx.pluginHost = this.pluginHost;
+
         this.systemCommands = new SystemCommandRegistry();
         register_defaultHandlers(this.systemCommands);
 
         this.workflowController = new WorkflowController();
+
+        this.bootOrchestrator = new BootOrchestrator({
+            vfs: this.vfs,
+            shell: this.shell,
+            storeActions: this.storeActions,
+            workflowAdapter: this.workflowAdapter,
+            workflowSession: this.workflowSession,
+            telemetryBus: this.telemetryBus,
+            sessionManager: this.sessionManager,
+            adapter_update: (a) => { this.workflowAdapter = a; },
+            session_update: (s) => { this.workflowSession = s; }
+        });
     }
 
     // ─── Lifecycle & Boot ───────────────────────────────────────────────────
@@ -164,34 +191,7 @@ export class CalypsoCore {
      * animation to a single final-state flash.
      */
     public async boot(): Promise<void> {
-        try {
-            const username: string = this.username_resolve();
-            const yieldLoop = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 80));
-
-            // ── Genesis: sync DAG session state ─────────────────────────
-            await this.status_emit('sys_genesis', 'INITIATING ARGUS CORE GENESIS', 'WAIT');
-            await yieldLoop();
-            await this.workflowSession.sync();
-            await this.status_emit('sys_genesis', 'INITIATING ARGUS CORE GENESIS', 'OK');
-            await yieldLoop();
-
-            // ── VFS: verify home namespace is materialized ───────────────
-            await this.status_emit('sys_vfs', 'MOUNTING VIRTUAL FILE SYSTEM', 'WAIT');
-            await yieldLoop();
-            const homeNode = this.vfs.node_stat(`/home/${username}`);
-            await this.status_emit('sys_vfs', 'MOUNTING VIRTUAL FILE SYSTEM', homeNode ? 'OK' : 'FAIL');
-            await yieldLoop();
-
-            // ── Merkle: integrity engine ready ───────────────────────────
-            await this.status_emit('sys_merkle', 'CALIBRATING INTEGRITY ENGINE', 'WAIT');
-            await yieldLoop();
-            await this.status_emit('sys_merkle', 'CALIBRATING INTEGRITY ENGINE', 'OK');
-            await yieldLoop();
-
-            await this.status_emit('sys_ready', `SYSTEM READY FOR USER: ${username.toUpperCase()}`, 'DONE');
-        } catch (e: unknown) {
-            console.error('System boot failed:', e);
-        }
+        return await this.bootOrchestrator.boot();
     }
 
     /**
@@ -201,97 +201,12 @@ export class CalypsoCore {
      * @returns Success status.
      */
     public async workflow_set(workflowId: string | null): Promise<boolean> {
-        if (!workflowId) return false;
-        try {
-            const yieldLoop = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 80));
-            
-            this.storeActions.state_set({ currentPersona: workflowId } as any);
-            (this.storeActions as any).session_start?.();
-
-            const username: string = this.username_resolve();
-            const sessionId: string = this.storeActions.sessionId_get() || 'unknown';
-
-            // 1. MANIFEST
-            await this.status_emit('user_manifest', `LOADING PERSONA MANIFEST: ${workflowId.toUpperCase()}`, 'WAIT');
-            await yieldLoop();
-            try {
-                this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
-                await this.status_emit('user_manifest', `LOADING PERSONA MANIFEST: ${workflowId.toUpperCase()}`, 'OK');
-                await yieldLoop();
-            } catch (e: any) {
-                await this.status_emit('user_manifest', `MANIFEST LOAD FAILED: ${e.message}`, 'FAIL');
-                throw e;
-            }
-            
-            await this.session_realign();
-            
-            // 2. SESSION VFS
-            await this.status_emit('user_vfs', 'GENERATING SESSION DATA SPACE', 'WAIT');
-            await yieldLoop();
-            try {
-                const { sessionDir_scaffold } = await import('../vfs/providers/ProjectProvider.js');
-                sessionDir_scaffold(this.vfs, username, undefined, sessionId);
-                await this.status_emit('user_vfs', 'GENERATING SESSION DATA SPACE', 'OK');
-                await yieldLoop();
-            } catch (e: any) {
-                await this.status_emit('user_vfs', `VFS GENESIS FAILED: ${e.message}`, 'FAIL');
-                throw e;
-            }
-
-            // 3. VIEWPORT
-            await this.status_emit('user_viewport', 'ESTABLISHING CAUSAL VIEWPORT PORTAL', 'WAIT');
-            await yieldLoop();
-            try {
-                this.workflowSession = new WorkflowSession(this.vfs, this.workflowAdapter, this.sessionPath);
-                await this.workflowSession.sync();
-                await this.status_emit('user_viewport', 'ESTABLISHING CAUSAL VIEWPORT PORTAL', 'OK');
-                await yieldLoop();
-            } catch (e: any) {
-                await this.status_emit('user_viewport', `VIEWPORT SYNC FAILED: ${e.message}`, 'FAIL');
-                throw e;
-            }
-            
-            await this.status_emit('user_ready', `PERSONA [${workflowId.toUpperCase()}] ACTIVE`, 'DONE');
-            
-            return true;
-        } catch (e: unknown) {
-            console.error('Workflow set failed:', e);
-            return false;
-        }
+        return await this.bootOrchestrator.workflow_set(workflowId);
     }
 
     /**
      * Internal helper for standardized boot status telemetry.
      */
-    private async status_emit(
-        id: string,
-        message: string,
-        status: BootStatus | null = null,
-        phase?: BootPhase,
-    ): Promise<void> {
-        const resolvedPhase: BootPhase = phase ?? this.bootPhase_resolve(id);
-        this.bootSequenceByPhase[resolvedPhase] += 1;
-        this.telemetryBus.emit({ 
-            type: 'boot_log', 
-            id, 
-            message, 
-            status, 
-            phase: resolvedPhase,
-            seq: this.bootSequenceByPhase[resolvedPhase],
-            timestamp: new Date().toISOString() 
-        });
-    }
-
-    /**
-     * Resolve boot phase from milestone id prefix.
-     */
-    private bootPhase_resolve(id: string): BootPhase {
-        if (id.startsWith('sys_')) {
-            return 'login_boot';
-        }
-        return 'workflow_boot';
-    }
-
     // ─── Command Execution ──────────────────────────────────────────────────
 
     /**
@@ -379,7 +294,7 @@ export class CalypsoCore {
     }
 
     public session_getPath(): string {
-        return this.sessionPath;
+        return this.sessionManager.sessionPath_get();
     }
 
     public workflows_available(): WorkflowSummary[] {
@@ -684,31 +599,17 @@ export class CalypsoCore {
     // ─── Internal Utilities ────────────────────────────────────────────────
 
     private async session_realign(): Promise<void> {
-        const projectName: string | null = this.projectName_resolve();
-        const newPath: string = this.sessionPath_resolve(projectName);
-        
-        const username: string = this.username_resolve();
-        const persona: string = this.shell.env_get('PERSONA') || 'fedml';
-        const sessionId: string | null = this.storeActions.sessionId_get();
-        const sessionRoot = sessionId ? `/home/${username}/projects/${persona}/${sessionId}` : null;
+        return await this.sessionManager.session_realign();
+    }
 
-        if (sessionRoot) this.shell.env_set('SCRATCH', sessionRoot);
+    private username_resolve(): string {
+        return this.shell.env_get('USER') || 'user';
+    }
 
-        if (newPath === this.sessionPath) {
-            await this.workflowSession.sync();
-            this.shell.boundary_set(this.workflowSession.viewportPath_get());
-            return;
-        }
-
-        this.sessionPath = newPath;
-        this.workflowSession.sessionPath_set(this.sessionPath);
-        this.merkleEngine.session_setPath(this.sessionPath);
-        this.storeActions.session_setPath(this.sessionPath);
-        this.pluginHost.session_setPath(this.sessionPath); 
-        
-        await this.workflowSession.sync();
-        
-        this.shell.boundary_set(this.workflowSession.viewportPath_get());
+    private workflow_nextStep(): string {
+        const pos = this.workflowAdapter.position_resolve(this.vfs, this.session_getPath());
+        if (pos.isComplete) return '● WORKFLOW COMPLETE.\n\nNext Steps:\n  `/reset` — Reset system to clean state';
+        return pos.nextInstruction || 'Workflow complete.';
     }
 
     private response_create(message: string, actions: CalypsoAction[], success: boolean, statusCode: CalypsoStatusCode, ui_hints?: CalypsoResponse['ui_hints']): CalypsoResponse {
@@ -770,24 +671,6 @@ export class CalypsoCore {
         const sessionId: string | null = this.storeActions.sessionId_get();
         if (sessionId) return `/home/${username}/projects/${persona}/${sessionId}/provenance`;
         return `/home/${username}/projects/${projectName || 'bootstrap'}/data`;
-    }
-
-    private username_resolve(): string {
-        return this.shell.env_get('USER') || 'user';
-    }
-
-    private workflow_nextStep(): string {
-        const pos = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
-        if (pos.isComplete) return '● WORKFLOW COMPLETE.\n\nNext Steps:\n  `/reset` — Reset system to clean state';
-        return pos.nextInstruction || 'Workflow complete.';
-    }
-
-    private provider_resolve(provider: string): 'openai' | 'gemini' | null {
-        const normalized: string = provider.toLowerCase();
-        if (normalized === 'openai' || normalized === 'gemini') {
-            return normalized;
-        }
-        return null;
     }
 
     private llmProvider_create(): LLMProvider {
