@@ -452,8 +452,8 @@ describe('dag/bridge/WorkflowAdapter — dag render', () => {
 
         expect(view).toContain('ml-readiness');
         expect(view).toContain('collect');
-        expect(view).toContain('join_gather_collect');
-        expect(view).toContain('join:collect+ml-readiness');
+        expect(view).toContain('join_ml-readiness-gather');
+        expect(view).toContain('join:gather+ml-readiness');
         expect(view).toContain('◉ ml-readiness');
     });
 
@@ -474,6 +474,6 @@ describe('dag/bridge/WorkflowAdapter — dag render', () => {
         expect(view.includes('▼') || view.includes('graphviz unavailable')).toBe(true);
         expect(view).toContain('ml-readiness');
         expect(view).toContain('collect');
-        expect(view).toContain('join_gather_collect');
+        expect(view).toContain('join_ml-readiness-gather');
     });
 });

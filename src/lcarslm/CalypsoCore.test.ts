@@ -130,7 +130,7 @@ describe('CalypsoCore', (): void => {
         expect(dagBoxResponse.statusCode).toBe(CalypsoStatusCode.OK);
         expect(dagBoxResponse.message).toContain('┌');
         expect(dagBoxResponse.message).toContain('└');
-        expect(dagBoxResponse.message).toContain('join_gather_collect');
+        expect(dagBoxResponse.message).toContain('join_ml-readiness-gather');
     });
 
     it('returns ERROR for unknown special command', async (): Promise<void> => {

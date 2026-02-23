@@ -111,10 +111,28 @@ stages:
       - readiness
     handler: ml-readiness
 
+  - id: join_ml-readiness-gather
+    name: Causal Convergence (Gather/Readiness)
+    phase: search-and-gather
+    previous: [gather, ml-readiness]
+    structural: true
+    produces:
+      - join.json
+    handler: topological-join
+
+  - id: gather-gate
+    name: Gather Output Checkpoint
+    phase: search-and-gather
+    previous: join_ml-readiness-gather
+    structural: true
+    produces:
+      - gate.json
+    handler: gather-gate
+
   - id: collect
     name: Cohort Collection Build
     phase: search-and-gather
-    previous: ml-readiness
+    previous: gather-gate
     optional: true
     produces:
       - collect.json
@@ -135,10 +153,10 @@ stages:
       - collect
     handler: collect
 
-  - id: join_gather_collect
-    name: Causal Convergence (Gather/Readiness/Collect)
+  - id: join_collect_gather-gate
+    name: Causal Convergence (Gate/Collection)
     phase: search-and-gather
-    previous: [collect, ml-readiness]
+    previous: [gather-gate, collect]
     structural: true
     produces:
       - join.json
@@ -147,7 +165,7 @@ stages:
   - id: pre_harmonize
     name: Harmonization View Resolver
     phase: harmonize
-    previous: [join_gather_collect]
+    previous: [join_collect_gather-gate]
     structural: true
     produces:
       - resolve.json
