@@ -26,3 +26,10 @@ npm-debug.log*
 SESSION-STATE.md
 .calypso-secret
 docs/writingGuide.md
+
+# AI / Agent Context
+CLAUDE.md
+*.resume
+.claude/
+.gemini/
+.aider*
