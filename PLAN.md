@@ -18,10 +18,10 @@
 - [x] **Refactor `CalypsoCore.ts`**:
     - [x] Remove `shell_handle` special case for `python`.
     - [x] Verify `train` plugin executes `python` via shell and handles artifact materialization.
-- [ ] **Extract System Commands**:
-    - [ ] Create `src/lcarslm/routing/SystemCommandRegistry.ts`.
-    - [ ] Move `/reset`, `/state`, `/snapshot`, `/version`, `/key`, `/session` handlers to the registry.
-    - [ ] Update `CalypsoCore` to delegate to this registry.
+- [x] **Extract System Commands**:
+    - [x] Create `src/lcarslm/routing/SystemCommandRegistry.ts`.
+    - [x] Move `/reset`, `/state`, `/snapshot`, `/version`, `/key`, `/session`, `/dag`, `/workflows`, `/help` handlers to the registry.
+    - [x] Update `CalypsoCore` to delegate to this registry.
 - [ ] **Extract Guidance & Confirmation**:
     - [ ] Move `guidance_handle` and `confirmation_dispatch` to `src/lcarslm/routing/WorkflowController.ts`.
 - [x] **Verify**:
