@@ -1,7 +1,7 @@
 = The ARGUS Developer Experience: Physical Provenance as Daily Practice
 :author: ATLAS Project Team
-:revdate: 2026-02-20
-:revnumber: 1.1.0
+:revdate: 2026-02-23
+:revnumber: 2.0.0
 :toc: macro
 :icons: font
 
@@ -19,10 +19,10 @@ inside one filesystem-native model.
 
 The result is a two-zone operating structure in which active development remains
 fast and local while every computational milestone remains materially preserved as a
-Merkle-addressable path lineage under `data/`. This specification explains why that
-model was necessary, how copy-on-write refinement preserves history without blocking
-manual intervention, and how the resulting directory graph functions as executable
-proof rather than passive storage.
+Merkle-addressable lineage under session `provenance/` trees. This specification
+explains why that model was necessary, how viewport rebinding keeps shell ergonomics
+high without violating lineage truth, and how the resulting directory graph
+functions as executable proof rather than passive storage.
 
 == Introduction: Historical Context and Pressure
 
@@ -47,53 +47,53 @@ ARGUS projects encode this contract directly in path layout.
 
 [source,text]
 ----
-/home/user/projects/my-model/
-|-- src/                         <-- workshop code and scripts
-|-- input                        <-- active portal to current data context
-`-- data/                        <-- immutable provenance graph
+~/projects/fedml/sess-20260223-1234/
+|-- search@                      <-- live viewport portal (symlink)
+|-- gather@                      <-- live viewport portal (symlink)
+`-- provenance/                  <-- immutable causal lineage
     `-- search/
-        |-- data/search.json
+        |-- output/search.json
         `-- gather/
-            |-- data/gather.json
+            |-- output/gather.json
+            |-- ml-readiness/    <-- optional branch evidence
+            |-- collect/         <-- optional branch evidence
             `-- harmonize/
-                |-- data/harmonize.json
-                `-- refine_human/
-                    `-- Dockerfile
+                `-- output/harmonize.json
 ----
 
-The `src/` and `input` surfaces provide the mutable room where developers inspect
-artifacts, iterate on implementations, and run local tooling without ceremony. The
-`data/` tree is the immutable room in which each directory boundary records a
-causal execution step with its own control metadata and payload artifacts. This
-partition is not metaphorical decoration. It is the core mechanism that lets ARGUS
-behave like both an engineering workstation and a scientific instrument.
+The viewport links and project work directories provide the mutable room where
+developers inspect artifacts, iterate on implementations, and run local tooling
+without ceremony. The `provenance/` tree is the immutable room in which each
+directory boundary records a causal execution step with its own control metadata
+and payload artifacts. This partition is not metaphorical decoration. It is the
+core mechanism that lets ARGUS behave like both an engineering workstation and a
+scientific instrument.
 
-== Copy-on-Write Refinement Through `input/`
+== Viewport Rebinding Through Stage Portals
 
-The `input/` symlink is the operational boundary object between mutable and
-immutable zones. It always resolves to the active leaf context that downstream
-commands should consume. If a user opens a generated file through `input/` and
-saves a modification, ARGUS does not reject the write and does not mutate the
-sealed source node. Instead, the runtime performs deterministic copy-on-write
-refinement by materializing a sibling refinement node, cloning prior contents,
-repointing `input/` to the new node, and committing the new bytes there.
+Each stage viewport link (for example, `search@` or `gather@`) is the operational
+boundary object between mutable command interaction and immutable lineage state. The
+shell beams the operator into the active stage portal at transition time, but does
+not trap subsequent navigation. This preserves command-line autonomy while
+maintaining a deterministic reference path back to active lineage context via `cd @`.
 
-This sequence preserves two properties that were historically in conflict. Human
-intervention remains immediate and tool-compatible because editors can write through
-normal filesystem operations. Provenance integrity remains intact because machine
-generated output is never rewritten in place. The intervention itself becomes a
-first-class lineage event that can be audited, reproduced, and reasoned about
-later.
+This mechanism preserves two properties that were historically in conflict. Human
+intervention remains immediate and tool-compatible because normal shell traversal
+and edits remain available. Provenance integrity remains intact because stage
+completion and lineage continuity are evaluated from materialized artifacts, not from
+working-directory assumptions.
 
 == Path-as-Proof Semantics
 
 In ARGUS, lineage is encoded in physical path structure rather than external
-database joins. A path such as `data/search/gather/harmonize/` states directly that
-`harmonize` consumed artifacts produced by `gather`, which in turn consumed
-artifacts from `search`. A convergent path such as
-`data/.../rename/_join_gather_rename/harmonize/` states multi-parent consumption in
-the same way. The path graph is therefore not only storage topology; it is the
-executable causal record.
+database joins. A path such as
+`provenance/search/gather/harmonize/` states directly that `harmonize` consumed
+artifacts produced by `gather`, which in turn consumed artifacts from `search`.
+Branch evidence is encoded upstream through optional stage artifacts such as
+`provenance/search/gather/ml-readiness/` and
+`provenance/search/gather/collect/` before convergence into harmonization ingress.
+The path graph is therefore not only storage topology; it is the executable causal
+record.
 
 This model removes a significant class of synchronization failures where metadata
 claims diverge from payload reality. Because control envelopes and data artifacts
@@ -112,3 +112,6 @@ project graph itself.
 This outcome closes a core integrity gap before v11 contract lock. ARGUS no longer
 asks operators to choose between speed and proof. It encodes both as native
 filesystem behavior under one deterministic runtime model.
+
+---
+_Last updated: 2026-02-23 (v11.0.0 session/provenance path contract)_

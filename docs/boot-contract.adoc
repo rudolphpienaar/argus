@@ -1,0 +1,197 @@
+= CALYPSO Boot Telemetry Contract (v1)
+:author: ATLAS Project Team
+:revdate: 2026-02-22
+:revnumber: 1.0.0
+:toc: macro
+:toclevels: 3
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+This document defines the formal contract for CALYPSO boot telemetry during
+login and workflow activation. The contract exists to remove ambiguity from the
+current boot experience, where progress milestones are known and deterministic
+but rendering has been vulnerable to race conditions, prompt interleaving, and
+transport timing effects.
+
+The objective is protocol-first stabilization: the server emits a strict,
+ordered milestone stream; the client renders it idempotently; and prompt display
+is gated by explicit terminal boot states rather than inferred timing.
+
+== Scope
+
+This contract governs only boot-phase telemetry:
+
+1. `login_boot` (`sys_*` milestones emitted during authenticated system boot).
+2. `workflow_boot` (`user_*` milestones emitted during persona/workflow
+   activation).
+
+It does not change normal command telemetry (`progress`, `log`, `status`) after
+boot completes.
+
+== Historical Context
+
+The current instability did not come from milestone logic itself. The milestone
+sequence is deterministic. Instability emerged at boundaries:
+
+1. Subscription timing (`onTelemetry` bound after boot started).
+2. Shared rendering surface (`readline` prompt redraws interleaving with boot
+   line rewrites).
+3. Large refactors in a monolithic REPL file causing collateral regressions.
+
+This contract isolates those concerns by defining one immutable protocol and one
+render lifecycle for boot phases.
+
+== Boot Event Schema
+
+All boot milestones are emitted as telemetry events of type `boot_log`.
+
+[source,typescript]
+----
+type BootPhase = 'login_boot' | 'workflow_boot';
+type BootStatus = 'WAIT' | 'OK' | 'FAIL' | 'DONE';
+
+interface BootLogEvent {
+    type: 'boot_log';
+    phase: BootPhase;
+    id: string;
+    seq: number;
+    status: BootStatus;
+    message: string;
+    timestamp: string; // ISO 8601
+}
+----
+
+=== Field Constraints
+
+1. `phase` is required and immutable per milestone.
+2. `id` is stable across updates for the same milestone.
+3. `seq` is strictly increasing per `phase`.
+4. `status` transitions are monotonic:
+   - `WAIT -> OK`
+   - `WAIT -> FAIL`
+   - `DONE` is terminal for a phase.
+5. `timestamp` is emit time, not render time.
+
+== Milestone Registry
+
+=== `login_boot` (required order)
+
+1. `sys_genesis`
+2. `sys_vfs`
+3. `sys_merkle`
+4. `sys_ready` (terminal milestone, `DONE`)
+
+=== `workflow_boot` (required order)
+
+1. `user_manifest`
+2. `user_vfs`
+3. `user_viewport`
+4. `user_ready` (terminal milestone, `DONE`)
+
+== Delivery Semantics
+
+1. Transport guarantee: at-least-once delivery is acceptable.
+2. Client requirement: idempotent processing by key `(phase, id)`.
+3. Duplicate events: ignored if `seq` is older than latest seen for `(phase,id)`.
+4. Out-of-order events:
+   - if `seq` is ahead, renderer may buffer or apply;
+   - renderer must never regress a displayed milestone state.
+
+== Rendering Contract (CLI REPL)
+
+=== Separation of Responsibilities
+
+1. Server emits ordered boot events only.
+2. REPL boot renderer consumes boot events only.
+3. Normal prompt/command renderer is inactive while a boot phase is active.
+
+=== Prompt Gating
+
+1. During active `login_boot`, prompt is suppressed.
+2. During active `workflow_boot`, prompt is suppressed.
+3. Prompt becomes visible only after terminal phase event:
+   - success: phase terminal `DONE`.
+   - failure: phase terminal `FAIL`.
+
+=== Idempotent Timeline Updates
+
+1. First event for `(phase,id)` creates one visible row.
+2. Subsequent events for same `(phase,id)` update that row in place.
+3. No additional rows are created for duplicate `id`.
+
+== Failure Contract
+
+1. Any milestone may emit `FAIL`.
+2. Phase failure requires terminal summary event with `status='FAIL'`.
+3. Client displays deterministic fail summary and exits boot phase.
+4. No indefinite spinner is allowed after phase failure.
+
+== Phase Boundaries
+
+1. `login_boot` completes before login success is announced.
+2. `workflow_boot` completes before persona activation banner/prompt is shown.
+3. Phases are non-overlapping in a single session.
+
+== Backward Compatibility
+
+For transitional rollout, clients may accept legacy `boot_log` payloads that
+lack `phase` and `seq`, but server-side emission should migrate to full v1
+schema first. Legacy adaptation logic must be isolated and removable.
+
+== Test Contract
+
+The following tests are mandatory gates for rollout:
+
+1. Protocol schema test:
+   - valid `phase`, `status`, `id`, monotonic `seq`.
+2. Ordered milestone test:
+   - both phase milestone registries emitted in defined order.
+3. Duplicate delivery test:
+   - duplicate events do not add rows or regress status.
+4. Prompt isolation test:
+   - no prompt appears during active boot phase.
+5. Phase completion test:
+   - prompt appears exactly once after terminal phase event.
+6. Failure path test:
+   - terminal fail state exits spinner state deterministically.
+
+== Staged Rollout Map
+
+=== Stage 0 (this document)
+
+Freeze contract and milestone registry. No runtime behavior change required.
+
+=== Stage 1
+
+Add schema fields and validation in protocol path, preserving compatibility.
+
+=== Stage 2
+
+Make server emission deterministic and sequence-numbered for both phases.
+
+=== Stage 3
+
+Extract boot renderer into isolated module; keep REPL command path untouched.
+
+=== Stage 4
+
+Wire strict phase gating in REPL and remove timing heuristics where possible.
+
+=== Stage 5
+
+Feature-flag rollout, default-off then default-on after stable pass.
+
+== Acceptance Criteria
+
+This contract is considered implemented when:
+
+1. Both boot phases emit required milestone IDs in order.
+2. CLI never shows a long undifferentiated spinner during boot phases.
+3. Prompt timing is deterministic and never interleaves boot line updates.
+4. Regression tests enforce protocol, ordering, and render boundaries.
+
+---
+_Status: Stage 0 baseline specification_

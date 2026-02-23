@@ -8,16 +8,26 @@
  */
 
 import type { WebSocket } from 'ws';
-import type { CalypsoCore } from '../../lcarslm/CalypsoCore.js';
-import type { TelemetryEvent } from '../../lcarslm/types.js';
+import type { WorkflowSummary } from '../../core/workflows/types.js';
+import type { CalypsoResponse, TelemetryEvent } from '../../lcarslm/types.js';
 import type {
     ClientMessage,
     ServerMessage
 } from '../protocol/types.js';
 
+export interface WebSocketCalypso {
+    command_execute(command: string): Promise<CalypsoResponse>;
+    boot(): Promise<void>;
+    workflow_set(workflowId: string | null): Promise<boolean>;
+    prompt_get(): string;
+    tab_complete(line: string): string[];
+    workflows_available(): WorkflowSummary[];
+    telemetry_subscribe(observer: (event: TelemetryEvent) => void): () => void;
+}
+
 export interface WebSocketHandlerDeps {
-    calypso_get: () => CalypsoCore;
-    calypso_reinitialize: (username?: string) => CalypsoCore;
+    calypso_get: () => WebSocketCalypso;
+    calypso_reinitialize: (username?: string) => WebSocketCalypso;
 }
 
 /**
@@ -65,8 +75,25 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
                 case 'login': {
                     const sanitized = msg.username.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'developer';
                     deps.calypso_reinitialize(sanitized);
+                    
+                    // 1. Bind telemetry FIRST
                     telemetry_bind();
+                    
+                    // 2. Await the Boot Sequence so telemetry streams in real-time
                     const calypso = deps.calypso_get();
+                    try {
+                        await calypso.boot();
+                    } catch (e) {
+                        console.error('Handshake boot failed:', e);
+                        const reason: string = e instanceof Error ? e.message : 'Unknown boot error';
+                        send({
+                            type: 'error',
+                            id: msg.id,
+                            message: `Boot failed: ${reason}`
+                        });
+                        break;
+                    }
+
                     console.log(`WS Login: User "${sanitized}" authenticated`);
                     send({
                         type: 'login-response',
@@ -81,7 +108,7 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
                 case 'persona': {
                     const calypso = deps.calypso_get();
                     if (!msg.workflowId || msg.workflowId === 'skip' || msg.workflowId === 'none') {
-                        calypso.workflow_set(null);
+                        await calypso.workflow_set(null);
                         send({
                             type: 'persona-response',
                             id: msg.id,
@@ -89,7 +116,7 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
                             message: 'Workflow guidance disabled'
                         });
                     } else {
-                        const success = calypso.workflow_set(msg.workflowId);
+                        const success = await calypso.workflow_set(msg.workflowId);
                         send({
                             type: 'persona-response',
                             id: msg.id,

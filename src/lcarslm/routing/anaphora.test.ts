@@ -44,6 +44,12 @@ function storeActions_create(): CalypsoStoreActions {
             return null;
         },
         session_setPath(): void {},
+        sessionId_get(): string | null {
+            return (state as any).currentSessionId || null;
+        },
+        session_start(): void {
+            (state as any).currentSessionId = 'sess-new';
+        },
         dataset_getById(id: string): Dataset | undefined {
             return DATASETS.find(ds => ds.id === id);
         },

@@ -36,6 +36,7 @@ const HELP_TOPICS: Record<string, string> = {
     touch: 'touch [-acm] [--no-create] FILE...',
     tree: 'tree [-a] [-d] [-L N] [path]',
     upload: 'upload [-d DEST] [DEST]',
+    wc: 'wc [-clmwL] FILE...',
     whoami: 'whoami [-u]'
 };
 

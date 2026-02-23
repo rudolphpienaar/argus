@@ -91,6 +91,8 @@ export interface CostEstimate {
  * Application state for the SeaGaP-MP workflow.
  */
 export interface AppState {
+    currentPersona: string;
+    currentSessionId: string | null;
     currentStage: 'login' | 'role-selection' | 'search' | 'gather' | 'process' | 'monitor' | 'post';
     selectedDatasets: Dataset[];
     activeProject: Project | null;

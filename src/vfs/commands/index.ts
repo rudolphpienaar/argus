@@ -9,10 +9,12 @@ import { command as touch } from './touch.js';
 import { command as rm } from './rm.js';
 import { command as cp } from './cp.js';
 import { command as mv } from './mv.js';
+import { command as ln } from './ln.js';
 import { command as tree } from './tree.js';
 import { command as env } from './env.js';
 import { command as exportCommand } from './export.js';
 import { command as whoami } from './whoami.js';
+import { command as wc } from './wc.js';
 import { command as date } from './date.js';
 import { command as history } from './history.js';
 import { command as help } from './help.js';
@@ -30,10 +32,12 @@ const COMMANDS = [
     rm,
     cp,
     mv,
+    ln,
     tree,
     env,
     exportCommand,
     whoami,
+    wc,
     date,
     history,
     help,

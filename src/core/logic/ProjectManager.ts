@@ -16,27 +16,6 @@ import { cohortTree_build } from '../../vfs/providers/DatasetProvider.js';
 
 
 /**
- * Creates a new Draft Project and adds it to the mock repository.
- *
- * @returns The newly created project.
- */
-export function project_createDraft(): Project {
-    const timestamp = Date.now();
-    const shortId = timestamp.toString().slice(-4);
-    const draftProject: Project = {
-        id: `draft-${timestamp}`,
-        name: `DRAFT-${shortId}`,
-        description: 'New project workspace',
-        created: new Date(),
-        lastModified: new Date(),
-        datasets: []
-    };
-    
-    MOCK_PROJECTS.push(draftProject);
-    return draftProject;
-}
-
-/**
  * Initializes the VFS structure for a project ("Filesystem First" workflow).
  * Creates the root directory but does not scaffold src/input/output yet.
  *
@@ -58,7 +37,7 @@ export function project_initialize(project: Project): void {
  * 
  * Logic:
  * 1. Checks for a target project (or active store project).
- * 2. If none, auto-creates a DRAFT project and activates it.
+ * 2. If none, initializes a session project and activates it.
  * 3. Adds dataset to project model.
  * 4. Updates global store selection.
  * 5. Mounts the dataset (or subtree) into the VFS.
@@ -74,13 +53,19 @@ export function project_gather(
     targetProject?: Project | null
 ): Project {
     let project = targetProject || store.state.activeProject;
-    let isNewDraft = false;
 
-    // 1. Auto-create if no project context
+    // 1. Initialize if no project context
     if (!project) {
-        project = project_createDraft();
+        const sessionId = store.sessionId_get() || 'unknown';
+        project = {
+            id: `proj-${sessionId}`,
+            name: '', // v11.0: No legacy DRAFT-XXXX names
+            description: 'Session-scoped research project',
+            created: new Date(),
+            lastModified: new Date(),
+            datasets: []
+        };
         project_initialize(project);
-        isNewDraft = true;
         
         // Load into store as active (persistence for session)
         store.project_load(project);
@@ -89,9 +74,8 @@ export function project_gather(
         if (store.globals.shell) {
             const paths = projectContext_get(project);
             try {
-                store.globals.shell.command_execute(`cd ${paths.root}`);
+                store.globals.shell.cwd_set(paths.root);
                 store.globals.shell.env_set('PROJECT', project.name);
-                if (store.globals.terminal) store.globals.terminal.prompt_sync();
             } catch (e: unknown) {
                 console.error('Shell sync failed:', e);
             }
@@ -183,7 +167,7 @@ export function project_rename(project: Project, newName: string): void {
             if (currentCwd.startsWith(oldPath)) {
                 const newCwd = currentCwd.replace(oldPath, newPath);
                 try {
-                    store.globals.vcs.cwd_set(newCwd);
+                    store.globals.shell?.cwd_set(newCwd);
                 } catch (e: unknown) {
                     console.error('Failed to update CWD after rename:', e);
                 }

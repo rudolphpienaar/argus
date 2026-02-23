@@ -1,7 +1,7 @@
 = Manifest-Driven DAG Engine: Topology as Execution Truth
 :author: ATLAS Project Team
-:revdate: 2026-02-20
-:revnumber: 10.3.0
+:revdate: 2026-02-23
+:revnumber: 11.0.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -36,22 +36,22 @@ resolution evidence.
 
 [source,text]
 ----
-Main topology with optional JOIN:
+Main topology with readiness-first optional JOIN:
 
 ┌────────────┐     ┌────────────┐
-│ SEARCH     │───▶│ GATHER     │──────────────┐
-└────────────┘     └────────────┘              │
+│ SEARCH     │───▶│ GATHER     │───▶┌────────────────┐
+└────────────┘     └────────────┘    │ ML-READINESS   │ optional
+                                      └───────┬────────┘
+                                              │
+                           optional reorg     ▼
+                                        ┌────────────┐
+                                        │ COLLECT opt│
+                                        └──────┬─────┘
                                                ▼
                                         ┌────────────┐
                                         │ JOIN GATE  │───▶┌────────────┐───▶┌────────────┐
                                         │ parents ok │    │ HARMONIZE  │    │ PROCEED    │
-                                        └─────┬──────┘    └────────────┘    └────────────┘
-                                              │
-                             optional path    │
-                                              ▼
-                                        ┌────────────┐
-                                        │ RENAME opt │
-                                        └────────────┘
+                                        └────────────┘    └────────────┘    └────────────┘
 
 Re-execution pressure:
 
@@ -120,7 +120,8 @@ Advance while optional parent is unresolved:
 └───────────────┬────────────────────┘
                 ▼
 ┌────────────────────────────────────┐
-│ transition check: pending rename   │
+│ transition check: pending optional │
+│ parents (ml-readiness, collect)    │
 └───────────────┬────────────────────┘
                 ▼
 ┌────────────────────────────────────┐
@@ -128,7 +129,8 @@ Advance while optional parent is unresolved:
 └───────────────┬────────────────────┘
                 ▼
 ┌────────────────────────────────────┐
-│ materialize skip evidence: rename  │
+│ materialize skip evidence:         │
+│ ml-readiness + collect             │
 └───────────────┬────────────────────┘
                 ▼
 ┌────────────────────────────────────┐
@@ -157,8 +159,8 @@ stage than the current pointer.
 
 Hardening also addressed stale-pointer behavior by ensuring fast verification paths
 detect self-completed stages and force slow-path advancement. Session-path updates
-after project renames are propagated through all consumers so status providers and
-resolver scans continue to inspect the active lineage root.
+are propagated through all consumers so status providers and resolver scans continue
+to inspect the active lineage root under persona/session provenance.
 
 These corrections preserve a single invariant: stage position is always derived from
 current artifact truth in the active session context.
@@ -172,4 +174,4 @@ controller folklore. They are filesystem evidence subject to the same verificati
 discipline as compute outputs.
 
 ---
-_Last updated: 2026-02-20 (v10.3.0)_
+_Last updated: 2026-02-23 (v11.0.0 readiness-first DAG contract)_

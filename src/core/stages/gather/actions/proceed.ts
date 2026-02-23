@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - Validate active project context before transition.
- * - Gate transitions for draft naming and heterogeneity warnings.
+ * - Gate transitions for heterogeneity warnings.
  * - Route to project activation or initialization flow.
  *
  * @module core/stages/gather/actions/proceed
@@ -36,21 +36,6 @@ export async function proceedToCode_execute(deps: ProceedToCodeDeps): Promise<vo
     }
 
     const activeProject = gatherStage_state.gatherTargetProject;
-    const isDraft: boolean = activeProject.name.startsWith('DRAFT-');
-
-    if (isDraft && store.globals.terminal) {
-        store.globals.terminal.println('<span class="warn">● DRAFT STATUS DETECTED.</span>');
-        store.globals.terminal.println('○ BEFORE PROCEEDING, CONSIDER GIVING THIS COHORT A DESCRIPTIVE NAME.');
-        store.globals.terminal.println('○ CLICK "RENAME" IN THE PROJECT DETAIL OR USE THE AI COMMAND.');
-
-        setTimeout((): void => {
-            deps.projectDetail_open(activeProject.id);
-            setTimeout((): void => {
-                deps.workspace_interactInitialize(activeProject.id);
-            }, 100);
-        }, 2000);
-        return;
-    }
 
     const username: string = store.globals.shell?.env_get('USER') || 'user';
     const projectBase: string = `/home/${username}/projects/${activeProject.name}`;

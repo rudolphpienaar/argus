@@ -13,6 +13,7 @@ import type { VirtualFileSystem } from '../VirtualFileSystem.js';
 import type { FileNode } from '../types.js';
 import type { Project } from '../../core/models/types.js';
 import { MOCK_PROJECTS } from '../../core/data/projects.js';
+import { store } from '../../core/state/store.js';
 
 /**
  * Scaffolds the home directory structure for a persona.
@@ -22,9 +23,15 @@ import { MOCK_PROJECTS } from '../../core/data/projects.js';
  *
  * @param vfs - The VirtualFileSystem instance.
  * @param username - The persona username (default: 'developer').
+ * @param onLog - Optional callback for reporting milestones.
  */
-export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'user'): void {
+export function homeDir_scaffold(
+    vfs: VirtualFileSystem, 
+    username: string = 'user',
+    onLog?: (msg: string) => void
+): void {
     const home: string = `/home/${username}`;
+    if (onLog) onLog(`[  OK  ] INITIALIZING VFS ROOT FOR USER [${username}]`);
 
     // Well-known directories
     const dirs: string[] = [
@@ -40,6 +47,7 @@ export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'use
     for (const dir of dirs) {
         vfs.dir_create(dir);
     }
+    if (onLog) onLog(`[  OK  ] SCAFFOLDING USER HOME HIERARCHY...`);
 
     // System directories
     vfs.dir_create('/etc/atlas');
@@ -76,9 +84,39 @@ export function homeDir_scaffold(vfs: VirtualFileSystem, username: string = 'use
         nodesNode.contentGenerator = 'node-registry';
         nodesNode.content = null;
     }
+    if (onLog) onLog(`[  OK  ] MOUNTING CORE CATALOG DATA (3 SHARDS)`);
+}
 
-    // Mount existing projects from mock repository
-    projects_mount(vfs, username, MOCK_PROJECTS);
+/**
+ * Scaffolds a new session directory structure for the current persona.
+ * Implements the 3-tier hierarchy: ~/projects/<persona>/<sessionID>/[provenance|scratch]
+ *
+ * @param vfs - The VirtualFileSystem instance.
+ * @param username - The persona username.
+ * @param onLog - Optional callback for reporting milestones.
+ * @param sessionIdOverride - Optional explicit session ID (v12.0).
+ */
+export function sessionDir_scaffold(
+    vfs: VirtualFileSystem, 
+    username: string = 'user',
+    onLog?: (msg: string) => void,
+    sessionIdOverride?: string
+): string {
+    const persona = store.state.currentPersona;
+    const sessionId = sessionIdOverride || store.state.currentSessionId;
+    
+    if (!sessionId) {
+        throw new Error('Cannot scaffold session: no active session ID in store.');
+    }
+
+    const sessionRoot = `/home/${username}/projects/${persona}/${sessionId}`;
+    if (onLog) onLog(`[  OK  ] GENERATING SESSION GENESIS [${sessionId}]`);
+    
+    vfs.dir_create(sessionRoot);
+    vfs.dir_create(`${sessionRoot}/provenance`);
+    if (onLog) onLog(`[  OK  ] ATTACHING PROVENANCE DAG TO PHYSICAL TREE`);
+
+    return sessionRoot;
 }
 
 /**

@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { replCompleter_create, replCompletionFallback_resolve, type ReplTabCompleteClient } from './Repl.js';
+import {
+    replCompleter_create,
+    replCompletionFallback_resolve,
+    replBootContractEnabled_resolve,
+    replTelemetryRenderAllowed_resolve,
+    replBanner_resolve,
+    type ReplTabCompleteClient,
+} from './Repl.js';
 
 type ReplCompletionResult = [string[], string];
 
@@ -61,5 +68,52 @@ describe('repl completion fallback', (): void => {
 
         expect(commandFallback).toContain('pwd');
         expect(argFallback).toEqual([]);
+    });
+});
+
+describe('repl boot contract flag', (): void => {
+    it('defaults to enabled when value is missing', (): void => {
+        expect(replBootContractEnabled_resolve(undefined)).toBe(true);
+    });
+
+    it('disables only for explicit falsey switch values', (): void => {
+        expect(replBootContractEnabled_resolve('0')).toBe(false);
+        expect(replBootContractEnabled_resolve('false')).toBe(false);
+        expect(replBootContractEnabled_resolve('off')).toBe(false);
+    });
+
+    it('remains enabled for truthy values', (): void => {
+        expect(replBootContractEnabled_resolve('1')).toBe(true);
+        expect(replBootContractEnabled_resolve('true')).toBe(true);
+        expect(replBootContractEnabled_resolve('on')).toBe(true);
+    });
+});
+
+describe('repl telemetry gate', (): void => {
+    it('suppresses non-boot telemetry while idle', (): void => {
+        expect(replTelemetryRenderAllowed_resolve(false, false)).toBe(false);
+    });
+
+    it('allows telemetry during command execution', (): void => {
+        expect(replTelemetryRenderAllowed_resolve(true, false)).toBe(true);
+    });
+
+    it('allows telemetry during startup operations', (): void => {
+        expect(replTelemetryRenderAllowed_resolve(false, true)).toBe(true);
+    });
+});
+
+describe('repl banner style', (): void => {
+    it('keeps default banner when style is unset', (): void => {
+        const base: string = 'DEFAULT BANNER';
+        expect(replBanner_resolve(base, undefined)).toBe(base);
+    });
+
+    it('renders figlet banner only when explicitly requested', (): void => {
+        const base: string = 'DEFAULT BANNER';
+        const figlet: string = replBanner_resolve(base, 'figlet');
+
+        expect(figlet).toContain('Cognitive Algorithms');
+        expect(figlet).not.toBe(base);
     });
 });

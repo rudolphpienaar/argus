@@ -41,6 +41,8 @@ export class Shell {
     private externalHandler: ExternalHandler | null = null;
     private cwdChangeHandler: ((newCwd: string) => void) | null = null;
     private username: string;
+    private logicalPwd: string;
+    private boundaryPath: string | null = null;
 
     /**
      * Creates a new Shell instance attached to a VFS.
@@ -57,20 +59,23 @@ export class Shell {
         this.env = new Map<string, string>();
         this.builtins = new ShellBuiltins(vfs);
         
+        const homeDir = `/home/${username}`;
+        this.logicalPwd = homeDir;
+
         // Initialize environment variables
         this.env.set('USER', username);
-        this.env.set('HOME', `/home/${username}`);
+        this.env.set('HOME', homeDir);
         this.env.set('PATH', `/bin:/usr/bin:/home/${username}/bin`);
         this.env.set('SHELL', '/bin/bash');
         this.env.set('TERM', 'xterm-256color');
-        this.env.set('PWD', `/home/${username}`);
+        this.env.set('PWD', homeDir);
         this.env.set('PERSONA', 'fedml'); // Default initial persona
         this.env.set('PS1', '$USER@argus:$PWD $ ');
         this.env.set('STAGE', 'search'); // Default stage
         
         // Ensure HOME exists
-        try { this.vfs.dir_create(this.env.get('HOME')!); } catch { /* ignore */ }
-        this.vfs.cwd_set(this.env.get('HOME')!);
+        try { this.vfs.dir_create(homeDir); } catch { /* ignore */ }
+        this.vfs.cwd_set(homeDir);
     }
 
     // ─── External Handler ───────────────────────────────────────
@@ -95,6 +100,13 @@ export class Shell {
      */
     public isBuiltin(command: string): boolean {
         return !!this.builtins.REGISTRY[command.toLowerCase()];
+    }
+
+    /**
+     * Return all registered builtin command names.
+     */
+    public builtins_list(): string[] {
+        return Object.keys(this.builtins.REGISTRY);
     }
 
     // ─── Command Execution ──────────────────────────────────────
@@ -135,21 +147,61 @@ export class Shell {
     }
 
     /**
+     * Set the current working directory (logical and physical).
+     *
+     * @param path - The target directory path.
+     * @returns A warning message if leaving the boundary, or null.
+     */
+    public cwd_set(path: string): string | null {
+        const physical = this.vfs.path_resolveSpecific(this.vfs.cwd_get(), path);
+        this.vfs.cwd_set(physical);
+        
+        const oldLogical = this.logicalPwd;
+        const newLogical = this.vfs.path_resolveSpecific(oldLogical, path);
+        
+        this.logicalPwd = newLogical;
+        this.env.set('PWD', newLogical);
+        
+        if (this.cwdChangeHandler) {
+            this.cwdChangeHandler(newLogical);
+        }
+
+        // Boundary Guard: Detect if we were inside the boundary and are now outside
+        if (this.boundaryPath && oldLogical.startsWith(this.boundaryPath)) {
+            if (!newLogical.startsWith(this.boundaryPath)) {
+                return "○ You are leaving your scratch space... to return type 'cd @'";
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Set the active navigation boundary (scratch space).
+     */
+    public boundary_set(path: string | null): void {
+        this.boundaryPath = path;
+    }
+
+    /**
      * Trigger the CWD change callback.
      * Called by 'cd' builtin.
+     *
+     * @param newCwd - The new working directory path after the change.
      */
     public cwd_didChange(newCwd: string): void {
-        if (this.cwdChangeHandler) {
-            this.cwdChangeHandler(newCwd);
-        }
+        // Now handled by Shell.cwd_set
     }
 
     /**
      * Expands $VARIABLE references in a string.
+     *
+     * @param input - Raw command string potentially containing $VAR references.
+     * @returns Input string with all known $VARIABLE tokens substituted.
      */
     private vars_expand(input: string): string {
         return input.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match: string, varName: string): string => {
-            if (varName === 'PWD') return this.vfs.cwd_get();
+            if (varName === 'PWD') return this.logicalPwd;
             return this.env.get(varName) ?? `$${varName}`;
         });
     }
@@ -160,9 +212,8 @@ export class Shell {
      * Returns the value of an environment variable.
      */
     public env_get(key: string): string | undefined {
-        // $PWD is always synced with VFS
         if (key === 'PWD') {
-            return this.vfs.cwd_get();
+            return this.logicalPwd;
         }
         return this.env.get(key);
     }
@@ -186,16 +237,21 @@ export class Shell {
      */
     public env_all(): Map<string, string> {
         const copy: Map<string, string> = new Map(this.env);
-        copy.set('PWD', this.vfs.cwd_get());
+        copy.set('PWD', this.logicalPwd);
         return copy;
     }
 
+    /**
+     * Return all environment variables as a plain object snapshot.
+     *
+     * @returns A plain Record of all current environment variable key-value pairs.
+     */
     public env_snapshot(): Record<string, string> {
         const snap: Record<string, string> = {};
         for (const [k, v] of this.env) {
             snap[k] = v;
         }
-        snap['PWD'] = this.vfs.cwd_get();
+        snap['PWD'] = this.logicalPwd;
         return snap;
     }
 
@@ -207,7 +263,7 @@ export class Shell {
     public prompt_render(): string {
         const ps1: string = this.env.get('PS1') || '$ ';
         const homePath: string = this.env.get('HOME') || '/home/user';
-        let pwd: string = this.vfs.cwd_get();
+        let pwd: string = this.logicalPwd;
 
         // Cosmetic ~ substitution
         if (pwd.startsWith(homePath)) {
@@ -240,8 +296,7 @@ export class Shell {
         try {
             // Ensure the directory exists
             this.vfs.dir_create(landingPath);
-            this.vfs.cwd_set(landingPath);
-            this.env.set('PWD', this.vfs.cwd_get());
+            this.cwd_set(landingPath);
         } catch (_e: unknown) {
             // If landing dir fails, stay where we are
         }
@@ -265,6 +320,9 @@ export class Shell {
 
     /**
      * Resolves the landing directory for a given SeaGaP stage.
+     *
+     * @param stage - The stage identifier (e.g. 'search', 'gather', 'process').
+     * @returns Absolute VFS path to navigate to when entering this stage.
      */
     private stageLanding_resolve(stage: string): string {
         const home: string = this.env.get('HOME') || '/home/user';

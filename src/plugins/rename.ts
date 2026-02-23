@@ -21,7 +21,7 @@ import { simDelay_wait } from './simDelay.js';
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
     return context.comms.execute(async (): Promise<PluginResult> => {
-        const { args, store, shell, vfs, ui } = context;
+        const { args, store, shell, vfs, ui, dataDir } = context;
         
         let newName: string = args.join(' ');
         if (newName.toLowerCase().startsWith('to ')) {
@@ -47,29 +47,9 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
 
         ui.status(`CALYPSO: RENAMING PROJECT [${active.name}] -> [${newName}]`);
         
-        const username: string = shell.env_get('USER') || 'user';
-        const oldPath: string = `/home/${username}/projects/${active.name}`;
-        const newPath: string = `/home/${username}/projects/${newName}`;
-
-        // Simulate path migration compute
-        await pathMigration_animate(context, oldPath, newPath);
-
-        if (vfs.node_stat(oldPath)) {
-            vfs.node_move(oldPath, newPath);
-        } else {
-            vfs.dir_create(newPath);
-            vfs.dir_create(`${newPath}/src`);
-            vfs.dir_create(`${newPath}/input`);
-            vfs.dir_create(`${newPath}/output`);
-        }
-
-        shell.env_set('PROJECT', newName);
-
-        const cwd: string = vfs.cwd_get();
-        if (cwd.startsWith(oldPath)) {
-            const nextCwd: string = cwd.replace(oldPath, newPath);
-            vfs.cwd_set(nextCwd);
-        }
+        // v11.0: Alias-Only Rename
+        // In the Topological Viewport model, we don't move the physical container.
+        // We just update the store. CalypsoCore will handle the viewport rotation.
 
         const updatedProject: Project = {
             ...active,
@@ -78,14 +58,58 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         };
         store.project_setActive(updatedProject);
 
+        shell.env_set('PROJECT', newName);
+
+        // v12.0: Physical Contract - Materialize the view in our output/
+        // We merge from our primary parent (gather).
+        const inputDir = dataDir.replace(/\/output$/, '/input');
+        const parentOutputDir = `${inputDir}/gather`;
+
+        try {
+            if (vfs.node_stat(parentOutputDir)) {
+                merge_causal(vfs, parentOutputDir, dataDir, 'gather');
+            }
+        } catch (e) {
+            // ignore
+        }
+
         return {
             message: `${CalypsoPresenter.success_format(`RENAMED TO [${newName}]`)}\n` +
-                    `${CalypsoPresenter.info_format(`VFS PATH MOVED TO ${newPath}`)}`,
+                    `${CalypsoPresenter.info_format(`VIEWPORT ALIAS UPDATED IN STORE`)}`,
             statusCode: CalypsoStatusCode.OK,
             actions: [{ type: 'project_rename', id: active.id, newName }],
-            artifactData: { oldName: active.name, newName, path: newPath }
+            artifactData: { oldName: active.name, newName },
+            physicalDataDir: dataDir
         };
     });
+}
+
+/**
+ * Implementation of Link-Merge logic (copied from workspace-commit for autonomy).
+ */
+function merge_causal(vfs: any, src: string, dest: string, parentId: string): void {
+    const nodes = vfs.dir_list(src);
+    
+    for (const node of nodes) {
+        // Skip system-owned infrastructure dirs
+        if (['meta', 'input', 'output'].includes(node.name)) {
+            continue;
+        }
+
+        const targetPath = `${dest}/${node.name}`;
+        const isDataDir = ['training', 'validation', 'images', 'masks'].includes(node.name);
+
+        if (isDataDir) {
+            // Relative link to parent output: ../input/<parentId>/<name>
+            vfs.link_create(targetPath, `../input/${parentId}/${node.name}`);
+        } else if (node.type === 'folder') {
+            vfs.dir_create(targetPath);
+            merge_causal(vfs, node.path, targetPath, parentId);
+        } else {
+            // Clone small work files
+            vfs.tree_clone(node.path, targetPath);
+        }
+    }
 }
 
 /**

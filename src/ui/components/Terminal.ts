@@ -45,8 +45,42 @@ type FallbackHandler = (cmd: string, args: string[]) => Promise<void>;
 export class LCARSTerminal extends BaseTerminal {
     private shell: Shell | null = null;
     private fallbackHandler: FallbackHandler | null = null;
+    private bootLines: Map<string, HTMLElement> = new Map();
 
     constructor(elementId: string) {
+...
+    /**
+     * Handles specialized boot telemetry log events.
+     * Implements in-place status replacement with spinners.
+     */
+    public bootLog_handle(event: { id: string, message: string, status: string | null }): void {
+        const { id, message, status } = event;
+        const finalStatus = status || 'WAIT';
+        const isWaiting = finalStatus === 'WAIT';
+        
+        let lineEl = this.bootLines.get(id);
+        
+        if (!lineEl) {
+            lineEl = document.createElement('div');
+            lineEl.className = 'line boot-log-line';
+            this.output.appendChild(lineEl);
+            this.bootLines.set(id, lineEl);
+        }
+
+        const statusClass = isWaiting ? 'boot-status-wait' : 'boot-status-ok';
+        const spinner = isWaiting ? '<span class="boot-spinner"></span>' : '';
+        const statusText = isWaiting ? ' .... ' : finalStatus.padEnd(6);
+
+        lineEl.innerHTML = `[ <span class="${statusClass}">${spinner}${statusText}</span> ] ${message}`;
+        
+        if (finalStatus === 'DONE') {
+            // Once session is ready, we can clear the boot buffer 
+            // but keep the lines visible.
+            this.bootLines.clear();
+        }
+
+        this.scrollToBottom();
+    }
         super({
             elementId,
             title: 'CALYPSO INTELLIGENCE CONSOLE // VFS LINK ACTIVE',
@@ -110,6 +144,39 @@ export class LCARSTerminal extends BaseTerminal {
 
             @keyframes lcars-progress-grow {
                 from { width: 0; }
+            }
+
+            .boot-log-line {
+                font-family: 'Courier New', monospace;
+                font-size: 0.85rem;
+                margin: 2px 0;
+                display: flex;
+                gap: 10px;
+                white-space: pre;
+            }
+            .boot-status-wait {
+                color: var(--canary);
+                display: inline-flex;
+                align-items: center;
+                min-width: 50px;
+            }
+            .boot-status-ok {
+                color: var(--sky);
+                font-weight: bold;
+                min-width: 50px;
+            }
+            .boot-spinner {
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border: 2px solid rgba(255,255,255,0.2);
+                border-radius: 50%;
+                border-top-color: var(--canary);
+                animation: boot-spin 1s linear infinite;
+                margin-right: 8px;
+            }
+            @keyframes boot-spin {
+                to { transform: rotate(360deg); }
             }
         `;
         document.head.appendChild(style);

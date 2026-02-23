@@ -55,17 +55,17 @@ export function sessionPaths_compute(definition: DAGDefinition): Map<string, Sta
 
     for (const node of definition.nodes.values()) {
         const ancestors = ancestorChain_build(node, definition);
-        const artifactName = (node.produces && node.produces.length > 0) 
-            ? node.produces[0] 
+        const artifactName = (node.produces && node.produces.length > 0)
+            ? node.produces[0]
             : `${node.id}.json`;
 
         // Include the full ancestor chain + the current node for nesting.
         // This ensures the root stage (e.g. 'search') gets its own directory.
         const nesting = [...ancestors, node.id].join('/');
-        
+
         paths.set(node.id, {
-            dataDir: `${nesting}/data`,
-            artifactFile: `${nesting}/data/${artifactName}`,
+            dataDir: `${nesting}/meta`,
+            artifactFile: `${nesting}/meta/${artifactName}`,
         });
     }
 
@@ -74,9 +74,12 @@ export function sessionPaths_compute(definition: DAGDefinition): Map<string, Sta
 
 /**
  * Build the ancestor chain from a node back to the root, following
- * primary parents (first entry in `previous` array).
+ * primary parents (first entry in `previous` array), skipping
+ * structural and optional nodes — they are transparent to path layout.
  *
- * @returns Array of ancestor IDs from root to immediate parent (NOT including the node itself)
+ * @param node - The DAG node whose ancestor chain to build.
+ * @param definition - The full DAG definition for node lookup.
+ * @returns Array of user-facing ancestor IDs from root to immediate parent (NOT including the node itself).
  */
 function ancestorChain_build(node: DAGNode, definition: DAGDefinition): string[] {
     const chain: string[] = [];
@@ -86,6 +89,16 @@ function ancestorChain_build(node: DAGNode, definition: DAGDefinition): string[]
         const primaryParentId = current.previous[0];
         const parent = definition.nodes.get(primaryParentId);
         if (!parent) break; // defensive
+
+        // Skip structural nodes entirely (implementation details).
+        // Skip non-root optional nodes (e.g. 'rename' which is a bypass in a join).
+        // Root-level optionals (e.g. 'search' with no parents) ARE canonical path elements.
+        const isNonRootOptional = parent.optional && parent.previous !== null && parent.previous.length > 0;
+        if (parent.structural || isNonRootOptional) {
+            current = parent;
+            continue;
+        }
+
         chain.unshift(parent.id);
         current = parent;
     }

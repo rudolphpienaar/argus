@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { project_createDraft, project_gather } from './ProjectManager.js';
+import { project_gather } from './ProjectManager.js';
 import { store } from '../state/store.js';
 import { MOCK_PROJECTS } from '../data/projects.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
@@ -40,24 +40,16 @@ describe('ProjectManager', () => {
         }
     });
 
-    describe('project_createDraft', () => {
-        it('should create a new draft project and add it to mock repo', () => {
-            const draft = project_createDraft();
-            expect(draft.name).toMatch(/^DRAFT-\d+$/);
-            expect(MOCK_PROJECTS).toContain(draft);
-        });
-    });
-
     describe('project_gather', () => {
         const dataset = DATASETS[0]; // BCH-PNEUMONIA
 
-        it('should auto-create draft if no active project', () => {
+        it('should initialize project if no active project', () => {
             expect(store.state.activeProject).toBeNull();
 
             const project = project_gather(dataset);
 
-            // 1. Should be a draft
-            expect(project.name).toMatch(/^DRAFT-\d+$/);
+            // 1. Should have no name (Bootstrap phase)
+            expect(project.name).toBe('');
             
             // 2. Should be active in store
             expect(store.state.activeProject).toBe(project);
@@ -67,34 +59,23 @@ describe('ProjectManager', () => {
             
             // 4. Dataset should be selected in store
             expect(store.state.selectedDatasets).toContain(dataset);
-            
-            // 5. VFS should be mounted (cohort tree structure: input/training/{dsDir}/...)
-            const username = store.globals.shell?.env_get('USER') || 'user';
-            const dsDir = dataset.name.replace(/\s+/g, '_');
-            const path = `/home/${username}/projects/${project.name}/input/training/${dsDir}/manifest.json`;
-            expect(store.globals.vcs.node_stat(path)).not.toBeNull();
         });
 
         it('should use existing active project', () => {
             // Setup existing project
-            const existing = project_createDraft();
-            store.project_load(existing);
+            const existing = {
+                id: 'test-proj',
+                name: 'Existing',
+                datasets: [],
+                created: new Date(),
+                lastModified: new Date()
+            };
+            store.project_load(existing as any);
             
             const gathered = project_gather(dataset);
             
-            expect(gathered).toBe(existing);
+            expect(gathered).toBe(existing as any);
             expect(existing.datasets).toContain(dataset);
-        });
-
-        it('should sync shell context to new draft', () => {
-            project_gather(dataset);
-            
-            const active = store.state.activeProject!;
-            const username = store.globals.shell?.env_get('USER');
-            const expectedCwd = `/home/${username}/projects/${active.name}`;
-            
-            expect(store.globals.vcs.cwd_get()).toBe(expectedCwd);
-            expect(store.globals.shell?.env_get('PROJECT')).toBe(active.name);
         });
     });
 });

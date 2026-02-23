@@ -20,6 +20,7 @@ import { store } from '../state/store.js';
 import { gutter_setStatus, gutter_resetAll } from '../../ui/gutters.js';
 import { stage_advanceTo } from '../logic/navigation.js';
 import { homeDir_scaffold } from '../../vfs/providers/ProjectProvider.js';
+import { core_get } from '../../lcarslm/browser.js';
 
 type Persona = 'fedml' | 'appdev' | 'annotator' | 'user' | 'provider' | 'scientist' | 'clinician' | 'admin' | 'fda';
 
@@ -117,8 +118,21 @@ export function user_logout(): void {
  *
  * @param persona - The selected persona.
  */
-export function role_select(persona: Persona): void {
+export async function role_select(persona: Persona): Promise<void> {
     persona_switch(persona);
+    
+    // v12.0: Trigger the AI Core Boot Sequence
+    const core = core_get();
+    if (core) {
+        // Open the console so the user sees the boot log
+        if (store.globals.frameSlot) {
+            store.globals.frameSlot.frame_open();
+        }
+        
+        // This initiates the boot sequence telemetry
+        await core.workflow_set(persona);
+    }
+
     stage_advanceTo('search');
 }
 
@@ -130,6 +144,8 @@ export function role_select(persona: Persona): void {
  */
 export function persona_switch(persona: Persona): void {
     store.persona_set(persona);
+
+    // v11.0: Handled by workflow_set in CalypsoCore for boot-logging
 
     document.querySelectorAll('.persona-btn').forEach((btn: Element): void => {
         const btnPersona: string | null = btn.getAttribute('data-persona');
@@ -154,7 +170,7 @@ export function personaButtons_initialize(): void {
         btn.addEventListener('click', (): void => {
             const persona: string | null = btn.getAttribute('data-persona');
             if (persona) {
-                persona_switch(persona as Persona);
+                role_select(persona as Persona);
             }
         });
     });

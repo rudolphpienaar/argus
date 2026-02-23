@@ -4,7 +4,7 @@
 # Defines the complete conversational DAG from dataset discovery
 # through federated model publication.
 #
-# 14 stages across 4 phases. Every stage produces an artifact.
+# 19 stages across 4 phases. Every stage produces an artifact.
 
 authors: ATLAS Team <atlas@childrens.harvard.edu>
 name: "Federated ML — SeaGaP-MP Pipeline"
@@ -13,7 +13,7 @@ description: >
   Search, Gather, Harmonize, Code, Train, Federate, Execute, Publish.
 category: Federated Learning
 persona: fedml
-version: 1.1.0
+version: 1.2.0
 locked: false
 
 stages:
@@ -86,32 +86,59 @@ stages:
         prepares the underlying filesystem for training.
       max_warnings: 2
 
-  - id: rename
-    name: Project Rename
+  - id: ml-readiness
+    name: ML Experiment Readiness
     phase: search-and-gather
     previous: gather
     optional: true
     produces:
-      - rename.json
+      - ml-readiness.json
     parameters:
-      name: null
-    narrative: Updating project identity and synchronizing workspace paths.
+      objective: auto
+      require_supervision: true
+    narrative: Validating task coherence and supervision coverage before harmonization.
     blueprint:
-      - Computing path migration plan for active project root.
-      - Applying VFS move and shell-context synchronization.
-      - Updating project model and shell context.
+      - Inspecting gathered cohorts for task type and annotation shape.
+      - Measuring supervision coverage and objective compatibility.
+      - Materializing readiness report with pass/fail rationale.
     instruction: >
-      Optionally rename your project to a meaningful identifier.
-      You can skip this step — the session ID and stage identifiers
-      provide sufficient context for causal navigation.
+      Optionally validate that your gathered cohort is a meaningful ML
+      experiment before continuing. This stage detects mixed-task
+      incompatibilities (classification vs detection vs segmentation)
+      and missing supervision artifacts.
     commands:
-      - rename <new-name>
-    handler: rename
+      - ml-readiness
+      - readiness
+    handler: ml-readiness
 
-  - id: join_gather_rename
-    name: Causal Convergence (Gather/Rename)
+  - id: collect
+    name: Cohort Collection Build
     phase: search-and-gather
-    previous: [rename, gather]
+    previous: ml-readiness
+    optional: true
+    produces:
+      - collect.json
+    parameters:
+      split_seed: 42
+      train_ratio: 0.8
+      validation_ratio: 0.2
+    narrative: Reorganizing gathered cohorts into a normalized collection layout.
+    blueprint:
+      - Classifying gathered cohorts by supervision task.
+      - Building a normalized collection tree for downstream harmonization.
+      - Emitting collection manifest and split receipts.
+    instruction: >
+      Optionally build a normalized collection view after readiness checks.
+      This stage does not alter gathered evidence; it creates a structured
+      reorganization suitable for downstream harmonization and model prep.
+    commands:
+      - collect
+    handler: collect
+
+  - id: join_gather_collect
+    name: Causal Convergence (Gather/Readiness/Collect)
+    phase: search-and-gather
+    previous: [collect, ml-readiness]
     structural: true
     produces:
       - join.json
@@ -120,7 +147,7 @@ stages:
   - id: pre_harmonize
     name: Harmonization View Resolver
     phase: harmonize
-    previous: [join_gather_rename]
+    previous: [join_gather_collect]
     structural: true
     produces:
       - resolve.json

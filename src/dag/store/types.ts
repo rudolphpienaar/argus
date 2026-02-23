@@ -184,22 +184,4 @@ export interface SessionStoreInterface {
 
     /** Check whether a stage has a materialized artifact. */
     artifact_exists(session: Session, stagePath: string[]): Promise<boolean>;
-
-    /**
-     * Materialize a topological join node at the convergence point.
-     *
-     * Creates the _join_<parents> directory with its data/ subdirectory,
-     * writes join.json with convergence metadata, and creates input
-     * reference links to each parent's data/ directory.
-     *
-     * @param session - Active session
-     * @param parentStagePaths - Map of parent stage ID → path segments to that parent's data/
-     * @param nestUnderPath - Path segments to the directory the join node nests under
-     * @returns The join node's name (e.g. '_join_gather_rename')
-     */
-    joinNode_materialize(
-        session: Session,
-        parentStagePaths: Record<string, string[]>,
-        nestUnderPath: string[],
-    ): Promise<string>;
 }

@@ -1,714 +1,231 @@
-# FEDML Pipeline (Code-Current)
+# FEDML Pipeline (Readiness-First Provenance Contract)
 
-This document reflects the **current code behavior** for the `fedml.manifest.yaml` workflow.
-Each section maps to one manifest stage, describes what the stage does in runtime, and shows a
-`~/projects` tree snapshot after that stage is completed.
+## Abstract
+This document specifies the FEDML pipeline contract for a readiness-first workflow in which raw cohort acquisition is cleanly separated from machine-learning feasibility checks and optional data reorganization. The central design goal is to prevent compute waste and scientific ambiguity by introducing an explicit `ml-readiness` gate immediately after `gather`, before any harmonization or code-generation work begins.
 
-## Conventions
+The contract also formalizes a strict provenance layout model. Every stage writes a deterministic `input/`, `meta/`, and `output/` triad under the session provenance tree. Structural and non-root optional nodes remain lineage-visible but path-transparent for downstream nesting. This keeps causal evidence complete while preserving stable consumer paths for harmonization and later federation stages.
 
-- `<USER>` means shell user (from `USER` env var).
-- `<PROJECT>` means active project directory under `~/projects`.
-- On first run, `<PROJECT>` is usually `DRAFT-xxxx` until `rename`.
-- `search` also writes a snapshot under `~/searches/...` (outside `~/projects`).
+## Introduction: Why This Contract Changed
+The previous FEDML documentation reflected an earlier branch in which optional project-renaming occupied the only post-gather branch point. That model did not address a more important scientific failure mode: users could assemble mixed-task cohorts (classification + detection + segmentation) and continue toward training without a formal machine-learning feasibility decision.
 
-## 1) `search` (`search <keywords>`)
+In practice, that produced two kinds of drift. First, expensive downstream steps could run on ill-posed task mixtures where model objective, supervision shape, and evaluation semantics were not aligned. Second, provenance could remain technically valid while the experiment itself was weakly defined, which is a scientific quality failure even if the software path was deterministic.
 
-Handler: `src/plugins/search.ts`  
-Stage artifact: `search.json`  
-Notes:
-- Resolves dataset hits via lexical-first + semantic fallback.
-- Writes stage artifact into session tree.
-- Writes separate search snapshot into `~/searches` (not shown below).
+The readiness-first contract resolves that pressure by moving feasibility analysis directly after `gather`, before optional reorganization. `collect` remains optional and does not replace feasibility; it only restructures already-accepted cohorts into a normalized training collection. The resulting architecture preserves user override flexibility while making experiment viability an explicit decision point in the causal chain.
+
+## Full DAG (Start to End)
+The following figure shows the complete FEDML pipeline with explicit branch and
+join topology after `ml-readiness` and before `harmonize`.
 
 ```text
-~/projects/
-└── <BOOTSTRAP_PROJECT>/
-    └── data/
-        ├── session.json
-        └── search/
-            └── data/
-                └── search.json
+search (optional root)
+  |
+gather
+  |
+ml-readiness (optional gate)
+  |\
+  | \--> collect (optional reorganization)
+  |         |
+  +---------+
+      |
+join_gather_collect (structural; parents: ml-readiness + collect)
+  |
+pre_harmonize (structural source resolver; collect > gather)
+  |
+harmonize
+  |
+pre_code (structural)
+  |
+code
+  |
+pre_train (structural)
+  |
+train
+  |
+federate-brief
+  |
+federate-transcompile
+  |
+federate-containerize
+  |
+federate-publish-config
+  |
+federate-publish-execute
+  |
+federate-dispatch
+  |
+federate-execute
+  |
+federate-model-publish
 ```
 
-## 2) `gather` (`add <dataset>`, then `gather`)
-
-Handler: `src/plugins/gather.ts`  
-Stage artifact: `gather.json`  
-Side effects:
-- Creates/activates project root.
-- Mounts cohort tree into stage data dir.
-- Writes `.cohort`.
-- If search happened in bootstrap root, migrates prior session tree into active project root.
+## Provenance Semantics
+### Session Root
+All stage evidence is materialized beneath:
 
 ```text
-~/projects/
-└── <PROJECT>/
-    └── data/
-        ├── session.json
-        └── search/
-            ├── data/
-            │   └── search.json
-            └── gather/
-                └── data/
-                    ├── gather.json
-                    ├── .cohort
-                    ├── manifest.json
-                    ├── training/
-                    │   └── <Dataset_Name>/
-                    │       ├── images/...
-                    │       ├── masks/... (if segmentation)
-                    │       ├── metadata.json
-                    │       └── manifest.json
-                    └── validation/...
+~/projects/<PERSONA>/<SESSION_ID>/provenance/
 ```
 
-## 3) `rename` (`rename <new-name>`) — optional
-
-Handler: `src/plugins/rename.ts`  
-Stage artifact: `rename.json`  
-Notes:
-- Moves `/home/<USER>/projects/<old>` to `/home/<USER>/projects/<new>`.
-- If skipped and user proceeds, host auto-materializes a skip sentinel at the same artifact path.
+A stage directory is always represented as:
 
 ```text
-~/projects/
-└── <PROJECT>/   # possibly renamed from DRAFT-xxxx
-    └── data/
-        └── search/
-            └── gather/
-                ├── data/
-                │   ├── gather.json
-                │   └── .cohort
-                └── rename/
-                    └── data/
-                        └── rename.json
+<stage>/
+├── input/
+├── meta/
+└── output/
 ```
 
-## 4) `harmonize`
+### Path Transparency Rules
+The lineage engine preserves two invariants for downstream nesting:
 
-Handler: `src/plugins/harmonize.ts`  
-Stage artifact: `harmonize.json`  
-Side effects:
-- Writes `.harmonized` marker.
-- Attempts clone from `~/projects/<PROJECT>/input` into stage data dir (safe if missing/unresolved).
+1. Structural stages are path-transparent.
+2. Non-root optional stages are path-transparent.
+
+This means optional or structural branches are still recorded in `meta/` artifacts and sentinels, but descendants resolve under the nearest user-facing required ancestor chain. This is what prevents path explosion while keeping provenance explicit.
+
+### Optional Stage Meaning
+In this contract, optional does not mean undefined behavior. It means the stage can be bypassed with explicit provenance. Skip behavior is expected to materialize a sentinel receipt so causal history records that the branch was declined rather than omitted accidentally.
+
+## Stage Contract (Gather to Harmonize)
+### 1) `gather`
+Handler: `src/plugins/gather.ts`
+
+`gather` materializes raw cohort directories exactly as cohort-specific payloads, with no global training objective assumptions.
 
 ```text
-~/projects/
-└── <PROJECT>/
-    └── data/
-        └── search/
-            └── gather/
-                ├── data/...
-                ├── rename/
-                │   └── data/
-                │       └── rename.json
-                └── harmonize/
-                    └── data/
-                        ├── harmonize.json
-                        └── .harmonized
+~/projects/<PERSONA>/<SESSION_ID>/provenance/search/gather/output/
+├── .cohort
+├── BCH_Chest_X-ray_Cohort/
+│   ├── images/
+│   └── labels.csv
+├── MGH_COVID_Collection/
+│   ├── images/
+│   └── labels.csv
+├── BIDMC_Pneumonia_Set/
+│   ├── images/
+│   └── annotations.json
+└── BWH_Thoracic_Segments/
+    ├── images/
+    └── masks/
 ```
 
-## 5) `code` (or `proceed`)
+### 2) `ml-readiness` (optional gate, recommended)
+Handler: `src/plugins/ml-readiness.ts`
 
-Handler: `src/plugins/scaffold.ts`  
-Stage artifact: `code.json`  
-Side effects:
-- Materializes scaffold files in `.../code/data/`:
-  - `train.py`
-  - `config.yaml`
-  - `requirements.txt`
-  - `README.md`
-  - `.meridian/manifest.json`
+`ml-readiness` evaluates whether the assembled cohort is scientifically coherent for a declared objective. It should classify task mix, inspect supervision availability, and fail fast on incompatible configurations unless explicitly overridden.
+
+Expected output shape:
 
 ```text
-~/projects/
-└── <PROJECT>/
-    └── data/
-        └── search/gather/harmonize/code/
-            └── data/
-                ├── code.json
-                ├── train.py
-                ├── config.yaml
-                ├── requirements.txt
-                ├── README.md
-                └── .meridian/
-                    └── manifest.json
+~/projects/<PERSONA>/<SESSION_ID>/provenance/search/gather/ml-readiness/output/
+├── ml-readiness.json
+├── task-matrix.json
+└── coverage-report.md
 ```
 
-## 6) `train` (or `python train.py`)
+### 3) `collect` (optional reorganization)
+Handler: `src/plugins/collect.ts`
 
-Handler: `src/plugins/train.ts`  
-Stage artifact: `train.json`  
-Side effects:
-- Runs through shell path with `DATA_DIR` bound to current stage data dir.
-- Writes `.local_pass` in stage data dir on successful local validation.
+`collect` does not decide whether a cohort is meaningful. It reorganizes already accepted data into a normalized collection layout suitable for downstream harmonization and model-specific preprocessing.
+
+Expected output shape:
 
 ```text
-~/projects/
-└── <PROJECT>/
-    └── data/
-        └── search/gather/harmonize/code/train/
-            └── data/
-                ├── train.json
-                └── .local_pass
+~/projects/<PERSONA>/<SESSION_ID>/provenance/search/gather/collect/output/
+├── collect.json
+├── collection-manifest.json
+├── cohorts/
+│   ├── classification/
+│   │   ├── BCH_Chest_X-ray_Cohort/
+│   │   └── MGH_COVID_Collection/
+│   ├── detection/
+│   │   └── BIDMC_Pneumonia_Set/
+│   └── segmentation/
+│       └── BWH_Thoracic_Segments/
+└── splits/
+    ├── train/
+    ├── validation/
+    └── test/
 ```
 
-## 7) `federate` (federation brief)
+### 4) `join_gather_collect` and `pre_harmonize` (structural)
+Handlers:
+- `src/plugins/topological-join.ts`
+- `src/plugins/pre-harmonize.ts`
 
-Handler: `src/plugins/federate-brief.ts`  
-Stage artifact: `briefing.json`  
-Side effects:
-- Creates/updates root config: `~/<PROJECT>/.federation-config.json`.
+The join stage exposes both available parents as linked views. `pre_harmonize` then selects the authoritative upstream source with deterministic precedence:
+
+1. `collect` if present
+2. `gather` otherwise
+
+This preserves a stable harmonization ingress without requiring downstream path changes.
+
+### 5) `harmonize`
+Handler: `src/plugins/harmonize.ts`
+
+Because optional and structural ancestors are path-transparent for descendants, harmonize remains in a stable canonical nesting chain:
 
 ```text
-~/projects/
-└── <PROJECT>/
-    ├── .federation-config.json
-    └── data/
-        └── search/gather/harmonize/code/train/federate-brief/
-            └── data/
-                └── briefing.json
+~/projects/<PERSONA>/<SESSION_ID>/provenance/search/gather/harmonize/
+├── input/
+├── meta/
+└── output/
 ```
 
-## 8) `transcompile`
-
-Handler: `src/plugins/federate-transcompile.ts`  
-Stage artifact: `transcompile.json`  
-Side effects:
-- Writes transcompile artifacts under project source DAG root:
-  - `src/source-crosscompile/data/node.py`
-  - `src/source-crosscompile/data/flower_hooks.py`
-  - `src/source-crosscompile/data/transcompile.log`
-  - `src/source-crosscompile/data/artifact.json`
+## Execution Paths
+### Minimal Path (skip both optional branches)
 
 ```text
-~/projects/
-└── <PROJECT>/
-    ├── src/
-    │   └── source-crosscompile/
-    │       └── data/
-    │           ├── node.py
-    │           ├── flower_hooks.py
-    │           ├── transcompile.log
-    │           └── artifact.json
-    └── data/
-        └── search/gather/harmonize/code/train/federate-brief/federate-transcompile/
-            └── data/
-                └── transcompile.json
+search -> gather -> [skip ml-readiness] -> [skip collect] -> join_gather_collect -> pre_harmonize -> harmonize -> code -> train -> federation
 ```
 
-## 9) `containerize`
-
-Handler: `src/plugins/federate-containerize.ts`  
-Stage artifact: `containerize.json`  
-Side effects:
-- Writes OCI simulation outputs:
-  - `src/source-crosscompile/containerize/data/Dockerfile`
-  - `image.tar`, `image.digest`, `sbom.json`, `build.log`
+### Readiness Path (run `ml-readiness`, skip `collect`)
 
 ```text
-~/projects/
-└── <PROJECT>/
-    ├── src/
-    │   └── source-crosscompile/
-    │       └── containerize/
-    │           └── data/
-    │               ├── Dockerfile
-    │               ├── image.tar
-    │               ├── image.digest
-    │               ├── sbom.json
-    │               └── build.log
-    └── data/
-        └── search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/
-            └── data/
-                └── containerize.json
+search -> gather -> ml-readiness -> join_gather_collect -> pre_harmonize -> harmonize -> code -> train -> federation
 ```
 
-## 10) `publish-config` (after `config ...`)
-
-Handler: `src/plugins/federate-publish-config.ts`  
-Stage artifact: `publish-config.json`  
-Side effects:
-- Updates `~/<PROJECT>/.federation-config.json`.
+### Full Branch Path (run `ml-readiness` and `collect`)
 
 ```text
-~/projects/
-└── <PROJECT>/
-    ├── .federation-config.json
-    └── data/
-        └── search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/
-            └── data/
-                └── publish-config.json
+search -> gather -> ml-readiness -> collect -> join_gather_collect -> pre_harmonize -> harmonize -> code -> train -> federation
 ```
 
-## 11) `publish-execute`
+In both paths, downstream stage locations remain stable under the canonical chain rooted at `search/gather/...`; branch variance is captured as upstream evidence, not as downstream path drift.
 
-Handler: `src/plugins/federate-publish-execute.ts`  
-Stage artifact: `publish-execute.json`  
-Side effects:
-- Writes publish outputs:
-  - `src/source-crosscompile/containerize/marketplace-publish/data/app.json`
-  - `publish-receipt.json`
-  - `registry-ref.txt`
-  - `publish.log`
+## End-State Example (Condensed)
 
 ```text
-~/projects/
-└── <PROJECT>/
-    ├── src/
-    │   └── source-crosscompile/
-    │       └── containerize/
-    │           └── marketplace-publish/
-    │               └── data/
-    │                   ├── app.json
-    │                   ├── publish-receipt.json
-    │                   ├── registry-ref.txt
-    │                   └── publish.log
-    └── data/
-        └── search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/
-            └── data/
-                └── publish-execute.json
+~/projects/<PERSONA>/<SESSION_ID>/
+├── provenance/
+│   └── search/
+│       └── gather/
+│           ├── output/                       # raw cohort view
+│           ├── ml-readiness/
+│           │   └── output/
+│           │       └── ml-readiness.json
+│           ├── collect/                      # optional
+│           │   └── output/
+│           │       └── collection-manifest.json
+│           ├── join_gather_collect/          # structural
+│           │   └── output/
+│           ├── pre_harmonize/                # structural
+│           │   └── output/
+│           ├── harmonize/
+│           │   └── output/
+│           ├── code/
+│           │   └── output/
+│           ├── train/
+│           │   └── output/
+│           └── federate-*/
+│               └── output/
+└── <stage>@ symlinks
 ```
 
-## 12) `dispatch`
+## Conclusion
+The readiness-first FEDML contract changes one critical ordering decision: experiment viability is evaluated immediately after cohort assembly, before optional reorganization and long-horizon compute stages. This reduces wasted execution, prevents ambiguous training objectives, and keeps scientific intent explicit in lineage.
 
-Handler: `src/plugins/federate-dispatch.ts`  
-Stage artifact: `dispatch.json`  
-Side effects:
-- Writes dispatch + rounds data:
-  - `.../dispatch/data/participants.json`
-  - `.../dispatch/data/dispatch.log`
-  - `.../dispatch/data/receipts/*.json`
-  - `.../dispatch/federated-rounds/data/round-0*.json`
-  - `.../dispatch/federated-rounds/data/aggregate-metrics.json`
-  - `.../dispatch/federated-rounds/data/final-checkpoint.bin`
-- Writes root marker: `~/<PROJECT>/.federation-dag.json`.
+At the same time, the provenance model remains stable and deterministic. Optional and structural branches remain fully auditable but do not fracture downstream path contracts. The result is a pipeline that is both stricter scientifically and cleaner operationally: evidence remains complete, stage paths remain predictable, and harmonization-to-federation consumers do not need to chase branch-specific tree shapes.
 
-```text
-~/projects/
-└── <PROJECT>/
-    ├── .federation-dag.json
-    ├── src/
-    │   └── source-crosscompile/containerize/marketplace-publish/dispatch/
-    │       ├── data/
-    │       │   ├── participants.json
-    │       │   ├── dispatch.log
-    │       │   └── receipts/
-    │       │       ├── bch.json
-    │       │       ├── mgh.json
-    │       │       └── bidmc.json
-    │       └── federated-rounds/
-    │           └── data/
-    │               ├── round-01.json
-    │               ├── round-02.json
-    │               ├── round-03.json
-    │               ├── round-04.json
-    │               ├── round-05.json
-    │               ├── aggregate-metrics.json
-    │               └── final-checkpoint.bin
-    └── data/
-        └── search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/
-            └── data/
-                └── dispatch.json
-```
-
-## 13) `status` / `show metrics` / `show rounds` (federate-execute)
-
-Handler: `src/plugins/federate-execute.ts`  
-Stage artifact: `execute.json`  
-Notes:
-- Primarily reads and reports metrics/rounds data.
-- Stage closure is recorded by writing `execute.json`.
-
-```text
-~/projects/
-└── <PROJECT>/
-    └── data/
-        └── search/gather/harmonize/code/train/federate-brief/federate-transcompile/federate-containerize/federate-publish-config/federate-publish-execute/federate-dispatch/federate-execute/
-            └── data/
-                └── execute.json
-```
-
-## 14) `publish model` (federate-model-publish)
-
-Handler: `src/plugins/federate-model-publish.ts`  
-Stage artifact: `model-publish.json`  
-Side effects:
-- Writes root completion marker: `~/<PROJECT>/.federated`.
-
-```text
-~/projects/
-└── <PROJECT>/
-    ├── .federation-config.json
-    ├── .federation-dag.json
-    ├── .federated
-    ├── src/
-    │   └── source-crosscompile/...
-    └── data/
-        ├── session.json
-        └── search/
-            └── gather/
-                ├── data/gather.json
-                ├── rename/data/rename.json
-                └── harmonize/
-                    └── code/
-                        └── train/
-                            └── federate-brief/
-                                └── federate-transcompile/
-                                    └── federate-containerize/
-                                        └── federate-publish-config/
-                                            └── federate-publish-execute/
-                                                └── federate-dispatch/
-                                                    └── federate-execute/
-                                                        └── federate-model-publish/
-                                                            └── data/
-                                                                └── model-publish.json
-```
-
-## 15) Final Explicit Tree (Canonical Full Run Example)
-
-Assumptions for this explicit tree:
-- User selected `ds-006` (`Histology_Segmentation`), then renamed project to `histo-exp`.
-- Full pipeline executed to `publish model`.
-- `harmonize` copied current `input` view into its stage data dir.
-
-```text
-~/projects/
-└── histo-exp/
-    ├── .federated
-    ├── .federation-config.json
-    ├── .federation-dag.json
-    ├── data/
-    │   ├── session.json
-    │   └── search/
-    │       ├── data/
-    │       │   └── search.json
-    │       └── gather/
-    │           ├── data/
-    │           │   ├── .cohort
-    │           │   ├── gather.json
-    │           │   ├── manifest.json
-    │           │   ├── training/
-    │           │   │   └── Histology_Segmentation/
-    │           │   │       ├── images/
-    │           │   │       │   ├── WBC_001.bmp
-    │           │   │       │   ├── WBC_002.bmp
-    │           │   │       │   ├── WBC_003.bmp
-    │           │   │       │   ├── WBC_004.bmp
-    │           │   │       │   ├── WBC_005.bmp
-    │           │   │       │   ├── WBC_006.bmp
-    │           │   │       │   ├── WBC_007.bmp
-    │           │   │       │   ├── WBC_008.bmp
-    │           │   │       │   ├── WBC_009.bmp
-    │           │   │       │   ├── WBC_010.bmp
-    │           │   │       │   ├── WBC_011.bmp
-    │           │   │       │   ├── WBC_012.bmp
-    │           │   │       │   ├── WBC_013.bmp
-    │           │   │       │   ├── WBC_014.bmp
-    │           │   │       │   ├── WBC_015.bmp
-    │           │   │       │   ├── WBC_016.bmp
-    │           │   │       │   ├── WBC_017.bmp
-    │           │   │       │   ├── WBC_018.bmp
-    │           │   │       │   ├── WBC_019.bmp
-    │           │   │       │   └── WBC_020.bmp
-    │           │   │       ├── manifest.json
-    │           │   │       ├── masks/
-    │           │   │       │   ├── WBC_001_mask.png
-    │           │   │       │   ├── WBC_002_mask.png
-    │           │   │       │   ├── WBC_003_mask.png
-    │           │   │       │   ├── WBC_004_mask.png
-    │           │   │       │   ├── WBC_005_mask.png
-    │           │   │       │   ├── WBC_006_mask.png
-    │           │   │       │   ├── WBC_007_mask.png
-    │           │   │       │   ├── WBC_008_mask.png
-    │           │   │       │   ├── WBC_009_mask.png
-    │           │   │       │   ├── WBC_010_mask.png
-    │           │   │       │   ├── WBC_011_mask.png
-    │           │   │       │   ├── WBC_012_mask.png
-    │           │   │       │   ├── WBC_013_mask.png
-    │           │   │       │   ├── WBC_014_mask.png
-    │           │   │       │   ├── WBC_015_mask.png
-    │           │   │       │   ├── WBC_016_mask.png
-    │           │   │       │   ├── WBC_017_mask.png
-    │           │   │       │   ├── WBC_018_mask.png
-    │           │   │       │   ├── WBC_019_mask.png
-    │           │   │       │   └── WBC_020_mask.png
-    │           │   │       └── metadata.json
-    │           │   └── validation/
-    │           │       ├── images/
-    │           │       │   ├── val_001.jpg
-    │           │       │   └── val_002.jpg
-    │           │       └── masks/
-    │           │           ├── val_001_mask.png
-    │           │           └── val_002_mask.png
-    │           ├── harmonize/
-    │           │   └── data/
-    │           │       ├── .cohort
-    │           │       ├── .harmonized
-    │           │       ├── gather.json
-    │           │       ├── harmonize.json
-    │           │       ├── manifest.json
-    │           │       ├── training/
-    │           │       │   └── Histology_Segmentation/
-    │           │       │       ├── images/
-    │           │       │       │   ├── WBC_001.bmp
-    │           │       │       │   ├── WBC_002.bmp
-    │           │       │       │   ├── WBC_003.bmp
-    │           │       │       │   ├── WBC_004.bmp
-    │           │       │       │   ├── WBC_005.bmp
-    │           │       │       │   ├── WBC_006.bmp
-    │           │       │       │   ├── WBC_007.bmp
-    │           │       │       │   ├── WBC_008.bmp
-    │           │       │       │   ├── WBC_009.bmp
-    │           │       │       │   ├── WBC_010.bmp
-    │           │       │       │   ├── WBC_011.bmp
-    │           │       │       │   ├── WBC_012.bmp
-    │           │       │       │   ├── WBC_013.bmp
-    │           │       │       │   ├── WBC_014.bmp
-    │           │       │       │   ├── WBC_015.bmp
-    │           │       │       │   ├── WBC_016.bmp
-    │           │       │       │   ├── WBC_017.bmp
-    │           │       │       │   ├── WBC_018.bmp
-    │           │       │       │   ├── WBC_019.bmp
-    │           │       │       │   └── WBC_020.bmp
-    │           │       │       ├── manifest.json
-    │           │       │       ├── masks/
-    │           │       │       │   ├── WBC_001_mask.png
-    │           │       │       │   ├── WBC_002_mask.png
-    │           │       │       │   ├── WBC_003_mask.png
-    │           │       │       │   ├── WBC_004_mask.png
-    │           │       │       │   ├── WBC_005_mask.png
-    │           │       │       │   ├── WBC_006_mask.png
-    │           │       │       │   ├── WBC_007_mask.png
-    │           │       │       │   ├── WBC_008_mask.png
-    │           │       │       │   ├── WBC_009_mask.png
-    │           │       │       │   ├── WBC_010_mask.png
-    │           │       │       │   ├── WBC_011_mask.png
-    │           │       │       │   ├── WBC_012_mask.png
-    │           │       │       │   ├── WBC_013_mask.png
-    │           │       │       │   ├── WBC_014_mask.png
-    │           │       │       │   ├── WBC_015_mask.png
-    │           │       │       │   ├── WBC_016_mask.png
-    │           │       │       │   ├── WBC_017_mask.png
-    │           │       │       │   ├── WBC_018_mask.png
-    │           │       │       │   ├── WBC_019_mask.png
-    │           │       │       │   └── WBC_020_mask.png
-    │           │       │       └── metadata.json
-    │           │       ├── validation/
-    │           │       │   ├── images/
-    │           │       │   │   ├── val_001.jpg
-    │           │       │   │   └── val_002.jpg
-    │           │       │   └── masks/
-    │           │       │       ├── val_001_mask.png
-    │           │       │       └── val_002_mask.png
-    │           │       └── code/
-    │           │           └── data/
-    │           │               ├── README.md
-    │           │               ├── code.json
-    │           │               ├── config.yaml
-    │           │               ├── requirements.txt
-    │           │               ├── train.py
-    │           │               ├── .meridian/
-    │           │               │   └── manifest.json
-    │           │               └── train/
-    │           │                   └── data/
-    │           │                       ├── .local_pass
-    │           │                       ├── train.json
-    │           │                       └── federate-brief/
-    │           │                           └── data/
-    │           │                               ├── briefing.json
-    │           │                               └── federate-transcompile/
-    │           │                                   └── data/
-    │           │                                       ├── transcompile.json
-    │           │                                       └── federate-containerize/
-    │           │                                           └── data/
-    │           │                                               ├── containerize.json
-    │           │                                               └── federate-publish-config/
-    │           │                                                   └── data/
-    │           │                                                       ├── publish-config.json
-    │           │                                                       └── federate-publish-execute/
-    │           │                                                           └── data/
-    │           │                                                               ├── publish-execute.json
-    │           │                                                               └── federate-dispatch/
-    │           │                                                                   └── data/
-    │           │                                                                       ├── dispatch.json
-    │           │                                                                       └── federate-execute/
-    │           │                                                                           └── data/
-    │           │                                                                               ├── execute.json
-    │           │                                                                               └── federate-model-publish/
-    │           │                                                                                   └── data/
-    │           │                                                                                       └── model-publish.json
-    │           └── rename/
-    │               └── data/
-    │                   └── rename.json
-    └── src/
-        └── source-crosscompile/
-            ├── data/
-            │   ├── artifact.json
-            │   ├── flower_hooks.py
-            │   ├── node.py
-            │   └── transcompile.log
-            └── containerize/
-                └── data/
-                    ├── Dockerfile
-                    ├── build.log
-                    ├── image.digest
-                    ├── image.tar
-                    ├── sbom.json
-                    └── marketplace-publish/
-                        └── data/
-                            ├── app.json
-                            ├── publish-receipt.json
-                            ├── publish.log
-                            ├── registry-ref.txt
-                            └── dispatch/
-                                ├── data/
-                                │   ├── dispatch.log
-                                │   ├── participants.json
-                                │   └── receipts/
-                                │       ├── bch.json
-                                │       ├── bidmc.json
-                                │       └── mgh.json
-                                └── federated-rounds/
-                                    └── data/
-                                        ├── aggregate-metrics.json
-                                        ├── final-checkpoint.bin
-                                        ├── round-01.json
-                                        ├── round-02.json
-                                        ├── round-03.json
-                                        ├── round-04.json
-                                        └── round-05.json
-```
-
-## 16) Final Explicit Tree (No-Rename Variant)
-
-Assumptions for this explicit variant:
-- User selected `ds-006` (`Histology_Segmentation`) and did **not** run `rename`.
-- Project remained in bootstrap naming (example: `DRAFT-8067`).
-- Full pipeline executed to `publish model`.
-
-Notes:
-- Payload files are the same as Section 15.
-- The only structural deltas are project-root naming and `rename` stage artifact policy
-  (either `rename/data/rename.json` if explicitly invoked, or host skip sentinel at that path when skipped).
-
-```text
-~/projects/
-└── DRAFT-8067/
-    ├── .federated
-    ├── .federation-config.json
-    ├── .federation-dag.json
-    ├── data/
-    │   ├── session.json
-    │   └── search/
-    │       ├── data/
-    │       │   └── search.json
-    │       └── gather/
-    │           ├── data/                       # same full payload tree as Section 15
-    │           │   ├── .cohort
-    │           │   ├── gather.json
-    │           │   ├── manifest.json
-    │           │   ├── training/Histology_Segmentation/...
-    │           │   └── validation/...
-    │           ├── harmonize/
-    │           │   └── data/                   # same full payload tree as Section 15
-    │           │       ├── .cohort
-    │           │       ├── .harmonized
-    │           │       ├── gather.json
-    │           │       ├── harmonize.json
-    │           │       ├── manifest.json
-    │           │       ├── training/Histology_Segmentation/...
-    │           │       ├── validation/...
-    │           │       └── code/
-    │           │           └── data/
-    │           │               ├── README.md
-    │           │               ├── code.json
-    │           │               ├── config.yaml
-    │           │               ├── requirements.txt
-    │           │               ├── train.py
-    │           │               ├── .meridian/manifest.json
-    │           │               └── train/data/...
-    │           └── rename/
-    │               └── data/
-    │                   └── rename.json         # explicit rename or skip sentinel artifact
-    └── src/
-        └── source-crosscompile/
-            ├── data/
-            │   ├── artifact.json
-            │   ├── flower_hooks.py
-            │   ├── node.py
-            │   └── transcompile.log
-            └── containerize/
-                └── data/
-                    ├── Dockerfile
-                    ├── build.log
-                    ├── image.digest
-                    ├── image.tar
-                    ├── sbom.json
-                    └── marketplace-publish/
-                        └── data/
-                            ├── app.json
-                            ├── publish-receipt.json
-                            ├── publish.log
-                            ├── registry-ref.txt
-                            └── dispatch/
-                                ├── data/
-                                │   ├── dispatch.log
-                                │   ├── participants.json
-                                │   └── receipts/
-                                │       ├── bch.json
-                                │       ├── bidmc.json
-                                │       └── mgh.json
-                                └── federated-rounds/
-                                    └── data/
-                                        ├── aggregate-metrics.json
-                                        ├── final-checkpoint.bin
-                                        ├── round-01.json
-                                        ├── round-02.json
-                                        ├── round-03.json
-                                        ├── round-04.json
-                                        └── round-05.json
-```
-
-## 17) Search Snapshot Tree (`~/searches`, Outside Project Root)
-
-Assumptions for this explicit variant:
-- User executed at least one `search <keywords>`.
-- Snapshot persisted by search provider in home-scoped catalog cache.
-
-```text
-~/searches/
-├── search-2026-02-20T21-47-47-275Z-7831.json
-├── search-2026-02-21T08-14-02-104Z-1199.json
-└── search-2026-02-21T09-36-55-987Z-4412.json
-```
-
-Example snapshot shape:
-
-```json
-{
-  "query": "histology data sets",
-  "timestamp": "2026-02-20T21:47:47.275Z",
-  "results": [
-    { "id": "ds-006", "name": "Histology Segmentation" },
-    { "id": "ds-001", "name": "BCH Chest X-ray Cohort" }
-  ]
-}
-```
-
-## Quick Path Index (artifact envelopes)
-
-- `search`: `.../search/data/search.json`
-- `gather`: `.../search/gather/data/gather.json`
-- `rename`: `.../search/gather/rename/data/rename.json`
-- `harmonize`: `.../search/gather/harmonize/data/harmonize.json`
-- `code`: `.../search/gather/harmonize/code/data/code.json`
-- `train`: `.../search/gather/harmonize/code/train/data/train.json`
-- `federate-brief`: `.../federate-brief/data/briefing.json`
-- `federate-transcompile`: `.../federate-transcompile/data/transcompile.json`
-- `federate-containerize`: `.../federate-containerize/data/containerize.json`
-- `federate-publish-config`: `.../federate-publish-config/data/publish-config.json`
-- `federate-publish-execute`: `.../federate-publish-execute/data/publish-execute.json`
-- `federate-dispatch`: `.../federate-dispatch/data/dispatch.json`
-- `federate-execute`: `.../federate-execute/data/execute.json`
-- `federate-model-publish`: `.../federate-model-publish/data/model-publish.json`
+---
+_Last updated: 2026-02-23 (readiness-first contract; branch/join topology corrected)_

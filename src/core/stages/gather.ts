@@ -149,7 +149,7 @@ export function projectStrip_render(): void {
     });
 
     strip.querySelector('.project-chip.new-project')?.addEventListener('click', (): void => {
-        projectDraft_create();
+        project_create();
     });
 }
 
@@ -171,36 +171,36 @@ function projectChip_toggle(projectId: string): void {
     projectStrip_render();
 
     if (store.globals.terminal) {
-        store.globals.terminal.println(`● GATHER TARGET: [${project.name.toUpperCase()}]`);
+        const displayName = project.name || 'SESSION PROJECT';
+        store.globals.terminal.println(`● GATHER TARGET: [${displayName.toUpperCase()}]`);
         store.globals.terminal.println('○ BROWSE DATASETS AND GATHER DATA FOR THIS PROJECT.');
     }
 }
 
 /**
- * Create a draft project and switch shell context to its root.
+ * Create a session project and switch shell context.
  */
-function projectDraft_create(): void {
-    const timestamp: number = Date.now();
-    const shortId: string = timestamp.toString().slice(-4);
-
-    const draftProject: Project = {
-        id: `draft-${timestamp}`,
-        name: `DRAFT-${shortId}`,
-        description: 'New project workspace',
+function project_create(): void {
+    const sessionId = store.state.currentSessionId || 'unknown';
+    const project: Project = {
+        id: `proj-${Date.now()}`,
+        name: '', // v11.0: No legacy DRAFT-XXXX names
+        description: 'New session project workspace',
         created: new Date(),
         lastModified: new Date(),
         datasets: [],
     };
 
-    MOCK_PROJECTS.push(draftProject);
-    gatherStage_state.gatherTargetProject = draftProject;
+    MOCK_PROJECTS.push(project);
+    gatherStage_state.gatherTargetProject = project;
 
-    const projectBase: string = `/home/user/projects/${draftProject.name}`;
-    store.globals.vcs.dir_create(projectBase);
+    const username = store.globals.shell?.env_get('USER') || 'user';
+    const persona = store.globals.shell?.env_get('PERSONA') || 'fedml';
+    const sessionBase = `/home/${username}/projects/${persona}/${sessionId}`;
 
     if (store.globals.shell) {
-        store.globals.shell.command_execute(`cd ${projectBase}`);
-        store.globals.shell.env_set('PROJECT', draftProject.name);
+        store.globals.shell.cwd_set(`${sessionBase}/gather`);
+        store.globals.shell.env_set('PROJECT', project.name);
         if (store.globals.terminal) {
             store.globals.terminal.prompt_sync();
         }
@@ -209,8 +209,7 @@ function projectDraft_create(): void {
     projectStrip_render();
 
     if (store.globals.terminal) {
-        store.globals.terminal.println(`● NEW PROJECT INITIALIZED: [${draftProject.name}].`);
-        store.globals.terminal.println(`○ CONTEXT SWITCHED TO ${projectBase}`);
+        store.globals.terminal.println(`● PROJECT INITIALIZED FOR SESSION: [${sessionId}].`);
         store.globals.terminal.println('○ TYPE "upload" TO INGEST LOCAL FILES OR CONTINUE SEARCHING.');
     }
 }

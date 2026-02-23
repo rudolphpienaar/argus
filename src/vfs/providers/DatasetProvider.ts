@@ -18,7 +18,7 @@ import type { FileNode } from '../types.js';
  * Minimal dataset interface — only the fields the provider needs.
  * Avoids coupling to the full `core/models/types.Dataset` type.
  */
-interface DatasetInput {
+export interface DatasetInput {
     id: string;
     name: string;
     modality: string;

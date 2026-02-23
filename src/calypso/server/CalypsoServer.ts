@@ -26,6 +26,7 @@ import { VERSION } from '../../generated/version.js';
 import { store } from '../../core/state/store.js';
 import { DATASETS } from '../../core/data/datasets.js';
 import { SYSTEM_KNOWLEDGE } from '../../core/data/knowledge.js';
+import { SettingsService } from '../../config/settings.js';
 import { restRequest_handle } from './RestHandler.js';
 import { wsConnection_handle } from './WebSocketHandler.js';
 import type { RestHandlerDeps } from './rest/types.js';
@@ -201,7 +202,7 @@ class GlobalStoreAdapter implements CalypsoStoreActions {
 /**
  * Initialize CalypsoCore with headless dependencies.
  */
-function calypso_initialize(username: string = 'developer'): CalypsoCore {
+function calypso_initialize(username: string = 'developer', settingsService?: SettingsService): CalypsoCore {
     const vfs: VirtualFileSystem = new VirtualFileSystem(username);
     store.globalVcs_set(vfs);
 
@@ -247,7 +248,8 @@ function calypso_initialize(username: string = 'developer'): CalypsoCore {
             apiKey: (openaiKey || geminiKey) as string,
             model: openaiKey ? 'gpt-4o-mini' : 'gemini-flash-latest'
         } : undefined,
-        knowledge: SYSTEM_KNOWLEDGE
+        knowledge: SYSTEM_KNOWLEDGE,
+        settingsService: settingsService || SettingsService.instance_get(),
     });
 
     storeAdapter.session_setPath(core.session_getPath());
@@ -269,12 +271,13 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
     const host: string = config.host;
     const port: number = config.port;
 
-    let calypso: CalypsoCore = calypso_initialize();
+    const settingsService: SettingsService = SettingsService.instance_get();
+    let calypso: CalypsoCore = calypso_initialize('developer', settingsService);
 
     const deps: RestHandlerDeps = {
         calypso_get: () => calypso,
         calypso_reinitialize: (username?: string): CalypsoCore => {
-            calypso = calypso_initialize(username);
+            calypso = calypso_initialize(username, settingsService);
             return calypso;
         },
         host,

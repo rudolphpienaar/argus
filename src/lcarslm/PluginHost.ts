@@ -15,6 +15,7 @@ import type { PluginHandlerName } from '../plugins/registry.js';
 import { pluginHandler_isKnown } from '../plugins/registry.js';
 import { TelemetryBus } from './TelemetryBus.js';
 import { PluginCommsRuntime } from './PluginComms.js';
+import type { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
 
 /**
  * Contract for plugin modules dynamically loaded by the host.
@@ -36,9 +37,18 @@ export class PluginHost {
         private readonly shell: Shell,
         private readonly storeActions: CalypsoStoreActions,
         private readonly searchProvider: SearchProvider,
-        private readonly telemetryBus: TelemetryBus
+        private readonly telemetryBus: TelemetryBus,
+        private readonly workflowAdapter: WorkflowAdapter,
+        private sessionPath: string
     ) {
         this.comms = new PluginCommsRuntime(this.searchProvider);
+    }
+
+    /**
+     * Update the session path.
+     */
+    public session_setPath(path: string): void {
+        this.sessionPath = path;
     }
 
     /**
@@ -55,12 +65,44 @@ export class PluginHost {
         parameters: Record<string, unknown>,
         command: string,
         args: string[],
-        dataDir: string
+        dataDir: string,
+        stageId: string
     ): Promise<PluginResult> {
         try {
             const knownHandler: PluginHandlerName = this.handler_requireKnown(handlerName);
+            
+            // v12.0: Physical Contract - dataDir provided is the stage ROOT.
+            // We ensure input/ and output/ exist.
+            const stageRoot = dataDir;
+            const inputDir = `${stageRoot}/input`;
+            const outputDir = `${stageRoot}/output`;
+            
+            this.vfs.dir_create(inputDir);
+            this.vfs.dir_create(outputDir);
+
+            // v12.0: Input Mounting
+            // For every parent in manifest, link its output/ into our input/
+            const node = this.workflowAdapter.dag.nodes.get(stageId);
+            if (node && node.previous) {
+                for (const parentId of node.previous) {
+                    const parentArtifact = this.workflowAdapter.latestArtifact_get(this.vfs, this.sessionPath, parentId);
+                    if (parentArtifact && parentArtifact._physical_path) {
+                        // Resolve parent's output directory
+                        // (artifact is in meta/, so go up to stageRoot and into output/)
+                        const parentMetaDir = parentArtifact._physical_path.substring(0, parentArtifact._physical_path.lastIndexOf('/'));
+                        const parentStageRoot = parentMetaDir.replace(/\/meta$/, '');
+                        const parentOutputDir = `${parentStageRoot}/output`;
+                        
+                        // Create relative link for portability
+                        const relParentOutput = this.path_relative(inputDir, parentOutputDir);
+                        this.vfs.link_create(`${inputDir}/${parentId}`, relParentOutput);
+                    }
+                }
+            }
+
             const module: PluginModule = await this.module_load(knownHandler);
-            const context: PluginContext = this.context_create(parameters, command, args, dataDir);
+            // v12.0: Plugins receive the output directory specifically
+            const context: PluginContext = this.context_create(parameters, command, args, outputDir);
             return await module.plugin_execute(context);
 
         } catch (e: unknown) {
@@ -70,6 +112,25 @@ export class PluginHost {
                 statusCode: CalypsoStatusCode.ERROR
             };
         }
+    }
+
+    /**
+     * Minimal relative path resolver for internal mounting.
+     */
+    private path_relative(from: string, to: string): string {
+        const fromParts = from.split('/').filter(Boolean);
+        const toParts = to.split('/').filter(Boolean);
+        
+        let common = 0;
+        while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+            common++;
+        }
+
+        const upCount = fromParts.length - common;
+        const up = upCount > 0 ? '../'.repeat(upCount) : '';
+        const down = toParts.slice(common).join('/');
+        
+        return up + down;
     }
 
     /**

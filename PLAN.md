@@ -1,65 +1,40 @@
-# ARGUS Pre-v11 Hardening Plan: Contract Lock Through Deletion
+# ARGUS Project Plan & Handoff Manifest
 
-## Abstract
+## Current Architectural Status (v12.0 "No-Magic")
 
-This plan specifies the final hardening trajectory from the late v10.3 line to a pre-v11 contract lock in which ARGUS Host behavior is mathematically constrained to manifest-driven orchestration and plugin-owned compute semantics. The objective is not feature expansion. The objective is architectural subtraction: remove residual backend-internalized workflow assumptions before they harden into long-lived compatibility debt.
+### 1. Causal Provenance & Viewport Portal
+- **Topology:** Full migration to a manifest-driven, session-based DAG. All physical work occurs in `~/projects/<persona>/<sessionId>/provenance/<topology>/output/`.
+- **Viewport:** Eliminated `scratch/` directory. The active viewport is a symbolic link named after the `stageId` (e.g., `search`, `gather`) living directly in the session root.
+- **Shell Autonomy:** Restored. The shell "beams" the user into the logical viewport once per stage transition, but does not forcefully "sticky-trap" the CWD during normal turns.
+- **Boundary Guard:** Implemented. The shell detects when a user `cd`s out of the scratch space and provides a reminder to return via `cd @`.
 
-The critical risk addressed here is not correctness in the narrow unit-test sense. It is contract drift. A state-grounded system can still accumulate hidden coupling if command vocabularies, handler inventories, stage pipelines, or bootstrap identities are encoded in backend code paths instead of being derived from declared runtime artifacts. This plan therefore treats every hardcoded backend surrogate as a provenance hazard and a future migration tax.
+### 2. Search-Gather Collection Workflow
+- **Search Collector:** The `search` stage now acts as a buffer. `add <id>` materializes an atomic `add-<id>.json` file in the search output.
+- **Incremental Ledger:** `search.json` maintains a cumulative record of all queries in the session.
+- **Flat Gather:** The `gather` plugin materializes datasets into dedicated subdirectories named after their IDs (e.g., `gather/ds-001/`), preserving native data structures.
+- **No-Magic Materialization:** `gather` derives its work strictly from the physical `add-*.json` files in its input directory, ignoring the application Store.
 
-## Introduction: Historical Pressure and Failure Mode
+---
 
-The v10 architecture established Host/Guest separation in principle, but several transitional seams remained in execution reality. Those seams manifested as static plugin loader tables, workflow-specific command vocabularies in intent routing, federation-specific script-runtime translation branches, and bootstrap literals that assumed persona or project identity (`fedml`, `DRAFT`) without explicit runtime declaration.
+## The Fundamental Failure: Boot Telemetry Handshake
 
-These are not cosmetic smells. They are structural liabilities. Each hidden assumption bypasses the manifest as source of truth and silently moves policy into code. When that happens, the platform can pass tests while still violating the core ARGUS doctrine: control decisions must be materialized and declarative, not implicit and internalized.
+Despite multiple refactoring passes, the **Initial System Boot Sequence** remains invisible or incorrectly sequenced in the CLI REPL.
 
-The pre-v11 program therefore adopts a strict investigative lens: identify where backend code is carrying latent persona semantics, remove those semantics, and re-ground behavior in manifests, plugins, and explicit runtime context.
+### Technical Discrepancies:
+1. **The Race Condition:** The `sys_*` milestones (Genesis, Merkle Calibration) are emitted during the initial connection/login phase. While the server is configured to `await calypso.boot()`, the CLI REPL often fails to render these events, or they arrive in a single "burst" after the handshake is already complete.
+2. **Phase Bifurcation:** The `user_*` milestones (Manifest Load, VFS Scaffolding) correctly appear *after* persona selection, confirming that the telemetry bus is functional but the timing of the initial connection is still misaligned.
+3. **CLI Rendering Conflict:** The interaction between Node.js `readline`, the cursor-overwrite logic, and the WebSocket stream has proved brittle. In-place status replacement works for the second phase but often stalls or clobbers the terminal during the first phase.
 
-## Hardening Program
+### Known Issues & Regressions:
+- **Telemetry Silence:** System-level boot milestones are frequently missed by the CLI client.
+- **UI Latency:** The initial VFS scaffolding and Merkle walk cause a significant "cold start" delay that is not yet successfully masked by the informative boot sequence.
+- **Duplicate Logic:** Residual project-centric logic may still exist in older stages (Monitor/Post) that have not yet been refactored to the v12.0 "Flat Collection" model.
 
-### Workstream 1: Plugin Resolution Purification
+---
 
-The legacy status quo used static handler-to-module assumptions at the Host boundary. This made plugin extension appear dynamic at the manifest layer while still requiring backend edits in practice. The resolution is convention-based module resolution (`<handler>.ts/.js`) with runtime export validation, coupled to manifest-load-time checks that referenced handlers are physically resolvable.
+## Handoff Directives
 
-The acceptance criterion is operational rather than stylistic: introducing a new handler no longer requires editing a static backend loader table. If manifest declaration and plugin module exist, Host dispatch is valid.
-
-### Workstream 2: Workflow Routing De-specialization
-
-The routing index previously contained stage-specific exceptions to enforce preferred command ownership. The pressure for these overrides came from migration-era ambiguity. In a contract-locked system, however, those overrides become an undocumented policy surface.
-
-The resolution is to preserve deterministic tie-breaking while eliminating per-stage privileges. Command ownership must emerge from manifest command declarations and stable index rules, never from hardcoded stage names.
-
-### Workstream 3: Script Runtime De-internalization
-
-The script runtime inherited federation translation logic that mapped action names to command chains inside backend code. That pattern reintroduced a hidden orchestrator under a different name. The investigative conclusion is straightforward: if a scripted step must run a command, the script should declare that command directly.
-
-The resolution is a generic command-step primitive in structured runtime and declarative command materialization in script catalog definitions. Federation sequencing remains explicit in stage commands, but backend runtime no longer embeds a federation micro-pipeline.
-
-### Workstream 4: Intent Vocabulary Grounding
-
-Intent compilation originally relied on backend-resident workflow command vocabularies. That model cannot remain stable across personas because manifest evolution and parser evolution can drift apart. The correct source of truth is the active manifest command set exposed through workflow adapter semantics.
-
-The resolution is command-set derivation from active workflow declarations for both deterministic matching and LLM-compiled payload validation. This closes a key loop: language compilation is now constrained by the same graph contract that governs execution.
-
-### Workstream 5: Bootstrap Identity Explicitness
-
-Residual defaults for workflow and project identity were preserved to smooth migration, but they now represent hidden assumptions in core session grounding. In a production-pure backend, identity must come from explicit runtime context (config, environment, active project, persisted session) or deterministic registry fallback, not embedded literals.
-
-The resolution removes silent persona/project defaults in core and store paths and replaces them with explicit resolution chains that remain inspectable and testable.
-
-### Workstream 6: Verification and Narrative Lock
-
-A hardening sweep is incomplete without verification pressure and narrative alignment. The test suite must contain guard assertions for each removed internalization surface, and technical docs must describe the post-cleanup contract in historical voice rather than feature dump shorthand.
-
-The resolution therefore couples code deletion with test reinforcement and documentation refactoring so the written architecture and executable architecture remain congruent.
-
-## Delivery Sequence and Operational Logic
-
-Execution order follows dependency pressure, not convenience. Plugin resolution and routing de-specialization are resolved first because they constrain all downstream semantics. Script-runtime de-internalization follows, then intent vocabulary grounding, then bootstrap cleanup. Verification hardening and documentation lock close the cycle so the release boundary reflects both behavioral and conceptual completion.
-
-This sequence is intentionally monotonic: each stage reduces backend policy surface area and does not reintroduce transitional toggles.
-
-## Completion Standard
-
-The hardening program is complete only when backend runtime no longer contains hidden workflow pipelines, static handler maps, workflow-id regex locks, or bootstrap literals that bypass explicit runtime context. Tests and build gates must remain green after each deletion phase, and documentation must record the architectural outcome as a causal investigation rather than a checklist.
-
-At that point, pre-v11 state is considered contract-locked: manifests declare orchestration, plugins own compute semantics, adapters own rendering, and Host remains a deterministic integrity kernel.
+1. **Stabilize Boot Sequence:** Resolve the race condition between the `CalypsoServer` boot-trigger and the `CalypsoRepl` telemetry subscription. Ensure `sys_genesis` is the first thing the user sees.
+2. **Validate DAG Continuity:** Verify that the `workspace-commit` and `topological-join` handlers correctly preserve the "Flat Collection" structure as the user moves into `harmonize` and `code`.
+3. **RPN Compliance:** Maintain the `object_method` naming convention and high-integrity JSDoc standards established in the v12.0 core.
+4. **Shell Consistency:** Ensure the `logicalPwd` in the Shell remains perfectly synced with the physical `cwd` in the VFS to prevent link-to-self recursion.

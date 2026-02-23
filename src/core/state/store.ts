@@ -21,6 +21,7 @@ type Persona = 'fedml' | 'appdev' | 'annotator' | 'user' | 'provider' | 'scienti
 
 interface ExtendedState extends AppState {
     currentPersona: Persona;
+    currentSessionId: string | null;
     marketplaceOpen: boolean;
     installedAssets: string[];
 }
@@ -28,6 +29,7 @@ interface ExtendedState extends AppState {
 /** Initial application state with all defaults zeroed. */
 const initialState: ExtendedState = {
     currentPersona: 'fedml',
+    currentSessionId: null,
     currentStage: 'login',
     selectedDatasets: [],
     activeProject: null,
@@ -125,13 +127,24 @@ class Store {
     }
 
     /**
-     * Sets the active user persona.
+     * Sets the active user persona and triggers session genesis.
      *
      * @param persona - The persona to activate.
      */
     public persona_set(persona: Persona): void {
         this._state.currentPersona = persona;
+        this.session_start();
         events.emit(Events.STATE_CHANGED, this._state);
+    }
+
+    /**
+     * Generates a new unique session ID for the current persona.
+     */
+    public session_start(): void {
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+        const randomStr = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        this._state.currentSessionId = `sess-${dateStr}-${randomStr}`;
     }
 
     /**
@@ -292,6 +305,15 @@ class Store {
      */
     public lastMentioned_get(): Dataset[] {
         return [...this._state.lastMentionedDatasets];
+    }
+
+    /**
+     * Retrieves the current session ID.
+     *
+     * @returns The session ID or null if not set.
+     */
+    public sessionId_get(): string | null {
+        return this._state.currentSessionId;
     }
 
     /**

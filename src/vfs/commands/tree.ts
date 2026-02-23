@@ -75,10 +75,6 @@ export const command: BuiltinCommand = {
                     const name: string = child.type === 'folder' ? `${child.name}/` : child.name;
                     const childPath: string = `${nodePath}/${child.name}`;
 
-                    if (child.type === 'file' && child.content === null && child.contentGenerator) {
-                        vfs.node_read(childPath);
-                    }
-
                     lines.push(`${prefix}${connector}${name}`);
 
                     if (child.type === 'folder') {

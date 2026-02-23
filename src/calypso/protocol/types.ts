@@ -71,6 +71,7 @@ export interface LoginResponseMessage {
     success: boolean;
     username: string;
     workflows: WorkflowSummary[];
+    message?: string;
 }
 
 export interface PersonaResponseMessage {

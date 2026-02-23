@@ -156,17 +156,18 @@ export class CalypsoClient {
     /**
      * Login with username.
      */
-    async login_send(username: string): Promise<{ success: boolean; username: string; workflows: WorkflowSummary[] }> {
+    async login_send(username: string): Promise<{ success: boolean; username: string; workflows: WorkflowSummary[]; message?: string }> {
         const id = messageId_generate();
         const response = await this.request({ type: 'login', id, username });
         if (response.type === 'error') {
-            return { success: false, username, workflows: [] };
+            throw new Error(response.message);
         }
         const loginResp = response as LoginResponseMessage;
         return {
             success: loginResp.success,
             username: loginResp.username,
-            workflows: loginResp.workflows
+            workflows: loginResp.workflows,
+            message: loginResp.message
         };
     }
 

@@ -12,8 +12,10 @@ import type { CalypsoCoreConfig } from './types.js';
 import { storeAdapter } from './adapters/StoreAdapter.js';
 import { store } from '../core/state/store.js';
 import { SYSTEM_KNOWLEDGE } from '../core/data/knowledge.js';
+import { TelemetryBus } from './TelemetryBus.js';
 
 let coreInstance: CalypsoCore | null = null;
+let telemetryUnsubscribe: (() => void) | null = null;
 
 /**
  * Get the browser CalypsoCore singleton.
@@ -33,13 +35,37 @@ export function core_get(): CalypsoCore | null {
  * @returns Reinitialized CalypsoCore instance, or null if shell is not ready.
  */
 export function core_reinitialize(): CalypsoCore | null {
+    if (telemetryUnsubscribe) {
+        telemetryUnsubscribe();
+        telemetryUnsubscribe = null;
+    }
+
     if (!store.globals.shell) {
         coreInstance = null;
         return null;
     }
 
+    // v12.0: Create and wire the bus BEFORE the core starts
+    const bus = new TelemetryBus();
+    if (store.globals.terminal) {
+        const terminal = store.globals.terminal as any;
+        telemetryUnsubscribe = bus.subscribe((event: any) => {
+            if (event.type === 'boot_log') {
+                terminal.bootLog_handle?.(event);
+            } else if (event.type === 'log') {
+                terminal.println?.(event.message);
+            }
+        });
+    }
+
     const config: CalypsoCoreConfig = config_resolveFromBrowser();
+    config.telemetryBus = bus;
+
     coreInstance = new CalypsoCore(store.globals.vcs, store.globals.shell, storeAdapter, config);
+
+    // v12.0: Trigger the Boot Sequence NOW that we are wired
+    coreInstance.boot().catch(e => console.error('Browser Boot trigger failed:', e));
+
     return coreInstance;
 }
 

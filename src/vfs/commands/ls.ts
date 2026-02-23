@@ -32,6 +32,10 @@ type LsRenderResult =
     | { ok: true; output: string }
     | { ok: false; error: string };
 
+type LsExpandResult =
+    | { ok: true; targets: string[] }
+    | { ok: false; error: string };
+
 /**
  * Register the `ls` builtin handler.
  */
@@ -47,7 +51,12 @@ export const command: BuiltinCommand = {
             };
         }
 
-        const targets: string[] = parsed.targets.length > 0 ? parsed.targets : [vfs.cwd_get()];
+        const expandedTargets: LsExpandResult = lsTargets_expand(vfs, parsed.targets);
+        if (!expandedTargets.ok) {
+            return { stdout: '', stderr: expandedTargets.error, exitCode: 1 };
+        }
+
+        const targets: string[] = expandedTargets.targets.length > 0 ? expandedTargets.targets : [vfs.cwd_get()];
         const blocks: string[] = [];
 
         try {
@@ -157,6 +166,87 @@ function lsArgs_parse(args: string[]): LsArgsParseResult {
 }
 
 /**
+ * Expand wildcard target operands against directory entries.
+ *
+ * Supports `*` and `?` in the basename segment. If a wildcard operand has no
+ * matches, `ls` returns the canonical "cannot access" error.
+ */
+function lsTargets_expand(vfs: VirtualFileSystem, targets: string[]): LsExpandResult {
+    if (targets.length === 0) {
+        return { ok: true, targets: [] };
+    }
+
+    const expanded: string[] = [];
+    for (const rawTarget of targets) {
+        if (!lsPattern_hasMeta(rawTarget)) {
+            expanded.push(rawTarget);
+            continue;
+        }
+
+        const split = lsPattern_split(rawTarget);
+        const dirResolved: string = vfs.path_resolve(split.dir);
+        const dirNode: FileNode | null = vfs.node_stat(dirResolved);
+        if (!dirNode || dirNode.type !== 'folder') {
+            return { ok: false, error: `ls: cannot access '${rawTarget}': No such file or directory` };
+        }
+
+        const matcher: RegExp = lsPattern_regex(split.pattern);
+        const matches: string[] = vfs
+            .dir_list(dirResolved)
+            .map((entry: FileNode): string => entry.name)
+            .filter((name: string): boolean => {
+                if (!split.pattern.startsWith('.') && name.startsWith('.')) {
+                    return false;
+                }
+                return matcher.test(name);
+            })
+            .sort((left: string, right: string): number => left.localeCompare(right));
+
+        if (matches.length === 0) {
+            return { ok: false, error: `ls: cannot access '${rawTarget}': No such file or directory` };
+        }
+
+        for (const name of matches) {
+            if (split.dir === '.') {
+                expanded.push(name);
+            } else if (split.dir === '/') {
+                expanded.push(`/${name}`);
+            } else {
+                expanded.push(`${split.dir}/${name}`);
+            }
+        }
+    }
+
+    return { ok: true, targets: expanded };
+}
+
+function lsPattern_hasMeta(target: string): boolean {
+    return /[*?]/.test(target);
+}
+
+function lsPattern_split(target: string): { dir: string; pattern: string } {
+    const slashIndex: number = target.lastIndexOf('/');
+    if (slashIndex === -1) {
+        return { dir: '.', pattern: target };
+    }
+    if (slashIndex === 0) {
+        return { dir: '/', pattern: target.slice(1) };
+    }
+    return {
+        dir: target.slice(0, slashIndex),
+        pattern: target.slice(slashIndex + 1),
+    };
+}
+
+function lsPattern_regex(pattern: string): RegExp {
+    const escaped: string = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    const wildcarded: string = escaped
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.');
+    return new RegExp(`^${wildcarded}$`);
+}
+
+/**
  * Render one `ls` target (single file/link or directory listing).
  *
  * @param vfs - Active virtual filesystem instance.
@@ -178,13 +268,28 @@ function lsTarget_render(
     _forceOnePerLine: boolean
 ): LsRenderResult {
     const resolvedPath: string = vfs.path_resolve(target);
-    const targetNode: FileNode | null = vfs.node_stat(resolvedPath);
+    const hasTrailingSlash = target.endsWith('/');
+    
+    // Use lstat first to see what we're dealing with
+    const targetNode: FileNode | null = vfs.node_lstat(resolvedPath);
     if (!targetNode) {
         return { ok: false, error: `ls: cannot access '${target}': No such file or directory` };
     }
 
-    if (targetNode.type === 'file' || targetNode.type === 'link' || directoryOnly) {
+    // POSIX rule: if it's not a link, or it is a link but we aren't following it 
+    // (no trailing slash AND not -d), then we just render the node itself if it's a file.
+    if (targetNode.type === 'file' || (targetNode.type === 'link' && !hasTrailingSlash) || directoryOnly) {
         return { ok: true, output: lsEntry_render(vfs, targetNode, longFormat) };
+    }
+
+    // If we've reached here, it's either a real folder or a link we WANT to follow
+    const effectiveNode: FileNode | null = vfs.node_stat(resolvedPath);
+    if (!effectiveNode) {
+        return { ok: false, error: `ls: cannot access '${target}': No such file or directory` };
+    }
+
+    if (effectiveNode.type !== 'folder') {
+        return { ok: true, output: lsEntry_render(vfs, effectiveNode, longFormat) };
     }
 
     let children: FileNode[] = vfs
@@ -197,8 +302,8 @@ function lsTarget_render(
             children = children.filter((child: FileNode): boolean => !child.name.startsWith('.'));
         }
     } else {
-        const selfRef: FileNode = { ...targetNode, name: '.' };
-        const parentRef: FileNode = { ...(vfs.node_stat(`${resolvedPath}/..`) || targetNode), name: '..' };
+        const selfRef: FileNode = { ...effectiveNode, name: '.' };
+        const parentRef: FileNode = { ...(vfs.node_stat(`${resolvedPath}/..`) || effectiveNode), name: '..' };
         children = [selfRef, parentRef, ...children];
     }
 
@@ -222,20 +327,25 @@ function lsEntry_render(
     let resolvedEntry: FileNode = entry;
     if (resolvedEntry.type === 'file' && resolvedEntry.content === null && resolvedEntry.contentGenerator) {
         vfs.node_read(resolvedEntry.path);
-        const refreshed: FileNode | null = vfs.node_stat(resolvedEntry.path);
+        const refreshed: FileNode | null = vfs.node_lstat(resolvedEntry.path);
         if (refreshed) {
             resolvedEntry = refreshed;
         }
     }
 
-    const name: string = resolvedEntry.type === 'folder' ? `${resolvedEntry.name}/` : resolvedEntry.name;
+    let name: string = resolvedEntry.name;
+    if (resolvedEntry.type === 'folder') {
+        name = `${resolvedEntry.name}/`;
+    } else if (resolvedEntry.type === 'link') {
+        name = `${resolvedEntry.name}@`;
+    }
 
     if (!longFormat) {
         let colorClass = 'file';
         if (resolvedEntry.type === 'folder') {
             colorClass = 'dir';
         } else if (resolvedEntry.type === 'link') {
-            colorClass = 'dim';
+            colorClass = 'keyword'; // Yellow/Prominent
         } else if (resolvedEntry.name.endsWith('.py') || resolvedEntry.name.endsWith('.sh')) {
             colorClass = 'exec';
         }
@@ -248,7 +358,6 @@ function lsEntry_render(
     const timestamp: string = resolvedEntry.modified.toISOString().replace('T', ' ').slice(0, 16);
     const sizeField: string = (resolvedEntry.size || '0 B').padStart(8);
     const linkSuffix: string = resolvedEntry.type === 'link' && resolvedEntry.target ? ` -> ${resolvedEntry.target}` : '';
-    const plainName: string = resolvedEntry.type === 'folder' ? `${resolvedEntry.name}/` : resolvedEntry.name;
 
-    return `${typePrefix}${perms} ${sizeField} ${timestamp} ${plainName}${linkSuffix}`;
+    return `${typePrefix}${perms} ${sizeField} ${timestamp} ${name}${linkSuffix}`;
 }

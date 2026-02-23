@@ -1,7 +1,7 @@
 = ARGUS Project History: The Forensic Chronicle of a State-Grounded Kernel
 :author: ATLAS Project Team
-:revdate: 2026-02-21
-:revnumber: 10.3.2
+:revdate: 2026-02-23
+:revnumber: 11.0.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -12,19 +12,20 @@ toc::[]
 
 The ARGUS (ATLAS Resource Guided User System) project represents a relentless, single-developer engineering investigation into the "Truth Gap" of AI-mediated scientific research. Since its inception on January 23, 2026, the system has evolved through multiple architectural phases, transitioning from a monolithic UI-centric prototype into a high-integrity system kernel grounded in Merkle-proven materialization. This document provides an exhaustive, forensic narrative of that evolution, providing a dedicated technical analysis for every significant version bump in the project's history.
 
-Each section details the specific technical pressures—such as monolithic drift, instructional decay, and the irreducible hallucination of agency—that necessitated the continuous refactoring of the system's core during this high-velocity solo sprint. The architectural decisions documented here are not the result of user studies, but the expression of over two decades of practitioner expertise in scientific computing systems. By documenting the "Historical Drama" of every milestone, this specification provides the necessary context for understanding why the v10.0 architecture is the only mathematically viable solution for high-stakes federated research.
+Each section details the specific technical pressures—such as monolithic drift, instructional decay, and the irreducible hallucination of agency—that necessitated the continuous refactoring of the system's core during this high-velocity solo sprint. The architectural decisions documented here are not the result of user studies, but the expression of over two decades of practitioner expertise in scientific computing systems. By documenting the "Historical Drama" of every milestone, this specification provides the necessary context for understanding why the v10 substrate required a formal major-version contract lock in `v11.0.0` once topology, telemetry, and path semantics converged.
 
 == Phase Timeline Figure
 
 [source,text]
 ----
-2026-01-23                                                            2026-02-21
+2026-01-23                                                            2026-02-23
     │                                                                      │
     ├── Phase I   v1.0  .. v1.4      SeaGaP codification
     ├── Phase II  v1.4.1.. v3.4      Intelligence console + agentic pivot
     ├── Phase III v4.0  .. v4.7      VCS substrate + slot refactor
     ├── Phase IV  v5.0  .. v8.0      Headless Calypso + ORACLE + scripts
-    └── Phase V   v9.0  .. v10.3.2   DAG + Merkle + plugin runtime hardening
+    ├── Phase V   v9.0  .. v10.3.2   DAG + Merkle + plugin runtime hardening
+    └── Phase VI  v10.3.3.. v11.0.0  contract consolidation + major lock
 
 arc: monolithic UI prototype  ─────────────────────────▶  state-grounded kernel
 ----
@@ -164,7 +165,7 @@ These releases aligned the Federation Orchestrator's internal command protocol w
 v7.3.0 eliminated these custom paths, forcing all orchestrator commands through the standard manifest-driven pipeline. This made the federalization handshake as verifiable and auditable as any other SeaGaP stage. It was the final "Cleanup" before the move to the v9.0 DAG revolution.
 
 == Phase V: The v10.x Plugin Revolution and Hardening Line (v9.0 - v10.3.2)
-_Period: February 14 – February 20, 2026_
+_Period: February 14 – February 21, 2026_
 
 === Version 9.0.0: Manifest-Driven DAG Engine
 Released on February 16, 2026, the v9.0.x series replaced the legacy linear state machine with a **Manifest-Driven DAG Engine**. Scientific workflows are rarely linear; they involve complex branching, re-execution of upstream stages, and parallel parentage that linear models cannot represent. This "Graph-Gap" was a primary source of state-drift in legacy versions.
@@ -283,6 +284,82 @@ Host/Guest execution semantics. In practical terms, this narrows release frictio
 investigation, oracle authoring, and manual verification now anchor against a single
 code-aligned directory contract.
 
+== Phase VI: Contract Consolidation and Major-Version Lock (v10.3.3 - v11.0.0)
+_Period: February 21 – February 23, 2026_
+
+=== Status Quo Before the Cut
+At the close of `10.3.2`, core hardening had succeeded in the narrow sense: host
+boundaries were cleaner, federation behavior had been plugin-localized, and oracle
+health was restored. But a second-order instability remained. Multiple user-visible
+contracts still had dual interpretations across codepaths: boot progress could appear
+late or collapsed, DAG branch semantics still carried legacy rename-era assumptions
+in documentation and adapters, and CLI affordances (workflow views, shell ergonomics,
+conversation width) were implemented but not yet fully normalized as first-class
+contract surfaces.
+
+This was the defining catalyst for the late-10.x churn. The platform was no longer
+failing through obvious crashes; it was failing through ambiguity at integration
+boundaries. Those ambiguities were operationally expensive because they produced
+"looks-broken" behavior under load while preserving nominal unit correctness.
+
+=== Version 10.3.3 - 10.3.6: Boot/Login Contract Repair
+The most visible failure mode was startup observability. Users experienced long
+connection waits with little or no phase detail, even though boot milestones were
+known and deterministic. Investigation showed the fault was not in milestone content
+but in boundary timing: telemetry subscription order, prompt redraw contention in the
+REPL, and mixed render ownership during early startup.
+
+The resolution was a protocol-first boot contract formalization and renderer
+extraction. `boot_log` events were treated as phase-scoped (`login_boot`,
+`workflow_boot`) with monotonic sequence guarantees, and prompt exposure became a
+terminal-phase gate rather than a timing heuristic. This converted startup rendering
+from an emergent side effect into an explicit contract. In parallel, boot failure
+handling was hardened to return deterministic hard-failure semantics rather than
+falling through into partially initialized sessions.
+
+=== Version 10.3.6 - 10.3.7: Readiness-First FEDML and UX Determinism
+The second pressure front was workflow semantics. The historical branch model around
+rename no longer represented the scientifically relevant gating problem. The true
+risk was ill-posed ML continuation after `gather` without explicit feasibility
+assessment. This drove the readiness-first FEDML redesign: `ml-readiness` moved to
+immediately after `gather`, `collect` became an optional downstream reorganization,
+and convergence was formalized through `join_gather_collect` with deterministic
+pre-harmonization ingress.
+
+This same window tightened user-plane determinism: shell completion regressions were
+repaired, wildcard operand behavior in `ls` was corrected, `wc` was added as a
+first-class builtin, and user-scoped settings introduced stable conversational-width
+control in both core and `/settings` surfaces. Collectively, these changes removed
+multiple operator friction points that had accumulated as collateral during rapid
+refactoring.
+
+=== The DAG Visualization Incident and Boundary Lesson
+A notable late-cycle regression occurred during DAG visualization modernization. Box
+rendering was moved toward Graphviz-backed layout to produce true branch/join
+geometry. The initial integration introduced a local process stall under test
+conditions, which exposed an important architectural lesson: deterministic UX must
+include deterministic failure behavior for optional tooling dependencies. The fix
+hardened the renderer with bounded execution and explicit fallback mode so the DAG
+surface could fail closed without blocking workflow execution or test completion.
+
+This incident was small in scope but structurally important. It reinforced the
+project's core doctrine that presentation enhancements cannot be allowed to re-open
+kernel nondeterminism.
+
+=== Version 11.0.0: Why This Is a Major Release
+The `v11.0.0` cut is justified by contract surface change, not by marketing scope.
+Across late `10.3.x`, the project crossed multiple SemVer-major boundaries:
+workflow topology and branch semantics changed, stage contracts moved from
+rename-centric to readiness-centric convergence, startup telemetry and gating became
+explicitly phased protocol behavior, and session/provenance path expectations were
+reframed around deterministic portal and lineage semantics.
+
+Treating these as patch-level events would preserve technical debt in release
+language even after runtime correction. The major bump therefore functions as a
+declaration that the old compatibility narrative is retired. `v11.0.0` is the first
+version where documentation, manifest topology, boot protocol, and user-facing DAG
+behavior are expected to describe the same system without legacy translation layers.
+
 == Persistence and Integrity Matrix
 
 The following matrix summarizes the evolution of the system's grounding mechanisms across the major developmental phases of this sprint.
@@ -345,13 +422,39 @@ The following matrix summarizes the evolution of the system's grounding mechanis
 |v10.3.2
 |Operator Contract Clarity
 |Publishes explicit stage-by-stage and end-state trees so runtime evidence paths remain unambiguous for testing and operations.
+
+|**Boot/Login Phase Telemetry Contract**
+|v10.3.6
+|Startup Determinism
+|Converts connection-time ambiguity into ordered phase evidence with prompt gating and explicit failure semantics.
+
+|**Readiness-First FEDML Convergence**
+|v10.3.7
+|Scientific Gatekeeping
+|Moves feasibility checks before harmonization and formalizes optional reorganization through causal join semantics.
+
+|**Contract Lock Release**
+|v11.0.0
+|SemVer Boundary Clarity
+|Declares topology, telemetry, and provenance contracts as major-version baseline, retiring legacy compatibility narratives.
 |===
 
 == Conclusion: The Arc of Integrity
 
-The evolution of ARGUS from January to February 2026 is a chronicle of the "Scientific Hardening" of AI. Each major version was a response to a specific failure mode where human trust in the system was compromised by AI-mediated ambiguity. From the early "Gutter Flash" regressions to the final "Merkle Staleness" proofs, the project has consistently prioritized "Evidence over Assertion."
+The evolution of ARGUS from January through February 2026 is a chronicle of the
+"Scientific Hardening" of AI. Each major version was a response to a specific
+failure mode where human trust in the system was compromised by AI-mediated
+ambiguity. From the early "Gutter Flash" regressions to Merkle staleness proofs and
+late boot-telemetry race repair, the project has consistently prioritized
+"Evidence over Assertion."
 
-By grounding the entire system in a virtualized hardware substrate (VCS), a graph-based conscience (DAG Engine), and a Merkle provenance chain, ARGUS `v10.3.2` now represents the stabilized hardening baseline at the end of the v10 deletion line. The project stands as a successful proof-of-concept for how agentic systems can be made structurally safe, transforming the "Hallucinating Agent" into a high-fidelity instrument of scientific discovery. The next arc is explicit: complete residual debt removal and lock Host/Guest contracts in `v11.0`.
+By grounding the system in a virtualized hardware substrate (VCS), a graph-based
+conscience (DAG Engine), and a Merkle provenance chain, the late v10 line reached
+technical maturity. The `v11.0.0` release marks the transition from hardening era to
+contract era: workflow topology, startup protocol, and provenance path semantics are
+now treated as stable major-version commitments rather than migration targets. The
+next arc is no longer architectural rescue; it is disciplined extension on top of a
+declared baseline.
 
 ---
-_Last updated: 2026-02-21 (v10.3.2)_
+_Last updated: 2026-02-23 (v11.0.0)_

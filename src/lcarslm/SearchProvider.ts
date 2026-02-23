@@ -255,7 +255,7 @@ export class SearchProvider {
     public snapshot_materialize(
         query: string, 
         results: Dataset[], 
-        sessionPath?: string
+        outputDir?: string
     ): SearchMaterialization {
         const username: string = this.shell.env_get('USER') || 'user';
         const now: Date = new Date();
@@ -263,38 +263,50 @@ export class SearchProvider {
         const nonce: string = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
         
         let targetPath: string;
-        let isTopological: boolean = false;
 
-        if (sessionPath) {
-            targetPath = `${sessionPath}/search.json`;
-            isTopological = true;
+        if (outputDir) {
+            // v12.0: Physical Contract - Materialize in stage output/
+            targetPath = `${outputDir}/search.json`;
         } else {
             const searchRoot: string = `/home/${username}/searches`;
             targetPath = `${searchRoot}/search-${timestamp}-${nonce}.json`;
         }
 
         try {
-            const content: SearchContent = {
-                query, // CRITICAL: Inclusion of query ensures different search intents yield different fingerprints
-                generatedAt: now.toISOString(),
+            const newEntry = {
+                query,
+                timestamp: now.toISOString(),
                 count: results.length,
                 results: results.map((ds: Dataset) => ({
                     id: ds.id,
                     name: ds.name,
-                    modality: ds.modality,
-                    annotationType: ds.annotationType,
-                    provider: ds.provider,
-                    imageCount: ds.imageCount
+                    provider: ds.provider
                 }))
             };
 
-            if (isTopological) {
-                // Return for core to wrap in envelope with fingerprints
-                return { content, path: targetPath };
+            let content: any = {
+                sessionSearchCount: 1,
+                history: [newEntry]
+            };
+
+            // v12.0: Cumulative Ledger - Read-then-Append
+            if (outputDir) {
+                try {
+                    const existing = this.vfs.node_read(targetPath);
+                    if (existing) {
+                        const parsed = JSON.parse(existing);
+                        if (Array.isArray(parsed.history)) {
+                            parsed.history.push(newEntry);
+                            parsed.sessionSearchCount = parsed.history.length;
+                            content = parsed;
+                        }
+                    }
+                } catch { /* first search */ }
             }
 
-            // Legacy standalone search write
             this.vfs.file_create(targetPath, JSON.stringify(content, null, 2));
+            
+            // Legacy/convenience: update the latest pointer
             this.vfs.node_write(`/home/${username}/searches/latest.txt`, `${targetPath}\n`);
             
             return { content, path: targetPath };

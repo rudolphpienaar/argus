@@ -221,40 +221,44 @@ describe('dag/bridge/WorkflowAdapter — position', () => {
         expect(pos.isComplete).toBe(false);
     });
 
-    it('should advance to rename (optional) after gather completes', () => {
-        // v10.2.1: Position stops at rename (first ready-but-incomplete node)
-        // because rename no longer auto-completes through stage-alias semantics.
+    it('should advance to ml-readiness (optional) after gather completes', () => {
         const vfs = vfs_create(['search', 'gather'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
-        expect(pos.currentStage?.id).toBe('rename');
+        expect(pos.currentStage?.id).toBe('ml-readiness');
     });
 
-    it('should advance to harmonize after gather + rename complete', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename'], sp);
+    it('should advance to collect after gather + ml-readiness complete', () => {
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness'], sp);
+        const pos = adapter.position_resolve(vfs, SESSION);
+        expect(pos.currentStage?.id).toBe('collect');
+    });
+
+    it('should advance to harmonize after gather + ml-readiness + collect complete', () => {
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('harmonize');
     });
 
     it('should advance to code after harmonize completes', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename', 'harmonize'], sp);
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect', 'harmonize'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('code');
     });
 
     it('should advance to train after code completes', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename', 'harmonize', 'code'], sp);
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect', 'harmonize', 'code'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('train');
     });
 
     it('should advance to federate-brief after train completes', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename', 'harmonize', 'code', 'train'], sp);
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect', 'harmonize', 'code', 'train'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.currentStage?.id).toBe('federate-brief');
     });
 
     it('should remain incomplete when only federate-brief is complete', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename', 'harmonize', 'code', 'train', 'federate-brief'], sp);
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect', 'harmonize', 'code', 'train', 'federate-brief'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
         expect(pos.isComplete).toBe(false);
         expect(pos.currentStage?.id).toBe('federate-transcompile');
@@ -263,10 +267,10 @@ describe('dag/bridge/WorkflowAdapter — position', () => {
     it('should provide instruction and commands from manifest', () => {
         const vfs = vfs_create(['search', 'gather'], sp);
         const pos = adapter.position_resolve(vfs, SESSION);
-        // v10.2.1: Position is at rename (optional), not harmonize
+        // Readiness-first path: after gather, first optional stage is ml-readiness.
         expect(pos.nextInstruction).toBeTruthy();
-        expect(pos.nextInstruction).toContain('Rename');
-        expect(pos.availableCommands).toContain('rename <new-name>');
+        expect(pos.nextInstruction).toContain('meaningful ML');
+        expect(pos.availableCommands).toContain('ml-readiness');
     });
 });
 
@@ -274,32 +278,33 @@ describe('dag/bridge/WorkflowAdapter — transitions', () => {
     const adapter = WorkflowAdapter.definition_load('fedml');
     const sp = adapter.stagePaths;
 
-    it('should allow harmonize when deps are satisfied (including rename)', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename'], sp);
+    it('should allow harmonize when deps are satisfied (including optional gates)', () => {
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect'], sp);
         const result = adapter.transition_check('harmonize', vfs, SESSION);
         expect(result.allowed).toBe(true);
     });
 
-    it('should signal auto-declinable optionals when rename is pending', () => {
-        // v10.2.1: harmonize has pending optional parent (rename).
+    it('should signal auto-declinable optionals when readiness/collect are pending', () => {
+        // Harmonize has pending optional parents (ml-readiness + collect).
         // transition_check returns autoDeclinable so CalypsoCore can
         // materialize a skip sentinel.
         const vfs = vfs_create(['search', 'gather'], sp);
         const result = adapter.transition_check('harmonize', vfs, SESSION);
         expect(result.allowed).toBe(false);
         expect(result.autoDeclinable).toBe(true);
-        expect(result.pendingOptionals).toContain('rename');
+        expect(result.pendingOptionals).toContain('ml-readiness');
+        expect(result.pendingOptionals).toContain('collect');
     });
 
     it('should warn when skipping harmonize to code', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename'], sp);
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect'], sp);
         const result = adapter.transition_check('proceed', vfs, SESSION);
         expect(result.allowed).toBe(false);
         expect(result.warning).toContain('Cohort not harmonized');
     });
 
     it('should allow after max warnings exceeded', () => {
-        const vfs = vfs_create(['search', 'gather', 'rename'], sp);
+        const vfs = vfs_create(['search', 'gather', 'ml-readiness', 'collect'], sp);
         adapter.skip_increment('harmonize');
         adapter.skip_increment('harmonize');
         const result = adapter.transition_check('proceed', vfs, SESSION);
@@ -322,10 +327,11 @@ describe('dag/bridge/WorkflowAdapter — transitions', () => {
         const vfs = new VirtualFileSystem('test');
         artifact_write(vfs, 'search', sp);
         artifact_write(vfs, 'gather', sp);
-        artifact_write(vfs, 'rename', sp);
+        artifact_write(vfs, 'ml-readiness', sp);
+        artifact_write(vfs, 'collect', sp);
         artifact_writeAt(
             vfs,
-            'search/gather/rename/_join_gather_rename/harmonize/data/harmonize.json',
+            'search/gather/ml-readiness/collect/_join_gather_collect/harmonize/data/harmonize.json',
             'harmonize',
         );
 
@@ -427,11 +433,47 @@ describe('dag/bridge/WorkflowAdapter — progress', () => {
     it('should summarize progress', () => {
         const vfs = vfs_create(['search', 'gather'], sp);
         const summary = adapter.progress_summarize(vfs, SESSION);
-        // v10.2.1: rename no longer auto-completes; position is at rename
-        expect(summary).toContain('Progress: 2/14'); // search + gather only
+        expect(summary).toContain('Progress: 2/15'); // search + gather only
         expect(summary).toContain('● Dataset Discovery');
-        expect(summary).toContain('○ Project Rename ← NEXT');
+        expect(summary).toContain('○ ML Experiment Readiness ← NEXT');
         expect(summary).toContain('● Cohort Assembly');
+        expect(summary).toContain('○ Cohort Collection Build');
         expect(summary).toContain('○ Data Harmonization');
+    });
+});
+
+describe('dag/bridge/WorkflowAdapter — dag render', () => {
+    const adapter = WorkflowAdapter.definition_load('fedml');
+    const sp = adapter.stagePaths;
+
+    it('renders branch/join topology with current-stage marker', () => {
+        const vfs = vfs_create(['search', 'gather'], sp);
+        const view = adapter.dag_render(vfs, SESSION, { showWhere: true, showStale: false });
+
+        expect(view).toContain('ml-readiness');
+        expect(view).toContain('collect');
+        expect(view).toContain('join_gather_collect');
+        expect(view).toContain('join:collect+ml-readiness');
+        expect(view).toContain('◉ ml-readiness');
+    });
+
+    it('supports compact output mode', () => {
+        const vfs = vfs_create(['search', 'gather'], sp);
+        const view = adapter.dag_render(vfs, SESSION, { compact: true });
+
+        expect(view).toContain(' <- ');
+        expect(view).toContain('search');
+    });
+
+    it('supports boxed glyph mode with explicit branch/join edges', () => {
+        const vfs = vfs_create(['search', 'gather'], sp);
+        const view = adapter.dag_render(vfs, SESSION, { box: true, showWhere: true });
+
+        expect(view).toContain('┌');
+        expect(view).toContain('└');
+        expect(view.includes('▼') || view.includes('graphviz unavailable')).toBe(true);
+        expect(view).toContain('ml-readiness');
+        expect(view).toContain('collect');
+        expect(view).toContain('join_gather_collect');
     });
 });

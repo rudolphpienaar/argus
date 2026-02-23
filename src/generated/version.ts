@@ -5,5 +5,5 @@
  * Run 'npm run build' or 'make cook' to regenerate.
  */
 
-export const VERSION = '10.3.7';
-export const GIT_HASH = '87a5a7';
+export const VERSION = '11.0.0';
+export const GIT_HASH = '9a8bdb';

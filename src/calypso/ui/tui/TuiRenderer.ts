@@ -368,9 +368,10 @@ export async function response_renderAnimated(
     ui_hints?: CalypsoResponse['ui_hints']
 ): Promise<void> {
     const renderMode = ui_hints?.render_mode || 'plain';
+    const conversationalWidth: number | undefined = ui_hints?.convo_width;
     
     if (renderMode === 'plain') {
-        console.log(message_style(message, { input }));
+        console.log(message_style(message, { input, conversationalWidth }));
         return;
     }
 
@@ -385,7 +386,7 @@ export async function response_renderAnimated(
     const baseDelay: number = ui_hints?.stream_delay_ms ?? 50;
 
     for (const line of lines) {
-        console.log(message_style(line, { input }));
+        console.log(message_style(line, { input, conversationalWidth }));
         if (!line.trim()) {
             await sleep_ms(baseDelay / 2);
             continue;
@@ -577,6 +578,7 @@ function tableCell_wrap(text: string, width: number): string[] {
 
 interface MessageStyleOptions {
     input?: string;
+    conversationalWidth?: number;
 }
 
 /**
@@ -586,6 +588,10 @@ interface MessageStyleOptions {
  * markdown tables, HTML spans, markdown emphasis, and LCARS markers.
  */
 export function message_style(message: string, options: MessageStyleOptions = {}): string {
+    if (typeof options.conversationalWidth === 'number') {
+        message = conversationalWrap_apply(message, options.conversationalWidth);
+    }
+
     const { styled: codeStyled, masks } = fencedCodeBlocks_style(message);
     let styled: string = codeStyled;
 
@@ -603,6 +609,101 @@ export function message_style(message: string, options: MessageStyleOptions = {}
         styled = styled.replaceAll(key, value);
     }
     return styled;
+}
+
+/**
+ * Wrap conversational prose to a fixed width while preserving structured lines.
+ */
+function conversationalWrap_apply(message: string, width: number): string {
+    const normalizedWidth: number = number_clamp(Math.floor(width), 40, 160);
+    const lines: string[] = message.split('\n');
+    const output: string[] = [];
+
+    let inFence = false;
+    let paragraph: string[] = [];
+    const paragraph_flush = (): void => {
+        if (paragraph.length === 0) return;
+        const joined: string = paragraph.join(' ').replace(/\s+/g, ' ').trim();
+        output.push(...textWrap_lines(joined, normalizedWidth));
+        paragraph = [];
+    };
+
+    for (const line of lines) {
+        const trimmed: string = line.trim();
+
+        if (trimmed.startsWith('```')) {
+            paragraph_flush();
+            output.push(line);
+            inFence = !inFence;
+            continue;
+        }
+
+        if (inFence) {
+            output.push(line);
+            continue;
+        }
+
+        if (trimmed.length === 0) {
+            paragraph_flush();
+            output.push('');
+            continue;
+        }
+
+        if (lineStructured_is(trimmed)) {
+            paragraph_flush();
+            output.push(line);
+            continue;
+        }
+
+        paragraph.push(trimmed);
+    }
+
+    paragraph_flush();
+    return output.join('\n');
+}
+
+function lineStructured_is(trimmedLine: string): boolean {
+    if (/^\|.*\|$/.test(trimmedLine)) return true;
+    if (/^(#{1,6}\s)/.test(trimmedLine)) return true;
+    if (/^([-*+]\s|\d+[.)]\s)/.test(trimmedLine)) return true;
+    if (/^(>\s|●\s|○\s|>>\s)/.test(trimmedLine)) return true;
+    if (/^```/.test(trimmedLine)) return true;
+    return false;
+}
+
+function textWrap_lines(text: string, width: number): string[] {
+    if (text.length <= width) return [text];
+    const words: string[] = text.split(/\s+/).filter(Boolean);
+    const wrapped: string[] = [];
+    let current: string = '';
+
+    const pushCurrent = (): void => {
+        if (current.length > 0) {
+            wrapped.push(current);
+            current = '';
+        }
+    };
+
+    for (const word of words) {
+        if (word.length > width) {
+            pushCurrent();
+            for (let i = 0; i < word.length; i += width) {
+                wrapped.push(word.slice(i, i + width));
+            }
+            continue;
+        }
+
+        const candidate: string = current ? `${current} ${word}` : word;
+        if (candidate.length <= width) {
+            current = candidate;
+        } else {
+            pushCurrent();
+            current = word;
+        }
+    }
+
+    pushCurrent();
+    return wrapped.length > 0 ? wrapped : [''];
 }
 
 /**

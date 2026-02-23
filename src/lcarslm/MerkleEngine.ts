@@ -4,6 +4,9 @@
  * Responsible for wrapping domain-specific content in Merkle-proven
  * artifact envelopes and materializing them into the session tree.
  *
+ * v12.0: Pure-Literal Topology. The engine injects NO structural nodes.
+ * physical paths strictly follow node.previous[0] pointers.
+ *
  * @module lcarslm/MerkleEngine
  */
 
@@ -64,24 +67,17 @@ export class MerkleEngine {
             stagePathSegments,
         );
         
-        const dataDir: string = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
-        const artifactName: string = stagePath.artifactFile.split('/').pop() || `${stage.id}.json`;
-        const basePath: string = `${dataDir}/${artifactName}`;
-        const finalArtifactPath: string = await this.artifactPath_storeResolve(basePath, stage.id, null);
+        const stageDir: string = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
         
-        // The data directory is the parent of the final artifact path
-        return finalArtifactPath.substring(0, finalArtifactPath.lastIndexOf('/'));
+        // v12.0: Physical Contract - Return STAGE ROOT.
+        // PluginHost handles input/ and output/ creation.
+        await this.backend.dir_create(stageDir);
+        
+        return stageDir;
     }
 
     /**
      * Materialize a skip sentinel for an auto-declined optional stage.
-     *
-     * Used when a user proceeds past an optional stage (e.g. rename) without
-     * executing it. The sentinel enters the Merkle chain so the provenance
-     * records the explicit decision to skip.
-     *
-     * @param stageId - The optional stage being declined.
-     * @param reason - Human-readable reason for the skip.
      */
     public async skipSentinel_materialize(stageId: string, reason: string): Promise<void> {
         await this.artifact_materialize(stageId, { skipped: true, reason });
@@ -93,6 +89,8 @@ export class MerkleEngine {
      * @param stageId - The ID of the stage being materialized.
      * @param content - Domain-specific content block (artifactData from plugin).
      * @param materialized - Optional list of side-effect files created by this stage.
+     * @param dataDirOverride - Optional stage directory path to write to instead of computing from topology.
+     * @returns Promise that resolves when the artifact has been written.
      */
     public async artifact_materialize(
         stageId: string, 
@@ -134,6 +132,9 @@ export class MerkleEngine {
 
     /**
      * Resolve the fingerprints of all parent stages.
+     *
+     * @param node - The DAGNode whose parent fingerprints to collect.
+     * @returns Map of parentId → fingerprint string for all materialized parents.
      */
     private parentFingerprints_resolve(node: DAGNode): Record<string, string> {
         const parentFingerprints: Record<string, string> = {};
@@ -150,6 +151,9 @@ export class MerkleEngine {
 
     /**
      * Read the fingerprint from the latest materialized artifact for a stage.
+     *
+     * @param stageId - Stage ID to look up.
+     * @returns The fingerprint string, or null if no artifact exists.
      */
     private fingerprint_get(stageId: string): string | null {
         const record: FingerprintRecord | null = this.workflowAdapter.latestFingerprint_get(
@@ -160,15 +164,24 @@ export class MerkleEngine {
         return record ? record.fingerprint : null;
     }
 
+    /**
+     * Write an artifact envelope to the session tree's meta/ directory.
+     *
+     * @param stage - The DAGNode being materialized.
+     * @param stagePath - Topology-aware path descriptor for this stage.
+     * @param envelope - Fully assembled Merkle artifact envelope.
+     * @param dataDirOverride - If provided, skip topology resolution and write here.
+     * @returns Promise that resolves when the artifact file has been created.
+     */
     private async artifact_storeWrite(
         stage: DAGNode,
         stagePath: StagePath,
         envelope: ArtifactEnvelope,
         dataDirOverride?: string,
     ): Promise<void> {
-        let dataDir: string;
+        let stageDir: string;
         if (dataDirOverride) {
-            dataDir = dataDirOverride;
+            stageDir = dataDirOverride.replace(/\/output$/, '');
         } else {
             const session: Session = this.session_resolve();
             const stagePathSegments: string[] = this.stagePathSegments_resolve(stagePath);
@@ -177,10 +190,15 @@ export class MerkleEngine {
                 stage,
                 stagePathSegments,
             );
-            dataDir = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
+            stageDir = this.sessionStore.stagePath_resolve(session, effectivePathSegments);
         }
+
+        // v12.0: System ledger files go into meta/
+        const metaDir = `${stageDir}/meta`;
+        await this.backend.dir_create(metaDir);
+
         const artifactName: string = stagePath.artifactFile.split('/').pop() || `${stage.id}.json`;
-        const basePath: string = `${dataDir}/${artifactName}`;
+        const basePath: string = `${metaDir}/${artifactName}`;
         const finalPath: string = await this.artifactPath_storeResolve(basePath, stage.id, envelope._fingerprint);
         
         if (process.env.CALYPSO_VERBOSE === 'true') {
@@ -193,6 +211,11 @@ export class MerkleEngine {
         );
     }
 
+    /**
+     * Build a minimal runtime Session record from the current engine state.
+     *
+     * @returns Session object suitable for use with SessionStore path resolution.
+     */
     private session_resolve(): Session {
         const now = new Date().toISOString();
         return {
@@ -205,161 +228,139 @@ export class MerkleEngine {
         };
     }
 
+    /**
+     * Extract directory segment names from a topology-aware StagePath.
+     * Strips 'data', 'meta', and artifact filename components.
+     *
+     * @param stagePath - The StagePath computed from the DAG topology.
+     * @returns Array of directory segment names in topological nesting order.
+     */
     private stagePathSegments_resolve(stagePath: StagePath): string[] {
-        // stagePath.artifactFile is e.g. "search/gather/data/gather.json"
-        // We want ["search", "gather"]
         const parts = stagePath.artifactFile.split('/');
-        // Remove the filename and the 'data' directory
-        return parts.filter(p => p !== 'data' && !p.endsWith('.json')).filter(Boolean);
+        return parts.filter(p => p !== 'data' && p !== 'meta' && !p.endsWith('.json')).filter(Boolean);
     }
 
+    /**
+     * Resolve the effective path segments to use when writing an artifact.
+     * Prefers literal manifest-order resolution over topology-derived segments.
+     *
+     * @param session - The runtime Session record.
+     * @param stage - The DAGNode being materialized.
+     * @param stagePath - Fallback path segments from topology.
+     * @returns Path segments to pass to SessionStore for directory resolution.
+     */
     private async stagePathForWrite_resolve(
         session: Session,
         stage: DAGNode,
         stagePath: string[],
     ): Promise<string[]> {
         const cache = new Map<string, string[]>();
-        const resolved: string[] | null = await this.stagePathWithJoins_resolve(
-            session,
+        const resolved: string[] | null = await this.stagePathLiteral_resolve(
             stage.id,
             cache,
         );
         return resolved && resolved.length > 0 ? resolved : stagePath;
     }
 
-    private async stagePathWithJoins_resolve(
-        session: Session,
+    /**
+     * Strictly literal path resolution, skipping structural and optional parent stages.
+     * Structural and optional nodes are transparent to the session tree layout —
+     * descendants nest under their first user-facing (non-structural, non-optional) ancestor.
+     */
+    private async stagePathLiteral_resolve(
         stageId: string,
         cache: Map<string, string[]>,
     ): Promise<string[] | null> {
         const cached = cache.get(stageId);
-        if (cached) {
-            return cached;
-        }
+        if (cached) return cached;
 
         const node: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
-        if (!node) {
-            return null;
-        }
+        if (!node) return null;
 
+        // Base case: root nodes (no parents)
         if (!node.previous || node.previous.length === 0) {
             const rootPath = [stageId];
             cache.set(stageId, rootPath);
             return rootPath;
         }
 
-        if (node.previous.length === 1) {
-            const parentPath = await this.stagePathWithJoins_resolve(session, node.previous[0], cache);
-            if (!parentPath) {
-                return null;
+        // Walk primary parent chain, skipping structural and optional nodes.
+        // These are transparent to the file system layout.
+        let primaryParentId = node.previous[0];
+        while (primaryParentId) {
+            const parentNode: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(primaryParentId);
+            if (!parentNode) break;
+
+            // Skip structural nodes and non-root optional nodes (e.g. 'rename').
+            // Root-level optionals (no parents, e.g. 'search') ARE canonical path elements.
+            const isNonRootOptional =
+                parentNode.optional && parentNode.previous !== null && parentNode.previous.length > 0;
+            if (parentNode.structural || isNonRootOptional) {
+                // Skip: continue up to the parent's primary parent
+                if (parentNode.previous && parentNode.previous.length > 0) {
+                    primaryParentId = parentNode.previous[0];
+                } else {
+                    // Structural root with no grandparents — treat this node as root too
+                    const rootPath = [stageId];
+                    cache.set(stageId, rootPath);
+                    return rootPath;
+                }
+            } else {
+                // Found a user-facing parent — resolve its path and nest under it
+                const parentPath = await this.stagePathLiteral_resolve(primaryParentId, cache);
+                if (!parentPath) return null;
+
+                const resolved = [...parentPath, stageId];
+                cache.set(stageId, resolved);
+                return resolved;
             }
-            const resolved = [...parentPath, stageId];
-            cache.set(stageId, resolved);
-            return resolved;
         }
 
-        const parentPaths: Record<string, string[]> = {};
-        const sortedParentIds = [...node.previous].sort();
-        const activeParentPaths = new Set<string>();
-        const activeParentIds: string[] = [];
-
-        for (const parentId of sortedParentIds) {
-            const parentNode = this.workflowAdapter.dag.nodes.get(parentId);
-            
-            // v10.2.1: Optional parents don't affect physical nesting.
-            // They are resolved via JOIN semantics (real artifact or skip sentinel)
-            // but don't create join nodes in the session tree.
-            if (parentNode?.optional) continue;
-
-            // Check if parent actually has an artifact.
-            const parentFp = this.fingerprint_get(parentId);
-            if (!parentFp) {
-                return null;
-            }
-
-            const parentPath = await this.stagePathWithJoins_resolve(session, parentId, cache);
-            if (!parentPath) return null;
-            
-            const pathKey = parentPath.join('/');
-            if (activeParentPaths.has(pathKey)) continue;
-
-            parentPaths[parentId] = parentPath;
-            activeParentIds.push(parentId);
-            activeParentPaths.add(pathKey);
-        }
-
-        // If only one parent path is active after filtering, don't create a join node
-        if (activeParentIds.length === 1) {
-            const resolved = [...parentPaths[activeParentIds[0]], stageId];
-            cache.set(stageId, resolved);
-            return resolved;
-        }
-
-        const anchorParentId = this.joinAnchorParent_resolve(activeParentIds, parentPaths);
-        const nestUnderPath = parentPaths[anchorParentId];
-        const joinName = await this.sessionStore.joinNode_materialize(
-            session,
-            parentPaths,
-            nestUnderPath,
-        );
-        const resolved = [...nestUnderPath, joinName, stageId];
-        cache.set(stageId, resolved);
-        return resolved;
+        // Fallback: treat as root
+        const rootPath = [stageId];
+        cache.set(stageId, rootPath);
+        return rootPath;
     }
 
-    private joinAnchorParent_resolve(
-        sortedParentIds: string[],
-        parentPaths: Record<string, string[]>,
-    ): string {
-        let anchorId = sortedParentIds[0];
-        for (const parentId of sortedParentIds.slice(1)) {
-            const current = parentPaths[parentId];
-            const anchor = parentPaths[anchorId];
-            if (
-                current.length > anchor.length ||
-                (current.length === anchor.length && parentId.localeCompare(anchorId) > 0)
-            ) {
-                anchorId = parentId;
-            }
-        }
-        return anchorId;
-    }
-
+    /**
+     * Resolve the final artifact file path, branching if the fingerprint changed.
+     * Prevents overwriting prior artifacts by creating a BRANCH-suffixed path on divergence.
+     *
+     * @param basePath - The canonical artifact path (meta/stageId.json).
+     * @param stageId - Stage ID for fingerprint lookup.
+     * @param newFingerprint - The fingerprint of the artifact being written.
+     * @returns The final file path to write to (may be a branched path).
+     */
     private async artifactPath_storeResolve(basePath: string, stageId: string, newFingerprint: string | null): Promise<string> {
         const exists: boolean = await this.backend.path_exists(basePath);
         if (!exists) {
             return basePath;
         }
 
-        // v10.2: Root stages (no parents) update in-place instead of branching.
-        // This keeps the base of the tree predictable for the developer.
         const node = this.workflowAdapter.dag.nodes.get(stageId);
         if (!node || !node.previous || node.previous.length === 0) {
             return basePath;
         }
 
-        // v10.2: Only branch if the stage has ALREADY been completed (has a fingerprint)
-        // AND the new content is actually different.
         const currentFp = this.fingerprint_get(stageId);
         if (!currentFp) {
             return basePath;
         }
 
-        // If we have a new fingerprint and it matches the current one, don't branch.
         if (newFingerprint && newFingerprint === currentFp) {
             return basePath;
         }
 
         const branchSuffix: string = Date.now().toString();
         const canonical: string = basePath.replace(
-            `/${stageId}/data/`,
-            `/${stageId}_BRANCH_${branchSuffix}/data/`,
+            `/${stageId}/meta/`,
+            `/${stageId}_BRANCH_${branchSuffix}/meta/`,
         );
         if (canonical !== basePath) {
             return canonical;
         }
 
-        const marker = '/data/';
+        const marker = '/meta/';
         const markerPos = basePath.lastIndexOf(marker);
         if (markerPos < 0) {
             return `${basePath}_BRANCH_${branchSuffix}`;

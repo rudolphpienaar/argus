@@ -28,7 +28,7 @@ export async function route_workflowHandle(context: RestRouteContext): Promise<b
             return true;
         }
 
-        const selected: boolean = context.calypso.workflow_set(workflowId);
+        const selected: boolean = await context.calypso.workflow_set(workflowId);
         if (!selected) {
             json_send(context.res, { error: `Unknown workflow: ${workflowId}` }, 400);
             return true;

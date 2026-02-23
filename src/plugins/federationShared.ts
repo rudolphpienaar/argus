@@ -37,15 +37,17 @@ const FEDERATION_CONFIG_FILE = '.federation-config.json';
  * Resolve project root from stage data directory.
  */
 export function projectRoot_resolve(context: PluginContext): string {
-    const dataMarker: string = '/data/';
+    const dataMarker: string = '/provenance/';
     const markerIndex: number = context.dataDir.indexOf(dataMarker);
     if (markerIndex > 0) {
+        // v11.0: Project root is the session directory
         return context.dataDir.substring(0, markerIndex);
     }
 
     const username: string = context.shell.env_get('USER') || 'user';
-    const projectName: string = context.shell.env_get('PROJECT') || 'DRAFT';
-    return `/home/${username}/projects/${projectName}`;
+    const persona: string = context.shell.env_get('PERSONA') || 'fedml';
+    const sessionId: string = context.store.sessionId_get() || 'unknown';
+    return `/home/${username}/projects/${persona}/${sessionId}`;
 }
 
 /**

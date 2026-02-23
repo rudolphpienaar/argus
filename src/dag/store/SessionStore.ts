@@ -107,10 +107,10 @@ export class SessionStore implements SessionStoreInterface {
             return session.rootPath;
         }
         if (stagePath.length === 1) {
-            return `${session.rootPath}/${stagePath[0]}/data`;
+            return `${session.rootPath}/${stagePath[0]}`;
         }
         const nested = stagePath.join('/');
-        return `${session.rootPath}/${nested}/data`;
+        return `${session.rootPath}/${nested}`;
     }
 
     async artifact_write(
@@ -118,9 +118,10 @@ export class SessionStore implements SessionStoreInterface {
         stagePath: string[],
         artifact: ArtifactEnvelope,
     ): Promise<void> {
-        const dataDir = this.stagePath_resolve(session, stagePath);
-        await this.backend.dir_create(dataDir);
-        const filePath = `${dataDir}/${artifact.stage}.json`;
+        const stageDir = this.stagePath_resolve(session, stagePath);
+        const metaDir = `${stageDir}/meta`;
+        await this.backend.dir_create(metaDir);
+        const filePath = `${metaDir}/${artifact.stage}.json`;
         await this.backend.artifact_write(filePath, JSON.stringify(artifact));
     }
 
@@ -128,10 +129,10 @@ export class SessionStore implements SessionStoreInterface {
         session: Session,
         stagePath: string[],
     ): Promise<ArtifactEnvelope | null> {
-        const dataDir = this.stagePath_resolve(session, stagePath);
-        // Look for <stageId>.json in data dir
+        const stageDir = this.stagePath_resolve(session, stagePath);
+        // Look for <stageId>.json in meta/ dir
         const stageId = stagePath[stagePath.length - 1];
-        const filePath = `${dataDir}/${stageId}.json`;
+        const filePath = `${stageDir}/meta/${stageId}.json`;
         const raw = await this.backend.artifact_read(filePath);
         if (!raw) return null;
         return JSON.parse(raw) as ArtifactEnvelope;
@@ -141,54 +142,9 @@ export class SessionStore implements SessionStoreInterface {
         session: Session,
         stagePath: string[],
     ): Promise<boolean> {
-        const dataDir = this.stagePath_resolve(session, stagePath);
+        const stageDir = this.stagePath_resolve(session, stagePath);
         const stageId = stagePath[stagePath.length - 1];
-        const filePath = `${dataDir}/${stageId}.json`;
+        const filePath = `${stageDir}/meta/${stageId}.json`;
         return this.backend.path_exists(filePath);
-    }
-
-    async joinNode_materialize(
-        session: Session,
-        parentStagePaths: Record<string, string[]>,
-        nestUnderPath: string[],
-    ): Promise<string> {
-        // Sort parent IDs alphabetically for deterministic naming
-        const parentIds = Object.keys(parentStagePaths).sort();
-        const joinName = `_join_${parentIds.join('_')}`;
-
-        // Create join node directory under nestUnderPath
-        const nestDir = this.stagePath_resolve(session, nestUnderPath);
-        // Go up from data/ to the stage dir, then create join dir
-        const nestStageDir = nestDir.replace(/\/data$/, '');
-        const joinDir = `${nestStageDir}/${joinName}`;
-        const joinDataDir = `${joinDir}/data`;
-        await this.backend.dir_create(joinDataDir);
-
-        // Build parent_paths (relative paths from join data/ to each parent data/)
-        const parentPaths: Record<string, string> = {};
-        for (const parentId of parentIds) {
-            const parentDataDir = this.stagePath_resolve(session, parentStagePaths[parentId]);
-            parentPaths[parentId] = parentDataDir;
-        }
-
-        // Write join.json
-        const joinContent: JoinNodeContent = {
-            parents: parentIds,
-            parent_paths: parentPaths,
-        };
-        await this.backend.artifact_write(
-            `${joinDataDir}/join.json`,
-            JSON.stringify(joinContent),
-        );
-
-        // Create input reference links to each parent's data/
-        for (const parentId of parentIds) {
-            await this.backend.link_create(
-                `${joinDataDir}/${parentId}`,
-                parentPaths[parentId],
-            );
-        }
-
-        return joinName;
     }
 }

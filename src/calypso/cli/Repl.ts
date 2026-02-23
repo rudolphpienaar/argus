@@ -10,10 +10,11 @@
 import * as readline from 'readline';
 import fs from 'fs';
 import path from 'path';
-import type { CalypsoAction, CalypsoResponse } from '../../lcarslm/types.js';
+import type { CalypsoAction, CalypsoResponse, BootLogEvent } from '../../lcarslm/types.js';
 import type { WorkflowSummary } from '../../core/workflows/types.js';
 import { cliAdapter } from '../../lcarslm/adapters/CLIAdapter.js';
 import { CalypsoClient } from '../client/CalypsoClient.js';
+import { BootTimeline, BootPhaseLifecycle } from './BootTimeline.js';
 import {
     COLORS,
     sleep_ms,
@@ -172,14 +173,8 @@ function boot_printLine(message: string, status: string | null): void {
     process.stdout.write(`${spinner}[ ${color}${text}${COLORS.reset} ] ${message}\n`);
 }
 
-interface BootLineRecord {
-    message: string;
-    status: string | null;
-    lineIndex: number;
-}
-
 interface BootDisplay {
-    render: (event: { id: string; message: string; status: string | null }) => void;
+    render: (event: BootLogEvent) => void;
 }
 
 /**
@@ -199,22 +194,21 @@ interface BootDisplay {
  * @returns BootDisplay whose render method processes incoming boot_log events.
  */
 function bootDisplay_create(): BootDisplay {
-    const lineMap: Map<string, BootLineRecord> = new Map();
-    let lineCount: number = 0;
+    const timeline: BootTimeline = new BootTimeline();
     return {
-        render(event: { id: string; message: string; status: string | null }): void {
-            const { id, message, status } = event;
-            const existing: BootLineRecord | undefined = lineMap.get(id);
-            if (existing) {
-                const linesBack: number = lineCount - existing.lineIndex;
+        render(event: BootLogEvent): void {
+            const result = timeline.event_apply(event);
+            if (result.kind === 'ignore') {
+                return;
+            }
+
+            if (result.kind === 'update') {
+                const linesBack: number = result.linesBack;
                 readline.moveCursor(process.stdout, 0, -linesBack);
-                boot_printLine(message, status);
+                boot_printLine(event.message, event.status);
                 readline.moveCursor(process.stdout, 0, linesBack - 1);
-                lineMap.set(id, { ...existing, status });
             } else {
-                boot_printLine(message, status);
-                lineMap.set(id, { message, status, lineIndex: lineCount });
-                lineCount++;
+                boot_printLine(event.message, event.status);
             }
         }
     };
@@ -253,6 +247,7 @@ const REPL_COMPLETION_FALLBACK_COMMANDS: string[] = [
     'mv',
     'ln',
     'tree',
+    'wc',
     'env',
     'export',
     'whoami',
@@ -269,10 +264,13 @@ const REPL_COMPLETION_FALLBACK_COMMANDS: string[] = [
     'train',
     'code',
     'federate',
+    'dag',
     'quit',
     'exit',
+    '/dag',
     '/scripts',
-    '/run'
+    '/run',
+    '/settings'
 ];
 
 /**
@@ -315,6 +313,59 @@ export function replCompleter_create(
     };
 }
 
+/**
+ * Resolve whether boot contract v1 behavior is enabled in REPL.
+ *
+ * Enabled by default. Set `CALYPSO_BOOT_CONTRACT_V1=0|false|off` to disable.
+ */
+export function replBootContractEnabled_resolve(rawValue?: string): boolean {
+    const resolved: string | undefined = rawValue ?? process.env.CALYPSO_BOOT_CONTRACT_V1;
+    if (!resolved) {
+        return true;
+    }
+
+    const normalized: string = resolved.trim().toLowerCase();
+    if (normalized === '0' || normalized === 'false' || normalized === 'off') {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Resolve whether non-boot telemetry should render to terminal.
+ *
+ * Telemetry is visible during command execution and startup operations
+ * (greeting/persona activation), but suppressed while idle.
+ */
+export function replTelemetryRenderAllowed_resolve(commandInFlight: boolean, startupInFlight: boolean): boolean {
+    return commandInFlight || startupInFlight;
+}
+
+/**
+ * Resolve startup banner style.
+ *
+ * Defaults to the existing adapter banner. Set
+ * `CALYPSO_BANNER_STYLE=figlet` to opt into ASCII figlet title art.
+ */
+export function replBanner_resolve(defaultBanner: string, rawStyle?: string): string {
+    const styleRaw: string | undefined = rawStyle ?? process.env.CALYPSO_BANNER_STYLE;
+    const style: string = (styleRaw || '').trim().toLowerCase();
+    if (style !== 'figlet') {
+        return defaultBanner;
+    }
+
+    const figletLines: string[] = [
+        '  _________    __    ____  ____________  _____',
+        ' / ____/   |  / /   / __ \\/ __  / __ \\/ ___/',
+        '/ /   / /| | / /   / / / / /_/ / /_/ /\\__ \\ ',
+        '\\ \\__/ ___ |/ /___/ /_/ / ____/ ____/___/ / ',
+        ' \\___/_/  |_/_____/\\____/_/   /_/    /____/  ',
+    ];
+
+    const subtitle: string = `${COLORS.dim}Cognitive Algorithms & Logic Yielding Predictive Scientific Outcomes${COLORS.reset}`;
+    return `${COLORS.cyan}${figletLines.join('\n')}${COLORS.reset}\n${subtitle}`;
+}
+
 // ─── REPL Component ─────────────────────────────────────────────────────────
 
 export interface ReplOptions {
@@ -329,10 +380,13 @@ export interface ReplOptions {
 class CalypsoRepl {
     private rl: readline.Interface | null = null;
     private commandInFlight: boolean = false;
+    private startupInFlight: boolean = false;
     private activeSpinnerStop: (() => void) | null = null;
+    private startupSpinnerStop: (() => void) | null = null;
     private spinnerSuppressedByTelemetry: boolean = false;
-    private bootLineMap: Map<string, { message: string, status: string | null, lineIndex: number }> = new Map();
-    private bootBlockLineCount: number = 0;
+    private readonly bootContractEnabled: boolean = replBootContractEnabled_resolve();
+    private readonly bootTimeline: BootTimeline = new BootTimeline();
+    private readonly bootPhaseLifecycle: BootPhaseLifecycle = new BootPhaseLifecycle();
     /** Guards prompt re-display from bootLog_render during startup phase. */
     private startupComplete: boolean = false;
 
@@ -382,12 +436,28 @@ class CalypsoRepl {
                 return;
             }
 
-            if (!this.commandInFlight) return;
+            const renderAllowed: boolean = replTelemetryRenderAllowed_resolve(this.commandInFlight, this.startupInFlight);
+            if (!renderAllowed) return;
+
+            // During startup workflows (greet/persona/standby), status events
+            // are rendered as rotating spinner labels instead of static lines.
+            if (event.type === 'status' && this.startupInFlight) {
+                if (this.startupSpinnerStop) {
+                    this.startupSpinnerStop();
+                    this.startupSpinnerStop = null;
+                }
+                this.startupSpinnerStop = spinner_start(event.message);
+                return;
+            }
             
-            if (this.activeSpinnerStop) {
+            if (this.commandInFlight && this.activeSpinnerStop) {
                 this.activeSpinnerStop();
                 this.activeSpinnerStop = null;
                 this.spinnerSuppressedByTelemetry = true;
+            }
+            if (this.startupInFlight && this.startupSpinnerStop) {
+                this.startupSpinnerStop();
+                this.startupSpinnerStop = null;
             }
 
             switch (event.type) {
@@ -401,30 +471,31 @@ class CalypsoRepl {
         };
     }
 
-    private bootLog_render(event: { id: string, message: string, status: string | null }): void {
-        const { id, message, status } = event;
-        const existing = this.bootLineMap.get(id);
+    private bootLog_render(event: BootLogEvent): void {
+        if (this.bootContractEnabled) {
+            this.bootPhaseLifecycle.event_apply(event);
+        }
 
         // Only re-display the prompt when the REPL is in its normal interactive
         // loop. During startup (greeting, persona selection) startupComplete is
         // false, preventing bootLog_render from firing a premature prompt that
         // would appear between boot-log lines and the "activated" message.
-        const promptVisible = !this.commandInFlight && this.rl && this.startupComplete;
-        if (promptVisible) {
+        const promptSurfaceActive: boolean = !this.commandInFlight && this.rl !== null && this.startupComplete;
+        const bootActive: boolean = this.bootContractEnabled && this.bootPhaseLifecycle.active_any();
+        const promptVisible: boolean = promptSurfaceActive && !bootActive;
+        if (promptSurfaceActive) {
             readline.cursorTo(process.stdout, 0);
             readline.clearLine(process.stdout, 0);
         }
 
-        if (existing) {
-            const linesBack = this.bootBlockLineCount - existing.lineIndex;
+        const result = this.bootTimeline.event_apply(event);
+        if (result.kind === 'update') {
+            const linesBack: number = result.linesBack;
             readline.moveCursor(process.stdout, 0, -linesBack);
-            boot_printLine(message, status);
+            boot_printLine(event.message, event.status);
             readline.moveCursor(process.stdout, 0, linesBack - 1);
-            this.bootLineMap.set(id, { ...existing, status });
-        } else {
-            boot_printLine(message, status);
-            this.bootLineMap.set(id, { message, status, lineIndex: this.bootBlockLineCount });
-            this.bootBlockLineCount++;
+        } else if (result.kind === 'new') {
+            boot_printLine(event.message, event.status);
         }
 
         if (promptVisible) this.rl?.prompt(true);
@@ -432,8 +503,16 @@ class CalypsoRepl {
 
     private async greeting_execute(): Promise<void> {
         try {
-            const res = await this.client.command_send(`/greet ${this.username}`);
-            if (res.message) console.log(message_style(res.message));
+            const res: CalypsoResponse = await this.startupBusy_run(
+                'CALYPSO: ESTABLISHING COGNITIVE LINK...',
+                (): Promise<CalypsoResponse> => this.client.command_send(`/greet ${this.username}`),
+            );
+            if (res.message) {
+                console.log(message_style(res.message, {
+                    input: `/greet ${this.username}`,
+                    conversationalWidth: res.ui_hints?.convo_width
+                }));
+            }
         } catch { /* optional */ }
     }
 
@@ -459,12 +538,21 @@ class CalypsoRepl {
             selectedId = workflows[choice - 1].id;
         }
 
-        const personaResult = await this.client.persona_send(selectedId);
+        const personaResult: { success: boolean; message: string } = await this.startupBusy_run(
+            'CALYPSO: ACTIVATING WORKFLOW...',
+            (): Promise<{ success: boolean; message: string }> => this.client.persona_send(selectedId),
+        );
         if (personaResult.success) {
             console.log();
             if (!selectedId) {
-                const standbyRes = await this.client.command_send(`/standby ${this.username}`);
-                console.log(message_style(standbyRes.message || 'Workflow guidance disabled.'));
+                const standbyRes: CalypsoResponse = await this.startupBusy_run(
+                    'CALYPSO: ENTERING STANDBY...',
+                    (): Promise<CalypsoResponse> => this.client.command_send(`/standby ${this.username}`),
+                );
+                console.log(message_style(standbyRes.message || 'Workflow guidance disabled.', {
+                    input: `/standby ${this.username}`,
+                    conversationalWidth: standbyRes.ui_hints?.convo_width
+                }));
             } else {
                 const wf = workflows.find(w => w.id === selectedId);
                 console.log(message_style(`**${wf?.name || selectedId}** activated. I'll guide you through each step.`));
@@ -542,6 +630,27 @@ class CalypsoRepl {
         return new Promise(resolve => this.rl?.question(query, resolve));
     }
 
+    /**
+     * Run a startup operation with spinner + telemetry-unmute semantics.
+     */
+    private async startupBusy_run<T>(label: string, operation: () => Promise<T>): Promise<T> {
+        if (this.startupInFlight) {
+            return operation();
+        }
+
+        this.startupInFlight = true;
+        this.startupSpinnerStop = spinner_start(label);
+        try {
+            return await operation();
+        } finally {
+            if (this.startupSpinnerStop) {
+                this.startupSpinnerStop();
+                this.startupSpinnerStop = null;
+            }
+            this.startupInFlight = false;
+        }
+    }
+
     private shutdown(): void {
         console.log(`${COLORS.dim}Goodbye.${COLORS.reset}`);
         this.client.disconnect();
@@ -588,16 +697,29 @@ export async function repl_start(options: ReplOptions = {}): Promise<void> {
         if (event.type === 'boot_log') bootDisplay.render(event);
     };
 
-    const loginRes = await client.login_send(username || 'developer');
+    let loginRes: Awaited<ReturnType<CalypsoClient['login_send']>>;
+    try {
+        loginRes = await client.login_send(username || 'developer');
+    } catch (e) {
+        client.onTelemetry = null;
+        const reason: string = e instanceof Error ? e.message : 'Login failed';
+        console.error(reason);
+        process.exit(1);
+        return;
+    }
 
     // Hand telemetry back; CalypsoRepl.telemetry_setup() will install its
     // own full handler covering both boot_log and command-phase events.
     client.onTelemetry = null;
 
-    if (!loginRes.success) { console.error('Login failed'); process.exit(1); }
+    if (!loginRes.success) {
+        const reason: string = loginRes.message || 'Login failed';
+        console.error(reason);
+        process.exit(1);
+    }
 
     console.log(`${COLORS.green}● Access granted.${COLORS.reset}\n`);
-    console.log(cliAdapter.banner_render());
+    console.log(replBanner_resolve(cliAdapter.banner_render()));
     console.log(`${COLORS.dim}Connected to ${host}:${port}${COLORS.reset}\n`);
 
     // 2. START REPL

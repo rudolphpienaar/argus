@@ -1,8 +1,8 @@
 /**
  * @file Shell Unit Tests
  *
- * Covers command parsing, builtins (cd, ls, cat, mkdir, touch, rm, cp, mv,
- * echo, env, export, whoami, date, history, help), environment variables,
+ * Covers command parsing, builtins (cd, ls, cat, wc, mkdir, touch, rm, cp,
+ * mv, echo, env, export, whoami, date, history, help), environment variables,
  * prompt generation, stage transitions, and external handler delegation.
  *
  * @module
@@ -36,7 +36,7 @@ describe('Shell', () => {
 
         it('should return synced $PWD from VFS', () => {
             vfs.dir_create('/home/fedml/src');
-            vfs.cwd_set('/home/fedml/src');
+            shell.cwd_set('/home/fedml/src');
             expect(shell.env_get('PWD')).toBe('/home/fedml/src');
         });
 
@@ -62,14 +62,14 @@ describe('Shell', () => {
 
         it('should render prompt with subdirectory', () => {
             vfs.dir_create('/home/fedml/src/project');
-            vfs.cwd_set('/home/fedml/src/project');
+            shell.cwd_set('/home/fedml/src/project');
             const prompt: string = shell.prompt_render();
             expect(prompt).toBe('fedml@argus:~/src/project $ ');
         });
 
         it('should render absolute path outside $HOME', () => {
             vfs.dir_create('/tmp');
-            vfs.cwd_set('/tmp');
+            shell.cwd_set('/tmp');
             const prompt: string = shell.prompt_render();
             expect(prompt).toBe('fedml@argus:/tmp $ ');
         });
@@ -84,6 +84,13 @@ describe('Shell', () => {
     // ─── Command Parsing ────────────────────────────────────────
 
     describe('command_execute', () => {
+        it('should expose registered builtin names', () => {
+            const builtins: string[] = shell.builtins_list();
+            expect(builtins).toContain('pwd');
+            expect(builtins).toContain('mkdir');
+            expect(builtins).toContain('wc');
+        });
+
         it('should return empty result for blank input', async () => {
             const result: ShellResult = await shell.command_execute('');
             expect(result.exitCode).toBe(0);
@@ -234,7 +241,7 @@ describe('Shell', () => {
             vfs.link_create('/home/fedml/input', '/home/fedml/data/search/gather/data');
             const result: ShellResult = await shell.command_execute('ls -l');
             expect(result.exitCode).toBe(0);
-            expect(result.stdout).toContain('input -> /home/fedml/data/search/gather/data');
+            expect(result.stdout).toContain('input@ -> /home/fedml/data/search/gather/data');
         });
 
         it('should reject unknown ls options', async () => {
@@ -248,6 +255,24 @@ describe('Shell', () => {
             const result: ShellResult = await shell.command_execute('ls -d demo');
             expect(result.exitCode).toBe(0);
             expect(result.stdout).toContain('demo/');
+        });
+
+        it('should expand wildcard operands in current directory', async () => {
+            vfs.file_create('/home/fedml/IMG001.png', 'a');
+            vfs.file_create('/home/fedml/IMG002.png', 'b');
+            vfs.file_create('/home/fedml/DOC001.txt', 'c');
+
+            const result: ShellResult = await shell.command_execute('ls IMG*');
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('IMG001.png');
+            expect(result.stdout).toContain('IMG002.png');
+            expect(result.stdout).not.toContain('DOC001.txt');
+        });
+
+        it('should return an error when wildcard has no matches', async () => {
+            const result: ShellResult = await shell.command_execute('ls IMG*');
+            expect(result.exitCode).toBe(1);
+            expect(result.stderr).toContain("cannot access 'IMG*'");
         });
     });
 
@@ -282,6 +307,49 @@ describe('Shell', () => {
             expect(result.exitCode).toBe(0);
             expect(result.stdout).toContain('alpha');
             expect(result.stdout).toContain('beta');
+        });
+    });
+
+    // ─── Builtin: wc ────────────────────────────────────────────
+
+    describe('wc', () => {
+        it('should print default line/word/byte counts', async () => {
+            vfs.file_create('/home/fedml/sample.txt', 'alpha beta\ngamma\n');
+            const result: ShellResult = await shell.command_execute('wc sample.txt');
+
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout).toContain('sample.txt');
+            expect(result.stdout).toContain('2');
+            expect(result.stdout).toContain('3');
+            expect(result.stdout).toContain('17');
+        });
+
+        it('should support selecting specific counters', async () => {
+            vfs.file_create('/home/fedml/sample.txt', 'one two\nthree\n');
+            const result: ShellResult = await shell.command_execute('wc -lw sample.txt');
+
+            expect(result.exitCode).toBe(0);
+            const fields: string[] = result.stdout.trim().split(/\s+/);
+            expect(fields[0]).toBe('2');
+            expect(fields[1]).toBe('3');
+            expect(fields[2]).toBe('sample.txt');
+        });
+
+        it('should include a total row for multiple files', async () => {
+            vfs.file_create('/home/fedml/one.txt', 'a b\n');
+            vfs.file_create('/home/fedml/two.txt', 'c d\ne\n');
+            const result: ShellResult = await shell.command_execute('wc one.txt two.txt');
+
+            expect(result.exitCode).toBe(0);
+            const lines: string[] = result.stdout.split('\n');
+            expect(lines.length).toBe(3);
+            expect(lines[2]).toContain('total');
+        });
+
+        it('should return error for missing operand', async () => {
+            const result: ShellResult = await shell.command_execute('wc');
+            expect(result.exitCode).toBe(1);
+            expect(result.stderr).toContain('missing operand');
         });
     });
 
@@ -544,6 +612,7 @@ describe('Shell', () => {
             expect(result.stdout).toContain('cd');
             expect(result.stdout).toContain('ls');
             expect(result.stdout).toContain('cat');
+            expect(result.stdout).toContain('wc');
             expect(result.stdout).toContain('rm');
             expect(result.stdout).toContain('cp');
             expect(result.stdout).toContain('mv');

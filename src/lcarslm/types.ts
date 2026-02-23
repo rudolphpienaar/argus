@@ -11,6 +11,7 @@ import type { Shell } from '../vfs/Shell.js';
 import type { Dataset, AppState, Project } from '../core/models/types.js';
 import type { FileNode } from '../vfs/types.js';
 import type { SearchProvider } from './SearchProvider.js';
+import type { SettingsService } from '../config/settings.js';
 
 // ─── LLM Types ─────────────────────────────────────────────────────────────
 
@@ -84,6 +85,8 @@ export interface ui_hints {
     stream_delay_ms?: number;
     animation?: 'progress_box' | 'harmonization' | 'none';
     animation_config?: StepAnimationConfig;
+    /** Conversational prose wrap width in characters (CLI renderer hint). */
+    convo_width?: number;
 }
 
 /**
@@ -119,11 +122,38 @@ export interface PluginResult {
 // ─── Telemetry Types ──────────────────────────────────────────────────────
 
 /**
+ * Contract phases for boot telemetry.
+ */
+export type BootPhase = 'login_boot' | 'workflow_boot';
+
+/**
+ * Contract statuses for boot telemetry.
+ */
+export type BootStatus = 'WAIT' | 'OK' | 'FAIL' | 'DONE';
+
+/**
+ * Structured boot milestone event.
+ *
+ * `phase` and `seq` are optional for backward compatibility with legacy
+ * emitters/consumers during staged rollout.
+ */
+export interface BootLogEvent {
+    type: 'boot_log';
+    id: string;
+    message: string;
+    status: BootStatus | null;
+    timestamp?: string;
+    phase?: BootPhase;
+    seq?: number;
+}
+
+/**
  * Primitives for live UI updates from plugins.
  * v10.2: Reactive primitives for line-by-line narrative control.
  */
 export type TelemetryEvent =
     | { type: 'log'; message: string }
+    | BootLogEvent
     | { type: 'progress'; label: string; percent: number }
     | { type: 'frame_open'; title: string; subtitle?: string }
     | { type: 'frame_close'; summary?: string[] }
@@ -329,6 +359,12 @@ export interface CalypsoCoreConfig {
 
     /** Optional project name for session path grounding. */
     projectName?: string;
+
+    /** v12.0: Optional external telemetry bus for capturing genesis events. */
+    telemetryBus?: any;
+
+    /** Optional shared settings manager (user-scoped). */
+    settingsService?: SettingsService;
 }
 
 // ─── Store Actions Interface ───────────────────────────────────────────────
@@ -376,6 +412,12 @@ export interface CalypsoStoreActions {
 
     /** Update the current session path */
     session_setPath(path: string | null): void;
+
+    /** v11.0: Get current session ID */
+    sessionId_get(): string | null;
+
+    /** v11.0: Generate a new session ID */
+    session_start(): void;
 
     /** v10.2: Store recently mentioned datasets for anaphora resolution across turns. */
     lastMentioned_set(datasets: Dataset[]): void;

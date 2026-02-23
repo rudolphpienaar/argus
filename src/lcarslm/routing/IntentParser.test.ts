@@ -52,6 +52,12 @@ function storeActions_create(activeProject: { id: string; name: string } | null)
             return null;
         },
         session_setPath(): void {},
+        sessionId_get(): string | null {
+            return (state as any).currentSessionId || null;
+        },
+        session_start(): void {
+            (state as any).currentSessionId = 'sess-new';
+        },
 
         dataset_getById(id: string): Dataset | undefined {
             return DATASETS.find(ds => ds.id === id);
@@ -147,6 +153,32 @@ describe('IntentParser', (): void => {
 
         expect(intent.type).toBe('llm');
         expect(intent.isModelResolved).toBe(true);
+    });
+
+    it('routes natural-language DAG requests to deterministic special intent', async (): Promise<void> => {
+        const parser: IntentParser = parser_create();
+
+        const showIntent = await parser.intent_resolve('please show this manifest');
+        expect(showIntent.type).toBe('special');
+        expect(showIntent.command).toBe('dag');
+        expect(showIntent.args).toEqual(['show', '--where']);
+        expect(showIntent.isModelResolved).toBe(false);
+
+        const whereIntent = await parser.intent_resolve('where am i in the workflow?');
+        expect(whereIntent.type).toBe('special');
+        expect(whereIntent.command).toBe('dag');
+        expect(whereIntent.args).toEqual(['show', '--where']);
+        expect(whereIntent.isModelResolved).toBe(false);
+    });
+
+    it('preserves explicit dag command arguments and flags', async (): Promise<void> => {
+        const parser: IntentParser = parser_create();
+        const intent = await parser.intent_resolve('dag show --box --stale');
+
+        expect(intent.type).toBe('special');
+        expect(intent.command).toBe('dag');
+        expect(intent.args).toEqual(['show', '--box', '--stale']);
+        expect(intent.isModelResolved).toBe(false);
     });
 
     it('extracts deterministic actions from LLM tags and cleans response text', (): void => {

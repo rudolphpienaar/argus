@@ -121,6 +121,31 @@ export class IntentParser {
             };
         }
 
+        // Match explicit dag command forms and preserve user-provided flags.
+        const dagMatch: RegExpMatchArray | null = input.trim().match(/^\/?dag(?:\s+(.*))?$/i);
+        if (dagMatch) {
+            const rawArgs: string = (dagMatch[1] || '').trim();
+            const args: string[] = rawArgs.length > 0 ? rawArgs.split(/\s+/) : ['show'];
+            return {
+                type: 'special',
+                command: 'dag',
+                args,
+                raw: input,
+                isModelResolved: false
+            };
+        }
+
+        // Deterministic DAG/manifest visualization intents
+        if (this.intentLooksLike_dagShow(trimmed)) {
+            return {
+                type: 'special',
+                command: 'dag',
+                args: ['show', '--where'],
+                raw: input,
+                isModelResolved: false
+            };
+        }
+
         // Match exact workflow verbs
         const workflowVerbs: string[] = this.workflowCommands_resolve();
         const firstWord: string = trimmed.split(/\s+/)[0];
@@ -145,6 +170,26 @@ export class IntentParser {
         }
 
         return null;
+    }
+
+    /**
+     * Detect natural-language DAG visualization requests.
+     *
+     * Examples:
+     * - "show workflow"
+     * - "please show this manifest"
+     * - "show dag"
+     * - "where am i in the workflow"
+     */
+    private intentLooksLike_dagShow(trimmed: string): boolean {
+        const normalized: string = trimmed.replace(/[?!.]+$/g, '').trim();
+        const patterns: RegExp[] = [
+            /^dag(?:\s+show)?(?:\s+.*)?$/,
+            /^(?:please\s+)?show(?:\s+me)?\s+(?:the\s+|this\s+)?(?:workflow|dag|manifest)(?:\s+.*)?$/,
+            /^(?:please\s+)?(?:where\s+am\s+i|where\s+are\s+we)(?:\s+in(?:\s+the)?\s+(?:workflow|dag|manifest))?$/,
+            /^(?:please\s+)?(?:show|display)\s+(?:workflow|dag)\s+(?:graph|tree|topology)$/,
+        ];
+        return patterns.some((pattern: RegExp): boolean => pattern.test(normalized));
     }
 
     /**

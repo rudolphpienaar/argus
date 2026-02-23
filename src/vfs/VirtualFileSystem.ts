@@ -65,7 +65,18 @@ export class VirtualFileSystem {
     }
 
     public path_resolve(input: string): string {
-        if (!input) return this.cwd;
+        return this.path_resolveSpecific(this.cwd, input);
+    }
+
+    /**
+     * Resolve a path string relative to a specific base directory.
+     *
+     * @param base - The absolute directory path to resolve from.
+     * @param input - The path string to resolve.
+     * @returns Fully normalized absolute path.
+     */
+    public path_resolveSpecific(base: string, input: string): string {
+        if (!input) return base;
         let segments: string[];
 
         if (input === '~' || input.startsWith('~/')) {
@@ -75,7 +86,7 @@ export class VirtualFileSystem {
         } else if (input.startsWith('/')) {
             segments = input.split('/').filter(Boolean);
         } else {
-            segments = this.cwd.split('/').filter(Boolean);
+            segments = base.split('/').filter(Boolean);
             segments.push(...input.split('/').filter(Boolean));
         }
 
@@ -95,12 +106,13 @@ export class VirtualFileSystem {
 
     public cwd_set(path: string): void {
         const resolved: string = this.path_resolve(path);
-        const node: FileNode | null = this.node_at(resolved);
+        // v11.0: Always resolve the PHYSICAL path for the VFS CWD
+        const node: FileNode | null = this.node_at(resolved, true);
         if (!node) throw new Error(`cd: ${path}: No such file or directory`);
         if (node.type !== 'folder') throw new Error(`cd: ${path}: Not a directory`);
         const oldPath: string = this.cwd;
-        this.cwd = resolved;
-        events.emit(Events.CWD_CHANGED, { oldPath, newPath: resolved });
+        this.cwd = node.path;
+        events.emit(Events.CWD_CHANGED, { oldPath, newPath: node.path });
     }
 
     public node_read(path: string): string | null {
@@ -124,12 +136,13 @@ export class VirtualFileSystem {
         const resolved: string = this.path_resolve(path);
         const parentPath: string = path_parent(resolved);
         const parent: FolderNode = this.node_folderRequire(parentPath, 'Parent directory does not exist');
+        const name = path_basename(resolved);
 
         let node: FileNode | null = this.node_at(resolved);
         if (node && node.type === 'folder') throw new Error(`write: ${path}: Is a directory`);
 
         if (!node) {
-            node = node_create(path_basename(resolved), 'file', resolved);
+            node = node_create(name, 'file', resolved);
             parent.children.push(node);
         }
 
@@ -183,6 +196,10 @@ export class VirtualFileSystem {
 
     public node_stat(path: string): FileNode | null {
         return this.node_at(this.path_resolve(path));
+    }
+
+    public node_lstat(path: string): FileNode | null {
+        return this.node_at(this.path_resolve(path), false);
     }
 
     public dir_list(path: string): FileNode[] {
@@ -242,11 +259,15 @@ export class VirtualFileSystem {
 
     public tree_mount(path: string, subtree: FileNode): void {
         const resolved: string = this.path_resolve(path);
+        const name = path_basename(resolved);
         this.dir_create(path_parent(resolved));
         const parent: FolderNode = this.node_folderRequire(path_parent(resolved), `mount: ${path}: Parent directory not found`);
-        parent.children = parent.children.filter((c: FileNode): boolean => c.name !== subtree.name);
+        
+        // v12.0: Strict replacement by name
+        parent.children = parent.children.filter((c: FileNode): boolean => c.name !== name);
+        
         node_repath(subtree, resolved);
-        subtree.name = path_basename(resolved);
+        subtree.name = name;
         parent.children.push(subtree);
         this.event_emit(resolved, 'mount');
     }
@@ -270,6 +291,54 @@ export class VirtualFileSystem {
         }
     }
 
+    public tree_link(srcPath: string, destPath: string): void {
+        const srcResolved: string = this.path_resolve(srcPath);
+        const destResolved: string = this.path_resolve(destPath);
+        const srcNode: FileNode | null = this.node_at(srcResolved);
+        if (!srcNode) throw new Error(`tree_link: ${srcPath}: No such file or directory`);
+
+        if (srcNode.type === 'folder' && srcNode.children) {
+            this.dir_create(destResolved);
+            for (const child of srcNode.children) {
+                const childDestPath = `${destResolved}/${child.name}`;
+                this.link_create(childDestPath, child.path);
+            }
+        } else {
+            this.link_create(destResolved, srcNode.path);
+        }
+    }
+
+    /**
+     * Recursively clone "work" files (scripts, docs) from src to dest,
+     * while skipping or linking known large data directories.
+     */
+    public tree_mergeCausal(srcPath: string, destPath: string): void {
+        const srcResolved: string = this.path_resolve(srcPath);
+        const destResolved: string = this.path_resolve(destPath);
+        const srcNode: FileNode | null = this.node_at(srcResolved);
+        if (!srcNode || srcNode.type !== 'folder' || !srcNode.children) return;
+
+        this.dir_create(destResolved);
+
+        for (const child of srcNode.children) {
+            const childDestPath = `${destResolved}/${child.name}`;
+            
+            // Heuristic: large data directories (training/validation) are linked.
+            // Small work files (scripts, configs, .json artifacts) are cloned.
+            const isDataDir = child.name === 'training' || child.name === 'validation' || child.name === 'images' || child.name === 'masks';
+            
+            if (isDataDir) {
+                this.link_create(childDestPath, child.path);
+            } else if (child.type === 'folder') {
+                this.tree_mergeCausal(child.path, childDestPath);
+            } else {
+                // Clone the file
+                const clone = node_cloneDeep(child, childDestPath);
+                this.tree_mount(childDestPath, clone);
+            }
+        }
+    }
+
     public tree_unmount(path: string): void {
         const resolved: string = this.path_resolve(path);
         const parent: FileNode | null = this.node_at(path_parent(resolved));
@@ -281,12 +350,14 @@ export class VirtualFileSystem {
     public link_create(path: string, target: string): void {
         const resolved: string = this.path_resolve(path);
         const parentPath: string = path_parent(resolved);
+        const name = path_basename(resolved);
         this.dir_create(parentPath);
         const parent: FolderNode = this.node_folderRequire(parentPath, `ln: ${path}: Parent directory not found`);
 
-        parent.children = parent.children.filter((c: FileNode): boolean => c.path !== resolved);
+        // v12.0: Strict replacement by name
+        parent.children = parent.children.filter((c: FileNode): boolean => c.name !== name);
         
-        const node: FileNode = node_create(path_basename(resolved), 'link', resolved);
+        const node: FileNode = node_create(name, 'link', resolved);
         node.target = target;
         parent.children.push(node);
         this.event_emit(resolved, 'link');
@@ -309,8 +380,18 @@ export class VirtualFileSystem {
             if (child.type === 'link' && (followLinks || i < segments.length - 1)) {
                 const target = child.target!;
                 const remaining = segments.slice(i + 1).join('/');
-                const nextPath = remaining ? `${target}/${remaining}` : target;
-                return this.node_at(this.path_resolve(nextPath), followLinks, depth + 1);
+                
+                let nextPath: string;
+                if (target.startsWith('/')) {
+                    nextPath = remaining ? `${target}/${remaining}` : target;
+                } else {
+                    // v11.0: Resolve relative link target relative to the link's PARENT directory
+                    const linkParent = '/' + segments.slice(0, i).join('/');
+                    const resolvedTarget = this.path_resolveSpecific(linkParent, target);
+                    nextPath = remaining ? `${resolvedTarget}/${remaining}` : resolvedTarget;
+                }
+                
+                return this.node_at(nextPath, followLinks, depth + 1);
             }
 
             current = child;

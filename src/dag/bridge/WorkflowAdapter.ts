@@ -25,6 +25,7 @@ import { chain_validate } from '../fingerprint/chain.js';
 import type { FingerprintRecord, ChainValidationResult, StalenessResult } from '../fingerprint/types.js';
 import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
 import type { ArtifactEnvelope } from '../store/types.js';
+import { dagBoxGraphviz_render, type DagBoxNodeInput, type DagBoxEdgeInput } from '../visualizer/graphvizBox.js';
 
 // ─── Protocol-Facing Types ─────────────────────────────────────
 
@@ -72,13 +73,36 @@ export interface TransitionResult {
     autoDeclinable?: boolean;
 }
 
+/**
+ * Rendering options for DAG visualization output.
+ */
+export interface DagRenderOptions {
+    /** Include structural nodes (join/pre_* helpers) in the output. */
+    includeStructural?: boolean;
+    /** Include optional nodes in the output. */
+    includeOptional?: boolean;
+    /** Emit compact one-line-per-node output instead of tree form. */
+    compact?: boolean;
+    /** Highlight the current position marker. */
+    showWhere?: boolean;
+    /** Annotate stale nodes based on Merkle validation. */
+    showStale?: boolean;
+    /** Render boxed glyph nodes with explicit branch/join edge lists. */
+    box?: boolean;
+}
+
 // ─── Manifest Registry ─────────────────────────────────────────
 
 interface ManifestEntry {
     yamlPath: string;
 }
 
-/** Resolve path relative to this module's directory. */
+/**
+ * Resolve a path relative to this module's directory.
+ *
+ * @param relativePath - Path relative to the compiled module location.
+ * @returns Absolute resolved path.
+ */
 function modulePath_resolve(relativePath: string): string {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
@@ -88,6 +112,12 @@ function modulePath_resolve(relativePath: string): string {
 /** Registry of available workflow manifests (scanned on demand). */
 let MANIFEST_CACHE: Record<string, ManifestEntry> | null = null;
 
+/**
+ * Scan the manifests directory and return the registry of available workflows.
+ * Results are cached in memory after the first scan.
+ *
+ * @returns Map of workflow ID → ManifestEntry with YAML path.
+ */
 function manifestRegistry_get(): Record<string, ManifestEntry> {
     if (MANIFEST_CACHE) {
         return MANIFEST_CACHE;
@@ -135,21 +165,38 @@ export class WorkflowAdapter {
     /** Topology-aware session tree paths for each stage. */
     private readonly _stagePaths: Map<string, StagePath>;
 
+    /**
+     * @param workflowId - Workflow identifier (e.g. 'fedml', 'chris').
+     * @param definition - Parsed DAGDefinition from the manifest.
+     */
     constructor(workflowId: string, definition: DAGDefinition) {
         this.workflowId = workflowId;
         this.definition = definition;
 
-        // Compute topology-aware session tree paths from DAG structure
         this._stagePaths = sessionPaths_compute(definition);
 
-        // Build command → stage reverse index
-        this.commandIndex = new Map();
-        this.declaredCommands = new Set<string>();
-        
-        // Use orderedNodeIds to ensure we process stages in manifest order
         const nodes: DAGNode[] = definition.orderedNodeIds.map(
             (id: string): DAGNode => definition.nodes.get(id)!,
         );
+        const { index, declared } = this.commandIndex_build(nodes);
+        this.commandIndex = index;
+        this.declaredCommands = declared;
+    }
+
+    /**
+     * Build the command → stage reverse index and declared command phrase set.
+     *
+     * Uses three passes over manifest-ordered nodes to establish priority:
+     * 1. Multi-word exact phrases (highest precedence — never shadowed)
+     * 2. Single-word commands that match their own stage ID
+     * 3. Base-word fallbacks (only when not shadowed by a more-specific phrase)
+     *
+     * @param nodes - DAG nodes in manifest declaration order.
+     * @returns Reverse command index and set of declared canonical phrases.
+     */
+    private commandIndex_build(nodes: DAGNode[]): { index: Map<string, DAGNode>; declared: Set<string> } {
+        const index = new Map<string, DAGNode>();
+        const declared = new Set<string>();
 
         // 1. First pass: Index EXACT multi-word specific commands.
         // These are highly specific and should always take precedence.
@@ -157,11 +204,11 @@ export class WorkflowAdapter {
             for (const cmd of node.commands) {
                 const canonicalFull = cmd.split(/[<\[]/)[0].toLowerCase().trim();
                 if (canonicalFull) {
-                    this.declaredCommands.add(canonicalFull);
+                    declared.add(canonicalFull);
                 }
                 if (canonicalFull.split(/\s+/).length > 1) {
-                    if (!this.commandIndex.has(canonicalFull)) {
-                        this.commandIndex.set(canonicalFull, node);
+                    if (!index.has(canonicalFull)) {
+                        index.set(canonicalFull, node);
                     }
                 }
             }
@@ -173,7 +220,7 @@ export class WorkflowAdapter {
                 const canonicalFull = cmd.split(/[<\[]/)[0].toLowerCase().trim();
                 if (canonicalFull.split(/\s+/).length === 1) {
                     if (canonicalFull === node.id) {
-                        this.commandIndex.set(canonicalFull, node);
+                        index.set(canonicalFull, node);
                     }
                 }
             }
@@ -183,19 +230,21 @@ export class WorkflowAdapter {
         for (const node of nodes) {
             for (const cmd of node.commands) {
                 const baseCmd = cmd.split(/\s+/)[0].toLowerCase();
-                if (baseCmd && !this.commandIndex.has(baseCmd)) {
+                if (baseCmd && !index.has(baseCmd)) {
                     // Check if this verb is a prefix of any OTHER stage's specific command
-                    const isShadowed: boolean = Array.from(this.commandIndex.keys()).some((fullCmd: string): boolean => {
+                    const isShadowed: boolean = Array.from(index.keys()).some((fullCmd: string): boolean => {
                         const parts: string[] = fullCmd.split(/\s+/);
-                        return parts.length > 1 && parts[0] === baseCmd && this.commandIndex.get(fullCmd)!.id !== node.id;
+                        return parts.length > 1 && parts[0] === baseCmd && index.get(fullCmd)!.id !== node.id;
                     });
 
                     if (!isShadowed) {
-                        this.commandIndex.set(baseCmd, node);
+                        index.set(baseCmd, node);
                     }
                 }
             }
         }
+
+        return { index, declared };
     }
 
     // ─── Static Factory ────────────────────────────────────────
@@ -224,6 +273,9 @@ export class WorkflowAdapter {
 
     /**
      * Validate that all declared stage handlers resolve to plugin modules.
+     *
+     * @param definition - The parsed DAG definition to validate.
+     * @throws If any stage handler cannot be resolved to a plugin module.
      */
     private static handlers_validate(definition: DAGDefinition): void {
         const missingHandlers: string[] = [];
@@ -243,6 +295,9 @@ export class WorkflowAdapter {
 
     /**
      * Check if a plugin module file exists for a handler name.
+     *
+     * @param handlerName - Handler identifier declared in the manifest.
+     * @returns True if a .ts or .js plugin module file exists for this handler.
      */
     private static pluginModule_exists(handlerName: string): boolean {
         const pluginsDir = modulePath_resolve('../../plugins');
@@ -253,6 +308,8 @@ export class WorkflowAdapter {
 
     /**
      * Get summaries of all available workflows.
+     *
+     * @returns Array of WorkflowSummary records, one per parseable manifest.
      */
     static workflows_summarize(): WorkflowSummary[] {
         const summaries: WorkflowSummary[] = [];
@@ -280,6 +337,8 @@ export class WorkflowAdapter {
 
     /**
      * Get all available workflow IDs.
+     *
+     * @returns Array of workflow ID strings (e.g. ['fedml', 'chris']).
      */
     static workflows_list(): string[] {
         return Object.keys(manifestRegistry_get());
@@ -363,15 +422,41 @@ export class WorkflowAdapter {
     private artifacts_find(vfs: VirtualFileSystem, path: string, stageId: string): ArtifactSearchResult[] {
         const results: ArtifactSearchResult[] = [];
         try {
+            const stats = vfs.node_lstat(path);
+            if (stats && stats.type === 'link') {
+                return results;
+            }
+
             const nodes: FileNode[] = vfs.dir_list(path);
+            
+            // v12.0: Check for meta/ directory at this level
+            const metaDir = nodes.find(n => n.name === 'meta' && n.type === 'folder');
+            if (metaDir) {
+                const metaFiles = vfs.dir_list(metaDir.path);
+                for (const file of metaFiles) {
+                    if (file.name.endsWith('.json')) {
+                        const rec: ArtifactSearchResult | null = this.fingerprintRecord_read(vfs, file.path);
+                        if (rec && rec.stageId === stageId) {
+                            results.push(rec);
+                        }
+                    }
+                }
+            }
+
+            // Fallback: Check the stage root itself for the json (compatibility)
             for (const node of nodes) {
-                if (node.type === 'folder') {
-                    results.push(...this.artifacts_find(vfs, node.path, stageId));
-                } else if (node.name.endsWith('.json')) {
+                if (node.type === 'file' && node.name.endsWith('.json')) {
                     const rec: ArtifactSearchResult | null = this.fingerprintRecord_read(vfs, node.path);
                     if (rec && rec.stageId === stageId) {
                         results.push(rec);
                     }
+                }
+            }
+
+            // Recurse into children (but skip system-owned input/output/meta already processed)
+            for (const node of nodes) {
+                if (node.type === 'folder' && !['meta', 'input', 'output'].includes(node.name)) {
+                    results.push(...this.artifacts_find(vfs, node.path, stageId));
                 }
             }
         } catch { /* ignore */ }
@@ -436,17 +521,26 @@ export class WorkflowAdapter {
             return WorkflowAdapter.result_allowed();
         }
 
+        // Propagate stale detection through structural nodes to find user-facing stale ancestors.
         const staleBlock: TransitionResult | null = this.transitionStaleBlock_resolve(targetNode, staleIds);
         if (staleBlock) {
             return staleBlock;
         }
 
-        const nodeReadiness: NodeReadiness | null = this.transitionReadiness_resolve(targetNode, completedIds);
+        // Use structural-promoted set so structural nodes are transparent to readiness.
+        const effectiveCompleted: Set<string> = this.structuralCompletion_resolve(completedIds);
+        const nodeReadiness: NodeReadiness | null = this.transitionReadiness_resolve(targetNode, effectiveCompleted);
         if (!nodeReadiness || nodeReadiness.pendingParents.length === 0) {
             return WorkflowAdapter.result_allowed();
         }
 
-        const parentBlock: TransitionResult | null = this.transitionPendingParentBlock_resolve(nodeReadiness);
+        // Expand structural pending parents to their user-facing equivalents.
+        const userFacingPending: string[] = this.userFacingPendingParents_resolve(
+            nodeReadiness.pendingParents,
+            effectiveCompleted,
+        );
+
+        const parentBlock: TransitionResult | null = this.transitionPendingParentBlock_resolve(userFacingPending);
         if (parentBlock) {
             return parentBlock;
         }
@@ -454,11 +548,25 @@ export class WorkflowAdapter {
         return WorkflowAdapter.result_allowed();
     }
 
+    /**
+     * Resolve the target DAGNode for a command string.
+     *
+     * @param command - Command string being attempted.
+     * @returns The target DAGNode, or undefined if the command is not workflow-routed.
+     */
     private transitionTarget_resolve(command: string): DAGNode | undefined {
         const baseCmd: string = command.split(/\s+/)[0].toLowerCase();
         return this.commandIndex.get(baseCmd);
     }
 
+    /**
+     * Check if the target stage is already freshly complete (completed and not stale).
+     *
+     * @param targetNode - The stage being targeted by the transition.
+     * @param completedIds - Set of all completed stage IDs.
+     * @param staleIds - Set of all stale stage IDs.
+     * @returns True if the stage is complete and not stale.
+     */
     private transition_isFreshComplete(
         targetNode: DAGNode,
         completedIds: Set<string>,
@@ -467,21 +575,134 @@ export class WorkflowAdapter {
         return completedIds.has(targetNode.id) && !staleIds.has(targetNode.id);
     }
 
+    /**
+     * Auto-promote structural stages when all their dependencies are met.
+     * Structural nodes are invisible to the user and should never block transitions.
+     *
+     * @param completedIds - Set of actually materialized stage IDs.
+     * @returns Expanded completed set with structural stages auto-promoted.
+     */
+    private structuralCompletion_resolve(completedIds: Set<string>): Set<string> {
+        const effective = new Set(completedIds);
+        let changed = true;
+
+        while (changed) {
+            changed = false;
+            for (const node of this.definition.nodes.values()) {
+                if (!node.structural || effective.has(node.id)) continue;
+
+                const allParentsMet =
+                    !node.previous || node.previous.every((pid: string) => effective.has(pid));
+
+                if (allParentsMet) {
+                    effective.add(node.id);
+                    changed = true;
+                }
+            }
+        }
+
+        return effective;
+    }
+
+    /**
+     * Expand structural pending parents to their user-facing equivalents.
+     * Traverses through structural nodes to find the real user-visible pending ancestors.
+     *
+     * @param pendingParentIds - IDs of pending parents from the readiness check.
+     * @param effectiveCompleted - Set of completed IDs after structural auto-promotion.
+     * @returns Array of user-facing (non-structural) pending parent stage IDs.
+     */
+    private userFacingPendingParents_resolve(
+        pendingParentIds: string[],
+        effectiveCompleted: Set<string>,
+    ): string[] {
+        const result: string[] = [];
+        const visited = new Set<string>();
+
+        const expand = (parentId: string): void => {
+            if (visited.has(parentId)) return;
+            visited.add(parentId);
+
+            const node: DAGNode | undefined = this.definition.nodes.get(parentId);
+            if (!node) return;
+
+            if (!node.structural) {
+                result.push(parentId);
+                return;
+            }
+
+            // Structural: expand its own pending parents recursively.
+            for (const grandParentId of (node.previous ?? [])) {
+                if (!effectiveCompleted.has(grandParentId)) {
+                    expand(grandParentId);
+                }
+            }
+        };
+
+        for (const parentId of pendingParentIds) {
+            expand(parentId);
+        }
+
+        return result;
+    }
+
+    /**
+     * Find a stale user-facing ancestor by traversing through structural nodes.
+     * Structural nodes are transparent — the stale signal propagates through them.
+     *
+     * @param node - The starting node (transition target) to inspect.
+     * @param staleIds - Set of stale stage IDs.
+     * @param visited - Cycle-prevention set (pass `new Set<string>()`).
+     * @returns The nearest stale user-facing ancestor, or null if none.
+     */
+    private staleUserFacingAncestor_find(
+        node: DAGNode,
+        staleIds: Set<string>,
+        visited: Set<string>,
+    ): DAGNode | null {
+        if (visited.has(node.id)) return null;
+        visited.add(node.id);
+
+        for (const parentId of (node.previous ?? [])) {
+            if (staleIds.has(parentId)) {
+                const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
+                if (parentNode && !parentNode.structural) {
+                    return parentNode;
+                }
+            }
+            // Recurse into structural parents to find the underlying stale user-facing stage.
+            const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
+            if (parentNode) {
+                const staleAncestor = this.staleUserFacingAncestor_find(parentNode, staleIds, visited);
+                if (staleAncestor) return staleAncestor;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Build a stale-block TransitionResult if any upstream stage is stale.
+     *
+     * @param targetNode - The DAGNode being transitioned to.
+     * @param staleIds - Set of currently stale stage IDs.
+     * @returns A hard-blocked TransitionResult, or null if no stale ancestors.
+     */
     private transitionStaleBlock_resolve(
         targetNode: DAGNode,
         staleIds: Set<string>,
     ): TransitionResult | null {
-        const staleParents: string[] = (targetNode.previous ?? []).filter(
-            (parentId: string): boolean => staleIds.has(parentId),
+        const staleAncestor: DAGNode | null = this.staleUserFacingAncestor_find(
+            targetNode,
+            staleIds,
+            new Set<string>(),
         );
-        if (staleParents.length === 0) {
+        if (!staleAncestor) {
             return null;
         }
 
-        const staleParentId: string = staleParents[0];
-        const staleParentNode: DAGNode | undefined = this.definition.nodes.get(staleParentId);
-        const staleParentName: string = staleParentNode?.name ?? staleParentId;
-        const staleParentCmd: string = staleParentNode?.commands?.[0] ?? staleParentId;
+        const staleParentName: string = staleAncestor.name;
+        const staleParentCmd: string = staleAncestor.commands?.[0] ?? staleAncestor.id;
 
         return {
             allowed: false,
@@ -495,6 +716,13 @@ export class WorkflowAdapter {
         };
     }
 
+    /**
+     * Resolve the NodeReadiness record for the transition target.
+     *
+     * @param targetNode - The DAGNode being transitioned to.
+     * @param completedIds - Set of completed stage IDs (after structural promotion).
+     * @returns NodeReadiness for the target, or null if the node is not found.
+     */
     private transitionReadiness_resolve(
         targetNode: DAGNode,
         completedIds: Set<string>,
@@ -506,12 +734,19 @@ export class WorkflowAdapter {
         return nodeReadiness ?? null;
     }
 
+    /**
+     * Evaluate pending parents and return a block result if any are non-optional.
+     * For auto-declinable optionals, returns a soft block with `autoDeclinable: true`.
+     *
+     * @param userFacingPendingIds - User-facing pending parent stage IDs.
+     * @returns A TransitionResult block, or null if all parents can be auto-declined.
+     */
     private transitionPendingParentBlock_resolve(
-        nodeReadiness: NodeReadiness,
+        userFacingPendingIds: string[],
     ): TransitionResult | null {
         const pendingOptionals: string[] = [];
 
-        for (const parentId of nodeReadiness.pendingParents) {
+        for (const parentId of userFacingPendingIds) {
             const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
             if (!parentNode) {
                 continue;
@@ -526,7 +761,6 @@ export class WorkflowAdapter {
                 }
             }
             // v10.2.1: Optional parents without skip_warning are auto-declinable.
-            // Collect them so CalypsoCore can materialize skip sentinels.
             if (parentNode.optional && !parentNode.skip_warning) {
                 pendingOptionals.push(parentId);
             }
@@ -551,6 +785,12 @@ export class WorkflowAdapter {
         return null;
     }
 
+    /**
+     * Build a hard-blocked TransitionResult for a missing required prerequisite.
+     *
+     * @param parentNode - The required stage that has not been completed.
+     * @returns Hard-blocked TransitionResult with prerequisite details.
+     */
     private transitionHardBlock_create(parentNode: DAGNode): TransitionResult {
         return {
             allowed: false,
@@ -566,6 +806,12 @@ export class WorkflowAdapter {
         };
     }
 
+    /**
+     * Build a skip-warning TransitionResult if the warning threshold has not been reached.
+     *
+     * @param parentNode - The optional stage with a skip_warning configuration.
+     * @returns Soft-blocked TransitionResult, or null if max warnings already shown.
+     */
     private transitionSkipWarningBlock_resolve(parentNode: DAGNode): TransitionResult | null {
         if (!parentNode.skip_warning) {
             return null;
@@ -676,6 +922,9 @@ export class WorkflowAdapter {
     /**
      * Increment skip counter for a stage.
      * Called when user proceeds despite a warning.
+     *
+     * @param stageId - The stage ID whose skip counter to increment.
+     * @returns The new skip count after incrementing.
      */
     skip_increment(stageId: string): number {
         const current = this.skipCounts[stageId] || 0;
@@ -685,6 +934,8 @@ export class WorkflowAdapter {
 
     /**
      * Clear skip counter for a stage (called when stage completes).
+     *
+     * @param stageId - The stage ID whose skip counter to reset.
      */
     stage_complete(stageId: string): void {
         delete this.skipCounts[stageId];
@@ -694,6 +945,10 @@ export class WorkflowAdapter {
 
     /**
      * Get a human-readable workflow progress summary.
+     *
+     * @param vfs - VirtualFileSystem for completion checks.
+     * @param sessionPath - Active session path.
+     * @returns Multi-line human-readable progress string.
      */
     progress_summarize(vfs: VirtualFileSystem, sessionPath: string): string {
         const pos = this.position_resolve(vfs, sessionPath);
@@ -703,9 +958,12 @@ export class WorkflowAdapter {
         summary += `Progress: ${pos.progress.completed}/${pos.progress.total} stages\n\n`;
 
         for (const node of this.definition.nodes.values()) {
+            // Skip structural nodes — they are transparent to the user.
+            if (node.structural) continue;
+
             const isComplete = pos.completedStages.includes(node.id);
             const isStale = pos.staleStages.includes(node.id);
-            
+
             // Marker: ● Complete, ○ Incomplete, * Stale
             const marker = isStale ? '*' : (isComplete ? '●' : '○');
             const status = isStale ? ' [STALE]' : '';
@@ -717,6 +975,187 @@ export class WorkflowAdapter {
         }
 
         return summary;
+    }
+
+    /**
+     * Render the active manifest DAG as a box-glyph tree with optional status overlays.
+     *
+     * The visual uses primary-parent lineage for single placement while preserving
+     * join metadata in node annotations (`join:a+b+...`).
+     *
+     * @param vfs - VirtualFileSystem for completion/staleness overlays.
+     * @param sessionPath - Active session path for position resolution.
+     * @param options - Rendering controls.
+     * @returns Multi-line DAG visualization.
+     */
+    public dag_render(
+        vfs: VirtualFileSystem,
+        sessionPath: string,
+        options: DagRenderOptions = {},
+    ): string {
+        const includeStructural: boolean = options.includeStructural !== false;
+        const includeOptional: boolean = options.includeOptional !== false;
+        const compact: boolean = options.compact === true;
+        const box: boolean = options.box === true;
+        const showWhere: boolean = options.showWhere !== false;
+        const showStale: boolean = options.showStale === true;
+
+        const pos: WorkflowPosition = this.position_resolve(vfs, sessionPath);
+        const header = this.definition.header as ManifestHeader;
+
+        const orderedNodes: DAGNode[] = this.definition.orderedNodeIds
+            .map((id: string): DAGNode | undefined => this.definition.nodes.get(id))
+            .filter((node: DAGNode | undefined): node is DAGNode => Boolean(node));
+        const orderIndex: Map<string, number> = new Map<string, number>(
+            orderedNodes.map((node: DAGNode, index: number): [string, number] => [node.id, index]),
+        );
+
+        const visibleNodes: DAGNode[] = orderedNodes.filter((node: DAGNode): boolean => {
+            if (!includeStructural && node.structural) return false;
+            if (!includeOptional && node.optional) return false;
+            return true;
+        });
+
+        if (visibleNodes.length === 0) {
+            return `DAG [${this.workflowId}] ${header.name}\n(no visible stages with current filters)`;
+        }
+
+        const visibleSet: Set<string> = new Set<string>(visibleNodes.map((node: DAGNode): string => node.id));
+        const parentMultiMap: Map<string, string[]> = new Map<string, string[]>();
+        const parentMap: Map<string, string | null> = new Map<string, string | null>();
+        const childrenMap: Map<string, string[]> = new Map<string, string[]>();
+        const childrenPrimaryMap: Map<string, string[]> = new Map<string, string[]>();
+
+        for (const node of visibleNodes) {
+            childrenMap.set(node.id, []);
+            childrenPrimaryMap.set(node.id, []);
+        }
+
+        for (const node of visibleNodes) {
+            const parents: string[] = this.displayParents_resolve(node, visibleSet, includeStructural, includeOptional)
+                .sort((left: string, right: string): number => (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0));
+            parentMultiMap.set(node.id, parents);
+
+            const parentId: string | null = parents.length > 0 ? parents[0] : null;
+            parentMap.set(node.id, parentId);
+            for (const p of parents) {
+                if (childrenMap.has(p)) {
+                    childrenMap.get(p)!.push(node.id);
+                }
+            }
+            if (parentId && childrenPrimaryMap.has(parentId)) {
+                childrenPrimaryMap.get(parentId)!.push(node.id);
+            }
+        }
+
+        for (const children of childrenMap.values()) {
+            children.sort((left: string, right: string): number => {
+                return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
+            });
+        }
+        for (const children of childrenPrimaryMap.values()) {
+            children.sort((left: string, right: string): number => {
+                return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
+            });
+        }
+
+        const roots: string[] = visibleNodes
+            .map((node: DAGNode): string => node.id)
+            .filter((id: string): boolean => !parentMap.get(id))
+            .sort((left: string, right: string): number => (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0));
+
+        const lines: string[] = [];
+        lines.push(`DAG [${this.workflowId}] ${header.name}`);
+        lines.push(`Progress: ${pos.progress.completed}/${pos.progress.total} stages`);
+        lines.push(`Legend: ● complete  ◉ current  ○ pending  ◌ optional pending  ! stale`);
+        lines.push('');
+
+        const markerForNode = (node: DAGNode): string => {
+            const isCurrent: boolean = showWhere && pos.currentStage?.id === node.id;
+            const isComplete: boolean = pos.completedStages.includes(node.id);
+            const isStale: boolean = showStale && pos.staleStages.includes(node.id);
+
+            if (isStale) return '!';
+            if (isCurrent) return '◉';
+            if (isComplete) return '●';
+            if (node.optional) return '◌';
+            return '○';
+        };
+
+        const lineForNode = (node: DAGNode): string => {
+            const isCurrent: boolean = showWhere && pos.currentStage?.id === node.id;
+            const isStale: boolean = showStale && pos.staleStages.includes(node.id);
+            const marker: string = markerForNode(node);
+
+            const tags: string[] = [];
+            if (node.optional) tags.push('optional');
+            if (node.structural) tags.push('structural');
+            if (isCurrent) tags.push('current');
+            if (isStale) tags.push('stale');
+            if (node.previous && node.previous.length > 1) {
+                tags.push(`join:${node.previous.join('+')}`);
+            }
+
+            const tagSuffix: string = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+            return `${marker} ${node.id} — ${node.name}${tagSuffix}`;
+        };
+
+        if (box) {
+            const boxNodes: DagBoxNodeInput[] = visibleNodes.map((node: DAGNode): DagBoxNodeInput => ({
+                id: node.id,
+                line1: `${markerForNode(node)} ${node.id}${node.optional ? ' (opt)' : ''}`,
+                line2: `${node.name}${node.previous && node.previous.length > 1 ? ' [join]' : ''}`,
+                order: orderIndex.get(node.id) ?? 0,
+            }));
+            const boxEdges: DagBoxEdgeInput[] = [];
+            for (const child of visibleNodes) {
+                const parents: string[] = parentMultiMap.get(child.id) || [];
+                for (const parent of parents) {
+                    boxEdges.push({ from: parent, to: child.id });
+                }
+            }
+            const boxLines: string[] = dagBoxGraphviz_render({ nodes: boxNodes, edges: boxEdges });
+            return [...lines, ...boxLines].join('\n');
+        }
+
+        if (compact) {
+            for (const nodeId of visibleNodes.map((node: DAGNode): string => node.id)) {
+                const node: DAGNode | undefined = this.definition.nodes.get(nodeId);
+                if (!node) continue;
+                const parentId: string = parentMap.get(nodeId) || 'ROOT';
+                lines.push(`${lineForNode(node)}  <- ${parentId}`);
+            }
+            return lines.join('\n');
+        }
+
+        const renderTree = (nodeId: string, prefix: string, isLast: boolean, isRoot: boolean): void => {
+            const node: DAGNode | undefined = this.definition.nodes.get(nodeId);
+            if (!node) return;
+
+            if (isRoot) {
+                lines.push(lineForNode(node));
+            } else {
+                const branch: string = isLast ? '└─ ' : '├─ ';
+                lines.push(`${prefix}${branch}${lineForNode(node)}`);
+            }
+
+            const children: string[] = childrenPrimaryMap.get(nodeId) || [];
+            const nextPrefix: string = isRoot
+                ? ''
+                : `${prefix}${isLast ? '   ' : '│  '}`;
+            children.forEach((childId: string, index: number): void => {
+                renderTree(childId, nextPrefix, index === children.length - 1, false);
+            });
+        };
+
+        roots.forEach((rootId: string, index: number): void => {
+            renderTree(rootId, '', index === roots.length - 1, true);
+            if (index !== roots.length - 1) {
+                lines.push('');
+            }
+        });
+
+        return lines.join('\n');
     }
 
     // ─── Access ────────────────────────────────────────────────
@@ -733,6 +1172,11 @@ export class WorkflowAdapter {
 
     // ─── Private ───────────────────────────────────────────────
 
+    /**
+     * Create an allowed TransitionResult (all fields set to permissive defaults).
+     *
+     * @returns TransitionResult with allowed=true and all block flags false.
+     */
     private static result_allowed(): TransitionResult {
         return {
             allowed: true,
@@ -746,6 +1190,94 @@ export class WorkflowAdapter {
         };
     }
 
+    /**
+     * Resolve the visible display parent for a node using primary lineage.
+     *
+     * If the direct primary parent is filtered out, this walks up primary ancestry
+     * until a visible ancestor is found, making filtered nodes path-transparent in
+     * the visual output.
+     */
+    private displayParents_resolve(
+        node: DAGNode,
+        visibleSet: Set<string>,
+        includeStructural: boolean,
+        includeOptional: boolean,
+    ): string[] {
+        if (!node.previous || node.previous.length === 0) {
+            return [];
+        }
+
+        const all: Set<string> = new Set<string>();
+        for (const parentId of node.previous) {
+            const ancestors: string[] = this.visibleAncestors_resolve(
+                parentId,
+                visibleSet,
+                includeStructural,
+                includeOptional,
+                new Set<string>(),
+            );
+            for (const ancestorId of ancestors) {
+                all.add(ancestorId);
+            }
+        }
+        return Array.from(all);
+    }
+
+    /**
+     * Resolve visible ancestors for a potentially filtered parent node.
+     *
+     * Traverses through hidden parents (structural/optional filtered out) until
+     * visible node IDs are reached.
+     */
+    private visibleAncestors_resolve(
+        nodeId: string,
+        visibleSet: Set<string>,
+        includeStructural: boolean,
+        includeOptional: boolean,
+        visited: Set<string>,
+    ): string[] {
+        if (visited.has(nodeId)) return [];
+        visited.add(nodeId);
+
+        if (visibleSet.has(nodeId)) {
+            return [nodeId];
+        }
+
+        const node: DAGNode | undefined = this.definition.nodes.get(nodeId);
+        if (!node || !node.previous || node.previous.length === 0) {
+            return [];
+        }
+
+        const hiddenByFilter: boolean =
+            (!includeStructural && Boolean(node.structural)) ||
+            (!includeOptional && Boolean(node.optional));
+        if (!hiddenByFilter) {
+            return [];
+        }
+
+        const ancestors: Set<string> = new Set<string>();
+        for (const parentId of node.previous) {
+            const parentAncestors = this.visibleAncestors_resolve(
+                parentId,
+                visibleSet,
+                includeStructural,
+                includeOptional,
+                visited,
+            );
+            for (const ancestorId of parentAncestors) {
+                ancestors.add(ancestorId);
+            }
+        }
+        return Array.from(ancestors);
+    }
+
+    /**
+     * Resolve the set of completed stage IDs by probing the session tree.
+     *
+     * @param vfs - VirtualFileSystem for artifact lookups.
+     * @param sessionPath - Active session path.
+     * @returns Set of stage IDs that have a materialized artifact.
+     */
     private completedIds_resolve(
         vfs: VirtualFileSystem,
         sessionPath: string,
@@ -763,6 +1295,13 @@ export class WorkflowAdapter {
         return completedIds;
     }
 
+    /**
+     * Resolve the set of stale stage IDs via Merkle chain validation.
+     *
+     * @param vfs - VirtualFileSystem for fingerprint lookups.
+     * @param sessionPath - Active session path.
+     * @returns Set of stage IDs whose fingerprint chain is broken.
+     */
     private staleIds_resolve(
         vfs: VirtualFileSystem,
         sessionPath: string,

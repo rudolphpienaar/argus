@@ -42,16 +42,27 @@ import { vfs_snapshot } from './utils/VfsUtils.js';
 import { scripts_list, type CalypsoScript } from './scripts/Catalog.js';
 import { controlPlaneIntent_resolve, type ControlPlaneIntent } from './routing/ControlPlaneRouter.js';
 import { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
-import type { TransitionResult, WorkflowSummary } from '../dag/bridge/WorkflowAdapter.js';
+import type { TransitionResult, WorkflowSummary, DagRenderOptions } from '../dag/bridge/WorkflowAdapter.js';
 import type { WorkflowPosition, DAGNode } from '../dag/graph/types.js';
 import type { ArtifactEnvelope } from '../dag/store/types.js';
 import { WorkflowSession, type CommandResolution } from '../dag/bridge/WorkflowSession.js';
 import { CalypsoPresenter } from './CalypsoPresenter.js';
+import { SettingsService } from '../config/settings.js';
 
 interface ParsedCommandInput {
     trimmed: string;
     parts: string[];
     primary: string;
+}
+
+interface DagCommandOptions {
+    includeStructural: boolean;
+    includeOptional: boolean;
+    compact: boolean;
+    box: boolean;
+    showWhere: boolean;
+    showStale: boolean;
+    manifestId: string | null;
 }
 
 /**
@@ -77,6 +88,7 @@ export class CalypsoCore {
     private pluginHost: PluginHost;
     private merkleEngine: MerkleEngine;
     private telemetryBus: TelemetryBus;
+    private settingsService: SettingsService;
     private bootSequenceByPhase: Record<BootPhase, number> = {
         login_boot: 0,
         workflow_boot: 0,
@@ -90,6 +102,7 @@ export class CalypsoCore {
     ) {
         this.storeActions = storeActions;
         this.knowledge = config.knowledge;
+        this.settingsService = config.settingsService || SettingsService.instance_get();
 
         this.telemetryBus = config.telemetryBus || new TelemetryBus();
         this.searchProvider = new SearchProvider(vfs, shell, storeActions);
@@ -336,6 +349,11 @@ export class CalypsoCore {
             if (shellResult) return shellResult;
         }
 
+        if (intent.type === 'special' && intent.command) {
+            const protocolCommand: string = `/${intent.command}${intent.args?.length ? ' ' + intent.args.join(' ') : ''}`;
+            return await this.special_handle(protocolCommand);
+        }
+
         const resolution = this.workflowSession.resolveCommand(parsed.primary, false);
         const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
         if (fastPathResult) return fastPathResult;
@@ -345,6 +363,7 @@ export class CalypsoCore {
 
         const response: CalypsoResponse = await this.llmProvider.query(parsed.trimmed, this.sessionPath);
         response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
+        this.conversationalHints_apply(response);
 
         await this.workflowSession.sync();
 
@@ -409,7 +428,7 @@ export class CalypsoCore {
         if (isCommandPosition) {
             const builtinCommands: string[] = this.shell.builtins_list();
             const workflowCommands: string[] = this.workflowAdapter.commandVerbs_list();
-            const sessionCommands: string[] = ['quit', 'exit'];
+            const sessionCommands: string[] = ['quit', 'exit', 'dag'];
             const allCommands: string[] = Array.from(
                 new Set<string>([...builtinCommands, ...workflowCommands, ...sessionCommands])
             );
@@ -462,7 +481,14 @@ export class CalypsoCore {
         }
 
         const isWorkflowCommand: boolean = resolution.stage !== null && !resolution.isJump;
-        if (trimmed.startsWith('/') || primary === 'reset' || primary === 'help' || (primary === 'status' && !isWorkflowCommand)) {
+        if (
+            trimmed.startsWith('/') ||
+            primary === 'reset' ||
+            primary === 'help' ||
+            primary === 'settings' ||
+            primary === 'dag' ||
+            (primary === 'status' && !isWorkflowCommand)
+        ) {
             const normalized: string = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
             const normalizedParts: string[] = normalized.slice(1).split(/\s+/);
             const commandName: string = normalizedParts[0].toLowerCase();
@@ -587,10 +613,16 @@ export class CalypsoCore {
     private async special_handle(input: string): Promise<CalypsoResponse> {
         const result = await this.special_dispatch(input);
         if (result.message === '__GREET_ASYNC__') {
-            return this.llmProvider.greeting_generate(this.shell.env_get('USER') || 'user');
+            const response: CalypsoResponse = await this.llmProvider.greeting_generate(this.shell.env_get('USER') || 'user');
+            response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
+            this.conversationalHints_apply(response);
+            return response;
         }
         if (result.message === '__STANDBY_ASYNC__') {
-            return this.llmProvider.standby_generate(this.shell.env_get('USER') || 'user');
+            const response: CalypsoResponse = await this.llmProvider.standby_generate(this.shell.env_get('USER') || 'user');
+            response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
+            this.conversationalHints_apply(response);
+            return response;
         }
         return result;
     }
@@ -618,13 +650,17 @@ export class CalypsoCore {
                 return this.key_register(args[0], args[1]);
             case 'session':
                 return await this.session_handle(args);
+            case 'settings':
+                return this.settings_handle(args);
+            case 'dag':
+                return this.dag_handle(args);
             case 'workflows': {
                 const workflows: WorkflowSummary[] = this.workflows_available();
                 const progress: string = workflows.map((w: WorkflowSummary): string => `○ [${w.id}] ${w.name}: ${w.description}`).join('\n');
                 return this.response_create(progress, [], true, CalypsoStatusCode.OK);
             }
             case 'help':
-                return this.response_create('  /status, /workflows, /next, /version, /key, /reset, /snapshot, /help', [], true, CalypsoStatusCode.OK);
+                return this.response_create('  /status, /settings, /workflows, /dag show, /next, /version, /key, /reset, /snapshot, /help', [], true, CalypsoStatusCode.OK);
             case 'greet': return this.response_create('__GREET_ASYNC__', [], true, CalypsoStatusCode.CONVERSATIONAL);
             case 'standby': return this.response_create('__STANDBY_ASYNC__', [], true, CalypsoStatusCode.CONVERSATIONAL);
             default: return this.response_create(`Unknown command: /${cmd}`, [], false, CalypsoStatusCode.ERROR);
@@ -822,8 +858,180 @@ export class CalypsoCore {
         }
     }
 
+    private settings_handle(args: string[]): CalypsoResponse {
+        const sub: string = (args[0] || 'show').toLowerCase();
+        const username: string = this.username_resolve();
+        const usage: string = 'Usage: /settings [show|set convo_width <n>|unset convo_width]';
+
+        if (sub === 'show') {
+            const userSettings = this.settingsService.userSettings_get(username);
+            const resolved = this.settingsService.snapshot(username);
+            const source = this.settingsService.convoWidth_source(username);
+            const userValue = userSettings.convo_width;
+            const userSegment = typeof userValue === 'number' ? `${userValue}` : 'unset';
+            const lines: string[] = [
+                `SETTINGS [${username}]:`,
+                `  convo_width = ${resolved.convo_width} (source: ${source}, user: ${userSegment})`,
+            ];
+            return this.response_create(lines.join('\n'), [], true, CalypsoStatusCode.OK);
+        }
+
+        if (sub === 'set') {
+            const key = args[1];
+            const value = args[2];
+            if (!key || value === undefined) {
+                return this.response_create(usage, [], false, CalypsoStatusCode.ERROR);
+            }
+            if (key !== 'convo_width') {
+                return this.response_create(`Unknown setting key: ${key}`, [], false, CalypsoStatusCode.ERROR);
+            }
+            const result = this.settingsService.set(username, 'convo_width', value);
+            if (!result.ok) {
+                return this.response_create(result.error, [], false, CalypsoStatusCode.ERROR);
+            }
+            return this.response_create(`● SET convo_width=${result.value} for user ${username}`, [], true, CalypsoStatusCode.OK);
+        }
+
+        if (sub === 'unset') {
+            const key = args[1];
+            if (!key) {
+                return this.response_create(usage, [], false, CalypsoStatusCode.ERROR);
+            }
+            if (key !== 'convo_width') {
+                return this.response_create(`Unknown setting key: ${key}`, [], false, CalypsoStatusCode.ERROR);
+            }
+            this.settingsService.unset(username, 'convo_width');
+            return this.response_create(`● UNSET convo_width for user ${username}`, [], true, CalypsoStatusCode.OK);
+        }
+
+        if (sub === 'help') {
+            return this.response_create(usage, [], true, CalypsoStatusCode.OK);
+        }
+
+        return this.response_create(usage, [], false, CalypsoStatusCode.ERROR);
+    }
+
+    private dag_handle(args: string[]): CalypsoResponse {
+        const usage: string = [
+            'Usage: /dag show [--full] [--where] [--stale] [--compact] [--box] [--no-optional] [--manifest <id>]',
+            'Aliases: dag show, dag, "show workflow", "show dag", "where am i in the workflow"',
+        ].join('\n');
+
+        if (args.length > 0 && (args[0] === 'help' || args[0] === '--help' || args[0] === '-h')) {
+            return this.response_create(usage, [], true, CalypsoStatusCode.OK);
+        }
+
+        const parse = this.dagOptions_parse(args);
+        if (!parse.ok || !parse.options) {
+            return this.response_create(parse.error || usage, [], false, CalypsoStatusCode.ERROR);
+        }
+
+        const options: DagCommandOptions = parse.options;
+        let adapter: WorkflowAdapter = this.workflowAdapter;
+        if (options.manifestId && options.manifestId !== this.workflowAdapter.workflowId) {
+            try {
+                adapter = WorkflowAdapter.definition_load(options.manifestId);
+            } catch {
+                return this.response_create(`Unknown workflow/manifest: ${options.manifestId}`, [], false, CalypsoStatusCode.ERROR);
+            }
+        }
+
+        const renderOptions: DagRenderOptions = {
+            includeStructural: options.includeStructural,
+            includeOptional: options.includeOptional,
+            compact: options.compact,
+            box: options.box,
+            showWhere: options.showWhere,
+            showStale: options.showStale,
+        };
+
+        const visualization: string = adapter.dag_render(this.vfs, this.sessionPath, renderOptions);
+        return this.response_create(visualization, [], true, CalypsoStatusCode.OK);
+    }
+
+    private dagOptions_parse(args: string[]): { ok: boolean; options?: DagCommandOptions; error?: string } {
+        const remaining: string[] = [...args];
+
+        // Accept command-order variants:
+        // - /dag show --where
+        // - /dag --where show
+        const firstNonFlag: string | undefined = remaining.find((token: string): boolean => !token.startsWith('-'));
+        if (firstNonFlag && firstNonFlag.toLowerCase() !== 'show') {
+            return { ok: false, error: `Unknown dag action: ${firstNonFlag}. Supported: show` };
+        }
+
+        const options: DagCommandOptions = {
+            includeStructural: true,
+            includeOptional: true,
+            compact: false,
+            box: false,
+            showWhere: true,
+            showStale: false,
+            manifestId: null,
+        };
+
+        for (let i = 0; i < remaining.length; i++) {
+            const token: string = remaining[i].toLowerCase();
+            if (token === 'show') continue;
+            if (token === '--full') {
+                options.includeStructural = true;
+                continue;
+            }
+            if (token === '--where') {
+                options.showWhere = true;
+                continue;
+            }
+            if (token === '--stale') {
+                options.showStale = true;
+                continue;
+            }
+            if (token === '--compact') {
+                options.compact = true;
+                continue;
+            }
+            if (token === '--box') {
+                options.box = true;
+                continue;
+            }
+            if (token === '--no-optional') {
+                options.includeOptional = false;
+                continue;
+            }
+            if (token === '--optional') {
+                options.includeOptional = true;
+                continue;
+            }
+            if (token === '--manifest' || token === '--workflow') {
+                const next: string | undefined = remaining[i + 1];
+                if (!next) {
+                    return { ok: false, error: `${token} requires a workflow id` };
+                }
+                options.manifestId = next.trim();
+                i += 1;
+                continue;
+            }
+            if (token.startsWith('-')) {
+                return { ok: false, error: `Unknown dag flag: ${remaining[i]}` };
+            }
+        }
+
+        return { ok: true, options };
+    }
+
     private response_create(message: string, actions: CalypsoAction[], success: boolean, statusCode: CalypsoStatusCode, ui_hints?: CalypsoResponse['ui_hints']): CalypsoResponse {
         return { message, actions, success, statusCode, ui_hints };
+    }
+
+    private conversationalHints_apply(response: CalypsoResponse): void {
+        if (response.statusCode !== CalypsoStatusCode.CONVERSATIONAL) {
+            return;
+        }
+        const username: string = this.username_resolve();
+        const convoWidth: number = this.settingsService.convoWidth_resolve(username);
+        response.ui_hints = {
+            ...(response.ui_hints || {}),
+            convo_width: convoWidth,
+        };
     }
 
     private workflowFallback_allowed(protocolCommand: string, intentCommand: string): boolean {

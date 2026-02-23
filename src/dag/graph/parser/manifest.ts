@@ -86,7 +86,13 @@ export function manifest_parse(yamlStr: string): DAGDefinition {
     };
 }
 
-/** Parse and validate the manifest header. */
+/**
+ * Parse and validate the manifest header.
+ *
+ * @param raw - Raw YAML object from the parsed manifest.
+ * @returns Validated manifest header record.
+ * @throws On missing or invalid required fields.
+ */
 function header_parse(raw: Record<string, unknown>): ManifestHeader {
     const name = raw['name'];
     const persona = raw['persona'];
@@ -108,7 +114,13 @@ function header_parse(raw: Record<string, unknown>): ManifestHeader {
     };
 }
 
-/** Parse a single stage entry into a DAGNode. */
+/**
+ * Parse a single stage entry into a DAGNode.
+ *
+ * @param raw - Raw stage object from the parsed YAML stages array.
+ * @returns Fully populated DAGNode.
+ * @throws On missing required fields (`id`, `produces`).
+ */
 function node_parse(raw: Record<string, unknown>): DAGNode {
     const id = raw['id'];
     if (!id || typeof id !== 'string') {
@@ -126,6 +138,7 @@ function node_parse(raw: Record<string, unknown>): DAGNode {
         phase: raw['phase'] != null ? String(raw['phase']) : null,
         previous: previous_normalize(raw['previous']),
         optional: Boolean(raw['optional'] ?? false),
+        structural: raw['structural'] === true,
         produces: produces.map(String),
         parameters: parameters_parse(raw['parameters']),
         instruction: String(raw['instruction'] ?? ''),
@@ -137,7 +150,14 @@ function node_parse(raw: Record<string, unknown>): DAGNode {
     };
 }
 
-/** Parse and validate a stage handler identifier. */
+/**
+ * Parse and validate a stage handler identifier.
+ *
+ * @param stageId - Stage ID for error reporting context.
+ * @param rawHandler - Raw handler value from YAML (may be null/undefined).
+ * @returns Normalized handler name, or null if absent.
+ * @throws On non-string values or invalid handler name format.
+ */
 function handler_parse(stageId: string, rawHandler: unknown): string | null {
     if (rawHandler == null) {
         return null;

@@ -26,20 +26,35 @@ type CdParseResult =
  */
 export const command: BuiltinCommand = {
     name: 'cd',
+    /**
+     * Execute `cd`: parse flags, resolve target directory, update PWD and OLDPWD.
+     *
+     * @param args - Arguments after `cd`.
+     * @param shell - Shell context providing env and cwd operations.
+     * @returns ShellResult with stdout set only when `cd -` prints the new path.
+     */
     create: ({ vfs }) => async (args, shell) => {
         const parsed: CdParseResult = cdArgs_parse(args, shell.env_get('OLDPWD'));
         if (!parsed.ok) {
             return { stdout: '', stderr: parsed.stderr, exitCode: parsed.exitCode };
         }
 
-        const target: string = parsed.options.target || shell.env_get('HOME') || '/';
-        const previousCwd: string = vfs.cwd_get();
+        let target: string = parsed.options.target || shell.env_get('HOME') || '/';
+        
+        // v11.0: Support '@' shortcut for $SCRATCH
+        if (target === '@') {
+            const scratch = shell.env_get('SCRATCH');
+            if (!scratch) {
+                return { stdout: '', stderr: 'cd: SCRATCH environment variable not set', exitCode: 1 };
+            }
+            target = scratch;
+        }
+
+        const previousPwd: string = shell.env_get('PWD') ?? vfs.cwd_get();
         try {
-            vfs.cwd_set(target);
-            const newCwd: string = vfs.cwd_get();
-            shell.env_set('OLDPWD', previousCwd);
-            shell.env_set('PWD', newCwd);
-            shell.cwd_didChange(newCwd);
+            shell.cwd_set(target);
+            const newCwd: string = shell.env_get('PWD') ?? vfs.cwd_get();
+            shell.env_set('OLDPWD', previousPwd);
             return { stdout: parsed.options.printTarget ? newCwd : '', stderr: '', exitCode: 0 };
         } catch (error: unknown) {
             return {

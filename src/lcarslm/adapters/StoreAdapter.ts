@@ -127,6 +127,20 @@ export class StoreAdapter implements CalypsoStoreActions {
     }
 
     /**
+     * Get the current session ID.
+     */
+    public sessionId_get(): string | null {
+        return store.sessionId_get();
+    }
+
+    /**
+     * Start a new session.
+     */
+    public session_start(): void {
+        store.session_start();
+    }
+
+    /**
      * Store recently mentioned datasets for anaphora resolution.
      */
     public lastMentioned_set(datasets: Dataset[]): void {
