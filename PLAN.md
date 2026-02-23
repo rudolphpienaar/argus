@@ -22,8 +22,10 @@
     - [x] Create `src/lcarslm/routing/SystemCommandRegistry.ts`.
     - [x] Move `/reset`, `/state`, `/snapshot`, `/version`, `/key`, `/session`, `/dag`, `/workflows`, `/help` handlers to the registry.
     - [x] Update `CalypsoCore` to delegate to this registry.
-- [ ] **Extract Guidance & Confirmation**:
-    - [ ] Move `guidance_handle` and `confirmation_dispatch` to `src/lcarslm/routing/WorkflowController.ts`.
+- [x] **Extract Guidance & Confirmation**:
+    - [x] Create `src/lcarslm/routing/WorkflowController.ts`.
+    - [x] Move `guidance_handle` and `confirmation_dispatch` to the controller.
+    - [x] Update `CalypsoCore` to delegate to this controller.
 - [x] **Verify**:
     - [x] Run ORACLE `train` walk to ensure `python train.py` still completes the stage and produces artifacts.
 

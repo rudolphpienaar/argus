@@ -46,6 +46,7 @@ import { WorkflowSession, type CommandResolution } from '../dag/bridge/WorkflowS
 import { CalypsoPresenter } from './CalypsoPresenter.js';
 import { SettingsService } from '../config/settings.js';
 import { SystemCommandRegistry, register_defaultHandlers } from './routing/SystemCommandRegistry.js';
+import { WorkflowController } from './routing/WorkflowController.js';
 
 interface ParsedCommandInput {
     trimmed: string;
@@ -78,6 +79,7 @@ export class CalypsoCore {
     private telemetryBus: TelemetryBus;
     private settingsService: SettingsService;
     private systemCommands: SystemCommandRegistry;
+    private workflowController: WorkflowController;
     private bootSequenceByPhase: Record<BootPhase, number> = {
         login_boot: 0,
         workflow_boot: 0,
@@ -145,6 +147,8 @@ export class CalypsoCore {
 
         this.systemCommands = new SystemCommandRegistry();
         register_defaultHandlers(this.systemCommands);
+
+        this.workflowController = new WorkflowController();
     }
 
     // ─── Lifecycle & Boot ───────────────────────────────────────────────────
@@ -310,7 +314,10 @@ export class CalypsoCore {
             if (shellResult) return shellResult;
         }
 
-        const confirmationFastPath: CalypsoResponse | null = await this.confirmation_dispatch(parsed.trimmed);
+        const confirmationFastPath: CalypsoResponse | null = await this.workflowController.confirmation_dispatch(
+            parsed.trimmed, 
+            this.workflowControllerContext_create()
+        );
         if (confirmationFastPath) {
             return confirmationFastPath;
         }
@@ -350,7 +357,10 @@ export class CalypsoCore {
         const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
         if (fastPathResult) return fastPathResult;
 
-        const guidance: CalypsoResponse | null = this.guidance_handle(parsed.trimmed);
+        const guidance: CalypsoResponse | null = this.workflowController.guidance_handle(
+            parsed.trimmed, 
+            this.workflowControllerContext_create()
+        );
         if (guidance) return guidance;
 
         const response: CalypsoResponse = await this.llmProvider.query(parsed.trimmed, this.sessionPath);
@@ -501,7 +511,10 @@ export class CalypsoCore {
         const controlResult: CalypsoResponse | null = await this.control_handle(trimmed);
         if (controlResult) return controlResult;
 
-        const confirmation: CalypsoResponse | null = await this.confirmation_dispatch(trimmed);
+        const confirmation: CalypsoResponse | null = await this.workflowController.confirmation_dispatch(
+            trimmed, 
+            this.workflowControllerContext_create()
+        );
         if (confirmation) return confirmation;
 
         return await this.shell_handle(trimmed, primary);
@@ -515,93 +528,6 @@ export class CalypsoCore {
      * @param input - Raw trimmed command string.
      * @returns Workflow response if the input was a confirmation, otherwise null.
      */
-    private async confirmation_dispatch(input: string): Promise<CalypsoResponse | null> {
-        if (!/^(yes|y|affirmative|confirm|ok|go\s+ahead|approve)$/i.test(input)) {
-            return null;
-        }
-
-        const state: Partial<AppState> = this.storeActions.state_get();
-        if (state.lastIntent?.startsWith('CONFIRM_JUMP:')) {
-            const intentContent: string = state.lastIntent.substring('CONFIRM_JUMP:'.length);
-            const [stageId, originalInput] = intentContent.split('|');
-
-            const stage: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(stageId);
-            if (stage) {
-                const clearIntentState: Partial<AppState> = { lastIntent: null };
-                this.storeActions.state_set(clearIntentState);
-                // v10.2.1: Use the known stage directly. Strict re-resolution
-                // fails when position hasn't advanced yet (e.g. 'add' didn't
-                // close gather, but gather artifact exists).
-                const res: CommandResolution = {
-                    stage,
-                    isJump: true,
-                    requiresConfirmation: false,
-                };
-                return await this.workflow_dispatch(originalInput, res, true);
-            }
-        }
-
-        // Stage-local affirmative continuation.
-        // Resolve to the active stage's safe execution verb only; never global-jump.
-        const stageCommand: string | null = this.activeStageAffirmativeCommand_resolve();
-        if (stageCommand) {
-            const res: CommandResolution = this.workflowSession.resolveCommand(stageCommand, true);
-            if (res.stage) {
-                return await this.workflow_dispatch(stageCommand, res, true);
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Resolve a safe active-stage command for generic affirmative replies.
-     *
-     * Meta verbs (show/config/status) and commands with required placeholders
-     * are excluded to keep short confirmations stage-local.
-     *
-     * @returns The first safe command for the current stage, or null if none.
-     */
-    private activeStageAffirmativeCommand_resolve(): string | null {
-        const activeStageId: string | null = this.workflowSession.activeStageId_get();
-        if (!activeStageId) return null;
-
-        const node: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(activeStageId);
-        if (!node) return null;
-
-        interface CommandCandidate {
-            command: string;
-            required: boolean;
-            base: string;
-        }
-
-        const candidates: CommandCandidate[] = node.commands
-            .map((raw: string): CommandCandidate => {
-                const normalized: string = raw.toLowerCase().trim();
-                const command: string = normalized.split(/[<\[]/)[0].trim();
-                const base: string = command.split(/\s+/)[0] || '';
-                const required: boolean = normalized.includes('<');
-                return { command, required, base };
-            })
-            .filter((entry: CommandCandidate): boolean => entry.command.length > 0);
-
-        const metaVerbs: Set<string> = new Set<string>(['show', 'config', 'status']);
-
-        const stageIdExact: CommandCandidate | undefined = candidates.find(
-            (entry: CommandCandidate): boolean =>
-                entry.command === activeStageId && !entry.required && !metaVerbs.has(entry.base),
-        );
-        if (stageIdExact) {
-            return stageIdExact.command;
-        }
-
-        const firstSafe: CommandCandidate | undefined = candidates.find(
-            (entry: CommandCandidate): boolean =>
-                !entry.required && !metaVerbs.has(entry.base),
-        );
-        return firstSafe?.command ?? null;
-    }
-
     private async special_handle(input: string): Promise<CalypsoResponse> {
         const result = await this.special_dispatch(input);
         if (result.message === '__GREET_ASYNC__') {
@@ -677,15 +603,6 @@ export class CalypsoCore {
             primary === 'python' ? { render_mode: 'training' } : undefined
         );
     }
-
-    private guidance_handle(input: string): CalypsoResponse | null {
-        const patterns: RegExp[] = [/^what('?s| is| should be)?\s*(the\s+)?next/i, /^next\??$/i, /^how\s+do\s+i\s+(proceed|continue|start)/i, /status/i, /progress/i];
-        return patterns.some((p: RegExp): boolean => p.test(input)) 
-            ? this.response_create(this.workflow_nextStep(), [], true, CalypsoStatusCode.OK) 
-            : null;
-    }
-
-    // ─── Workflow Handlers ──────────────────────────────────────────────────
 
     private async workflow_dispatch(input: string, resolution: CommandResolution, isConfirmed: boolean = false): Promise<CalypsoResponse | null> {
         const parts: string[] = input.split(/\s+/);
@@ -812,6 +729,19 @@ export class CalypsoCore {
 
     private workflowFallback_allowed(protocolCommand: string, intentCommand: string): boolean {
         return intentCommand.toLowerCase() === 'proceed' || this.workflowAdapter.commandDeclared_isExplicit(protocolCommand);
+    }
+
+    private workflowControllerContext_create(): any {
+        return {
+            vfs: this.vfs,
+            storeActions: this.storeActions,
+            workflowAdapter: this.workflowAdapter,
+            workflowSession: this.workflowSession,
+            sessionPath: this.sessionPath,
+            response_create: (m: string, a: CalypsoAction[], s: boolean, sc: CalypsoStatusCode) => this.response_create(m, a, s, sc),
+            workflow_nextStep: () => this.workflow_nextStep(),
+            workflow_dispatch: (i: string, r: CommandResolution, c: boolean) => this.workflow_dispatch(i, r, c)
+        };
     }
 
     private workflowId_resolve(config: CalypsoCoreConfig): string {
