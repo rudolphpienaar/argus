@@ -26,6 +26,7 @@ import type { FingerprintRecord, ChainValidationResult, StalenessResult } from '
 import { sessionPaths_compute, type StagePath } from './SessionPaths.js';
 import type { ArtifactEnvelope } from '../store/types.js';
 import { dagBoxGraphviz_render, type DagBoxNodeInput, type DagBoxEdgeInput } from '../visualizer/graphvizBox.js';
+import { DagRenderer } from '../visualizer/DagRenderer.js';
 
 // ─── Protocol-Facing Types ─────────────────────────────────────
 
@@ -165,6 +166,8 @@ export class WorkflowAdapter {
     /** Topology-aware session tree paths for each stage. */
     private readonly _stagePaths: Map<string, StagePath>;
 
+    private readonly renderer: DagRenderer;
+
     /**
      * @param workflowId - Workflow identifier (e.g. 'fedml', 'chris').
      * @param definition - Parsed DAGDefinition from the manifest.
@@ -181,6 +184,7 @@ export class WorkflowAdapter {
         const { index, declared } = this.commandIndex_build(nodes);
         this.commandIndex = index;
         this.declaredCommands = declared;
+        this.renderer = new DagRenderer();
     }
 
     /**
@@ -993,169 +997,20 @@ export class WorkflowAdapter {
         sessionPath: string,
         options: DagRenderOptions = {},
     ): string {
-        const includeStructural: boolean = options.includeStructural !== false;
-        const includeOptional: boolean = options.includeOptional !== false;
-        const compact: boolean = options.compact === true;
-        const box: boolean = options.box === true;
-        const showWhere: boolean = options.showWhere !== false;
-        const showStale: boolean = options.showStale === true;
-
-        const pos: WorkflowPosition = this.position_resolve(vfs, sessionPath);
-        const header = this.definition.header as ManifestHeader;
-
-        const orderedNodes: DAGNode[] = this.definition.orderedNodeIds
-            .map((id: string): DAGNode | undefined => this.definition.nodes.get(id))
-            .filter((node: DAGNode | undefined): node is DAGNode => Boolean(node));
-        const orderIndex: Map<string, number> = new Map<string, number>(
-            orderedNodes.map((node: DAGNode, index: number): [string, number] => [node.id, index]),
-        );
-
-        const visibleNodes: DAGNode[] = orderedNodes.filter((node: DAGNode): boolean => {
-            if (!includeStructural && node.structural) return false;
-            if (!includeOptional && node.optional) return false;
-            return true;
-        });
-
-        if (visibleNodes.length === 0) {
-            return `DAG [${this.workflowId}] ${header.name}\n(no visible stages with current filters)`;
-        }
-
-        const visibleSet: Set<string> = new Set<string>(visibleNodes.map((node: DAGNode): string => node.id));
-        const parentMultiMap: Map<string, string[]> = new Map<string, string[]>();
-        const parentMap: Map<string, string | null> = new Map<string, string | null>();
-        const childrenMap: Map<string, string[]> = new Map<string, string[]>();
-        const childrenPrimaryMap: Map<string, string[]> = new Map<string, string[]>();
-
-        for (const node of visibleNodes) {
-            childrenMap.set(node.id, []);
-            childrenPrimaryMap.set(node.id, []);
-        }
-
-        for (const node of visibleNodes) {
-            const parents: string[] = this.displayParents_resolve(node, visibleSet, includeStructural, includeOptional)
-                .sort((left: string, right: string): number => (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0));
-            parentMultiMap.set(node.id, parents);
-
-            const parentId: string | null = parents.length > 0 ? parents[0] : null;
-            parentMap.set(node.id, parentId);
-            for (const p of parents) {
-                if (childrenMap.has(p)) {
-                    childrenMap.get(p)!.push(node.id);
-                }
-            }
-            if (parentId && childrenPrimaryMap.has(parentId)) {
-                childrenPrimaryMap.get(parentId)!.push(node.id);
-            }
-        }
-
-        for (const children of childrenMap.values()) {
-            children.sort((left: string, right: string): number => {
-                return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
-            });
-        }
-        for (const children of childrenPrimaryMap.values()) {
-            children.sort((left: string, right: string): number => {
-                return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
-            });
-        }
-
-        const roots: string[] = visibleNodes
-            .map((node: DAGNode): string => node.id)
-            .filter((id: string): boolean => !parentMap.get(id))
-            .sort((left: string, right: string): number => (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0));
-
-        const lines: string[] = [];
-        lines.push(`DAG [${this.workflowId}] ${header.name}`);
-        lines.push(`Progress: ${pos.progress.completed}/${pos.progress.total} stages`);
-        lines.push(`Legend: ● complete  ◉ current  ○ pending  ◌ optional pending  ! stale`);
-        lines.push('');
-
-        const markerForNode = (node: DAGNode): string => {
-            const isCurrent: boolean = showWhere && pos.currentStage?.id === node.id;
-            const isComplete: boolean = pos.completedStages.includes(node.id);
-            const isStale: boolean = showStale && pos.staleStages.includes(node.id);
-
-            if (isStale) return '!';
-            if (isCurrent) return '◉';
-            if (isComplete) return '●';
-            if (node.optional) return '◌';
-            return '○';
-        };
-
-        const lineForNode = (node: DAGNode): string => {
-            const isCurrent: boolean = showWhere && pos.currentStage?.id === node.id;
-            const isStale: boolean = showStale && pos.staleStages.includes(node.id);
-            const marker: string = markerForNode(node);
-
-            const tags: string[] = [];
-            if (node.optional) tags.push('optional');
-            if (node.structural) tags.push('structural');
-            if (isCurrent) tags.push('current');
-            if (isStale) tags.push('stale');
-            if (node.previous && node.previous.length > 1) {
-                tags.push(`join:${node.previous.join('+')}`);
-            }
-
-            const tagSuffix: string = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
-            return `${marker} ${node.id} — ${node.name}${tagSuffix}`;
-        };
-
-        if (box) {
-            const boxNodes: DagBoxNodeInput[] = visibleNodes.map((node: DAGNode): DagBoxNodeInput => ({
-                id: node.id,
-                line1: `${markerForNode(node)} ${node.id}${node.optional ? ' (opt)' : ''}`,
-                line2: `${node.name}${node.previous && node.previous.length > 1 ? ' [join]' : ''}`,
-                order: orderIndex.get(node.id) ?? 0,
-            }));
-            const boxEdges: DagBoxEdgeInput[] = [];
-            for (const child of visibleNodes) {
-                const parents: string[] = parentMultiMap.get(child.id) || [];
-                for (const parent of parents) {
-                    boxEdges.push({ from: parent, to: child.id });
-                }
-            }
-            const boxLines: string[] = dagBoxGraphviz_render({ nodes: boxNodes, edges: boxEdges });
-            return [...lines, ...boxLines].join('\n');
-        }
-
-        if (compact) {
-            for (const nodeId of visibleNodes.map((node: DAGNode): string => node.id)) {
-                const node: DAGNode | undefined = this.definition.nodes.get(nodeId);
-                if (!node) continue;
-                const parentId: string = parentMap.get(nodeId) || 'ROOT';
-                lines.push(`${lineForNode(node)}  <- ${parentId}`);
-            }
-            return lines.join('\n');
-        }
-
-        const renderTree = (nodeId: string, prefix: string, isLast: boolean, isRoot: boolean): void => {
-            const node: DAGNode | undefined = this.definition.nodes.get(nodeId);
-            if (!node) return;
-
-            if (isRoot) {
-                lines.push(lineForNode(node));
-            } else {
-                const branch: string = isLast ? '└─ ' : '├─ ';
-                lines.push(`${prefix}${branch}${lineForNode(node)}`);
-            }
-
-            const children: string[] = childrenPrimaryMap.get(nodeId) || [];
-            const nextPrefix: string = isRoot
-                ? ''
-                : `${prefix}${isLast ? '   ' : '│  '}`;
-            children.forEach((childId: string, index: number): void => {
-                renderTree(childId, nextPrefix, index === children.length - 1, false);
-            });
-        };
-
-        roots.forEach((rootId: string, index: number): void => {
-            renderTree(rootId, '', index === roots.length - 1, true);
-            if (index !== roots.length - 1) {
-                lines.push('');
+        const position = this.position_resolve(vfs, sessionPath);
+        
+        return this.renderer.dag_render(options, {
+            vfs,
+            sessionPath,
+            definition: this.definition,
+            position,
+            workflowId: this.workflowId,
+            displayParents_resolve: (node, visibleSet) => {
+                const includeStructural = options.includeStructural !== false;
+                const includeOptional = options.includeOptional !== false;
+                return this.displayParents_resolve(node, visibleSet, includeStructural, includeOptional);
             }
         });
-
-        return lines.join('\n');
     }
 
     // ─── Access ────────────────────────────────────────────────

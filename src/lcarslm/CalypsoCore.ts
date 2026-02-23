@@ -5,9 +5,6 @@
  * Receives natural language input, classifies intent, executes deterministic
  * operations against VFS/Store, and returns structured responses.
  *
- * This module has ZERO DOM dependencies. All UI operations are delegated
- * to adapters via CalypsoAction objects in the response.
- *
  * @module
  * @see docs/calypso.adoc
  * @see docs/oracle.adoc
@@ -30,6 +27,8 @@ import type {
 import { CalypsoStatusCode } from './types.js';
 import type { AppState, Project } from '../core/models/types.js';
 import { ScriptRuntime } from './scripts/ScriptRuntime.js';
+import { scripts_list, type CalypsoScript } from './scripts/Catalog.js';
+import { controlPlaneIntent_resolve, type ControlPlaneIntent } from './routing/ControlPlaneRouter.js';
 import { SearchProvider } from './SearchProvider.js';
 import { StatusProvider } from './StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
@@ -37,8 +36,6 @@ import { IntentParser } from './routing/IntentParser.js';
 import { PluginHost } from './PluginHost.js';
 import { TelemetryBus } from './TelemetryBus.js';
 import { MerkleEngine } from './MerkleEngine.js';
-import { scripts_list, type CalypsoScript } from './scripts/Catalog.js';
-import { controlPlaneIntent_resolve, type ControlPlaneIntent } from './routing/ControlPlaneRouter.js';
 import { WorkflowAdapter, type WorkflowSummary } from '../dag/bridge/WorkflowAdapter.js';
 import type { WorkflowPosition, DAGNode } from '../dag/graph/types.js';
 import type { ArtifactEnvelope } from '../dag/store/types.js';
@@ -49,6 +46,7 @@ import { SystemCommandRegistry, register_defaultHandlers } from './routing/Syste
 import { WorkflowController } from './routing/WorkflowController.js';
 import { SessionManager } from './SessionManager.js';
 import { BootOrchestrator } from './BootOrchestrator.js';
+import { type CalypsoServiceBag } from './CalypsoFactory.js';
 
 interface ParsedCommandInput {
     trimmed: string;
@@ -61,11 +59,7 @@ interface ParsedCommandInput {
  */
 export class CalypsoCore {
     private engine: LCARSEngine | null;
-    private knowledge: Record<string, string> | undefined;
-    private activeProvider: 'openai' | 'gemini' | null = null;
-    private activeModel: string | null = null;
-
-    /** Providers for logic delegation. */
+    
     private searchProvider: SearchProvider;
     private statusProvider: StatusProvider;
     private llmProvider: LLMProvider;
@@ -85,6 +79,8 @@ export class CalypsoCore {
     private sessionManager: SessionManager;
     private bootOrchestrator: BootOrchestrator;
 
+    private readonly config: CalypsoCoreConfig;
+
     constructor(
         private vfs: VirtualFileSystem,
         private shell: Shell,
@@ -92,104 +88,141 @@ export class CalypsoCore {
         config: CalypsoCoreConfig = {}
     ) {
         this.storeActions = storeActions;
-        this.knowledge = config.knowledge;
-        this.settingsService = config.settingsService || SettingsService.instance_get();
+        this.config = config;
+        
+        // v11.0: Factory-driven assembly.
+        const bag = this.bag_assemble();
+        
+        this.engine = bag.engine;
+        this.searchProvider = bag.searchProvider;
+        this.statusProvider = bag.statusProvider;
+        this.workflowAdapter = bag.workflowAdapter;
+        this.sessionPath = bag.sessionPath;
+        this.workflowSession = bag.workflowSession;
+        this.intentParser = bag.intentParser;
+        this.llmProvider = bag.llmProvider;
+        this.pluginHost = bag.pluginHost;
+        this.merkleEngine = bag.merkleEngine;
+        this.scripts = bag.scripts;
+        this.systemCommands = bag.systemCommands;
+        this.workflowController = bag.workflowController;
+        this.sessionManager = bag.sessionManager;
+        this.telemetryBus = bag.telemetryBus;
+        this.settingsService = bag.settingsService;
+        this.bootOrchestrator = bag.bootOrchestrator;
 
-        this.telemetryBus = config.telemetryBus || new TelemetryBus();
-        this.searchProvider = new SearchProvider(vfs, shell, storeActions);
+        // Re-bind lifecycle updates back to this instance
+        (this.bootOrchestrator as any).ctx.adapter_update = (a: WorkflowAdapter) => { this.workflowAdapter = a; };
+        (this.bootOrchestrator as any).ctx.session_update = (s: WorkflowSession) => { this.workflowSession = s; };
+    }
 
-        this.sessionManager = new SessionManager({
-            vfs: this.vfs,
-            shell: this.shell,
-            storeActions: this.storeActions,
-            workflowSession: null as any, // Bootstrapping
-            merkleEngine: null as any,
-            pluginHost: null as any
-        });
+    private bag_assemble(): CalypsoServiceBag {
+        const telemetryBus = this.config.telemetryBus || new TelemetryBus();
+        const settingsService = this.config.settingsService || SettingsService.instance_get();
+        const searchProvider = new SearchProvider(this.vfs, this.shell, this.storeActions);
 
-        const workflowId: string = this.workflowId_resolve(config);
-        this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
-        this.statusProvider = new StatusProvider(vfs, storeActions, this.workflowAdapter);
+        const workflowId = this.workflowId_resolve(this.config);
+        const workflowAdapter = WorkflowAdapter.definition_load(workflowId);
+        const statusProvider = new StatusProvider(this.vfs, this.storeActions, workflowAdapter);
 
-        if (config.llmConfig) {
-            this.engine = new LCARSEngine(config.llmConfig, config.knowledge);
-            this.activeProvider = config.llmConfig.provider;
-            this.activeModel = config.llmConfig.model;
-        } else {
-            this.engine = null;
+        let engine: LCARSEngine | null = null;
+        if (this.config.llmConfig) {
+            engine = new LCARSEngine(this.config.llmConfig, this.config.knowledge);
         }
 
-        const projectName: string | null = this.projectName_resolve(config.projectName);
+        const projectName = this.projectName_resolve(this.config.projectName);
+        const sessionPath = this.sessionPath_resolve(projectName);
         
-        // v10.2: Physical Provenance - sessionPath is now project/provenance
-        this.sessionPath = this.sessionPath_resolve(projectName);
-        this.sessionManager.session_init(this.sessionPath);
-        
-        this.workflowSession = new WorkflowSession(vfs, this.workflowAdapter, this.sessionPath);
+        const workflowSession = new WorkflowSession(this.vfs, workflowAdapter, sessionPath);
 
-        this.intentParser = new IntentParser(this.searchProvider, storeActions, {
-            activeStageId_get: (): string | null => this.workflowSession.activeStageId_get(),
-            stage_forCommand: (cmd: string) => this.workflowAdapter.stage_forCommand(cmd),
-            commands_list: (): string[] => this.workflowAdapter.commandVerbs_list()
+        const intentParser = new IntentParser(searchProvider, this.storeActions, {
+            activeStageId_get: () => workflowSession.activeStageId_get(),
+            stage_forCommand: (cmd) => workflowAdapter.stage_forCommand(cmd),
+            commands_list: () => workflowAdapter.commandVerbs_list()
         });
 
-        this.llmProvider = this.llmProvider_create();
-        this.pluginHost = new PluginHost(
-            vfs, 
-            shell, 
-            storeActions, 
-            this.searchProvider, 
-            this.telemetryBus,
-            this.workflowAdapter,
-            this.sessionPath
-        );
-        this.merkleEngine = new MerkleEngine(
-            vfs,
-            this.workflowAdapter,
-            this.sessionPath,
+        const pluginHost = new PluginHost(
+            this.vfs, 
+            this.shell, 
+            this.storeActions, 
+            searchProvider, 
+            telemetryBus,
+            workflowAdapter,
+            sessionPath
         );
 
-        this.scripts = new ScriptRuntime(
-            storeActions,
-            this.workflowAdapter,
-            (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd),
+        const merkleEngine = new MerkleEngine(this.vfs, workflowAdapter, sessionPath);
+
+        const scripts = new ScriptRuntime(
+            this.storeActions,
+            workflowAdapter,
+            (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd)
         );
 
-        // Finalize managers with full context
-        (this.sessionManager as any).ctx.workflowSession = this.workflowSession;
-        (this.sessionManager as any).ctx.merkleEngine = this.merkleEngine;
-        (this.sessionManager as any).ctx.pluginHost = this.pluginHost;
+        const systemCommands = new SystemCommandRegistry();
+        register_defaultHandlers(systemCommands);
+        
+        const workflowController = new WorkflowController();
 
-        this.systemCommands = new SystemCommandRegistry();
-        register_defaultHandlers(this.systemCommands);
-
-        this.workflowController = new WorkflowController();
-
-        this.bootOrchestrator = new BootOrchestrator({
+        const sessionManager = new SessionManager({
             vfs: this.vfs,
             shell: this.shell,
             storeActions: this.storeActions,
-            workflowAdapter: this.workflowAdapter,
-            workflowSession: this.workflowSession,
-            telemetryBus: this.telemetryBus,
-            sessionManager: this.sessionManager,
-            adapter_update: (a) => { this.workflowAdapter = a; },
-            session_update: (s) => { this.workflowSession = s; }
+            workflowSession,
+            merkleEngine,
+            pluginHost
         });
+        sessionManager.session_init(sessionPath);
+
+        const bootOrchestrator = new BootOrchestrator({
+            vfs: this.vfs,
+            shell: this.shell,
+            storeActions: this.storeActions,
+            workflowAdapter,
+            workflowSession,
+            telemetryBus,
+            sessionManager,
+            adapter_update: () => {}, 
+            session_update: () => {}
+        });
+
+        const llmProvider = new LLMProvider(
+            engine,
+            statusProvider,
+            searchProvider,
+            this.storeActions,
+            intentParser,
+            (msg, act, succ) => this.response_create(msg, act, succ, succ ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR),
+            (cmd) => this.command_execute(cmd),
+            {
+                status_emit: (m) => telemetryBus.emit({ type: 'status', message: m }),
+                log_emit: (m) => telemetryBus.emit({ type: 'log', message: m })
+            }
+        );
+
+        return {
+            searchProvider,
+            statusProvider,
+            llmProvider,
+            workflowAdapter,
+            workflowSession,
+            scripts,
+            intentParser,
+            pluginHost,
+            merkleEngine,
+            telemetryBus,
+            settingsService,
+            systemCommands,
+            workflowController,
+            sessionManager,
+            bootOrchestrator,
+            sessionPath,
+            engine
+        };
     }
 
     // ─── Lifecycle & Boot ───────────────────────────────────────────────────
 
-    /**
-     * Public trigger for the interactive system boot sequence.
-     *
-     * Each milestone emits WAIT before performing its work, then OK once
-     * complete. The 80ms yield between states is intentional: it ensures
-     * the WAIT frame clears the WebSocket send buffer and arrives at the
-     * client in a distinct TCP segment, preventing Nagle coalescing from
-     * delivering both frames simultaneously and collapsing the WAIT→OK
-     * animation to a single final-state flash.
-     */
     public async boot(): Promise<void> {
         return await this.bootOrchestrator.boot();
     }
@@ -204,9 +237,6 @@ export class CalypsoCore {
         return await this.bootOrchestrator.workflow_set(workflowId);
     }
 
-    /**
-     * Internal helper for standardized boot status telemetry.
-     */
     // ─── Command Execution ──────────────────────────────────────────────────
 
     /**
@@ -278,7 +308,7 @@ export class CalypsoCore {
         );
         if (guidance) return guidance;
 
-        const response: CalypsoResponse = await this.llmProvider.query(parsed.trimmed, this.sessionPath);
+        const response: CalypsoResponse = await this.llmProvider.query(parsed.trimmed, this.session_getPath());
         response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
         this.conversationalHints_apply(response);
 
@@ -318,7 +348,7 @@ export class CalypsoCore {
     }
 
     public workflow_getPosition(): WorkflowPosition {
-        return this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+        return this.workflowAdapter.position_resolve(this.vfs, this.session_getPath());
     }
 
     public store_snapshot(): Partial<AppState> {
@@ -326,7 +356,7 @@ export class CalypsoCore {
     }
 
     public merkleEngine_latestFingerprint_get(stageId: string): ArtifactEnvelope | null {
-        return this.workflowAdapter.latestArtifact_get(this.vfs, this.sessionPath, stageId);
+        return this.workflowAdapter.latestArtifact_get(this.vfs, this.session_getPath(), stageId);
     }
 
     public async merkleEngine_dataDir_resolve(stageId: string): Promise<string> {
@@ -435,24 +465,16 @@ export class CalypsoCore {
         return await this.shell_handle(trimmed, primary);
     }
 
-    /**
-     * Check whether the input is a generic affirmative reply and route it to
-     * either a pending phase-jump confirmation or the active stage's safe
-     * closing command. Returns null if input is not an affirmative.
-     *
-     * @param input - Raw trimmed command string.
-     * @returns Workflow response if the input was a confirmation, otherwise null.
-     */
     private async special_handle(input: string): Promise<CalypsoResponse> {
         const result = await this.special_dispatch(input);
         if (result.message === '__GREET_ASYNC__') {
-            const response: CalypsoResponse = await this.llmProvider.greeting_generate(this.shell.env_get('USER') || 'user');
+            const response: CalypsoResponse = await this.llmProvider.greeting_generate(this.username_resolve());
             response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
             this.conversationalHints_apply(response);
             return response;
         }
         if (result.message === '__STANDBY_ASYNC__') {
-            const response: CalypsoResponse = await this.llmProvider.standby_generate(this.shell.env_get('USER') || 'user');
+            const response: CalypsoResponse = await this.llmProvider.standby_generate(this.username_resolve());
             response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
             this.conversationalHints_apply(response);
             return response;
@@ -474,9 +496,9 @@ export class CalypsoCore {
             workflowAdapter: this.workflowAdapter,
             workflowSession: this.workflowSession,
             merkleEngine: this.merkleEngine,
-            sessionPath: this.sessionPath,
-            activeProvider: this.activeProvider,
-            activeModel: this.activeModel,
+            sessionPath: this.session_getPath(),
+            activeProvider: (this.config.llmConfig as any)?.provider || null,
+            activeModel: (this.config.llmConfig as any)?.model || null,
             engineAvailable: Boolean(this.engine),
             username_resolve: () => this.username_resolve(),
             session_realign: () => this.session_realign(),
@@ -523,7 +545,7 @@ export class CalypsoCore {
         const parts: string[] = input.split(/\s+/);
         const cmd: string = parts[0].toLowerCase();
 
-        const transition: TransitionResult = this.workflowAdapter.transition_check(cmd, this.vfs, this.sessionPath);
+        const transition: TransitionResult = this.workflowAdapter.transition_check(cmd, this.vfs, this.session_getPath());
         if (!transition.allowed) {
             if (transition.pendingOptionals?.length && transition.autoDeclinable) {
                 for (const optionalId of transition.pendingOptionals) {
@@ -585,7 +607,7 @@ export class CalypsoCore {
             const hasAdvanceAction = result.actions?.some(a => a.type === 'stage_advance');
 
             if (isClosingCommand || hasAdvanceAction) {
-                const pos = this.workflowAdapter.position_resolve(this.vfs, this.sessionPath);
+                const pos = this.workflowAdapter.position_resolve(this.vfs, this.session_getPath());
                 if (pos.currentStage && pos.currentStage.id !== stage.id) {
                     this.workflowSession.advance_force(pos.currentStage.id);
                     if (pos.currentStage.structural) return await this.workflow_execute(pos.currentStage.id, pos.currentStage);
@@ -638,7 +660,7 @@ export class CalypsoCore {
             storeActions: this.storeActions,
             workflowAdapter: this.workflowAdapter,
             workflowSession: this.workflowSession,
-            sessionPath: this.sessionPath,
+            sessionPath: this.session_getPath(),
             response_create: (m: string, a: CalypsoAction[], s: boolean, sc: CalypsoStatusCode) => this.response_create(m, a, s, sc),
             workflow_nextStep: () => this.workflow_nextStep(),
             workflow_dispatch: (i: string, r: CommandResolution, c: boolean) => this.workflow_dispatch(i, r, c)
