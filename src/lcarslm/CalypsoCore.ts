@@ -235,9 +235,15 @@ export class CalypsoCore {
         await this.session_realign();
         await this.workflowSession.sync();
 
-        // 1. SYSTEM COMMAND PRECEDENCE
+        // 1. HARDWARE/SYSTEM PRECEDENCE
+        // We handle /commands and shell builtins before the kernel to ensure 
+        // instant resolution without AI spinner triggers.
         if (parsed.trimmed.startsWith('/')) {
             return await this.special_handle(parsed.trimmed);
+        }
+        if (this.shell.builtins_list().includes(parsed.primary)) {
+            const shellResult = await this.shell_handle(parsed.trimmed, parsed.primary);
+            if (shellResult) return shellResult;
         }
 
         // 2. CNS RESOLUTION (Intelligence Mediator)
