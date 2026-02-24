@@ -255,19 +255,18 @@ export class CalypsoCore {
         await this.session_realign();
         await this.workflowSession.sync();
 
-        if (this.shell.isBuiltin(parsed.primary)) {
-            const shellResult: CalypsoResponse | null = await this.shell_handle(parsed.trimmed, parsed.primary);
-            if (shellResult) return shellResult;
-        }
-
-        const confirmationFastPath: CalypsoResponse | null = await this.workflowController.confirmation_dispatch(
+        // 1. FAST PATH: Guidance & Interaction
+        const guidance: CalypsoResponse | null = this.workflowController.guidance_handle(
             parsed.trimmed, 
             this.workflowControllerContext_create()
         );
-        if (confirmationFastPath) {
-            return confirmationFastPath;
-        }
+        if (guidance) return guidance;
 
+        const resolution = this.workflowSession.resolveCommand(parsed.primary, false);
+        const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
+        if (fastPathResult) return fastPathResult;
+
+        // 2. PRIMARY PATH: Intent Parsing (Deterministic then Probabilistic)
         const intent: CalypsoIntent = await this.intentParser.intent_resolve(parsed.trimmed, this.engine);
 
         if (intent.type === 'workflow' && intent.command) {
@@ -299,16 +298,7 @@ export class CalypsoCore {
             return await this.special_handle(protocolCommand);
         }
 
-        const resolution = this.workflowSession.resolveCommand(parsed.primary, false);
-        const fastPathResult: CalypsoResponse | null = await this.commandFastPath_handle(parsed, resolution);
-        if (fastPathResult) return fastPathResult;
-
-        const guidance: CalypsoResponse | null = this.workflowController.guidance_handle(
-            parsed.trimmed, 
-            this.workflowControllerContext_create()
-        );
-        if (guidance) return guidance;
-
+        // 3. FALLBACK: Conversational Guidance
         const response: CalypsoResponse = await this.llmProvider.query(parsed.trimmed, this.session_getPath());
         response.statusCode = CalypsoStatusCode.CONVERSATIONAL;
         this.conversationalHints_apply(response);
