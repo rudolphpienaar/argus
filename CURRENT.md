@@ -1,113 +1,49 @@
-# CURRENT STATE — 2026-02-21
+# CURRENT STATE — 2026-02-23
 
-## Latest Runtime Stabilization (Post-10.3.1)
+## v12.0.0 — The Instrumented CNS (COMPLETED)
 
-1. Removed legacy fixed `10s` execution timeout in host workflow dispatch (`CalypsoCore.workflow_execute`).
-2. Hardened CLI telemetry rendering:
-   - in-place progress row rewrites (no multi-line progress triangle),
-   - glyph progress bars (`█`/`░`),
-   - frame width capping/clipping for terminal-fit output.
-3. Added REPL telemetry gating:
-   - telemetry ignored when no command is active,
-   - active spinner is suppressed once telemetry stream starts.
-4. Validation status after patch:
-   - Unit tests: `370/370` passing.
-   - ORACLE scenarios: `9/9` passing.
+1.  **CNS Consolidation**: Relocated all intelligence modules to `src/lcarslm/kernel/` to create a centralized, auditable Central Nervous System.
+2.  **CalypsoKernel Facade**: Implemented a unified mediator for intent resolution, encapsulating Guidance, FastPath, RAG, and LLM orchestration.
+3.  **Null Hypothesis (Structural Bypass)**:
+    -   Implemented `NULL_HYPOTHESIS` mode for quantitative drift experiments.
+    -   Bypass logic intentionally disables Prompt RAG, Anaphora grounding, and FastPath interceptors.
+    -   Enables researchers to observe the "Raw Light" of model non-determinism against a deterministic baseline.
+4.  **Precedence of Truth**: Hardcoded the Interceptor Pattern into the CNS to ensure deterministic filters always precede probabilistic interpretation.
+5.  **Validation status**:
+    -   Unit tests: `425/425` passing.
+    -   ORACLE scenarios: `9/9` passing.
 
 ## What Just Happened (Chronological)
 
-### Commit 1-3: Previously documented in v7.3.x history.
+### v11.0.5: IAS Purity Refactor
+Achieved the absolute separation of Intent, Action, and State. Purged domain intelligence from the kernel and offloaded lifecycle policy to `BootOrchestrator` and `SessionManager`.
 
-### Commit 4: v9.3.1 — Fully Manifest-Driven Persona Refactor (COMPLETED)
-Achieved the goal of making personas fully manifest-driven. Adding a new persona now only
-requires adding a `.manifest.yaml` file to `src/dag/manifests/`.
+### v11.0.16: Intent Guard and Precedence Lock
+Implemented the `IntentGuard` to prevent "Intent Theft" through vocabulary jailing and output validation. Enforced the "Precedence of Truth" mandate in the execution loop.
 
-1. **Dynamic Manifest Registry**: Replaced hardcoded `MANIFEST_REGISTRY` in `WorkflowAdapter.ts`
-   with a dynamic scanning mechanism that reads all `*.manifest.yaml` files from the
-   manifests directory.
-2. **Generic Completion Mapping**: Completion resolution is read
-   directly from topology-aware manifest stage artifacts. Legacy
-   persona-specific mapper factories were deleted as topology-aware
-   artifact discovery became the single completion contract.
-3. **Generic Dispatch & Handlers**: `CalypsoCore.workflow_execute` now dispatches via each
-   stage's manifest-defined `handler` into `PluginHost`, replacing persona-specific dispatch.
-4. **Workflow Context Routing**: `WorkflowSession` now resolves commands in context using the
-   active stage first, with explicit phase-jump confirmations when users issue out-of-context
-   commands.
-5. **Type Safety**: Updated `CalypsoAction` in `src/lcarslm/types.ts` to allow arbitrary
-   string workflow IDs, supporting a truly open manifest system.
-
-### Bug Fix: VFS POSIX Compliance
-Fixed two regression in `VirtualFileSystem.ts`:
-- `node_write` now correctly throws an error if the parent directory does not exist (matching POSIX).
-- `node_invalidate` no longer clears content for files without a `contentGenerator`, preventing data loss for static files.
+### v12.0.0: CNS Consolidation and Measurement Architecture
+Moved from "Safe Architecture" to "Measurement Architecture." Centralized the brain and provided the structural bypasses required for scientific study of autonomous drift.
 
 ## What's Next
 
-**Goal: Runtime `_join_*` Materialization Integration.**
-The objective is to move from primary-parent-only runtime nesting to explicit topological join
-materialization for multi-parent DAG convergence, while preserving backward compatibility.
+**Goal: Quantitative Drift Measurement Baseline.**
+The objective is to utilize the v12.0.0 instrumentation to document the first "Hallucination Gap" metrics.
 
-### Phase 0 — Baseline and Guardrails (COMPLETE)
-1. Bridge fixture drift fixed; all bridge tests now align with fingerprint contract.
-2. Full unit baseline restored: `317/317` tests passing.
-3. ORACLE baseline confirmed: `8/8` scenarios passing.
-
-### Phase 1 — Integration Scaffolding
-1. Introduced optional runtime routing through `SessionStore` + `VfsBackend` in `MerkleEngine`
-   via `runtimeMode: 'store'`.
-2. Initially preserved default behavior (`runtimeMode: 'legacy'`) while scaffolding landed.
-3. Added join-runtime toggle scaffolding (`joinMaterializationEnabled` / `ARGUS_RUNTIME_JOIN_MATERIALIZE`)
-   with default OFF; Phase 1 keeps primary-parent write paths even when the toggle is enabled.
-
-### Phase 2 — Join-Node Write Path
-1. Enable join-node insertion for multi-parent stage materialization in runtime:
-   - create `_join_<parents>/data/join.json`
-   - create parent input references under join `data/`
-   - nest downstream stage artifacts under the join node
-   - status: implemented in `MerkleEngine` when `runtimeMode='store'` and join toggle is enabled
-2. Preserve fingerprint chain semantics across join artifacts and downstream children.
-
-### Phase 3 — Read/Resolve Compatibility
-1. Make completion and staleness reads tolerant to both layouts:
-   - legacy primary-parent sessions
-   - new join-materialized sessions
-   - status: implemented for transition gating + session fast-verify using fingerprint discovery
-2. Ensure `WorkflowSession.verify_fast()` and transition checks remain correct under both trees.
-   - status: implemented
-3. Emit `BLOCKED_STALE` explicitly where stale-data gating is surfaced.
-   - status: implemented (`CalypsoCore` returns `BLOCKED_STALE` on stale prerequisite blocks)
-
-### Phase 4 — Validation and Flip
-1. Expand bridge/store/oracle assertions to include explicit join runtime expectations.
-2. Re-run full quality gates: unit tests, ORACLE, build, typecheck.
-3. Flip join runtime toggle to default-on only after all gates are green.
-   - status: implemented (`store+join` is now default runtime posture)
-4. Keep compatibility reader for historical sessions (no migration rewrite required).
-   - status: implemented (legacy read compatibility retained; legacy write path deprecated)
-
-### Risks and Controls
-1. **Routing regressions** (stage resolution drift): controlled by dual-layout read support + oracle walks.
-2. **Path assertion breakage** in tests: controlled by staged test updates before default flip.
-3. **Session compatibility**: controlled by non-destructive backward-compatible reader behavior.
-
-### Acceptance Criteria
-1. Join nodes are physically materialized for multi-parent convergence in live runtime.
-2. `WorkflowAdapter.position_resolve()` returns identical logical stage progression across both layouts.
-3. `BLOCKED_STALE` is emitted for stale-gated commands where applicable.
-4. `328/328` unit tests and `8/8` ORACLE scenarios remain green post-flip.
+1.  **Baseline Generation**: Run the full ORACLE suite in `NULL_HYPOTHESIS` mode.
+2.  **Drift Capture**: Document the specific stages where the naked model attempts to jump topology.
+3.  **Safety Multiplier**: Calculate the mathematical reliability increase provided by the `STRICT` mode guardrails.
 
 ## Current Code State
 
-- **Unit tests**: `328 passed / 0 failed` across 13 test files.
-- **ORACLE**: `8 scenarios passed` (including generated FedML/ChRIS and merkle-staleness scenarios).
-- **Build/typecheck**: verified green after default `store+join` flip.
+- **Unit tests**: `425 passed / 0 failed`.
+- **ORACLE**: `9 scenarios passed`.
+- **Instrumentation**: `STRICT`, `EXPERIMENTAL`, `NULL_HYPOTHESIS` modes verified.
 
 ## Test & Build Commands
 
 ```bash
-npx vitest run                    # currently: 328 passed / 0 failed
+npx vitest run                    # currently: 425 passed / 0 failed
 npm run build                     # tsc + manifest copy
-node scripts/oracle-runner.mjs    # currently: 8 scenarios pass
+node scripts/oracle-runner.mjs    # currently: 9 scenarios pass
 npx tsc --noEmit                  # Type check
 ```

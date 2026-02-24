@@ -1,7 +1,7 @@
 = ARGUS Project History: The Forensic Chronicle of a State-Grounded Kernel
 :author: ATLAS Project Team
 :revdate: 2026-02-23
-:revnumber: 11.0.5
+:revnumber: 12.0.0
 :toc: macro
 :toclevels: 4
 :sectnums:
@@ -26,9 +26,10 @@ Each section details the specific technical pressures—such as monolithic drift
     ├── Phase IV  v5.0  .. v8.0      Headless Calypso + ORACLE + scripts
     ├── Phase V   v9.0  .. v10.3.2   DAG + Merkle + plugin runtime hardening
     ├── Phase VI  v10.3.3.. v11.0.0  contract consolidation + major lock
-    └── Phase VII v11.0.1.. v11.0.5  IAS purity refactor + decoupled kernel
+    ├── Phase VII v11.0.1.. v11.0.5  IAS purity refactor + decoupled kernel
+    └── Phase VIII v11.0.6.. v12.0.0  Instrumented CNS + Null Hypothesis
 
-arc: monolithic UI prototype  ─────────────────────────▶  state-grounded kernel
+arc: monolithic UI prototype  ─────────────────────────▶  instrumented CNS
 ----
 
 == Phase I: Genesis and the Codification of "SeaGaP" (v1.0 - v1.4)
@@ -445,6 +446,53 @@ release marks the transition of ARGUS into a truly "Domain-Agnostic" operating
 system, where all persona-specific behavior and scientific logic reside entirely 
 in Plugins and Manifests.
 
+== Phase VIII: The Instrumented CNS and Null Hypothesis (v11.0.6 - v12.0.0)
+_Period: February 23, 2026_
+
+=== Status Quo: The Greedy Interpreter Failure
+The transition to v12.0.0 was triggered by a profound conversational failure that 
+exposed a fundamental flaw in the system's intelligence integration. Following the 
+successful IAS refactor, we "Grounded" the LLM in the full physical manifest (RAG) 
+to improve its guidance. However, this grounding backfired: because the model now 
+knew the entire workflow, it became a "Greedy Interpreter." When a user asked a 
+simple guidance question (e.g., "what's next?"), the model "stole" the intent and 
+mapped it to a valid—but topologically locked—future command like `status`. The 
+deterministic engine correctly blocked the command, but the result was a 
+"Brain-Dead" system that could no longer answer basic questions.
+
+=== Version 11.0.14 - 11.0.16: The Precedence of Truth
+This failure revealed that safety in an agentic system is not a property of 
+prompts, but of **Execution Physics**. We realized that deterministic filters 
+*must* structurally precede probabilistic interpretation. This led to the 
+**Precedence of Truth** mandate: a hardcoded interceptor pattern that ensures 
+regex-based guidance and system verbs are handled by the kernel before the LLM 
+ever sees the input. To enforce this, we implemented the **IntentGuard**, which 
+introduced "Vocabulary Jailing"—physically blinding the AI to any command not 
+currently marked as `READY` by the DAG. This effectively turned the AI into a 
+"Prisoner of the DAG," ensuring it could only propose intents that were 
+topologically valid.
+
+=== Version 12.0.0: The Instrumented CNS and Source Reorganization
+The final step in this arc was the formalization of the **Central Nervous System 
+(CNS)**. We recognized that the "Brain" of ARGUS—the engine, the parser, the 
+guard, and the status provider—was dangerously fragmented across `src/lcarslm/`. 
+To ensure this critical safety stack was auditable and protected from accidental 
+refactor-drift, we performed a major source tree reorganization, consolidating all 
+intelligence modules into `src/lcarslm/kernel/`. This co-location created a 
+centralized, high-integrity dirtree that clearly defines the "Linguistic Hardware" 
+of the ship's computer.
+
+=== Instrumentation: The Null Hypothesis and Drift Measurement
+Released on February 23, 2026, v12.0.0 transforms ARGUS from a "Safe Machine" 
+into a **Scientific Instrument for AI Research**. By implementing the toggleable 
+**"Null Hypothesis" (Structural Bypass)**, we have created a telescope for 
+measuring AI drift. In this mode, we intentionally disable all architectural 
+"helps"—RAG grounding, Anaphora resolution, and FastPath matching—allowing 
+researchers to observe the "Raw Light" of the model's non-determinism. This setup 
+enables the quantitative calculation of the "Hallucination Gap": the mathematical 
+proof of how much the ARGUS deterministic core actually improves the reliability 
+of the underlying probabilistic model.
+
 == Persistence and Integrity Matrix
 
 The following matrix summarizes the evolution of the system's grounding mechanisms across the major developmental phases of this sprint.
@@ -527,6 +575,11 @@ The following matrix summarizes the evolution of the system's grounding mechanis
 |v11.0.5
 |Orchestration Purification
 |Evicts remaining domain-intelligence and lifecycle policy from the kernel, achieving a pure persona-agnostic execution substrate.
+
+|**Instrumented CNS & Null Hypothesis**
+|v12.0.0
+|Intelligence Measurement
+|Enables quantitative drift measurement via structural bypasses, transforming ARGUS into a scientific instrument for AI study.
 |===
 
 == Conclusion: The Arc of Integrity
@@ -539,12 +592,12 @@ late boot-telemetry race repair, the project has consistently prioritized
 "Evidence over Assertion."
 
 By grounding the system in a virtualized hardware substrate (VCS), a graph-based
-conscience (DAG Engine), and a Merkle provenance chain, the late v10 line reached
-technical maturity. The `v11.0.0` release marks the transition from hardening era to
-contract era: workflow topology, startup protocol, and provenance path semantics are
-now treated as stable major-version commitments rather than migration targets. The
-next arc is no longer architectural rescue; it is disciplined extension on top of a
-declared baseline.
+conscience (DAG Engine), and a Merkle provenance chain, the system reached 
+technical maturity in the v11.0 contract era. The `v12.0.0` release marks the 
+transition from **Architecture for Safety** to **Architecture for Measurement**. 
+By centralizing the CNS and providing the instrumentation to study the failures 
+of the edge, ARGUS provides the definitive platform for building and measuring 
+autonomous scientific agency.
 
 ---
-_Last updated: 2026-02-23 (v11.0.0)_
+_Last updated: 2026-02-23 (v12.0.0)_
