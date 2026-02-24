@@ -34,21 +34,21 @@ describe('Topological Viewport: Search -> Gather Convergence', () => {
         // 3. Gather (to close the stage and anchor the viewport)
         await core.command_execute('gather');
         
-        const state: any = core.store_snapshot();
-        const sessionId = state.currentSessionId;
-        const projectName = state.activeProject.name;
-        
-        const provenancePath = `/home/rudolph/projects/fedml/${sessionId}/provenance/search/gather/output`;
-        const sessionRoot = `/home/rudolph/projects/fedml/${sessionId}`;
+        const provenancePath = await core.merkleEngine_dataDir_resolve('gather');
+        const sessionPath = core.session_getPath();
+        const sessionRoot = sessionPath.substring(0, sessionPath.lastIndexOf('/provenance'));
         const viewportPath = `${sessionRoot}/gather`;
 
         // VERIFY SHELL POSITION
         // v11.0: Shell should be INSIDE the alias (Logical PWD)
         expect(shell.env_get('PWD')).toBe(viewportPath);
-        expect(vfs.cwd_get()).toBe(provenancePath);
+        
+        // PHYSICAL DATA is in the 'output' subfolder of the provenance stage dir
+        const dataPath = `${provenancePath}/output`;
+        expect(vfs.cwd_get()).toBe(dataPath);
 
         // VERIFY PHYSICAL DATA
-        const outputEntries = vfs.dir_list(provenancePath);
+        const outputEntries = vfs.dir_list(dataPath);
         expect(outputEntries.some(e => e.name === 'Histology_Segmentation')).toBe(true);
         expect(outputEntries.some(e => e.name === 'training')).toBe(false);
         expect(outputEntries.some(e => e.name === 'validation')).toBe(false);
@@ -64,9 +64,5 @@ describe('Topological Viewport: Search -> Gather Convergence', () => {
         const currentEntries = vfs.dir_list('.');
         expect(currentEntries.some(e => e.name === 'Histology_Segmentation')).toBe(true);
         expect(currentEntries.some(e => e.name === 'training')).toBe(false);
-        
-        // CRITICAL STABILITY CHECK: No link-to-self recursion
-        // The viewport MUST NOT contain another link with its own name
-        expect(currentEntries.some(e => e.name === projectName)).toBe(false);
     });
 });

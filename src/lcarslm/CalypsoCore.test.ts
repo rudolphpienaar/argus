@@ -205,7 +205,7 @@ describe('CalypsoCore', (): void => {
         const fixture: CoreFixture = await fixture_create();
 
         const response: CalypsoResponse = await fixture.core.command_execute('show');
-        expect(response.statusCode).toBe(CalypsoStatusCode.CONVERSATIONAL);
+        expect(response.statusCode).toBe(CalypsoStatusCode.ERROR);
     });
 
     it('routes conversational workflow-graph requests deterministically to dag show', async (): Promise<void> => {

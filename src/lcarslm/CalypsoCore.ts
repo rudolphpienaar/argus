@@ -251,6 +251,8 @@ export class CalypsoCore {
         }
 
         // 4. FALLBACK: Shell builtins
+        // We only try shell if the kernel returned a conversational (LLM) intent.
+        // If the kernel reported an ERROR (e.g. offline), we still try shell.
         const shellResult = await this.shell_handle(parsed.trimmed, parsed.primary);
         if (shellResult) return shellResult;
 
@@ -262,24 +264,43 @@ export class CalypsoCore {
      * Dispatch a resolved intent to the appropriate internal handler.
      */
     private async intent_dispatch(intent: CalypsoIntent, parsed: ParsedCommandInput): Promise<CalypsoResponse> {
-        if (intent.type === 'workflow' && intent.command) {
-            const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
-            const strictResolution: CommandResolution = this.workflowSession.resolveCommand(intent.command, true);
+        if (intent.type === 'workflow') {
+            const command: string = intent.command || parsed.primary;
+            const protocolCommand: string = command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
+
+            // 1. Strict Stage Resolution
+            const strictResolution: CommandResolution = this.workflowSession.resolveCommand(command, true);
             if (strictResolution.stage) {
                 const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, strictResolution);
                 if (workflowResult) return workflowResult;
             }
+
+            // 2. Global Fallback Resolution
+            if (this.workflowFallback_allowed(protocolCommand, command)) {
+                const globalResolution: CommandResolution = this.workflowSession.resolveCommand(command, false);
+                if (globalResolution.stage) {
+                    const workflowResult: CalypsoResponse | null = await this.workflow_dispatch(protocolCommand, globalResolution);
+                    if (workflowResult) return workflowResult;
+                }
+            }
         }
 
-        if (intent.type === 'shell' && intent.command) {
-            const protocolCommand: string = intent.command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
-            const shellResult: CalypsoResponse | null = await this.shell_handle(protocolCommand, intent.command);
+        if (intent.type === 'shell') {
+            const command: string = intent.command || parsed.primary;
+            const protocolCommand: string = command + (intent.args?.length ? ' ' + intent.args.join(' ') : '');
+            const shellResult: CalypsoResponse | null = await this.shell_handle(protocolCommand, command);
             if (shellResult) return shellResult;
         }
 
-        if (intent.type === 'special' && intent.command) {
-            const protocolCommand: string = `/${intent.command}${intent.args?.length ? ' ' + intent.args.join(' ') : ''}`;
+        if (intent.type === 'special') {
+            const command: string = intent.command || parsed.primary;
+            const protocolCommand: string = `/${command}${intent.args?.length ? ' ' + intent.args.join(' ') : ''}`;
             return await this.special_handle(protocolCommand);
+        }
+
+        if (intent.type === 'llm') {
+            // Conversational intent passed back to the kernel loop
+            return this.response_create(intent.raw, [], true, CalypsoStatusCode.CONVERSATIONAL);
         }
 
         return this.response_create(`>> ERROR: UNABLE TO DISPATCH INTENT [${intent.type}]`, [], false, CalypsoStatusCode.ERROR);
@@ -343,7 +364,7 @@ export class CalypsoCore {
         if (isCommandPosition) {
             const builtinCommands: string[] = this.shell.builtins_list();
             const workflowCommands: string[] = this.workflowAdapter.commandVerbs_list();
-            const sessionCommands: string[] = ['quit', 'exit', 'dag'];
+            const sessionCommands: string[] = ['quit', 'exit', 'dag', 'status'];
             const allCommands: string[] = Array.from(
                 new Set<string>([...builtinCommands, ...workflowCommands, ...sessionCommands])
             );
@@ -536,6 +557,12 @@ export class CalypsoCore {
 
     private username_resolve(): string {
         return this.shell.env_get('USER') || 'user';
+    }
+
+    private workflow_nextStep(): string {
+        const pos = this.workflowAdapter.position_resolve(this.vfs, this.session_getPath());
+        if (pos.isComplete) return '● WORKFLOW COMPLETE.\n\nNext Steps:\n  `/reset` — Reset system to clean state';
+        return pos.nextInstruction || 'Workflow complete.';
     }
 
     private response_create(message: string, actions: CalypsoAction[], success: boolean, statusCode: CalypsoStatusCode, ui_hints?: CalypsoResponse['ui_hints']): CalypsoResponse {
