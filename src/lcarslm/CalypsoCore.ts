@@ -21,14 +21,12 @@ import type {
     CalypsoStoreActions,
     CalypsoIntent,
     PluginResult,
-    BootPhase,
-    BootStatus,
 } from './types.js';
 import { CalypsoStatusCode } from './types.js';
-import type { AppState, Project } from '../core/models/types.js';
+import type { AppState } from '../core/models/types.js';
 import { ScriptRuntime } from './scripts/ScriptRuntime.js';
-import { scripts_list, type CalypsoScript } from './scripts/Catalog.js';
-import { controlPlaneIntent_resolve, type ControlPlaneIntent } from './routing/ControlPlaneRouter.js';
+import { scripts_list } from './scripts/Catalog.js';
+import { controlPlaneIntent_resolve } from './routing/ControlPlaneRouter.js';
 import { SearchProvider } from './SearchProvider.js';
 import { StatusProvider } from './StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
@@ -46,7 +44,7 @@ import { SystemCommandRegistry, register_defaultHandlers } from './routing/Syste
 import { WorkflowController } from './routing/WorkflowController.js';
 import { SessionManager } from './SessionManager.js';
 import { BootOrchestrator } from './BootOrchestrator.js';
-import { type CalypsoServiceBag } from './CalypsoFactory.js';
+import { IntentGuard, IntentGuardMode } from './routing/IntentGuard.js';
 
 interface ParsedCommandInput {
     trimmed: string;
@@ -78,6 +76,7 @@ export class CalypsoCore {
     private workflowController: WorkflowController;
     private sessionManager: SessionManager;
     private bootOrchestrator: BootOrchestrator;
+    private intentGuard: IntentGuard;
 
     private readonly config: CalypsoCoreConfig;
 
@@ -90,136 +89,95 @@ export class CalypsoCore {
         this.storeActions = storeActions;
         this.config = config;
         
-        // v11.0: Factory-driven assembly.
-        const bag = this.bag_assemble();
-        
-        this.engine = bag.engine;
-        this.searchProvider = bag.searchProvider;
-        this.statusProvider = bag.statusProvider;
-        this.workflowAdapter = bag.workflowAdapter;
-        this.sessionPath = bag.sessionPath;
-        this.workflowSession = bag.workflowSession;
-        this.intentParser = bag.intentParser;
-        this.llmProvider = bag.llmProvider;
-        this.pluginHost = bag.pluginHost;
-        this.merkleEngine = bag.merkleEngine;
-        this.scripts = bag.scripts;
-        this.systemCommands = bag.systemCommands;
-        this.workflowController = bag.workflowController;
-        this.sessionManager = bag.sessionManager;
-        this.telemetryBus = bag.telemetryBus;
-        this.settingsService = bag.settingsService;
-        this.bootOrchestrator = bag.bootOrchestrator;
-
-        // Re-bind lifecycle updates back to this instance
-        (this.bootOrchestrator as any).ctx.adapter_update = (a: WorkflowAdapter) => { this.workflowAdapter = a; };
-        (this.bootOrchestrator as any).ctx.session_update = (s: WorkflowSession) => { this.workflowSession = s; };
+        // v11.0: Domain-Agnostic Kernel Assembly
+        // All wiring logic is centralized in this local helper until 
+        // the external factory is fully integrated into the build path.
+        this.bag_assemble();
     }
 
-    private bag_assemble(): CalypsoServiceBag {
-        const telemetryBus = this.config.telemetryBus || new TelemetryBus();
-        const settingsService = this.config.settingsService || SettingsService.instance_get();
-        const searchProvider = new SearchProvider(this.vfs, this.shell, this.storeActions);
+    /**
+     * Assemble the kernel dependency graph.
+     */
+    private bag_assemble(): void {
+        this.telemetryBus = this.config.telemetryBus || new TelemetryBus();
+        this.settingsService = this.config.settingsService || SettingsService.instance_get();
+        this.searchProvider = new SearchProvider(this.vfs, this.shell, this.storeActions);
 
         const workflowId = this.workflowId_resolve(this.config);
-        const workflowAdapter = WorkflowAdapter.definition_load(workflowId);
-        const statusProvider = new StatusProvider(this.vfs, this.storeActions, workflowAdapter);
+        this.workflowAdapter = WorkflowAdapter.definition_load(workflowId);
+        this.statusProvider = new StatusProvider(this.vfs, this.storeActions, this.workflowAdapter);
 
-        let engine: LCARSEngine | null = null;
         if (this.config.llmConfig) {
-            engine = new LCARSEngine(this.config.llmConfig, this.config.knowledge);
+            this.engine = new LCARSEngine(this.config.llmConfig, this.config.knowledge);
+        } else {
+            this.engine = null;
         }
 
         const projectName = this.projectName_resolve(this.config.projectName);
-        const sessionPath = this.sessionPath_resolve(projectName);
+        this.sessionPath = this.sessionPath_resolve(projectName);
         
-        const workflowSession = new WorkflowSession(this.vfs, workflowAdapter, sessionPath);
+        this.workflowSession = new WorkflowSession(this.vfs, this.workflowAdapter, this.sessionPath);
 
-        const systemCommands = new SystemCommandRegistry();
-        register_defaultHandlers(systemCommands);
-        
-        const workflowController = new WorkflowController();
+        // v11.0: Initialize Intent Guard (S-Tier safety primitive)
+        const guardMode = (this.config.enableIntentGuardrails !== false) 
+            ? IntentGuardMode.STRICT 
+            : IntentGuardMode.EXPERIMENTAL;
+        this.intentGuard = new IntentGuard({ mode: guardMode });
 
-        const intentParser = new IntentParser(searchProvider, this.storeActions, {
-            activeStageId_get: () => workflowSession.activeStageId_get(),
-            stage_forCommand: (cmd) => workflowAdapter.stage_forCommand(cmd),
-            commands_list: () => workflowAdapter.commandVerbs_list(),
-            systemCommands_list: () => systemCommands.commands_list()
+        this.intentParser = new IntentParser(this.searchProvider, this.storeActions, this.intentGuard, {
+            activeStageId_get: () => this.workflowSession.activeStageId_get(),
+            stage_forCommand: (cmd) => this.workflowAdapter.stage_forCommand(cmd),
+            commands_list: () => this.workflowAdapter.commandVerbs_list(),
+            systemCommands_list: () => this.systemCommands.commands_list(),
+            readyCommands_list: () => this.workflowAdapter.position_resolve(this.vfs, this.sessionPath).availableCommands
         });
 
-        const pluginHost = new PluginHost(
+        this.pluginHost = new PluginHost(
             this.vfs, 
             this.shell, 
             this.storeActions, 
-            searchProvider, 
-            telemetryBus,
-            workflowAdapter,
-            sessionPath
+            this.searchProvider, 
+            this.telemetryBus,
+            this.workflowAdapter,
+            this.sessionPath
         );
 
-        const merkleEngine = new MerkleEngine(this.vfs, workflowAdapter, sessionPath);
+        this.merkleEngine = new MerkleEngine(this.vfs, this.workflowAdapter, this.sessionPath);
 
-        const scripts = new ScriptRuntime(
+        this.scripts = new ScriptRuntime(
             this.storeActions,
-            workflowAdapter,
+            this.workflowAdapter,
             (cmd: string): Promise<CalypsoResponse> => this.command_execute(cmd)
         );
 
-        const sessionManager = new SessionManager({
+        this.systemCommands = new SystemCommandRegistry();
+        register_defaultHandlers(this.systemCommands);
+        
+        this.workflowController = new WorkflowController();
+
+        this.sessionManager = new SessionManager({
             vfs: this.vfs,
             shell: this.shell,
             storeActions: this.storeActions,
-            workflowSession,
-            merkleEngine,
-            pluginHost
+            workflowSession: this.workflowSession,
+            merkleEngine: this.merkleEngine,
+            pluginHost: this.pluginHost
         });
-        sessionManager.session_init(sessionPath);
+        this.sessionManager.session_init(this.sessionPath);
 
-        const bootOrchestrator = new BootOrchestrator({
+        this.bootOrchestrator = new BootOrchestrator({
             vfs: this.vfs,
             shell: this.shell,
             storeActions: this.storeActions,
-            workflowAdapter,
-            workflowSession,
-            telemetryBus,
-            sessionManager,
-            adapter_update: () => {}, 
-            session_update: () => {}
+            workflowAdapter: this.workflowAdapter,
+            workflowSession: this.workflowSession,
+            telemetryBus: this.telemetryBus,
+            sessionManager: this.sessionManager,
+            adapter_update: (a) => { this.workflowAdapter = a; },
+            session_update: (s) => { this.workflowSession = s; }
         });
 
-        const llmProvider = new LLMProvider(
-            engine,
-            statusProvider,
-            searchProvider,
-            this.storeActions,
-            intentParser,
-            (msg, act, succ) => this.response_create(msg, act, succ, succ ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR),
-            (cmd) => this.command_execute(cmd),
-            {
-                status_emit: (m) => telemetryBus.emit({ type: 'status', message: m }),
-                log_emit: (m) => telemetryBus.emit({ type: 'log', message: m })
-            }
-        );
-
-        return {
-            searchProvider,
-            statusProvider,
-            llmProvider,
-            workflowAdapter,
-            workflowSession,
-            scripts,
-            intentParser,
-            pluginHost,
-            merkleEngine,
-            telemetryBus,
-            settingsService,
-            systemCommands,
-            workflowController,
-            sessionManager,
-            bootOrchestrator,
-            sessionPath,
-            engine
-        };
+        this.llmProvider = this.llmProvider_create();
     }
 
     // ─── Lifecycle & Boot ───────────────────────────────────────────────────

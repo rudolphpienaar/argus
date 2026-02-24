@@ -398,7 +398,13 @@ This project uses ES modules (`"type": "module"` in `package.json`). **NEVER** u
     ```
 *   **Lint Rule:** Consider enabling `@typescript-eslint/no-require-imports` to catch this automatically.
 
-### 5. Plugin Boundary: No Stage Imports from `src/plugins/*`
+### 5. Architectural Precedence Mandate
+**Deterministic filters MUST precede probabilistic interpretation.**
+*   **The Risk:** AI models are "greedy" interpreters. If an LLM is given the opportunity to see a natural-language request for guidance (e.g., "what's next?") or a system command (e.g., "/reset"), it may "steal" that intent and map it to a valid manifest command, triggering out-of-order execution errors.
+*   **The Rule:** The `command_execute` pipeline must prioritize deterministic matching (FastPath, Regex, Manual Handlers) over LLM-based intent compilation.
+*   **Enforcement:** This precedence must be hardcoded into the `IntentParser` or `CalypsoCore` loop and verified via ORACLE tests that assert `isModelResolved: false` for guidance commands.
+
+### 6. Plugin Boundary: No Stage Imports from `src/plugins/*`
 Plugins are runtime/domain modules and must remain UI-surface agnostic.
 *   **The Risk:** Importing `src/core/stages/*` or `src/core/logic/*` from plugins couples runtime logic to browser adapters/app orchestration and collapses SeaGaP boundaries.
 *   **The Rule:** Files under `src/plugins/` **MUST NOT** import from `src/core/stages/*` or `src/core/logic/*`.

@@ -1,9 +1,11 @@
 /**
  * @file Intent Parser
  *
- * Coordination layer for natural language interpretation. Delegating 
- * deterministic resolution to FastPathRouter and probabilistic 
- * resolution to LLMIntentCompiler.
+ * Coordination layer for natural language interpretation. Enforces the 
+ * "Precedence of Truth" by ensuring deterministic resolution (FastPath) 
+ * always precedes probabilistic resolution (LLM).
+ *
+ * Incorporates the IntentGuard to jail LLM vocabulary and validate output.
  *
  * @module lcarslm/routing/IntentParser
  */
@@ -13,20 +15,25 @@ import type { SearchProvider } from '../SearchProvider.js';
 import { LCARSEngine } from '../engine.js';
 import { FastPathRouter } from './FastPathRouter.js';
 import { LLMIntentCompiler } from './LLMIntentCompiler.js';
+import { IntentGuard } from './IntentGuard.js';
+
+export interface IntentParserContext {
+    activeStageId_get: () => string | null;
+    stage_forCommand: (cmd: string) => { id: string; commands: string[] } | null;
+    commands_list: () => string[];
+    systemCommands_list: () => string[];
+    readyCommands_list: () => string[];
+}
 
 export class IntentParser {
     private readonly fastPath: FastPathRouter;
     private readonly compiler: LLMIntentCompiler;
 
     constructor(
-        private searchProvider: SearchProvider,
-        private storeActions: CalypsoStoreActions,
-        private workflowContext?: {
-            activeStageId_get: () => string | null;
-            stage_forCommand: (cmd: string) => { id: string; commands: string[] } | null;
-            commands_list?: () => string[];
-            systemCommands_list?: () => string[];
-        }
+        private readonly searchProvider: SearchProvider,
+        private readonly storeActions: CalypsoStoreActions,
+        private readonly guard: IntentGuard,
+        private readonly workflowContext: IntentParserContext
     ) {
         this.fastPath = new FastPathRouter();
         this.compiler = new LLMIntentCompiler();
@@ -48,9 +55,10 @@ export class IntentParser {
         const groundedInput = this.inputGrounded_resolve(input);
 
         // 1. FAST PATH: Check for exact deterministic matches first.
+        // This is the Interceptor Pattern: deterministic truth ALWAYS precedes probability.
         const deterministic = this.fastPath.intent_resolve(groundedInput, {
             workflowCommands_resolve: () => this.workflowCommands_resolve(),
-            systemCommands_list: () => this.workflowContext?.systemCommands_list?.() || [],
+            systemCommands_list: () => this.workflowContext.systemCommands_list(),
             workflowHandles_status: () => this.workflowHandles_status()
         });
         if (deterministic) {
@@ -59,11 +67,7 @@ export class IntentParser {
 
         // 2. PRIMARY PATH: Delegate to LLM for "Noisy-to-Protocol" compilation
         if (model) {
-            return await this.compiler.compile(input, model, {
-                workflowCommands_resolve: () => this.workflowCommands_resolve(),
-                searchProvider: this.searchProvider,
-                storeActions: this.storeActions
-            });
+            return await this.probabilisticIntent_resolve(input, model);
         }
 
         // 3. FALLBACK: Return basic LLM intent for conversational input
@@ -72,6 +76,28 @@ export class IntentParser {
             raw: input,
             isModelResolved: false
         };
+    }
+
+    /**
+     * Perform probabilistic resolution using the LLM and the IntentGuard.
+     */
+    private async probabilisticIntent_resolve(input: string, model: LCARSEngine): Promise<CalypsoIntent> {
+        const allCommands = this.workflowCommands_resolve();
+        const readyCommands = this.workflowContext.readyCommands_list();
+
+        // v11.0: Vocabulary Jail
+        // We filter the commands presented to the model based on DAG readiness.
+        const jailedVocabulary = this.guard.vocabulary_jail(allCommands, readyCommands);
+
+        const intent = await this.compiler.compile(input, model, {
+            workflowCommands_resolve: () => jailedVocabulary,
+            searchProvider: this.searchProvider,
+            storeActions: this.storeActions
+        });
+
+        // v11.0: Output Validation
+        // We intercept the model's decision and verify it against the ready set.
+        return this.guard.intent_validate(intent, readyCommands);
     }
 
     /**
@@ -89,7 +115,6 @@ export class IntentParser {
      * Resolve whether the current workflow context handles the 'status' command.
      */
     private workflowHandles_status(): boolean {
-        if (!this.workflowContext) return false;
         const activeId = this.workflowContext.activeStageId_get();
         if (!activeId) return false;
 
@@ -101,14 +126,9 @@ export class IntentParser {
      * Resolve active workflow command verbs from the runtime workflow context.
      */
     private workflowCommands_resolve(): string[] {
-        if (!this.workflowContext?.commands_list) {
-            return [];
-        }
-
         const commandsRaw: string[] = this.workflowContext.commands_list();
         const commands: string[] = commandsRaw
             .map((cmd: string): string => cmd.trim().toLowerCase())
-            // v10.4: Allow compound commands (e.g. "show container", "python train.py")
             .filter((cmd: string): boolean => cmd.length > 0);
 
         return Array.from(new Set(commands));
@@ -121,7 +141,6 @@ export class IntentParser {
         const words = input.trim().split(/\s+/);
         if (words.length === 0) return input;
 
-        // v10.2: Never ground the first word (it's the verb/command).
         const verb = words[0].toLowerCase();
         if (verb === 'rename') return input;
 

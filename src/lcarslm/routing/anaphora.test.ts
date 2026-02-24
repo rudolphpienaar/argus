@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IntentParser } from './IntentParser.js';
+import { IntentGuard, IntentGuardMode } from './IntentGuard.js';
 import { SearchProvider } from '../SearchProvider.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
@@ -84,10 +85,13 @@ describe('Anaphora Resolution (Compiler Layer)', (): void => {
         const shell: Shell = new Shell(vfs, 'tester');
         store = storeActions_create();
         searchProvider = new SearchProvider(vfs, shell, store);
-        parser = new IntentParser(searchProvider, store, {
+        const guard = new IntentGuard({ mode: IntentGuardMode.EXPERIMENTAL });
+        parser = new IntentParser(searchProvider, store, guard, {
             activeStageId_get: () => null,
             stage_forCommand: () => null,
-            commands_list: () => ['search', 'add', 'gather', 'rename', 'harmonize', 'proceed']
+            commands_list: () => ['search', 'add', 'gather', 'rename', 'harmonize', 'proceed'],
+            systemCommands_list: () => [],
+            readyCommands_list: () => []
         });
     });
 

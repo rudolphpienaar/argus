@@ -44,6 +44,15 @@ To ensure the integrity of the scientific process over time, ARGUS utilizes a Me
 *   **Proof of Work:** Every artifact materialized by the `MerkleEngine` is a "Proof of Execution." The SHA-256 fingerprint anchors the artifact to its specific logic and its specific parentage in the workflow DAG.
 *   **Drift Detection:** If any upstream state is modified, the downstream fingerprints become invalid ($[STALE]$). This cryptographic grounding provides a mathematical guarantee that no model can be trained on inconsistent or outdated data, creating a hard safety gate that is immune to AI hallucination.
 
+== The Intent-Guard: Hardware-Enforced Honesty
+
+To prevent the "Intent Theft" problem where a sophisticated model might attempt to map natural language to a valid but out-of-order workflow command, ARGUS implements the `IntentGuard` middleware. This module enforces safety through two primary mechanisms:
+
+1.  **Vocabulary Jailing:** Before invoking the LLM, the `IntentGuard` filters the manifest command list to include only those stages currently marked as `READY` by the DAG Engine. By denying the model knowledge of future opcodes, we eliminate the primary surface for "Instructional Decay."
+2.  **Output Validation:** Any intent returned by the probabilistic compiler is intercepted and verified against the ready set. If the model attempts to return an unauthorized command, the `IntentGuard` downgrades the intent to `CONVERSATIONAL`.
+
+This "Jail and Intercept" pattern ensures that even in the presence of conversational drift, the system's deterministic core remains unbreachable. The guard is toggleable, allowing researchers to quantitatively measure the "Hallucination Delta" between strict and experimental modes.
+
 == Conclusion
 
 The ARGUS safety model provides a mathematically rigorous framework for embedding AI within high-stakes medical research environments. By grounding the conversational interface in a deterministic host virtual machine, we transform the AI from a decision-making authority into a high-fidelity mediator. This architecture ensures that scientific integrity is maintained through physical evidence and cryptographic proofs, rather than trusting the transient memory of a probabilistic model.

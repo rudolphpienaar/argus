@@ -5,6 +5,8 @@ import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import type { CalypsoStoreActions, AppState } from '../types.js';
 
+import { IntentGuard, IntentGuardMode } from './IntentGuard.js';
+
 function storeActions_mock(): CalypsoStoreActions {
     return {
         state_get: () => ({}),
@@ -31,12 +33,14 @@ function parser_create(commands: string[]): IntentParser {
     const vfs = new VirtualFileSystem('tester');
     const shell = new Shell(vfs, 'tester');
     const searchProvider = new SearchProvider(vfs, shell, storeActions_mock());
+    const guard = new IntentGuard({ mode: IntentGuardMode.EXPERIMENTAL });
     
-    return new IntentParser(searchProvider, storeActions_mock(), {
+    return new IntentParser(searchProvider, storeActions_mock(), guard, {
         activeStageId_get: () => 'train',
         stage_forCommand: (cmd) => ({ id: 'train', commands: ['python train.py', 'train'] }),
         commands_list: () => commands,
-        systemCommands_list: () => ['status', 'settings', 'workflows', 'version', 'reset', 'snapshot', 'state', 'session', 'help', 'key']
+        systemCommands_list: () => ['status', 'settings', 'workflows', 'version', 'reset', 'snapshot', 'state', 'session', 'help', 'key'],
+        readyCommands_list: () => commands
     });
 }
 

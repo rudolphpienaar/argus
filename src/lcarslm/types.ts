@@ -365,6 +365,12 @@ export interface CalypsoCoreConfig {
 
     /** Optional shared settings manager (user-scoped). */
     settingsService?: SettingsService;
+
+    /** 
+     * When true (default), enforces strict DAG-ready vocabulary for the AI. 
+     * Set to false for quantitative drift experiments.
+     */
+    enableIntentGuardrails?: boolean;
 }
 
 // ─── Store Actions Interface ───────────────────────────────────────────────

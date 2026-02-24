@@ -8,6 +8,8 @@ import type { AppState, Dataset, Project } from '../../core/models/types.js';
 import { DATASETS } from '../../core/data/datasets.js';
 import { LCARSEngine } from '../engine.js';
 
+import { IntentGuard, IntentGuardMode } from './IntentGuard.js';
+
 function storeActions_create(activeProject: { id: string; name: string } | null): CalypsoStoreActions {
     const state: Partial<AppState> = {
         activeProject: activeProject
@@ -76,8 +78,10 @@ function storeActions_create(activeProject: { id: string; name: string } | null)
 function parser_create(activeProject: { id: string; name: string } | null = null): IntentParser {
     const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
     const shell: Shell = new Shell(vfs, 'tester');
-    const searchProvider: SearchProvider = new SearchProvider(vfs, shell);
-    return new IntentParser(searchProvider, storeActions_create(activeProject), {
+    const searchProvider: SearchProvider = new SearchProvider(vfs, shell, storeActions_create(activeProject));
+    const guard = new IntentGuard({ mode: IntentGuardMode.EXPERIMENTAL });
+    
+    return new IntentParser(searchProvider, storeActions_create(activeProject), guard, {
         activeStageId_get: () => null,
         stage_forCommand: () => null,
         commands_list: () => [
@@ -85,7 +89,9 @@ function parser_create(activeProject: { id: string; name: string } | null = null
             'proceed', 'code', 'python', 'train', 'federate',
             'transcompile', 'containerize', 'publish-config', 'publish-execute',
             'show', 'config', 'dispatch', 'status', 'publish'
-        ]
+        ],
+        systemCommands_list: () => ['status', 'settings', 'workflows', 'version', 'reset', 'snapshot', 'state', 'session', 'help', 'key'],
+        readyCommands_list: () => []
     });
 }
 

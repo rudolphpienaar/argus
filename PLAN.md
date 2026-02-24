@@ -1,72 +1,66 @@
 # ARGUS Engineering Plan: The IAS Purity Refactor (Complete)
 
-**Objective:** Transform `CalypsoCore` into a pure, domain-agnostic execution kernel and dissolve the `FederationOrchestrator` pattern. (COMPLETED v11.0.5)
+**Objective:** Transform `CalypsoCore` into a pure, domain-agnostic execution kernel. (COMPLETED v11.0.5)
 
 ---
 
 # ARGUS Engineering Plan: Early Pipeline Gate Hardening (Complete)
 
-**Objective:** Refactor the early FedML pipeline to include explicit "Readiness" and "Collection" gates, using structural plugins to materialize causal checkpoints. (COMPLETED v11.0.8)
+**Objective:** Refactor the early FedML pipeline to include explicit "Readiness" and "Collection" gates. (COMPLETED v11.0.8)
 
 ---
 
 # ARGUS Engineering Plan: God-Object Modularization (Complete)
 
-**Objective:** Decompose oversized modules and methods identified in the v11.0.8 audit to ensure long-term maintainability and single-responsibility compliance. (COMPLETED v11.0.9)
+**Objective:** Decompose oversized modules and methods. (COMPLETED v11.0.9)
 
-## 1. Workflow Visualization Extraction
-**Goal:** Move `dag_render` logic out of `WorkflowAdapter` into a dedicated visualization engine.
+---
 
-- [x] **Create `src/dag/visualizer/DagRenderer.ts`**:
-    - [x] Implement `DagRenderer` class.
-    - [x] Move `Tree`, `Compact`, and `Box` rendering logic.
-- [x] **Update `WorkflowAdapter.ts`**:
-    - [x] Delegate `dag_render` to the new engine.
-- [x] **Verify**:
-    - [x] Run `bridge.test.ts` to ensure DAG visuals are identical.
+# ARGUS Engineering Plan: Intent-Guard Hardening (The "Drift-Ready" Core)
 
-## 2. Intent Router Separation
-**Goal:** Split `IntentParser` into deterministic and probabilistic modules.
+**Objective:** Implement a fundamental, toggleable "Intent Guardrail" system to prevent hallucination-driven stage jumping and enable quantitative drift experiments.
 
-- [x] **Create `src/lcarslm/routing/FastPathRouter.ts`**:
-    - [x] Move regex and exact-phrase matching logic.
-- [x] **Create `src/lcarslm/routing/LLMIntentCompiler.ts`**:
-    - [x] Move prompt construction and JSON result parsing.
-- [x] **Update `IntentParser.ts`**:
-    - [x] Delegate resolution to the new components.
-- [x] **Verify**:
-    - [x] Run `IntentParser.test.ts` and `IntentParser.compound.test.ts`.
+## 1. The IntentGuard Module
+**Goal:** Centralize vocabulary jailing and output validation.
 
-## 3. Kernel Dependency Injection
-**Goal:** Simplify the `CalypsoCore` constructor by using a Factory pattern.
+- [ ] **Create `src/lcarslm/routing/IntentGuard.ts`**:
+    - [ ] Implement `IntentGuard` class with `STRICT` and `EXPERIMENTAL` modes.
+    - [ ] Implement `vocabulary_jail()`: Restrict LLM visibility to DAG-ready commands only.
+    - [ ] Implement `intent_validate()`: Downgrade unauthorized intents to `conversational`.
+- [ ] **Verify**:
+    - [ ] Add `IntentGuard.test.ts` to verify mode-switching and filtering.
 
-- [x] **Create `src/lcarslm/CalypsoFactory.ts`**:
-    - [x] Implement wiring logic for all kernel services.
-- [x] **Update `CalypsoCore.ts`**:
-    - [x] Simplify constructor using synchronous bag assembly.
-- [x] **Verify**:
-    - [x] Run `CalypsoCore.test.ts`.
+## 2. IntentParser Interceptor Refactor
+**Goal:** Encapsulate precedence so it cannot be broken by code reordering.
 
-## 4. Registry Hardening (S-Tier)
-**Goal:** Refactor `SystemCommandRegistry` to use a disciplined enum-driven factory pattern.
+- [ ] **Update `IntentParser.ts`**:
+    - [ ] Hide `LLMIntentCompiler` behind a protected method.
+    - [ ] Force `FastPathRouter` check before any LLM invocation.
+    - [ ] Integrate `IntentGuard` into the compiler loop.
+- [ ] **Verify**:
+    - [ ] Ensure unit tests pass with `STRICT=true`.
 
-- [x] **Define `SystemCommand` Enum**: Model all OS-level verbs.
-- [x] **Decompose Handlers**: Move each registration into its own typed method in `SystemCommandHandlers`.
-- [x] **Implement Factory**: Create `SystemCommandFactory` to loop across enums and dispatch to the registry.
-- [x] **Verify**:
-    - [x] Run `CalypsoCore.test.ts` (all green).
+## 3. Kernel Integration & Toggle
+**Goal:** Expose guardrail mode as a first-class configuration.
 
-## 5. Manifest RAG Grounding
-**Goal:** Fix conversational drift by providing the LLM with the full manifest context for the active stage.
+- [ ] **Update `CalypsoCoreConfig`**:
+    - [ ] Add `enableIntentGuardrails` flag.
+- [ ] **Update `CalypsoFactory.ts`**:
+    - [ ] Wire the flag to the `CALYPSO_STRICT` environment variable.
+- [ ] **Verify**:
+    - [ ] Run ORACLE tests in both modes to measure baseline drift.
 
-- [x] **Update `StatusProvider.ts`**:
-    - [x] Refactor `workflowContext_generate` to include exhaustive manifest metadata (instruction, commands, blueprint) for the active stage.
-- [x] **Verify**:
-    - [x] Run `CalypsoCore.test.ts`.
+## 4. Documentation & Style Hardening
+**Goal:** Codify the "Precedence of Truth" mandate.
+
+- [ ] **Update `TYPESCRIPT-STYLE-GUIDE.md`**:
+    - [ ] Add "Architectural Precedence Mandate": Deterministic filters MUST precede probabilistic interpretation.
+- [ ] **Update `docs/agentic-safety.adoc`**:
+    - [ ] Formalize the `IntentGuard` as a core safety primitive.
 
 ---
 
 ## Validation Strategy
-- **Visual Parity:** Ensure DAG ASCII output remains unchanged.
-- [x] **Regression Testing:** Full ORACLE suite run after each refactor.
-- [x] **RPN Compliance:** Maintain naming standards in new classes.
+- **Path Assertion:** New tests to check `isModelResolved` status.
+- **Zero-Shot Regression:** Run full ORACLE suite.
+- **Experimental Baseline:** Document drift metrics with Guardrails OFF.

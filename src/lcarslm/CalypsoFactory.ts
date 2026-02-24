@@ -30,6 +30,7 @@ import { SystemCommandRegistry, register_defaultHandlers } from './routing/Syste
 import { WorkflowController } from './routing/WorkflowController.js';
 import { SessionManager } from './SessionManager.js';
 import { BootOrchestrator } from './BootOrchestrator.js';
+import { IntentGuard, IntentGuardMode } from './routing/IntentGuard.js';
 
 /**
  * Container for all pre-wired Calypso services.
@@ -52,6 +53,7 @@ export interface CalypsoServiceBag {
     bootOrchestrator: BootOrchestrator;
     sessionPath: string;
     engine: LCARSEngine | null;
+    intentGuard: IntentGuard;
 }
 
 /**
@@ -82,10 +84,19 @@ export async function calypso_assemble(
     
     const workflowSession = new WorkflowSession(vfs, workflowAdapter, sessionPath);
 
-    const intentParser = new IntentParser(searchProvider, storeActions, {
+    // v11.0: Initialize Intent Guard
+    // Mode is derived from config or environment toggle
+    const guardMode = (config.enableIntentGuardrails !== false) 
+        ? IntentGuardMode.STRICT 
+        : IntentGuardMode.EXPERIMENTAL;
+    const intentGuard = new IntentGuard({ mode: guardMode });
+
+    const intentParser = new IntentParser(searchProvider, storeActions, intentGuard, {
         activeStageId_get: () => workflowSession.activeStageId_get(),
         stage_forCommand: (cmd) => workflowAdapter.stage_forCommand(cmd),
-        commands_list: () => workflowAdapter.commandVerbs_list()
+        commands_list: () => workflowAdapter.commandVerbs_list(),
+        systemCommands_list: () => systemCommands.commands_list(),
+        readyCommands_list: () => workflowAdapter.position_resolve(vfs, sessionPath).availableCommands
     });
 
     const pluginHost = new PluginHost(
@@ -129,8 +140,8 @@ export async function calypso_assemble(
         workflowSession,
         telemetryBus,
         sessionManager,
-        adapter_update: () => {}, // Handled by host instance
-        session_update: () => {}  // Handled by host instance
+        adapter_update: () => {}, 
+        session_update: () => {}
     });
 
     const llmProvider = new LLMProvider(
@@ -143,7 +154,7 @@ export async function calypso_assemble(
             message: msg, 
             actions: act, 
             success: succ, 
-            statusCode: 0 // Placeholder
+            statusCode: 0 
         } as any),
         commandExecutor,
         {
@@ -169,7 +180,8 @@ export async function calypso_assemble(
         sessionManager,
         bootOrchestrator,
         sessionPath,
-        engine
+        engine,
+        intentGuard
     };
 }
 
