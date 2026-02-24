@@ -69,22 +69,54 @@ export class StatusProvider {
 
     /**
      * Build system context for LLM awareness.
+     * 
+     * This functions as the 'Grounded Context' (RAG) that anchors the LLM
+     * in the physical reality of the VFS and the manifest contract.
      */
     public workflowContext_generate(sessionPath: string): string {
         const pos: WorkflowPosition = this.adapter.position_resolve(this.vfs, sessionPath);
         const datasets: Dataset[] = this.store.datasets_getSelected();
         const activeProject: { id: string; name: string } | null = this.store.project_getActive();
+        const header = (this.adapter.dag.header as any);
 
-        let context: string = `--- SYSTEM CONTEXT ---\n`;
-        context += `Current User: ${this.vfs.username_get()}\n`;
-        context += `Working Directory: ${this.vfs.cwd_get()}\n`;
-        context += `Active Project: ${activeProject ? activeProject.name : 'None'}\n`;
+        let context: string = `--- SYSTEM TRUTH (VFS & STORE) ---\n`;
+        context += `User: ${this.vfs.username_get()}\n`;
+        context += `CWD: ${this.vfs.cwd_get()}\n`;
+        context += `Project: ${activeProject ? activeProject.name : 'None'}\n`;
         context += `Selected Datasets: ${datasets.length} (${datasets.map((d: Dataset) => d.id).join(', ')})\n`;
-        context += `\n--- WORKFLOW POSITION ---\n`;
-        context += `Workflow: ${this.adapter.workflowId}\n`;
+        
+        context += `\n--- MANIFEST CONTRACT ---\n`;
+        context += `Workflow ID: ${this.adapter.workflowId}\n`;
+        context += `Name: ${header.name}\n`;
+        context += `Persona: ${header.persona}\n`;
+        context += `Description: ${header.description}\n`;
+
+        context += `\n--- WORKFLOW PROGRESS ---\n`;
         context += `Completed Stages: ${pos.completedStages.join(', ') || 'None'}\n`;
-        context += `Current Stage: ${pos.currentStage?.id || 'Complete'}\n`;
-        context += `Ready for: ${pos.availableCommands.join(', ')}\n`;
+        
+        const readyStages = pos.allReadiness
+            .filter(r => r.ready && !r.complete)
+            .map(r => r.nodeId);
+        context += `Ready Stages: ${readyStages.join(', ')}\n`;
+
+        if (pos.currentStage) {
+            const stage = pos.currentStage;
+            context += `\n--- ACTIVE STAGE: [${stage.id.toUpperCase()}] ---\n`;
+            context += `Name: ${stage.name}\n`;
+            context += `Phase: ${stage.phase || 'N/A'}\n`;
+            context += `Instruction: ${stage.instruction}\n`;
+            context += `Available Commands: ${stage.commands.join(', ')}\n`;
+            
+            if (stage.narrative) {
+                context += `Narrative Context: ${stage.narrative}\n`;
+            }
+            if (stage.blueprint && stage.blueprint.length > 0) {
+                context += `Execution Blueprint:\n`;
+                stage.blueprint.forEach(line => context += `  • ${line}\n`);
+            }
+        } else if (pos.isComplete) {
+            context += `\n--- STATUS: WORKFLOW COMPLETE ---\n`;
+        }
 
         return context;
     }

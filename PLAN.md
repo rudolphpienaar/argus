@@ -56,6 +56,14 @@
 - [x] **Verify**:
     - [x] Run `CalypsoCore.test.ts` (all green).
 
+## 5. Manifest RAG Grounding
+**Goal:** Fix conversational drift by providing the LLM with the full manifest context for the active stage.
+
+- [x] **Update `StatusProvider.ts`**:
+    - [x] Refactor `workflowContext_generate` to include exhaustive manifest metadata (instruction, commands, blueprint) for the active stage.
+- [x] **Verify**:
+    - [x] Run `CalypsoCore.test.ts`.
+
 ---
 
 ## Validation Strategy
