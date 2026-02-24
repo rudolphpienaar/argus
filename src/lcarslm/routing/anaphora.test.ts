@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { IntentParser } from './IntentParser.js';
-import { IntentGuard, IntentGuardMode } from './IntentGuard.js';
+import { IntentParser } from '../kernel/IntentParser.js';
+import { IntentGuard, IntentGuardMode } from '../kernel/IntentGuard.js';
 import { SearchProvider } from '../SearchProvider.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import type { CalypsoStoreActions, QueryResponse } from '../types.js';
 import type { AppState, Dataset, Project } from '../../core/models/types.js';
-import { LCARSEngine } from '../engine.js';
+import { LCARSEngine } from '../kernel/LCARSEngine.js';
 import { DATASETS } from '../../core/data/datasets.js';
 
 function storeActions_create(): CalypsoStoreActions {

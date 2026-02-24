@@ -7,12 +7,12 @@
  * @module
  */
 
-import { OpenAIClient } from './client.js';
-import { GeminiClient } from './gemini.js';
-import type { ChatMessage, QueryResponse, LCARSSystemConfig } from './types.js';
-import { DATASETS } from '../core/data/datasets.js';
-import { MOCK_PROJECTS } from '../core/data/projects.js';
-import type { Dataset, Project } from '../core/models/types.js';
+import { OpenAIClient } from '../client.js';
+import { GeminiClient } from '../gemini.js';
+import type { ChatMessage, QueryResponse, LCARSSystemConfig } from '../types.js';
+import { DATASETS } from '../../core/data/datasets.js';
+import { MOCK_PROJECTS } from '../../core/data/projects.js';
+import type { Dataset, Project } from '../../core/models/types.js';
 
 /**
  * Engine for the LCARS Language Model integration.
@@ -75,7 +75,8 @@ The context provided to you contains a JSON list of available datasets. Use this
         userText: string,
         selectedIds: string[] = [],
         isSoftVoice: boolean = false,
-        workflowContext?: string
+        workflowContext?: string,
+        options: { bypassContext?: boolean } = {}
     ): Promise<QueryResponse> {
         // 1. Check for System Commands
         if (userText.toLowerCase().trim() === 'listmodels') {
@@ -88,6 +89,16 @@ The context provided to you contains a JSON list of available datasets. Use this
 
         if (!this.client) {
             throw new Error('AI CORE OFFLINE: No LLM provider configured.');
+        }
+
+        // v12.0: NULL HYPOTHESIS BYPASS
+        if (options.bypassContext) {
+            const messages: ChatMessage[] = [
+                { role: 'system', content: this.systemPrompt },
+                { role: 'user', content: userText }
+            ];
+            const answer = await this.client.query(messages);
+            return { answer, relevantDatasets: [] };
         }
 
         // 3. Real LLM Path (Retrieval Augmented Generation)

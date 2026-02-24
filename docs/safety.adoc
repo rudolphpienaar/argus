@@ -1,0 +1,77 @@
+= ARGUS Safety Foundations: The Math of Agentic Integrity
+:author: ATLAS Project Team
+:revdate: 2026-02-23
+:revnumber: 12.0.0
+:toc: macro
+:toclevels: 3
+:sectnums:
+
+toc::[]
+
+== Abstract
+
+This document provides the formal mathematical and architectural foundations for the ARGUS safety model. It analyzes the "Irreducible Hallucination" problem inherent in probabilistic AI systems and provides a proof for the necessity of the **Intent-Action-State (IAS)** separation. 
+
+Starting with v12.0.0, ARGUS moves beyond "Static Safety" to an **Instrumented CNS (Central Nervous System)** architecture. By implementing a toggleable **"Null Hypothesis" (Structural Bypass)**, ARGUS functions as a scientific instrument capable of quantitatively measuring LLM drift and instructional decay against a deterministic baseline.
+
+== The Irreducible Hallucination Problem: Probabilities vs. States
+
+The core of the safety challenge lies in the fundamental difference between probabilistic token prediction and deterministic state transformation.
+
+*   **The Multiplication of Error:** Let $P(s)$ be the probability that an AI correctly executes a single step in a workflow. For a sequence of $n$ autonomous steps, the total reliability is $P(s)^n$. As $n$ increases, the probability of a "Session Drift" approach 1.0, regardless of how high $P(s)$ is.
+*   **The Truth Gap:** An AI can "believe" it has performed an action (e.g., "I have harmonized the data") because it generated the text describing the success. However, without a deterministic feedback loop from the environment, there is no mechanism to verify the claim.
+
+== The CNS Architecture: Precedence of Truth
+
+Safety in ARGUS is enforced by the **Precedence of Truth**, a structural ordering of the execution pipeline that ensures deterministic filters always intercept user intent before probabilistic models can "steal" it.
+
+=== The Interceptor Pattern
+A Sophisticated model is a "Greedy Interpreter." If given the opportunity to see a natural-language request for guidance (e.g., "what's next?") or a system command (e.g., "/reset"), it may map that intent to a valid but out-of-order manifest command, triggering prerequisite failures.
+
+The ARGUS CNS (Central Nervous System) solves this via an **Encapsulated Interceptor**:
+1.  **Deterministic Guidance:** Regex-based matching for status and progress.
+2.  **FastPath Router:** Exact match resolution for system verbs and manifest phrases.
+3.  **Probabilistic Compiler:** Only reachable if the first two layers fail.
+
+== The Intent-Guard: Vocabulary Jailing
+
+To prevent "Instructional Decay," ARGUS implements an **IntentGuard** that makes the LLM a "prisoner of the DAG."
+
+1.  **Vocabulary Jailing:** Before invoking the LLM, the CNS filters the manifest command list to include *only* those stages currently marked as `READY` by the DAG Engine. The AI is denied knowledge of future opcodes, eliminating the surface area for stage-jumping.
+2.  **Output Validation:** Any intent returned by the AI is verified against the ready set. If the model attempts to return an unauthorized command, the CNS downgrades the intent to `CONVERSATIONAL`.
+
+== Instrumentation: The Null Hypothesis (Measuring Drift)
+
+The primary innovation of v12.0.0 is the transformation of ARGUS into a **Telescope for Drift**. By building structural bypasses into the CNS, researchers can measure the "Hallucination Gap" between raw AI and guarded architecture.
+
+[cols="1,3,2"]
+|===
+| Mode | Description | Lenses On
+
+| `STRICT`
+| Production-grade safety. Hallucination-prevention active.
+| FastPath, RAG, Anaphora, Guardrails.
+
+| `EXPERIMENTAL`
+| Drift Lite. Measures how the model behaves when it is "helped" by RAG but not blocked by Guardrails.
+| FastPath, RAG, Anaphora.
+
+| `NULL_HYPOTHESIS`
+| **The Raw Light.** Total structural bypass. Measures the pure model drift.
+| None.
+|===
+
+=== Why the "Null Hypothesis" Matters
+In `NULL_HYPOTHESIS` mode, we intentionally disable:
+*   **Prompt RAG:** No stage instructions or blueprints are injected. The AI must rely on conversation history.
+*   **Anaphora Grounding:** No pre-processing of "this" or "it." The AI must perform entity linking.
+*   **FastPath:** The AI sees every command first.
+
+This allows for the quantitative calculation of the **"Safety Multiplier"**—the mathematical proof of how much the ARGUS architecture improves the reliability of the underlying model.
+
+== Conclusion
+
+Safety in ARGUS is not a property of better prompting, but a property of **Better Physics**. By grounding the CNS in a deterministic Host VM and providing the instrumentation to measure the failures of the edge, we create a system where scientific integrity is maintained through physical evidence rather than linguistic trust.
+
+---
+_Last updated: 2026-02-23 (v12.0.0)_

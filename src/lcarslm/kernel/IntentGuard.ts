@@ -10,7 +10,7 @@
  * @module lcarslm/routing/IntentGuard
  */
 
-import { CalypsoStatusCode, type CalypsoIntent } from '../types.js';
+import { CalypsoStatusCode, type CalypsoIntent } from '../../types.js';
 
 /**
  * Operational mode for the Intent Guard.

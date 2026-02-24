@@ -371,6 +371,12 @@ export interface CalypsoCoreConfig {
      * Set to false for quantitative drift experiments.
      */
     enableIntentGuardrails?: boolean;
+
+    /**
+     * Operational mode for the Central Nervous System (CNS).
+     * Controls the degree of deterministic anchoring and context injection.
+     */
+    mode?: 'strict' | 'experimental' | 'null_hypothesis';
 }
 
 // ─── Store Actions Interface ───────────────────────────────────────────────

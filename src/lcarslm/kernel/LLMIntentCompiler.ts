@@ -7,9 +7,9 @@
  * @module lcarslm/routing/LLMIntentCompiler
  */
 
-import type { CalypsoIntent, CalypsoAction, CalypsoStoreActions } from '../types.js';
-import type { LCARSEngine } from '../engine.js';
-import type { SearchProvider } from '../SearchProvider.js';
+import type { CalypsoIntent, CalypsoAction, CalypsoStoreActions } from '../../types.js';
+import type { LCARSEngine } from './LCARSEngine.js';
+import type { SearchProvider } from '../../SearchProvider.js';
 import type { Dataset } from '../../core/models/types.js';
 
 interface ModelIntentPayload {

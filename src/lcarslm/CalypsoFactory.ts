@@ -9,16 +9,16 @@
 
 import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import type { Shell } from '../vfs/Shell.js';
-import { LCARSEngine } from './engine.js';
+import { LCARSEngine } from './kernel/LCARSEngine.js';
 import type { 
     CalypsoCoreConfig, 
     CalypsoStoreActions, 
     CalypsoResponse 
 } from './types.js';
 import { SearchProvider } from './SearchProvider.js';
-import { StatusProvider } from './StatusProvider.js';
+import { StatusProvider } from './kernel/StatusProvider.js';
 import { LLMProvider } from './LLMProvider.js';
-import { IntentParser } from './routing/IntentParser.js';
+import { IntentParser } from './kernel/IntentParser.js';
 import { PluginHost } from './PluginHost.js';
 import { TelemetryBus } from './TelemetryBus.js';
 import { MerkleEngine } from './MerkleEngine.js';
@@ -30,7 +30,8 @@ import { SystemCommandRegistry, register_defaultHandlers } from './routing/Syste
 import { WorkflowController } from './routing/WorkflowController.js';
 import { SessionManager } from './SessionManager.js';
 import { BootOrchestrator } from './BootOrchestrator.js';
-import { IntentGuard, IntentGuardMode } from './routing/IntentGuard.js';
+import { IntentGuard, IntentGuardMode } from './kernel/IntentGuard.js';
+import { CalypsoKernel, CalypsoOperationMode } from './kernel/CalypsoKernel.js';
 
 /**
  * Container for all pre-wired Calypso services.
@@ -54,6 +55,7 @@ export interface CalypsoServiceBag {
     sessionPath: string;
     engine: LCARSEngine | null;
     intentGuard: IntentGuard;
+    kernel: CalypsoKernel;
 }
 
 /**
@@ -91,13 +93,27 @@ export async function calypso_assemble(
         : IntentGuardMode.EXPERIMENTAL;
     const intentGuard = new IntentGuard({ mode: guardMode });
 
-    const intentParser = new IntentParser(searchProvider, storeActions, intentGuard, {
+    const parserContext = {
         activeStageId_get: () => workflowSession.activeStageId_get(),
-        stage_forCommand: (cmd) => workflowAdapter.stage_forCommand(cmd),
+        stage_forCommand: (cmd: string) => workflowAdapter.stage_forCommand(cmd),
         commands_list: () => workflowAdapter.commandVerbs_list(),
         systemCommands_list: () => systemCommands.commands_list(),
-        readyCommands_list: () => workflowAdapter.position_resolve(vfs, sessionPath).availableCommands
-    });
+        readyCommands_list: () => workflowAdapter.position_resolve(vfs, sessionPath).availableCommands,
+        vfs,
+        workflowAdapter
+    };
+
+    const intentParser = new IntentParser(searchProvider, storeActions, intentGuard, parserContext);
+
+    // v11.0: The Central Nervous System
+    const kernelMode = (config.mode as CalypsoOperationMode) || CalypsoOperationMode.STRICT;
+    const kernel = new CalypsoKernel(
+        engine,
+        searchProvider,
+        storeActions,
+        parserContext,
+        { mode: kernelMode }
+    );
 
     const pluginHost = new PluginHost(
         vfs, 
@@ -181,7 +197,8 @@ export async function calypso_assemble(
         bootOrchestrator,
         sessionPath,
         engine,
-        intentGuard
+        intentGuard,
+        kernel
     };
 }
 

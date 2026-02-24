@@ -91,19 +91,21 @@ function storeActions_create(): CalypsoStoreActions {
     };
 }
 
-function fixture_create(): CoreFixture {
+async function fixture_create(): Promise<CoreFixture> {
     const vfs: VirtualFileSystem = new VirtualFileSystem('tester');
     const shell: Shell = new Shell(vfs, 'tester');
     const storeActions: CalypsoStoreActions = storeActions_create();
     const core: CalypsoCore = new CalypsoCore(vfs, shell, storeActions, {
         settingsService: new SettingsService()
     });
+    await core.boot();
+    await core.workflow_set('fedml');
     return { core };
 }
 
 describe('CalypsoCore', (): void => {
     it('returns OK for empty command input', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
         const response: CalypsoResponse = await fixture.core.command_execute('   ');
 
         expect(response.statusCode).toBe(CalypsoStatusCode.OK);
@@ -112,7 +114,7 @@ describe('CalypsoCore', (): void => {
     });
 
     it('handles special commands via fast path', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
 
         const helpResponse: CalypsoResponse = await fixture.core.command_execute('/help');
         expect(helpResponse.statusCode).toBe(CalypsoStatusCode.OK);
@@ -134,7 +136,7 @@ describe('CalypsoCore', (): void => {
     });
 
     it('returns ERROR for unknown special command', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
         const response: CalypsoResponse = await fixture.core.command_execute('/does-not-exist');
 
         expect(response.statusCode).toBe(CalypsoStatusCode.ERROR);
@@ -143,7 +145,7 @@ describe('CalypsoCore', (): void => {
     });
 
     it('exposes deterministic helpers for prompt, workflows, and tab completion', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
 
         expect(fixture.core.prompt_get().length).toBeGreaterThan(0);
         expect(fixture.core.workflows_available().length).toBeGreaterThan(0);
@@ -164,7 +166,7 @@ describe('CalypsoCore', (): void => {
         }
 
         try {
-            const fixture: CoreFixture = fixture_create();
+            const fixture: CoreFixture = await fixture_create();
 
             await fixture.core.command_execute('search histology');
             await fixture.core.command_execute('add ds-006');
@@ -185,7 +187,7 @@ describe('CalypsoCore', (): void => {
     });
 
     it('materializes gather datasets directly at stage root without training/validation wrappers', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
 
         await fixture.core.command_execute('search histology');
         await fixture.core.command_execute('add ds-006');
@@ -200,14 +202,14 @@ describe('CalypsoCore', (): void => {
     });
 
     it('does not globally jump on ambiguous workflow base verbs', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
 
         const response: CalypsoResponse = await fixture.core.command_execute('show');
         expect(response.statusCode).toBe(CalypsoStatusCode.CONVERSATIONAL);
     });
 
     it('routes conversational workflow-graph requests deterministically to dag show', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
         await fixture.core.command_execute('search histology');
         await fixture.core.command_execute('add ds-006');
         await fixture.core.command_execute('gather');
@@ -219,7 +221,7 @@ describe('CalypsoCore', (): void => {
     });
 
     it('supports user-scoped /settings for conversational width', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
 
         const showDefault: CalypsoResponse = await fixture.core.command_execute('/settings show');
         expect(showDefault.statusCode).toBe(CalypsoStatusCode.OK);
@@ -236,7 +238,7 @@ describe('CalypsoCore', (): void => {
     });
 
     it('emits conversational width hint for conversational responses', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
         await fixture.core.command_execute('/settings set convo_width 74');
 
         const response: CalypsoResponse = await fixture.core.command_execute('/greet tester');
@@ -245,7 +247,7 @@ describe('CalypsoCore', (): void => {
     });
 
     it('emits boot telemetry with phase and monotonic sequence per phase', async (): Promise<void> => {
-        const fixture: CoreFixture = fixture_create();
+        const fixture: CoreFixture = await fixture_create();
         const events: BootLogEvent[] = [];
         const unsubscribe: () => void = fixture.core.telemetry_subscribe((event: TelemetryEvent): void => {
             if (event.type === 'boot_log') {

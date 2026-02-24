@@ -10,9 +10,9 @@
  * @module lcarslm/routing/IntentParser
  */
 
-import type { CalypsoAction, CalypsoIntent, CalypsoStoreActions } from '../types.js';
-import type { SearchProvider } from '../SearchProvider.js';
-import { LCARSEngine } from '../engine.js';
+import type { CalypsoAction, CalypsoIntent, CalypsoStoreActions } from '../../types.js';
+import type { SearchProvider } from '../../SearchProvider.js';
+import { LCARSEngine } from './LCARSEngine.js';
 import { FastPathRouter } from './FastPathRouter.js';
 import { LLMIntentCompiler } from './LLMIntentCompiler.js';
 import { IntentGuard } from './IntentGuard.js';
@@ -23,6 +23,7 @@ export interface IntentParserContext {
     commands_list: () => string[];
     systemCommands_list: () => string[];
     readyCommands_list: () => string[];
+    workflow_nextStep?: () => string;
 }
 
 export class IntentParser {
@@ -33,7 +34,8 @@ export class IntentParser {
         private readonly searchProvider: SearchProvider,
         private readonly storeActions: CalypsoStoreActions,
         private readonly guard: IntentGuard,
-        private readonly workflowContext: IntentParserContext
+        private readonly workflowContext: IntentParserContext,
+        private readonly options: { bypassAnaphora?: boolean } = {}
     ) {
         this.fastPath = new FastPathRouter();
         this.compiler = new LLMIntentCompiler();
@@ -52,7 +54,8 @@ export class IntentParser {
      */
     public async intent_resolve(input: string, model?: LCARSEngine | null): Promise<CalypsoIntent> {
         // v10.2: GROUNDED PRE-PROCESSING (Anaphora Resolution)
-        const groundedInput = this.inputGrounded_resolve(input);
+        // v12.0: Bypassed in NULL_HYPOTHESIS mode
+        const groundedInput = this.options.bypassAnaphora ? input : this.inputGrounded_resolve(input);
 
         // 1. FAST PATH: Check for exact deterministic matches first.
         // This is the Interceptor Pattern: deterministic truth ALWAYS precedes probability.

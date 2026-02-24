@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { IntentParser } from './IntentParser.js';
+import { IntentParser } from '../kernel/IntentParser.js';
 import { SearchProvider } from '../SearchProvider.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import type { CalypsoStoreActions, CalypsoAction, QueryResponse } from '../types.js';
 import type { AppState, Dataset, Project } from '../../core/models/types.js';
 import { DATASETS } from '../../core/data/datasets.js';
-import { LCARSEngine } from '../engine.js';
+import { LCARSEngine } from '../kernel/LCARSEngine.js';
 
-import { IntentGuard, IntentGuardMode } from './IntentGuard.js';
+import { IntentGuard, IntentGuardMode } from '../kernel/IntentGuard.js';
 
 function storeActions_create(activeProject: { id: string; name: string } | null): CalypsoStoreActions {
     const state: Partial<AppState> = {

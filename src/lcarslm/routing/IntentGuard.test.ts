@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { IntentGuard, IntentGuardMode } from './IntentGuard.js';
+import { IntentGuard, IntentGuardMode } from '../kernel/IntentGuard.js';
 import { CalypsoStatusCode } from '../types.js';
 
 describe('IntentGuard', () => {

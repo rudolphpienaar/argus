@@ -6,12 +6,12 @@
  * @module lcarslm/status
  */
 
-import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
-import type { CalypsoStoreActions } from './types.js';
-import { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
-import { VERSION } from '../generated/version.js';
-import type { Dataset, Project } from '../core/models/types.js';
-import type { WorkflowPosition } from '../dag/graph/types.js';
+import type { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
+import type { CalypsoStoreActions } from '../types.js';
+import { WorkflowAdapter } from '../../dag/bridge/WorkflowAdapter.js';
+import { VERSION } from '../../generated/version.js';
+import type { Dataset, Project } from '../../core/models/types.js';
+import type { WorkflowPosition } from '../../dag/graph/types.js';
 
 /**
  * Provider for system status and workflow context.

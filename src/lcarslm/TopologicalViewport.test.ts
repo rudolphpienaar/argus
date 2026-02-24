@@ -20,6 +20,8 @@ describe('Topological Viewport: Search -> Gather Convergence', () => {
         core = new CalypsoCore(vfs, shell, storeAdapter, {
             workflowId: 'fedml'
         });
+        await core.boot();
+        await core.workflow_set('fedml');
     });
 
     it('should materialize data in gather/output and project it to scratch', async () => {
@@ -32,7 +34,7 @@ describe('Topological Viewport: Search -> Gather Convergence', () => {
         // 3. Gather (to close the stage and anchor the viewport)
         await core.command_execute('gather');
         
-        const state: any = store.state;
+        const state: any = core.store_snapshot();
         const sessionId = state.currentSessionId;
         const projectName = state.activeProject.name;
         

@@ -7,11 +7,11 @@
  * @module lcarslm/llm
  */
 
-import type { LCARSEngine } from './engine.js';
-import type { StatusProvider } from './StatusProvider.js';
+import type { LCARSEngine } from './kernel/LCARSEngine.js';
+import type { StatusProvider } from './kernel/StatusProvider.js';
 import type { SearchProvider } from './SearchProvider.js';
 import type { CalypsoStoreActions, CalypsoResponse, CalypsoAction, QueryResponse } from './types.js';
-import { IntentParser } from './routing/IntentParser.js';
+import { IntentParser } from './kernel/IntentParser.js';
 
 interface LLMProviderTelemetryHooks {
     status_emit?: (message: string) => void;

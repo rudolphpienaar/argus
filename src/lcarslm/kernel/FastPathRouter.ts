@@ -7,7 +7,7 @@
  * @module lcarslm/routing/FastPathRouter
  */
 
-import type { CalypsoIntent } from '../types.js';
+import type { CalypsoIntent } from '../../types.js';
 
 /**
  * Context required for deterministic intent resolution.

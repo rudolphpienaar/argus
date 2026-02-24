@@ -13,7 +13,7 @@ import type { Shell } from '../../vfs/Shell.js';
 import { CalypsoStatusCode } from '../types.js';
 import { vfs_snapshot } from '../utils/VfsUtils.js';
 import type { VfsSnapshotNode } from '../types.js';
-import type { StatusProvider } from '../StatusProvider.js';
+import type { StatusProvider } from '../kernel/StatusProvider.js';
 import type { SettingsService } from '../../config/settings.js';
 import { WorkflowAdapter, type WorkflowSummary, type DagRenderOptions } from '../../dag/bridge/WorkflowAdapter.js';
 import type { WorkflowSession } from '../../dag/bridge/WorkflowSession.js';

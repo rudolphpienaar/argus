@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { LLMProvider } from './LLMProvider.js';
-import type { LCARSEngine } from './engine.js';
+import type { LCARSEngine } from './kernel/LCARSEngine.js';
 import type { QueryResponse, CalypsoResponse, CalypsoAction } from './types.js';
 import { CalypsoStatusCode } from './types.js';
-import type { StatusProvider } from './StatusProvider.js';
+import type { StatusProvider } from './kernel/StatusProvider.js';
 import type { SearchProvider } from './SearchProvider.js';
 import type { CalypsoStoreActions } from './types.js';
-import type { IntentParser } from './routing/IntentParser.js';
+import type { IntentParser } from './kernel/IntentParser.js';
 
 interface EngineStub {
     query: (

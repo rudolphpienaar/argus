@@ -16,51 +16,60 @@
 
 ---
 
-# ARGUS Engineering Plan: Intent-Guard Hardening (The "Drift-Ready" Core)
+# ARGUS Engineering Plan: Intent-Guard Hardening (Complete)
 
-**Objective:** Implement a fundamental, toggleable "Intent Guardrail" system to prevent hallucination-driven stage jumping and enable quantitative drift experiments.
+**Objective:** Implement toggleable "Intent Guardrail" system. (COMPLETED v11.0.16)
 
-## 1. The IntentGuard Module
-**Goal:** Centralize vocabulary jailing and output validation.
+---
 
-- [ ] **Create `src/lcarslm/routing/IntentGuard.ts`**:
-    - [ ] Implement `IntentGuard` class with `STRICT` and `EXPERIMENTAL` modes.
-    - [ ] Implement `vocabulary_jail()`: Restrict LLM visibility to DAG-ready commands only.
-    - [ ] Implement `intent_validate()`: Downgrade unauthorized intents to `conversational`.
+# ARGUS Engineering Plan: CNS Consolidation & Null-Hypothesis Mode
+
+**Objective:** Colocate all "Brain" modules into a single `kernel/` directory to create a centralized, auditable Central Nervous System (CNS) and implement a "Null Hypothesis" mode for quantitative drift experiments.
+
+## 1. CNS Directory Structural Setup
+**Goal:** Create the `src/lcarslm/kernel/` directory and relocate existing intelligence modules.
+
+- [ ] **Establish `src/lcarslm/kernel/`**:
+    - [ ] Move `engine.ts` -> `kernel/LCARSEngine.ts`.
+    - [ ] Move `StatusProvider.ts` -> `kernel/StatusProvider.ts`.
+    - [ ] Move `routing/IntentGuard.ts` -> `kernel/IntentGuard.ts`.
+    - [ ] Move `routing/FastPathRouter.ts` -> `kernel/FastPathRouter.ts`.
+    - [ ] Move `routing/LLMIntentCompiler.ts` -> `kernel/LLMIntentCompiler.ts`.
+    - [ ] Move `routing/IntentParser.ts` -> `kernel/IntentParser.ts`.
 - [ ] **Verify**:
-    - [ ] Add `IntentGuard.test.ts` to verify mode-switching and filtering.
+    - [ ] Run `make test` to ensure imports are correctly updated.
 
-## 2. IntentParser Interceptor Refactor
-**Goal:** Encapsulate precedence so it cannot be broken by code reordering.
+## 2. The CalypsoKernel Facade
+**Goal:** Implement a high-level CNS entry point that encapsulates the "Structural Bypass" logic.
 
-- [ ] **Update `IntentParser.ts`**:
-    - [ ] Hide `LLMIntentCompiler` behind a protected method.
-    - [ ] Force `FastPathRouter` check before any LLM invocation.
-    - [ ] Integrate `IntentGuard` into the compiler loop.
-- [ ] **Verify**:
-    - [ ] Ensure unit tests pass with `STRICT=true`.
-
-## 3. Kernel Integration & Toggle
-**Goal:** Expose guardrail mode as a first-class configuration.
-
-- [ ] **Update `CalypsoCoreConfig`**:
-    - [ ] Add `enableIntentGuardrails` flag.
+- [ ] **Create `src/lcarslm/kernel/CalypsoKernel.ts`**:
+    - [ ] Implement `CalypsoKernel` class.
+    - [ ] Implement `OperationMode`: `STRICT`, `EXPERIMENTAL`, `NULL_HYPOTHESIS`.
+    - [ ] Encapsulate the `IntentParser` and `LLMProvider` logic into a single `resolve()` method.
+    - [ ] Add the "Structural Bypass" logic: in `NULL_HYPOTHESIS` mode, skip FastPath and RAG context injection.
 - [ ] **Update `CalypsoFactory.ts`**:
-    - [ ] Wire the flag to the `CALYPSO_STRICT` environment variable.
+    - [ ] Wire the `CalypsoKernel` as the primary intelligence mediator.
+
+## 3. Simplified Core Integration
+**Goal:** Strip residual intelligence orchestration from `CalypsoCore`.
+
+- [ ] **Refactor `CalypsoCore.ts`**:
+    - [ ] Delegate `command_execute` directly to `CalypsoKernel.resolve()`.
+    - [ ] Remove separate calls to `IntentParser` and `LLMProvider`.
 - [ ] **Verify**:
-    - [ ] Run ORACLE tests in both modes to measure baseline drift.
+    - [ ] Run `CalypsoCore.test.ts`.
 
-## 4. Documentation & Style Hardening
-**Goal:** Codify the "Precedence of Truth" mandate.
+## 4. Null-Hypothesis Verification
+**Goal:** Prove the "Zero-Bias" mode works without breaking the infrastructure.
 
-- [ ] **Update `TYPESCRIPT-STYLE-GUIDE.md`**:
-    - [ ] Add "Architectural Precedence Mandate": Deterministic filters MUST precede probabilistic interpretation.
-- [ ] **Update `docs/agentic-safety.adoc`**:
-    - [ ] Formalize the `IntentGuard` as a core safety primitive.
+- [ ] **Add `NullHypothesis.test.ts`**:
+    - [ ] Verify that in `NULL_HYPOTHESIS` mode, the LLM is called with empty context and FastPath is bypassed.
+- [ ] **Verify**:
+    - [ ] Run ORACLE suites in `NULL_HYPOTHESIS` mode and document the baseline hallucination rate.
 
 ---
 
 ## Validation Strategy
-- **Path Assertion:** New tests to check `isModelResolved` status.
-- **Zero-Shot Regression:** Run full ORACLE suite.
-- **Experimental Baseline:** Document drift metrics with Guardrails OFF.
+- **Architectural Audit:** Verify all AI logic is contained within `src/lcarslm/kernel/`.
+- **Zero-DOM Enforcement:** Ensure the CNS remains 100% browser-agnostic.
+- **Regression Testing:** Ensure `STRICT` mode maintains the existing ORACLE success rate.

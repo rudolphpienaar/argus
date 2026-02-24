@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { IntentParser } from './IntentParser.js';
+import { IntentParser } from '../kernel/IntentParser.js';
 import { SearchProvider } from '../SearchProvider.js';
 import { VirtualFileSystem } from '../../vfs/VirtualFileSystem.js';
 import { Shell } from '../../vfs/Shell.js';
 import type { CalypsoStoreActions, AppState } from '../types.js';
 
-import { IntentGuard, IntentGuardMode } from './IntentGuard.js';
+import { IntentGuard, IntentGuardMode } from '../kernel/IntentGuard.js';
 
 function storeActions_mock(): CalypsoStoreActions {
     return {
