@@ -6,7 +6,7 @@
  * @module
  */
 
-import type { ChatMessage, LCARSSystemConfig } from './types.js';
+import type { ChatMessage, LCARSSystemConfig } from '../types.js';
 
 interface GeminiModelList {
     models: Array<{ name: string }>;

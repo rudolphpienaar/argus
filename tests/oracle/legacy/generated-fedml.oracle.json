@@ -1,0 +1,88 @@
+{
+  "name": "Generated Linear Walk: Federated ML — SeaGaP-MP Pipeline",
+  "username": "oracle",
+  "persona": "fedml",
+  "steps": [
+    {
+      "send": "/reset",
+      "success": true
+    },
+    {
+      "send": "search brain",
+      "success": true
+    },
+    {
+      "send": "add ds-001",
+      "success": true,
+      "capture_project": true
+    },
+    {
+      "send": "gather",
+      "success": true
+    },
+    {
+      "send": "rename walk-test",
+      "success": true
+    },
+    {
+      "send": "harmonize",
+      "success": true
+    },
+    {
+      "send": "proceed",
+      "success": true
+    },
+    {
+      "send": "python train.py",
+      "success": true
+    },
+    {
+      "send": "federate",
+      "success": true
+    },
+    {
+      "send": "show transcompile",
+      "success": true
+    },
+    {
+      "send": "transcompile",
+      "success": true
+    },
+    {
+      "send": "show container",
+      "success": true
+    },
+    {
+      "send": "containerize",
+      "success": true
+    },
+    {
+      "send": "config name oracle-app",
+      "success": true
+    },
+    {
+      "send": "publish-config",
+      "success": true
+    },
+    {
+      "send": "show publish",
+      "success": true
+    },
+    {
+      "send": "publish-execute",
+      "success": true
+    },
+    {
+      "send": "dispatch",
+      "success": true
+    },
+    {
+      "send": "status",
+      "success": true
+    },
+    {
+      "send": "publish model",
+      "success": true
+    }
+  ]
+}

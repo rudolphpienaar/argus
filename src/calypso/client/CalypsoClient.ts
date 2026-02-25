@@ -14,6 +14,7 @@ import type { WorkflowSummary } from '../../core/workflows/types.js';
 import type {
     ClientMessage,
     ServerMessage,
+    SessionEventMessage,
     LoginResponseMessage,
     PersonaResponseMessage,
     PromptResponseMessage,
@@ -46,6 +47,13 @@ export class CalypsoClient {
     /** v10.2 Live telemetry listener. */
     public onTelemetry: ((event: TelemetryEvent) => void) | null = null;
 
+    /**
+     * Cross-surface session event handler.
+     * Called when another surface submits an intent — the full CalypsoResponse
+     * is included so this surface can run its complete rendering pipeline.
+     */
+    public onSessionEvent: ((event: SessionEventMessage) => void) | null = null;
+
     constructor(options: CalypsoClientOptions = {}) {
         if (options.url) {
             this.url = options.url;
@@ -73,6 +81,11 @@ export class CalypsoClient {
                     
                     if (msg.type === 'telemetry') {
                         if (this.onTelemetry) this.onTelemetry(msg.payload);
+                        return;
+                    }
+
+                    if (msg.type === 'session_event') {
+                        if (this.onSessionEvent) this.onSessionEvent(msg as SessionEventMessage);
                         return;
                     }
 

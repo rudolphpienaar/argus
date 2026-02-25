@@ -1,5 +1,5 @@
 {
-  "name": "FedML Walk: Rename Branch",
+  "name": "FedML Walk: Short Path (Gather to Harmonize)",
   "username": "oracle",
   "steps": [
     {
@@ -16,14 +16,9 @@
       "expect": "OK"
     },
     {
-      "send": "rename walk-test-project",
-      "expect": "OK",
-      "materialized": ["${session}/search/gather/rename/data/rename.json"]
-    },
-    {
       "send": "harmonize",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
+      "materialized": ["${session}/search/gather/harmonize/output/.harmonized"]
     }
   ]
 }

@@ -1,0 +1,58 @@
+{
+  "name": "FedML Comprehensive: Linear and Restart Paths",
+  "username": "oracle",
+  "steps": [
+    {
+      "send": "search pathology",
+      "expect": "OK"
+    },
+    {
+      "send": "add ds-006",
+      "expect": "OK",
+      "capture_project": true
+    },
+    {
+      "send": "gather",
+      "expect": "OK"
+    },
+    {
+      "send": "harmonize",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/output/.harmonized"
+      ]
+    },
+    {
+      "send": "proceed",
+      "expect": "OK"
+    },
+    {
+      "send": "/reset",
+      "expect": "OK"
+    },
+    {
+      "send": "search histology",
+      "expect": "OK"
+    },
+    {
+      "send": "add ds-006",
+      "expect": "OK",
+      "capture_project": true
+    },
+    {
+      "send": "gather",
+      "expect": "OK"
+    },
+    {
+      "send": "harmonize",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/harmonize/output/.harmonized"
+      ]
+    },
+    {
+      "send": "proceed",
+      "expect": "OK"
+    }
+  ]
+}

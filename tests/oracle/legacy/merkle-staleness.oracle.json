@@ -22,7 +22,7 @@
     {
       "send": "harmonize",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
+      "materialized": ["${session}/search/gather/harmonize/output/.harmonized"]
     },
     {
       "send": "search pathology",

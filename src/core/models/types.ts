@@ -105,3 +105,15 @@ export interface AppState {
     /** v10.2: Persistent memory of recently searched/mentioned datasets. */
     lastMentionedDatasets: Dataset[];
 }
+
+/**
+ * Result of a workflow transition check.
+ */
+export interface TransitionResult {
+    allowed: boolean;
+    reason?: string;
+    targetStage?: string;
+    missingPrerequisites?: string[];
+    pendingOptionals?: string[];
+    autoDeclinable?: boolean;
+}

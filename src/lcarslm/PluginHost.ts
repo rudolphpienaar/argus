@@ -1,36 +1,33 @@
 /**
- * @file PluginHost - The Argus Plugin Virtual Machine
+ * @file Plugin Host
  *
- * Responsible for dynamically loading and executing idiosyncratic workflow
- * logic from the src/plugins/ directory.
+ * Execution environment for atomic workflow plugins.
+ * Provides the standard library context (VM) to guest plugins.
  *
  * @module lcarslm/PluginHost
  */
 
 import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import type { Shell } from '../vfs/Shell.js';
-import type { CalypsoStoreActions, PluginContext, PluginResult } from './types.js';
-import { CalypsoStatusCode } from './types.js';
-import type { PluginHandlerName } from '../plugins/registry.js';
-import { pluginHandler_isKnown } from '../plugins/registry.js';
-import { TelemetryBus } from './TelemetryBus.js';
-import { PluginCommsRuntime } from './PluginComms.js';
-import type { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
-
-/**
- * Contract for plugin modules dynamically loaded by the host.
- */
-interface PluginModule {
-    plugin_execute(context: PluginContext): Promise<PluginResult>;
-}
-
+import type { CalypsoStoreActions } from './types.js';
+import type { TelemetryBus } from './TelemetryBus.js';
 import type { SearchProvider } from './SearchProvider.js';
+import type { WorkflowAdapter } from '../dag/bridge/WorkflowAdapter.js';
+import type {
+    PluginContext,
+    PluginResult,
+    PluginModule,
+    PluginComms
+} from './types.js';
+import { CalypsoStatusCode } from './types.js';
+import { PluginCommsRuntime } from './PluginComms.js';
 
 /**
- * Host environment for executing Argus plugins.
+ * Host for executing guest workflow plugins.
  */
 export class PluginHost {
-    private readonly comms: PluginCommsRuntime;
+    private readonly comms: PluginComms;
+    private sessionPath: string;
 
     constructor(
         private readonly vfs: VirtualFileSystem,
@@ -39,115 +36,59 @@ export class PluginHost {
         private readonly searchProvider: SearchProvider,
         private readonly telemetryBus: TelemetryBus,
         private readonly workflowAdapter: WorkflowAdapter,
-        private sessionPath: string
+        sessionPath: string
     ) {
         this.comms = new PluginCommsRuntime(this.searchProvider);
+        this.sessionPath = sessionPath;
     }
 
     /**
-     * Update the session path.
+     * Update the active session path.
      */
     public session_setPath(path: string): void {
         this.sessionPath = path;
     }
 
     /**
-     * Load and execute a plugin by handler name.
-     *
-     * @param handlerName - The name of the plugin module in src/plugins/.
-     * @param parameters - Configuration parameters from the manifest.
-     * @param command - The canonical command verb.
-     * @param args - Command arguments.
-     * @returns The result from the plugin execution.
+     * Execute a plugin handler with the provided parameters and command context.
+     * 
+     * @param handlerName - The name of the plugin module to load.
+     * @param parameters - Configuration from the manifest.
+     * @param command - The triggering protocol command.
+     * @param args - Arguments passed to the command.
+     * @param dataDir - Physical directory for materialization.
+     * @param stageId - Unique identifier for the current workflow stage.
+     * @returns Result of the plugin execution.
      */
     public async plugin_execute(
-        handlerName: string, 
+        handlerName: string,
         parameters: Record<string, unknown>,
         command: string,
         args: string[],
         dataDir: string,
         stageId: string
     ): Promise<PluginResult> {
+        let plugin: PluginModule;
         try {
-            const knownHandler: PluginHandlerName = this.handler_requireKnown(handlerName);
-            
-            // v12.0: Physical Contract - dataDir provided is the stage ROOT.
-            // We ensure input/ and output/ exist.
-            const stageRoot = dataDir;
-            const inputDir = `${stageRoot}/input`;
-            const outputDir = `${stageRoot}/output`;
-            
-            this.vfs.dir_create(inputDir);
-            this.vfs.dir_create(outputDir);
-
-            // v12.0: Input Mounting
-            // For every parent in manifest, link its output/ into our input/
-            const node = this.workflowAdapter.dag.nodes.get(stageId);
-            if (node && node.previous) {
-                for (const parentId of node.previous) {
-                    const parentArtifact = this.workflowAdapter.latestArtifact_get(this.vfs, this.sessionPath, parentId);
-                    if (parentArtifact && parentArtifact._physical_path) {
-                        // Resolve parent's output directory
-                        // (artifact is in meta/, so go up to stageRoot and into output/)
-                        const parentMetaDir = parentArtifact._physical_path.substring(0, parentArtifact._physical_path.lastIndexOf('/'));
-                        const parentStageRoot = parentMetaDir.replace(/\/meta$/, '');
-                        const parentOutputDir = `${parentStageRoot}/output`;
-                        
-                        // Create relative link for portability
-                        const relParentOutput = this.path_relative(inputDir, parentOutputDir);
-                        this.vfs.link_create(`${inputDir}/${parentId}`, relParentOutput);
-                    }
-                }
-            }
-
-            const module: PluginModule = await this.module_load(knownHandler);
-            // v12.0: Plugins receive the output directory specifically
-            const context: PluginContext = this.context_create(parameters, command, args, outputDir);
-            return await module.plugin_execute(context);
-
-        } catch (e: unknown) {
-            const message: string = e instanceof Error ? e.message : String(e);
+            plugin = await this.module_load(handlerName);
+        } catch (e) {
             return {
-                message: `>> ERROR: PLUGIN EXECUTION FAILED [${handlerName}]: ${message}`,
+                message: e instanceof Error ? e.message : `Unknown plugin handler '${handlerName}'`,
                 statusCode: CalypsoStatusCode.ERROR
             };
         }
+        const context: PluginContext = this.context_create(parameters, command, args, dataDir, stageId);
+
+        return await plugin.plugin_execute(context);
     }
 
     /**
-     * Minimal relative path resolver for internal mounting.
+     * Load a plugin module dynamically.
+     * 
+     * @param handlerName - Module identifier.
+     * @returns Loaded plugin module.
      */
-    private path_relative(from: string, to: string): string {
-        const fromParts = from.split('/').filter(Boolean);
-        const toParts = to.split('/').filter(Boolean);
-        
-        let common = 0;
-        while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
-            common++;
-        }
-
-        const upCount = fromParts.length - common;
-        const up = upCount > 0 ? '../'.repeat(upCount) : '';
-        const down = toParts.slice(common).join('/');
-        
-        return up + down;
-    }
-
-    /**
-     * Validate and normalize handler names before module load.
-     */
-    private handler_requireKnown(handlerName: string): PluginHandlerName {
-        const normalizedHandler: string = handlerName.trim();
-        if (!pluginHandler_isKnown(normalizedHandler)) {
-            throw new Error(`Unknown plugin handler '${handlerName}'`);
-        }
-        return normalizedHandler;
-    }
-
-    /**
-     * Load a plugin module from the plugin directory by handler convention.
-     */
-    private async module_load(handlerName: PluginHandlerName): Promise<PluginModule> {
+    private async module_load(handlerName: string): Promise<PluginModule> {
         const moduleSpecifier: string = `../plugins/${handlerName}.js`;
         let module: unknown;
         try {
@@ -171,7 +112,8 @@ export class PluginHost {
         parameters: Record<string, unknown>,
         command: string,
         args: string[],
-        dataDir: string
+        dataDir: string,
+        stageId: string
     ): PluginContext {
         return {
             vfs: this.vfs,
@@ -183,7 +125,8 @@ export class PluginHost {
             parameters,
             command,
             args,
-            dataDir
+            dataDir,
+            stageId
         };
     }
 }

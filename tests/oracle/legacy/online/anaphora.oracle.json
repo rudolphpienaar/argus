@@ -1,0 +1,34 @@
+{
+  "name": "Live CNS: Anaphora Stress (Entity Linking)",
+  "persona": "fedml",
+  "steps": [
+    {
+      "send": "search for brain images",
+      "expect": "OK",
+      "output_contains": ["ds-005"]
+    },
+    {
+      "send": "search chest",
+      "expect": "OK",
+      "output_contains": ["ds-004"]
+    },
+    {
+      "send": "ok add them",
+      "expect": "CONVERSATIONAL",
+      "expect_model_resolved": true,
+      "output_contains": ["ds-001", "ds-002", "ds-003", "ds-004", "ds-005", "ds-006"]
+    },
+    {
+      "send": "gather",
+      "expect": "OK",
+      "materialized": [
+        "${session}/search/gather/output/BWH_Thoracic_Segments",
+        "${session}/search/gather/output/Brain_MRI_Segmentation",
+        "${session}/search/gather/output/Histology_Segmentation",
+        "${session}/search/gather/output/Chest_Xray_Pneumonia",
+        "${session}/search/gather/output/Chest_Xray_COVID-19",
+        "${session}/search/gather/output/Pediatric_Chest_X-ray"
+      ]
+    }
+  ]
+}

@@ -78,7 +78,7 @@ export interface TransitionResult {
  * Rendering options for DAG visualization output.
  */
 export interface DagRenderOptions {
-    /** Include structural nodes (join/pre_* helpers) in the output. */
+    /** Include no-commands nodes (join/pre_* helpers) in the output. */
     includeStructural?: boolean;
     /** Include optional nodes in the output. */
     includeOptional?: boolean;
@@ -202,11 +202,12 @@ export class WorkflowAdapter {
         const index = new Map<string, DAGNode>();
         const declared = new Set<string>();
 
+        const command_clean = (cmd: string): string => cmd.split(/[<\[]/)[0].toLowerCase().trim();
+
         // 1. First pass: Index EXACT multi-word specific commands.
-        // These are highly specific and should always take precedence.
         for (const node of nodes) {
             for (const cmd of node.commands) {
-                const canonicalFull = cmd.split(/[<\[]/)[0].toLowerCase().trim();
+                const canonicalFull = command_clean(cmd);
                 if (canonicalFull) {
                     declared.add(canonicalFull);
                 }
@@ -221,7 +222,7 @@ export class WorkflowAdapter {
         // 2. Second pass: Index single-word commands that match their stage ID.
         for (const node of nodes) {
             for (const cmd of node.commands) {
-                const canonicalFull = cmd.split(/[<\[]/)[0].toLowerCase().trim();
+                const canonicalFull = command_clean(cmd);
                 if (canonicalFull.split(/\s+/).length === 1) {
                     if (canonicalFull === node.id) {
                         index.set(canonicalFull, node);
@@ -233,17 +234,10 @@ export class WorkflowAdapter {
         // 3. Third pass: Index remaining commands as base-word fallbacks.
         for (const node of nodes) {
             for (const cmd of node.commands) {
-                const baseCmd = cmd.split(/\s+/)[0].toLowerCase();
+                const canonicalFull = command_clean(cmd);
+                const baseCmd = canonicalFull.split(/\s+/)[0].toLowerCase();
                 if (baseCmd && !index.has(baseCmd)) {
-                    // Check if this verb is a prefix of any OTHER stage's specific command
-                    const isShadowed: boolean = Array.from(index.keys()).some((fullCmd: string): boolean => {
-                        const parts: string[] = fullCmd.split(/\s+/);
-                        return parts.length > 1 && parts[0] === baseCmd && index.get(fullCmd)!.id !== node.id;
-                    });
-
-                    if (!isShadowed) {
-                        index.set(baseCmd, node);
-                    }
+                    index.set(baseCmd, node);
                 }
             }
         }
@@ -525,14 +519,14 @@ export class WorkflowAdapter {
             return WorkflowAdapter.result_allowed();
         }
 
-        // Propagate stale detection through structural nodes to find user-facing stale ancestors.
+        // Propagate stale detection through no-commands nodes to find user-facing stale ancestors.
         const staleBlock: TransitionResult | null = this.transitionStaleBlock_resolve(targetNode, staleIds);
         if (staleBlock) {
             return staleBlock;
         }
 
-        // Use structural-promoted set so structural nodes are transparent to readiness.
-        const effectiveCompleted: Set<string> = this.structuralCompletion_resolve(completedIds);
+        // Use auto-execute-promoted set so no-commands nodes are transparent to readiness.
+        const effectiveCompleted: Set<string> = this.autoExecuteCompletion_resolve(completedIds);
         const nodeReadiness: NodeReadiness | null = this.transitionReadiness_resolve(targetNode, effectiveCompleted);
         if (!nodeReadiness || nodeReadiness.pendingParents.length === 0) {
             return WorkflowAdapter.result_allowed();
@@ -580,20 +574,20 @@ export class WorkflowAdapter {
     }
 
     /**
-     * Auto-promote structural stages when all their dependencies are met.
-     * Structural nodes are invisible to the user and should never block transitions.
+     * Auto-promote no-commands stages when all their dependencies are met.
+     * No-commands nodes are invisible to the user and should never block transitions.
      *
      * @param completedIds - Set of actually materialized stage IDs.
-     * @returns Expanded completed set with structural stages auto-promoted.
+     * @returns Expanded completed set with no-commands stages auto-promoted.
      */
-    private structuralCompletion_resolve(completedIds: Set<string>): Set<string> {
+    private autoExecuteCompletion_resolve(completedIds: Set<string>): Set<string> {
         const effective = new Set(completedIds);
         let changed = true;
 
         while (changed) {
             changed = false;
             for (const node of this.definition.nodes.values()) {
-                if (!node.structural || effective.has(node.id)) continue;
+                if (this.nodeHasCommands(node) || effective.has(node.id)) continue;
 
                 const allParentsMet =
                     !node.previous || node.previous.every((pid: string) => effective.has(pid));
@@ -609,12 +603,23 @@ export class WorkflowAdapter {
     }
 
     /**
-     * Expand structural pending parents to their user-facing equivalents.
-     * Traverses through structural nodes to find the real user-visible pending ancestors.
+     * Determine whether a DAG node has user-invocable commands.
+     * Nodes without commands are auto-executed when their parents complete.
+     *
+     * @param node - The DAGNode to inspect.
+     * @returns True if the node has at least one command, false otherwise.
+     */
+    private nodeHasCommands(node: DAGNode): boolean {
+        return Array.isArray(node.commands) && node.commands.length > 0;
+    }
+
+    /**
+     * Expand no-commands pending parents to their user-facing equivalents.
+     * Traverses through no-commands nodes to find the real user-visible pending ancestors.
      *
      * @param pendingParentIds - IDs of pending parents from the readiness check.
-     * @param effectiveCompleted - Set of completed IDs after structural auto-promotion.
-     * @returns Array of user-facing (non-structural) pending parent stage IDs.
+     * @param effectiveCompleted - Set of completed IDs after auto-execute promotion.
+     * @returns Array of user-facing (commands-bearing) pending parent stage IDs.
      */
     private userFacingPendingParents_resolve(
         pendingParentIds: string[],
@@ -630,12 +635,12 @@ export class WorkflowAdapter {
             const node: DAGNode | undefined = this.definition.nodes.get(parentId);
             if (!node) return;
 
-            if (!node.structural) {
+            if (this.nodeHasCommands(node)) {
                 result.push(parentId);
                 return;
             }
 
-            // Structural: expand its own pending parents recursively.
+            // No commands: expand its own pending parents recursively.
             for (const grandParentId of (node.previous ?? [])) {
                 if (!effectiveCompleted.has(grandParentId)) {
                     expand(grandParentId);
@@ -651,8 +656,8 @@ export class WorkflowAdapter {
     }
 
     /**
-     * Find a stale user-facing ancestor by traversing through structural nodes.
-     * Structural nodes are transparent — the stale signal propagates through them.
+     * Find a stale user-facing ancestor by traversing through no-commands nodes.
+     * No-commands nodes are transparent — the stale signal propagates through them.
      *
      * @param node - The starting node (transition target) to inspect.
      * @param staleIds - Set of stale stage IDs.
@@ -670,11 +675,11 @@ export class WorkflowAdapter {
         for (const parentId of (node.previous ?? [])) {
             if (staleIds.has(parentId)) {
                 const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
-                if (parentNode && !parentNode.structural) {
+                if (parentNode && this.nodeHasCommands(parentNode)) {
                     return parentNode;
                 }
             }
-            // Recurse into structural parents to find the underlying stale user-facing stage.
+            // Recurse into no-commands parents to find the underlying stale user-facing stage.
             const parentNode: DAGNode | undefined = this.definition.nodes.get(parentId);
             if (parentNode) {
                 const staleAncestor = this.staleUserFacingAncestor_find(parentNode, staleIds, visited);
@@ -962,8 +967,8 @@ export class WorkflowAdapter {
         summary += `Progress: ${pos.progress.completed}/${pos.progress.total} stages\n\n`;
 
         for (const node of this.definition.nodes.values()) {
-            // Skip structural nodes — they are transparent to the user.
-            if (node.structural) continue;
+            // Skip no-commands nodes — they are transparent to the user.
+            if (!this.nodeHasCommands(node)) continue;
 
             const isComplete = pos.completedStages.includes(node.id);
             const isStale = pos.staleStages.includes(node.id);
@@ -1081,7 +1086,7 @@ export class WorkflowAdapter {
     /**
      * Resolve visible ancestors for a potentially filtered parent node.
      *
-     * Traverses through hidden parents (structural/optional filtered out) until
+     * Traverses through hidden parents (no-commands/optional filtered out) until
      * visible node IDs are reached.
      */
     private visibleAncestors_resolve(
@@ -1104,7 +1109,7 @@ export class WorkflowAdapter {
         }
 
         const hiddenByFilter: boolean =
-            (!includeStructural && Boolean(node.structural)) ||
+            (!includeStructural && !this.nodeHasCommands(node)) ||
             (!includeOptional && Boolean(node.optional));
         if (!hiddenByFilter) {
             return [];

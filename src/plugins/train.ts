@@ -20,7 +20,7 @@ import { simDelay_wait } from './simDelay.js';
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
     return context.comms.execute(async (): Promise<PluginResult> => {
-        const { command, args, shell, ui, parameters } = context;
+        const { command, args, shell, ui, parameters, dataDir } = context;
         
         // Map 'train' alias to the actual simulator command
         const executable: string = command === 'train' ? 'python' : command;
@@ -31,28 +31,36 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         const epochs: number = (parameters.epochs as number) || 5;
 
         // 2. Perform Simulated Training (The Live Feed)
-        ui.status('CALYPSO: INITIATING LOCAL VALIDATION...');
-        ui.log('● [PHANTOM SIMULATOR] LOADING SOURCE: train.py');
+        const label = context.stageId === 'test' ? 'TESTING' : 'VALIDATION';
+        ui.status(`CALYPSO: INITIATING LOCAL ${label}...`);
+        ui.log(`● [PHANTOM SIMULATOR] LOADING SOURCE: ${executableArgs[0] || 'code'}`);
         
         await training_animate(context, epochs);
 
         // 3. Delegate to the shell capability (The Deterministic Logic)
         // v10.2: Pass physical provenance dataDir to the shell for marker materialization
         const originalDataDir = shell.env_get('DATA_DIR');
-        shell.env_set('DATA_DIR', context.dataDir);
+        shell.env_set('DATA_DIR', dataDir);
         const result: ShellResult = await shell.command_execute(input);
         if (originalDataDir) shell.env_set('DATA_DIR', originalDataDir);
         else shell.env_all().delete('DATA_DIR');
 
+        const returnLabel = context.stageId === 'test' ? 'TESTING' : 'TRAINING';
         return {
             message: result.stderr ? `${result.stdout}\n<error>${result.stderr}</error>` : result.stdout,
             statusCode: result.exitCode === 0 ? CalypsoStatusCode.OK : CalypsoStatusCode.ERROR,
             artifactData: { 
+                step: context.stageId,
                 command: input,
                 exitCode: result.exitCode,
                 stdout: result.stdout
             },
-            materialized: ['.local_pass']
+            materialized: ['.local_pass', `${context.stageId}.json`],
+            physicalDataDir: dataDir,
+            ui_hints: {
+                render_mode: 'training',
+                spinner_label: `● LOCAL ${returnLabel} COMPLETE.`
+            }
         };
     });
 }
@@ -81,7 +89,8 @@ async function training_animate(context: PluginContext, epochs: number): Promise
         }
     }
     
-    ui.log('● LOCAL TRAINING COMPLETE. CONVERGENCE ACHIEVED.');
+    const finalLabel = context.stageId === 'test' ? 'TESTING' : 'TRAINING';
+    ui.log(`● LOCAL ${finalLabel} COMPLETE. CONVERGENCE ACHIEVED.`);
     ui.log('  ○ Model weights saved to: /home/$USER/projects/$PROJECT/output/model.pth');
     ui.log('  ○ Validation metrics saved to: /home/$USER/projects/$PROJECT/output/val_metrics.json');
 }

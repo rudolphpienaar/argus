@@ -62,7 +62,8 @@ export class DagRenderer {
         );
 
         const visibleNodes: DAGNode[] = orderedNodes.filter((node: DAGNode): boolean => {
-            if (!includeStructural && node.structural) return false;
+            const hasCommands = Array.isArray(node.commands) && node.commands.length > 0;
+            if (!includeStructural && !hasCommands) return false;
             if (!includeOptional && node.optional) return false;
             return true;
         });
@@ -141,8 +142,9 @@ export class DagRenderer {
             const marker: string = marker_resolve(node);
 
             const tags: string[] = [];
+            const hasCommands = Array.isArray(node.commands) && node.commands.length > 0;
             if (node.optional) tags.push('optional');
-            if (node.structural) tags.push('structural');
+            if (!hasCommands) tags.push('auto-execute');
             if (isCurrent) tags.push('current');
             if (isStale) tags.push('stale');
             if (node.previous && node.previous.length > 1) {

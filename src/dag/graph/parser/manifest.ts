@@ -5,6 +5,10 @@
  * representation. Manifests define the complete conversational DAG
  * for a persona workflow.
  *
+ * The YAML is validated against `ManifestSchema` (Zod) at the boundary
+ * before any field access. This replaces the previous hand-rolled
+ * `typeof` checks field by field.
+ *
  * @module dag/graph/parser
  * @see docs/dag-engine.adoc
  */
@@ -21,33 +25,46 @@ import {
     skipWarning_parse,
     parameters_parse,
 } from './common.js';
+import { ManifestSchema, type RawStage } from './schemas.js';
 
 /**
  * Parse a manifest YAML string into a DAGDefinition.
  *
  * @param yamlStr - Raw YAML string
  * @returns Parsed DAGDefinition with source='manifest'
- * @throws On missing required fields or invalid structure
+ * @throws On schema violations, duplicate stage IDs, or invalid structure
  */
 export function manifest_parse(yamlStr: string): DAGDefinition {
-    const raw = yaml_parse(yamlStr) as Record<string, unknown>;
-    if (!raw || typeof raw !== 'object') {
-        throw new Error('Invalid manifest: not a YAML object');
+    const raw = yaml_parse(yamlStr);
+
+    // ── Boundary: validate the full document before touching any fields ──────
+    const result = ManifestSchema.safeParse(raw);
+    if (!result.success) {
+        const issues = result.error.issues
+            .map(i => `[${i.path.join('.')}] ${i.message}`)
+            .join('; ');
+        throw new Error(`Invalid manifest: ${issues}`);
     }
 
-    const header = header_parse(raw);
+    const doc = result.data;
+
+    const header: ManifestHeader = {
+        name:        doc.name,
+        description: doc.description,
+        category:    doc.category,
+        persona:     doc.persona,
+        version:     doc.version,
+        locked:      doc.locked,
+        authors:     doc.authors,
+    };
+
     const nodes = new Map<string, DAGNode>();
     const orderedNodeIds: string[] = [];
     const edges: DAGEdge[] = [];
 
-    const rawStages = raw['stages'];
-    if (!Array.isArray(rawStages)) {
-        throw new Error('Invalid manifest: stages must be an array');
-    }
-
     // Build nodes (preserving manifest order)
-    for (const rawStage of rawStages) {
-        const node = node_parse(rawStage as Record<string, unknown>);
+    for (const rawStage of doc.stages) {
+        const node = node_build(rawStage);
         if (nodes.has(node.id)) {
             throw new Error(`Duplicate stage ID: '${node.id}'`);
         }
@@ -87,89 +104,26 @@ export function manifest_parse(yamlStr: string): DAGDefinition {
 }
 
 /**
- * Parse and validate the manifest header.
+ * Build a DAGNode from a schema-validated stage record.
  *
- * @param raw - Raw YAML object from the parsed manifest.
- * @returns Validated manifest header record.
- * @throws On missing or invalid required fields.
+ * The heavy validation is done by Zod. This function handles only the
+ * semantic conversions that Zod doesn't own: normalizing `previous`,
+ * parsing `skip_warning`, and filling in derived fields.
  */
-function header_parse(raw: Record<string, unknown>): ManifestHeader {
-    const name = raw['name'];
-    const persona = raw['persona'];
-    if (!name || typeof name !== 'string') {
-        throw new Error('Invalid manifest: missing required field "name"');
-    }
-    if (!persona || typeof persona !== 'string') {
-        throw new Error('Invalid manifest: missing required field "persona"');
-    }
-
+function node_build(stage: RawStage): DAGNode {
     return {
-        name: String(name),
-        description: String(raw['description'] ?? ''),
-        category: String(raw['category'] ?? ''),
-        persona: String(persona),
-        version: String(raw['version'] ?? '1.0.0'),
-        locked: Boolean(raw['locked'] ?? false),
-        authors: String(raw['authors'] ?? ''),
+        id:           stage.id,
+        name:         stage.name ?? stage.id,
+        phase:        stage.phase ?? null,
+        previous:     previous_normalize(stage.previous),
+        optional:     stage.optional,
+        produces:     stage.produces,
+        parameters:   parameters_parse(stage.parameters),
+        instruction:  stage.instruction,
+        commands:     stage.commands,
+        handler:      stage.handler,
+        skip_warning: skipWarning_parse(stage.skip_warning),
+        narrative:    stage.narrative ?? null,
+        blueprint:    stage.blueprint,
     };
-}
-
-/**
- * Parse a single stage entry into a DAGNode.
- *
- * @param raw - Raw stage object from the parsed YAML stages array.
- * @returns Fully populated DAGNode.
- * @throws On missing required fields (`id`, `produces`).
- */
-function node_parse(raw: Record<string, unknown>): DAGNode {
-    const id = raw['id'];
-    if (!id || typeof id !== 'string') {
-        throw new Error('Invalid stage: missing required field "id"');
-    }
-
-    const produces = raw['produces'];
-    if (!Array.isArray(produces) || produces.length === 0) {
-        throw new Error(`Stage '${id}': produces must be a non-empty array`);
-    }
-
-    return {
-        id: String(id),
-        name: String(raw['name'] ?? id),
-        phase: raw['phase'] != null ? String(raw['phase']) : null,
-        previous: previous_normalize(raw['previous']),
-        optional: Boolean(raw['optional'] ?? false),
-        structural: raw['structural'] === true,
-        produces: produces.map(String),
-        parameters: parameters_parse(raw['parameters']),
-        instruction: String(raw['instruction'] ?? ''),
-        commands: Array.isArray(raw['commands']) ? raw['commands'].map(String) : [],
-        handler: handler_parse(id, raw['handler']),
-        skip_warning: skipWarning_parse(raw['skip_warning']),
-        narrative: raw['narrative'] != null ? String(raw['narrative']) : null,
-        blueprint: Array.isArray(raw['blueprint']) ? raw['blueprint'].map(String) : [],
-    };
-}
-
-/**
- * Parse and validate a stage handler identifier.
- *
- * @param stageId - Stage ID for error reporting context.
- * @param rawHandler - Raw handler value from YAML (may be null/undefined).
- * @returns Normalized handler name, or null if absent.
- * @throws On non-string values or invalid handler name format.
- */
-function handler_parse(stageId: string, rawHandler: unknown): string | null {
-    if (rawHandler == null) {
-        return null;
-    }
-    if (typeof rawHandler !== 'string') {
-        throw new Error(`Stage '${stageId}': handler must be a string`);
-    }
-
-    const handlerName: string = rawHandler.trim();
-    const handlerPattern: RegExp = /^[a-z][a-z0-9_-]*$/;
-    if (!handlerPattern.test(handlerName)) {
-        throw new Error(`Stage '${stageId}': handler '${handlerName}' has invalid format`);
-    }
-    return handlerName;
 }

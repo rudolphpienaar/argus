@@ -24,7 +24,7 @@ stages:
     name: Dataset Discovery
     phase: search-and-gather
     previous: ~
-    optional: true
+    optional: false 
     produces:
       - search.json
     parameters:
@@ -48,13 +48,6 @@ stages:
       - remove <dataset>
       - show cohort
     handler: search
-    skip_warning:
-      short: Dataset discovery not performed.
-      reason: >
-        Federated learning requires a clearly defined cohort of datasets.
-        The search stage records the criteria used to identify your data,
-        which is essential for scientific reproducibility and provenance.
-      max_warnings: 2
 
   - id: gather
     name: Cohort Assembly
@@ -115,7 +108,6 @@ stages:
     name: Causal Convergence (Gather/Readiness)
     phase: search-and-gather
     previous: [gather, ml-readiness]
-    structural: true
     produces:
       - join.json
     handler: topological-join
@@ -124,7 +116,6 @@ stages:
     name: Gather Output Checkpoint
     phase: search-and-gather
     previous: join_ml-readiness-gather
-    structural: true
     produces:
       - gate.json
     handler: gather-gate
@@ -157,7 +148,6 @@ stages:
     name: Causal Convergence (Gate/Collection)
     phase: search-and-gather
     previous: [gather-gate, collect]
-    structural: true
     produces:
       - join.json
     handler: topological-join
@@ -166,7 +156,6 @@ stages:
     name: Harmonization View Resolver
     phase: harmonize
     previous: [join_collect_gather-gate]
-    structural: true
     produces:
       - resolve.json
     handler: pre-harmonize
@@ -209,7 +198,6 @@ stages:
     name: Workspace Continuity (Pre-Code)
     phase: code-and-validate
     previous: [harmonize]
-    structural: true
     produces:
       - resolve.json
     handler: workspace-commit
@@ -252,7 +240,6 @@ stages:
     name: Workspace Continuity (Pre-Train)
     phase: code-and-validate
     previous: [code]
-    structural: true
     produces:
       - resolve.json
     handler: workspace-commit

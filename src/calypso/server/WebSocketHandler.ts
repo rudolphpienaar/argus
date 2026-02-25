@@ -1,73 +1,108 @@
 /**
  * @file WebSocket Connection Handler
  *
- * Per-connection handler that maps WebSocket messages to CalypsoCore
- * method calls and sends typed responses with correlation IDs.
+ * Per-connection handler that registers this connection as a surface on the
+ * SessionBus and maps WebSocket messages to kernel operations.
+ *
+ * Each connection gets a unique `connectionId`. On connect it registers a
+ * surface handler with the bus — this handler sends `session_event` to the
+ * WS client whenever another surface submits an intent. On close it
+ * unregisters. The `command` message handler calls `bus.intent_submit()`
+ * and sends the returned response directly to the caller — backward-
+ * compatible with existing WUI/TUI clients that don't yet act on
+ * `session_event`.
  *
  * @module
  */
 
 import type { WebSocket } from 'ws';
-import type { WorkflowSummary } from '../../core/workflows/types.js';
-import type { CalypsoResponse, TelemetryEvent } from '../../lcarslm/types.js';
-import type {
-    ClientMessage,
-    ServerMessage
-} from '../protocol/types.js';
+import type { TelemetryEvent } from '../../lcarslm/types.js';
+import type { ServerMessage } from '../protocol/types.js';
+import type { SessionEvent } from '../bus/types.js';
+import { SessionBus } from '../bus/SessionBus.js';
+import { ClientMessageSchema } from '../protocol/schemas.js';
 
-export interface WebSocketCalypso {
-    command_execute(command: string): Promise<CalypsoResponse>;
-    boot(): Promise<void>;
-    workflow_set(workflowId: string | null): Promise<boolean>;
-    prompt_get(): string;
-    tab_complete(line: string): string[];
-    workflows_available(): WorkflowSummary[];
-    telemetry_subscribe(observer: (event: TelemetryEvent) => void): () => void;
-}
+// Re-export WebSocketCalypso from its canonical location so existing
+// imports (CalypsoServer, tests) continue to resolve from this module.
+export type { WebSocketCalypso } from '../bus/types.js';
+
+export { SessionBus };
 
 export interface WebSocketHandlerDeps {
-    calypso_get: () => WebSocketCalypso;
-    calypso_reinitialize: (username?: string) => WebSocketCalypso;
+    bus_get: () => SessionBus;
+    calypso_reinitialize: (username?: string) => void;
 }
+
+let wsConnectionCounter = 0;
 
 /**
  * Handle a single WebSocket connection.
- * Sets up message routing and lifecycle management.
+ * Registers the connection as a surface on the SessionBus and routes messages.
  */
 export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): void {
+    const connectionId = `ws-conn-${++wsConnectionCounter}`;
+    const bus = deps.bus_get();
+
     const send = (msg: ServerMessage): void => {
         if (ws.readyState === ws.OPEN) {
             ws.send(JSON.stringify(msg));
         }
     };
 
-    // v10.2: Subscribe to live telemetry and broadcast to client.
-    // Rebind on login because core is reinitialized per authenticated user.
+    // Register as a surface — receive cross-surface SessionEvents from the bus.
+    // The handler sends a session_event wire message to this WS client.
+    const unregisterSurface = bus.surface_register(connectionId, (event: SessionEvent): void => {
+        send({
+            type: 'session_event',
+            sourceId: event.sourceId,
+            input: event.input,
+            response: event.response,
+            timestamp: event.timestamp
+        });
+    });
+
+    // Forward live telemetry from the kernel to this client.
+    // Rebind on login because the kernel (and its TelemetryBus) is replaced.
     const telemetryForward = (event: TelemetryEvent): void => {
         send({ type: 'telemetry', payload: event });
     };
-    let unsubscribe: () => void = (): void => {};
+    let unsubscribeTelemetry: () => void = (): void => {};
     const telemetry_bind = (): void => {
-        unsubscribe();
-        unsubscribe = deps.calypso_get().telemetry_subscribe(telemetryForward);
+        unsubscribeTelemetry();
+        unsubscribeTelemetry = bus.telemetry_subscribe(telemetryForward);
     };
 
     telemetry_bind();
 
     ws.on('message', async (data: Buffer | string) => {
-        let msg: ClientMessage;
+        // ── Boundary: parse + validate before touching any fields ────────────
+        let raw: unknown;
         try {
-            msg = JSON.parse(typeof data === 'string' ? data : data.toString()) as ClientMessage;
+            raw = JSON.parse(typeof data === 'string' ? data : data.toString());
         } catch {
             send({ type: 'error', id: 'unknown', message: 'Invalid JSON' });
             return;
         }
 
+        const parsed = ClientMessageSchema.safeParse(raw);
+        if (!parsed.success) {
+            // Extract the correlation id from the raw object if possible so the
+            // client can match this error to the failing request.
+            const id = (raw as Record<string, unknown>)?.id;
+            send({
+                type: 'error',
+                id: typeof id === 'string' ? id : 'unknown',
+                message: `Invalid message: ${parsed.error.issues.map(i => i.message).join(', ')}`
+            });
+            return;
+        }
+
+        const msg = parsed.data;  // fully typed — all fields guaranteed by schema
+
         try {
             switch (msg.type) {
                 case 'command': {
-                    const calypso = deps.calypso_get();
-                    const response = await calypso.command_execute(msg.command);
+                    const response = await bus.intent_submit(msg.command, connectionId);
                     send({ type: 'response', id: msg.id, payload: response });
                     break;
                 }
@@ -75,22 +110,16 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
                 case 'login': {
                     const sanitized = msg.username.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'developer';
                     deps.calypso_reinitialize(sanitized);
-                    
-                    // 1. Bind telemetry FIRST
+
+                    // Rebind telemetry FIRST so boot events stream to this client.
                     telemetry_bind();
-                    
-                    // 2. Await the Boot Sequence so telemetry streams in real-time
-                    const calypso = deps.calypso_get();
+
                     try {
-                        await calypso.boot();
+                        await bus.boot();
                     } catch (e) {
                         console.error('Handshake boot failed:', e);
                         const reason: string = e instanceof Error ? e.message : 'Unknown boot error';
-                        send({
-                            type: 'error',
-                            id: msg.id,
-                            message: `Boot failed: ${reason}`
-                        });
+                        send({ type: 'error', id: msg.id, message: `Boot failed: ${reason}` });
                         break;
                     }
 
@@ -100,63 +129,37 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
                         id: msg.id,
                         success: true,
                         username: sanitized,
-                        workflows: calypso.workflows_available()
+                        workflows: bus.workflows_available()
                     });
                     break;
                 }
 
                 case 'persona': {
-                    const calypso = deps.calypso_get();
                     if (!msg.workflowId || msg.workflowId === 'skip' || msg.workflowId === 'none') {
-                        await calypso.workflow_set(null);
-                        send({
-                            type: 'persona-response',
-                            id: msg.id,
-                            success: true,
-                            message: 'Workflow guidance disabled'
-                        });
+                        await bus.workflow_set(null);
+                        send({ type: 'persona-response', id: msg.id, success: true, message: 'Workflow guidance disabled' });
                     } else {
-                        const success = await calypso.workflow_set(msg.workflowId);
+                        const success = await bus.workflow_set(msg.workflowId);
                         send({
                             type: 'persona-response',
                             id: msg.id,
                             success,
-                            message: success
-                                ? `Workflow set: ${msg.workflowId}`
-                                : `Unknown workflow: ${msg.workflowId}`
+                            message: success ? `Workflow set: ${msg.workflowId}` : `Unknown workflow: ${msg.workflowId}`
                         });
                     }
                     break;
                 }
 
                 case 'prompt': {
-                    const calypso = deps.calypso_get();
-                    send({
-                        type: 'prompt-response',
-                        id: msg.id,
-                        prompt: calypso.prompt_get()
-                    });
+                    send({ type: 'prompt-response', id: msg.id, prompt: bus.prompt_get() });
                     break;
                 }
 
                 case 'tab-complete': {
-                    const calypso = deps.calypso_get();
-                    const completions = calypso.tab_complete(msg.line);
-                    send({
-                        type: 'tab-complete-response',
-                        id: msg.id,
-                        completions,
-                        partial: msg.line
-                    });
+                    const completions = bus.tab_complete(msg.line);
+                    send({ type: 'tab-complete-response', id: msg.id, completions, partial: msg.line });
                     break;
                 }
-
-                default:
-                    send({
-                        type: 'error',
-                        id: (msg as { id?: string }).id || 'unknown',
-                        message: `Unknown message type: ${(msg as { type: string }).type}`
-                    });
             }
         } catch (e: unknown) {
             const error = e instanceof Error ? e.message : 'Unknown error';
@@ -165,7 +168,8 @@ export function wsConnection_handle(ws: WebSocket, deps: WebSocketHandlerDeps): 
     });
 
     ws.on('close', () => {
-        unsubscribe();
+        unregisterSurface();
+        unsubscribeTelemetry();
         console.log(`WebSocket client disconnected`);
     });
 

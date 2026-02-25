@@ -8,6 +8,7 @@
 
 import type { AppState, Dataset, Project } from '../models/types.js';
 import type { VfsChangeEvent, CwdChangeEvent } from '../../vfs/types.js';
+import type { TelemetryEvent } from '../../lcarslm/types.js';
 
 /** All application event types. */
 export enum Events {
@@ -17,7 +18,8 @@ export enum Events {
     PROJECT_LOADED = 'PROJECT_LOADED',
     VFS_UPDATED = 'VFS_UPDATED',
     VFS_CHANGED = 'VFS_CHANGED',
-    CWD_CHANGED = 'CWD_CHANGED'
+    CWD_CHANGED = 'CWD_CHANGED',
+    TELEMETRY_EMITTED = 'TELEMETRY_EMITTED'
 }
 
 /** Maps each event type to its payload type. */
@@ -29,6 +31,7 @@ export interface EventPayloads {
     [Events.VFS_UPDATED]: void;
     [Events.VFS_CHANGED]: VfsChangeEvent;
     [Events.CWD_CHANGED]: CwdChangeEvent;
+    [Events.TELEMETRY_EMITTED]: TelemetryEvent;
 }
 
 type Callback<T> = (payload: T) => void;
@@ -46,11 +49,12 @@ class EventEmitter {
      * @param event - The event type.
      * @param callback - The handler to invoke when the event fires.
      */
-    public on<K extends Events>(event: K, callback: Callback<EventPayloads[K]>): void {
+    public on<K extends Events>(event: K, callback: Callback<EventPayloads[K]>): () => void {
         if (!this.listeners[event]) {
             this.listeners[event] = [];
         }
         this.listeners[event]!.push(callback);
+        return () => this.off(event, callback);
     }
 
     /**

@@ -26,12 +26,14 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         const workflowId: string = args[0] || (parameters.workflowId as string) || 'fedml';
         const active: { id: string; name: string; } | null = store.project_getActive();
         
+        const outputDir = `${dataDir}/output`;
+        try { vfs.dir_create(outputDir); } catch { /* ignore */ }
+
         if (active) {
             ui.status(`CALYPSO: SCAFFOLDING ${workflowId.toUpperCase()} WORKSPACE...`);
             
             const username: string = shell.env_get('USER') || 'user';
-            // v10.2: Materialize directly into the provenance-aware dataDir
-            const projectPath: string = dataDir;
+            // v10.2: Materialize into the output subdirectory for DAG linking
             shell.env_set('PROJECT', active.name);
             
             // 2. Perform Simulated Compute (The Experience)
@@ -40,14 +42,14 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
             // 3. Perform actual scaffolding (The Logic)
             const { projectDir_populate, chrisProject_populate } = await import('../vfs/providers/ProjectProvider.js');
             if (workflowId === 'chris') {
-                chrisProject_populate(vfs, username, active.name, projectPath);
+                chrisProject_populate(vfs, username, active.name, outputDir);
             } else {
-                projectDir_populate(vfs, username, active.name, projectPath);
+                projectDir_populate(vfs, username, active.name, outputDir);
             }
             
             // 4. Update working directory
-            vfs.cwd_set(projectPath);
-            shell.env_set('PWD', projectPath);
+            vfs.cwd_set(outputDir);
+            shell.env_set('PWD', outputDir);
         }
 
         const materialized = workflowId === 'chris'
@@ -59,7 +61,8 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
             statusCode: CalypsoStatusCode.OK,
             actions: [{ type: 'stage_advance', stage: 'process', workflow: workflowId }],
             artifactData: { workflowId, scaffolded: true },
-            materialized
+            materialized,
+            physicalDataDir: outputDir
         };
     });
 }

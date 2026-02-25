@@ -77,7 +77,8 @@ async function handle_gather(context: PluginContext): Promise<PluginResult> {
     datasets_materialize(vfs, selected, dataDir);
 
     // 5. Finalize artifact
-    const markerPath: string = `${dataDir}/.cohort`;
+    const markerPath: string = `${dataDir}/output/.cohort`;
+    try { vfs.dir_create(`${dataDir}/output`); } catch { /* ignore */ }
     vfs.file_create(markerPath, `COHORT ASSEMBLED: DETERMINISTIC_SIMULATION\nDATASETS: ${selected.map(d => d.id).join(',')}\n`);
 
     return {
@@ -87,7 +88,7 @@ async function handle_gather(context: PluginContext): Promise<PluginResult> {
         actions: [{ type: 'stage_advance', stage: 'gather' }],
         artifactData: { cohort: selected.map((d: Dataset): string => d.id) },
         materialized: ['.cohort'],
-        physicalDataDir: dataDir
+        physicalDataDir: `${dataDir}/output`
     };
 }
 
@@ -95,22 +96,27 @@ async function handle_gather(context: PluginContext): Promise<PluginResult> {
  * Scan the stage input directory for atomic selection artifacts.
  *
  * @param vfs - Virtual File System instance.
- * @param dataDir - Current stage output directory path.
+ * @param dataDir - Current stage directory path.
  * @returns Array of dataset IDs found in the input buffer.
  */
 function gatherInputs_scan(vfs: VirtualFileSystem, dataDir: string): string[] {
-    const inputDir: string = dataDir.replace(/\/output$/, '/input');
-    const searchInputDir: string = `${inputDir}/search`;
+    // Physical Truth (v12.0): Atomic add-artifacts live in the sibling 'search/output' directory.
+    // The DAG link might be broken or incomplete during transition, so we scan the source.
+    const provenanceRoot = dataDir.split('/search/')[0] + '/search';
+    const searchOutputDir = `${provenanceRoot}/output`;
+    
     const datasetIds: string[] = [];
 
     try {
-        const files = vfs.dir_list(searchInputDir);
+        const files = vfs.dir_list(searchOutputDir);
         for (const file of files) {
             if (file.name.startsWith('add-') && file.name.endsWith('.json')) {
                 const raw: string | null = vfs.node_read(file.path);
                 if (raw) {
                     const data: AddArtifact = JSON.parse(raw) as AddArtifact;
-                    if (data.id) datasetIds.push(data.id);
+                    if (data.id && !datasetIds.includes(data.id)) {
+                        datasetIds.push(data.id);
+                    }
                 }
             }
         }
@@ -126,9 +132,12 @@ function gatherInputs_scan(vfs: VirtualFileSystem, dataDir: string): string[] {
  *
  * @param vfs - Virtual File System instance.
  * @param datasets - Selected datasets to materialize.
- * @param dataDir - Stage output directory path to materialize into.
+ * @param dataDir - Stage directory path to materialize into.
  */
 function datasets_materialize(vfs: VirtualFileSystem, datasets: Dataset[], dataDir: string): void {
+    const outputDir = `${dataDir}/output`;
+    try { vfs.dir_create(outputDir); } catch { /* ignore */ }
+
     const cohortTree = cohortTree_build(datasets as DatasetInput[]);
     const rootChildren = cohortTree.children || [];
     const trainingDir = rootChildren.find((node) => node.type === 'folder' && node.name === 'training');
@@ -141,7 +150,7 @@ function datasets_materialize(vfs: VirtualFileSystem, datasets: Dataset[], dataD
     const datasetDirs = preferredDatasetDirs.length > 0 ? preferredDatasetDirs : fallbackDatasetDirs;
 
     for (const datasetDir of datasetDirs) {
-        vfs.tree_mount(`${dataDir}/${datasetDir.name}`, datasetDir);
+        vfs.tree_mount(`${outputDir}/${datasetDir.name}`, datasetDir);
     }
 }
 

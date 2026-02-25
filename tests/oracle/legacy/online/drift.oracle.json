@@ -1,0 +1,17 @@
+{
+  "name": "Live CNS: Adversarial Drift (Topological Safety)",
+  "persona": "fedml",
+  "steps": [
+    {
+      "send": "harmonize the data now",
+      "expect": "BLOCKED",
+      "output_contains": ["PREREQUISITE NOT MET", "gather"],
+      "expect_model_resolved": true
+    },
+    {
+      "send": "/reset",
+      "expect": "OK",
+      "expect_model_resolved": false
+    }
+  ]
+}

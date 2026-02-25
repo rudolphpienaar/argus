@@ -1,0 +1,21 @@
+{
+  "name": "FedML Smoke (v10 Protocol Verification)",
+  "username": "oracle",
+  "steps": [
+    { "send": "search histology", "expect": "OK" },
+    { "send": "add ds-006", "expect": "OK" },
+    { "send": "gather", "expect": "OK" },
+    { "send": "harmonize", "expect": "OK" },
+    { "send": "proceed", "expect": "OK" },
+    { "send": "train", "expect": "OK" },
+    { "send": "federate", "expect": "OK" },
+    { "send": "transcompile", "expect": "OK" },
+    { "send": "containerize", "expect": "OK" },
+    { "send": "config name oracle-app", "expect": "OK" },
+    { "send": "publish-config", "expect": "OK" },
+    { "send": "publish-execute", "expect": "OK" },
+    { "send": "dispatch", "expect": "OK" },
+    { "send": "status", "expect": "OK" },
+    { "send": "publish model", "expect": "OK" }
+  ]
+}

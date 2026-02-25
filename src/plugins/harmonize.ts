@@ -21,7 +21,7 @@ import { simDelay_wait } from './simDelay.js';
  */
 export async function plugin_execute(context: PluginContext): Promise<PluginResult> {
     return context.comms.execute(async (): Promise<PluginResult> => {
-        const { store, ui, parameters } = context;
+        const { store, ui, parameters, dataDir, vfs } = context;
 
         const active: { id: string; name: string } | null = store.project_getActive();
         if (!active) {
@@ -30,6 +30,9 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
                 statusCode: CalypsoStatusCode.BLOCKED_MISSING
             };
         }
+
+        const outputDir = `${dataDir}/output`;
+        try { vfs.dir_create(outputDir); } catch { /* ignore */ }
 
         // 1. Start the Orchestration Narrative
         ui.log(CalypsoPresenter.success_format('INITIATING COHORT HARMONIZATION PROTOCOL...'));
@@ -48,19 +51,18 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
 
         // 3. Materialize VFS proof-of-work
         // v10.2: Physical Provenance - Materialize actual files into our physical leaf.
-        // We clone from input/ (our parent context) into ourselves (dataDir).
-        const projectRoot = context.dataDir.substring(0, context.dataDir.indexOf('/data'));
-        const symlinkPath = `${projectRoot}/input`;
+        // We clone from our inputs into ourselves (outputDir).
+        const inputDir = dataDir.replace(/\/output$/, '/input');
         
         try {
-            // Clone the input view (parent) into our physical leaf
-            context.vfs.tree_clone(symlinkPath, context.dataDir);
+            // Clone all inputs into our physical leaf
+            vfs.tree_clone(inputDir, outputDir);
         } catch (e) {
             // Fallback or ignore if input is missing/unresolved
         }
 
-        const markerPath: string = `${context.dataDir}/.harmonized`;
-        context.vfs.file_create(markerPath, `HARMONIZED: DETERMINISTIC_SIMULATION\nMODALITY: ${modality}\n`);
+        const markerPath: string = `${outputDir}/.harmonized`;
+        vfs.file_create(markerPath, `HARMONIZED: DETERMINISTIC_SIMULATION\nMODALITY: ${modality}\n`);
 
         ui.frame_close([
             'Images processed:     1,247',
@@ -78,7 +80,8 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
                 modality,
                 cohort: selected.map(ds => ds.id)
             },
-            materialized: ['.harmonized']
+            materialized: ['.harmonized'],
+            physicalDataDir: outputDir
         };
     });
 }

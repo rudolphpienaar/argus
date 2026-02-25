@@ -1,0 +1,12 @@
+{
+  "name": "Live CNS: Scientific Intent (High-Level Mapping)",
+  "persona": "fedml",
+  "steps": [
+    {
+      "send": "I want to devise a training experiment using segmented image data -- do you have any sets?",
+      "expect": "OK",
+      "expect_model_resolved": true,
+      "output_contains": ["ds-004", "ds-005", "ds-006"]
+    }
+  ]
+}

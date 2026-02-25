@@ -263,9 +263,9 @@ export class MerkleEngine {
     }
 
     /**
-     * Strictly literal path resolution, skipping structural and optional parent stages.
-     * Structural and optional nodes are transparent to the session tree layout —
-     * descendants nest under their first user-facing (non-structural, non-optional) ancestor.
+     * Strictly literal path resolution following primary parent chain.
+     * All stages — including joins, gates, and resolvers — appear in the
+     * provenance path. Descendants nest under their primary parent (previous[0]).
      */
     private async stagePathLiteral_resolve(
         stageId: string,
@@ -284,42 +284,15 @@ export class MerkleEngine {
             return rootPath;
         }
 
-        // Walk primary parent chain, skipping structural and optional nodes.
-        // These are transparent to the file system layout.
-        let primaryParentId = node.previous[0];
-        while (primaryParentId) {
-            const parentNode: DAGNode | undefined = this.workflowAdapter.dag.nodes.get(primaryParentId);
-            if (!parentNode) break;
+        // Follow primary parent (previous[0]) for path nesting.
+        // Every stage appears in the chain — no transparency skipping.
+        const primaryParentId = node.previous[0];
+        const parentPath = await this.stagePathLiteral_resolve(primaryParentId, cache);
+        if (!parentPath) return null;
 
-            // Skip structural nodes and non-root optional nodes (e.g. 'rename').
-            // Root-level optionals (no parents, e.g. 'search') ARE canonical path elements.
-            const isNonRootOptional =
-                parentNode.optional && parentNode.previous !== null && parentNode.previous.length > 0;
-            if (parentNode.structural || isNonRootOptional) {
-                // Skip: continue up to the parent's primary parent
-                if (parentNode.previous && parentNode.previous.length > 0) {
-                    primaryParentId = parentNode.previous[0];
-                } else {
-                    // Structural root with no grandparents — treat this node as root too
-                    const rootPath = [stageId];
-                    cache.set(stageId, rootPath);
-                    return rootPath;
-                }
-            } else {
-                // Found a user-facing parent — resolve its path and nest under it
-                const parentPath = await this.stagePathLiteral_resolve(primaryParentId, cache);
-                if (!parentPath) return null;
-
-                const resolved = [...parentPath, stageId];
-                cache.set(stageId, resolved);
-                return resolved;
-            }
-        }
-
-        // Fallback: treat as root
-        const rootPath = [stageId];
-        cache.set(stageId, rootPath);
-        return rootPath;
+        const resolved = [...parentPath, stageId];
+        cache.set(stageId, resolved);
+        return resolved;
     }
 
     /**

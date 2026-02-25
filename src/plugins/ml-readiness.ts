@@ -341,7 +341,7 @@ function report_markdownBuild(summary: ReadinessSummary): string {
     lines.push('# ML Readiness Coverage Report');
     lines.push('');
     lines.push(`- Decision: **${summary.decision.toUpperCase()}**`);
-    lines.push(`- Objective: \\`${summary.objective}\\``);
+    lines.push(`- Objective: \`${summary.objective}\``);
     lines.push(`- Mixed tasks: **${summary.mixedTasks ? 'YES' : 'NO'}**`);
     lines.push(`- Reason: ${summary.reason}`);
     lines.push('');

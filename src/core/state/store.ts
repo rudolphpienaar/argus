@@ -13,7 +13,7 @@ import { events, Events } from './events.js';
 import { MARKETPLACE_ASSETS, type MarketplaceAsset } from '../data/marketplace.js';
 import { asset_install } from '../../vfs/providers/MarketplaceProvider.js';
 import type { LCARSTerminal } from '../../ui/components/Terminal.js';
-import type { LCARSEngine } from '../../lcarslm/engine.js';
+import type { LCARSEngine } from '../../lcarslm/kernel/LCARSEngine.js';
 import type { Shell } from '../../vfs/Shell.js';
 import type { FrameSlot } from '../../ui/components/FrameSlot.js';
 

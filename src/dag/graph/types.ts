@@ -73,7 +73,6 @@ export interface DAGNode {
     phase: string | null;
     previous: string[] | null;
     optional: boolean;
-    structural?: boolean;
     produces: string[];
     parameters: StageParameters;
     instruction: string;

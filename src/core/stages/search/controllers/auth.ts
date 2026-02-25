@@ -16,7 +16,7 @@
  */
 
 import { store } from '../../../state/store.js';
-import { LCARSEngine } from '../../../../lcarslm/engine.js';
+import { LCARSEngine } from '../../../../lcarslm/kernel/LCARSEngine.js';
 import { core_reinitialize } from '../../../../lcarslm/browser.js';
 import { SYSTEM_KNOWLEDGE } from '../../../data/knowledge.js';
 

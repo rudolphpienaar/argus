@@ -1,33 +1,29 @@
 /**
- * @file LCARSLM Engine
+ * @file LCARSEngine - Retrieval Augmented Generation (RAG) orchestrator.
  * 
- * Orchestrates the interaction between the user, the dataset "knowledge base",
- * and the LLM. Implements a simplified RAG pattern.
- * 
- * @module
+ * Manages the interaction between the LLM model and local system knowledge.
  */
 
-import { OpenAIClient } from '../client.js';
-import { GeminiClient } from '../gemini.js';
-import type { ChatMessage, QueryResponse, LCARSSystemConfig } from '../types.js';
+import { GeminiClient } from './gemini.js';
+import { OpenAIClient } from './openai.js';
+import type { 
+    ChatMessage, 
+    LCARSSystemConfig, 
+    QueryResponse,
+    Dataset,
+    Project
+} from '../types.js';
 import { DATASETS } from '../../core/data/datasets.js';
 import { MOCK_PROJECTS } from '../../core/data/projects.js';
-import type { Dataset, Project } from '../../core/models/types.js';
 
-/**
- * Engine for the LCARS Language Model integration.
- * Orchestrates retrieval, prompt construction, and LLM interaction.
- */
 export class LCARSEngine {
-    private client: OpenAIClient | GeminiClient | null;
-    private systemPrompt: string;
+    private client: any;
     private history: ChatMessage[] = [];
     private readonly MAX_HISTORY = 10;
+    private readonly systemPrompt: string;
 
     /**
-     * Creates a new LCARSEngine instance.
-     * 
-     * @param config - The system configuration, or null for offline mode.
+     * @param config - Provider configuration (Gemini or OpenAI).
      * @param knowledge - Optional dictionary of system documentation (filename -> content).
      */
     constructor(
@@ -48,15 +44,10 @@ export class LCARSEngine {
 Your primary function is to query the medical imaging dataset catalog and manage the user session. You also have access to the system's full technical documentation.
 
 ### OPERATIONAL DIRECTIVES:
-1.  **Response Format**: Use LCARS markers. Start important affirmations with "●". Use "○" for technical details. Use line breaks (\n) between logical sections for terminal readability.
+1.  **Response Format**: Use LCARS markers. Start important affirmations with "●". Use "○" for technical details. Use line breaks (\\n) between logical sections for terminal readability.
 2.  **Intent Identification**:
     *   If the user EXPLICITLY asks to "open", "select", "inspect", or "add" a specific dataset, include [SELECT: ds-ID] at the **END** of your response.
     *   If the user asks to "search", "show", "find", or "list" datasets, include [ACTION: SHOW_DATASETS] and optionally [FILTER: ds-ID, ds-ID] at the **END** of your response. Do NOT use [SELECT] for search queries.
-    *   If the user wants to proceed to the coding/development stage:
-        - If they specify a workflow type, include [ACTION: PROCEED <workflow-id>] at the **END**.
-        - If they do NOT specify a workflow type (just "proceed", "let's code", etc.), ASK them to choose from available workflows. Do NOT include [ACTION: PROCEED] until they choose.
-    *   If the user asks to rename the current project (or draft), include [ACTION: RENAME new-name] at the **END** of your response. Use a URL-safe name (alphanumeric, underscores, or hyphens).
-    *   If the user asks to "harmonize", "standardize", "normalize", or "fix" the data/cohort to resolve heterogeneity issues, include [ACTION: HARMONIZE] at the **END** of your response.
 3.  **Strict Boundary**: Do NOT attempt to "correct" or "fix" shell command typos (e.g., if the user types 'sl', do NOT analyze it as 'ls'). If a command is unknown, simply respond conversationally or state that the command is not recognized. NEVER output structured [ACTION] tags for shell-level typographical errors.
 4.  **Persona**: Industrial, efficient, but helpful. Use "I" to refer to yourself as Calypso.
 5.  **Knowledge Usage**: Use the provided SYSTEM KNOWLEDGE BASE to answer questions about ARGUS architecture, the SeaGaP workflow, or specific components. Cite the file name if relevant (e.g., "ACCORDING TO docs/legacy/seagap-workflow.adoc...").
@@ -97,7 +88,7 @@ The context provided to you contains a JSON list of available datasets. Use this
                 { role: 'system', content: this.systemPrompt },
                 { role: 'user', content: userText }
             ];
-            const answer = await this.client.query(messages);
+            const answer = await this.client.chat(messages);
             return { answer, relevantDatasets: [] };
         }
 
@@ -142,27 +133,19 @@ The context provided to you contains a JSON list of available datasets. Use this
             ...this.history
         ];
 
-        // 3. Generation
-        const answer: string = await this.client_require().chat(messages);
+        try {
+            const answer = await this.client.chat(messages);
+            
+            // Append model response to history
+            this.history.push({ role: 'assistant', content: answer });
 
-        // Add assistant response to history
-        this.history.push({ role: 'assistant', content: answer });
-
-        return {
-            answer,
-            relevantDatasets
-        };
-    }
-
-    /**
-     * Returns an initialized LLM client for online requests.
-     *
-     * @returns Active OpenAI or Gemini client.
-     */
-    private client_require(): OpenAIClient | GeminiClient {
-        if (!this.client) {
-            throw new Error('LLM client is not configured.');
+            return {
+                answer,
+                relevantDatasets
+            };
+        } catch (error: unknown) {
+            console.error('LLM Query Error:', error);
+            throw error;
         }
-        return this.client;
     }
 }

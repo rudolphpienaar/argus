@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import { wsConnection_handle } from './WebSocketHandler.js';
+import { SessionBus } from '../bus/SessionBus.js';
 import type { WebSocket } from 'ws';
-import type { WebSocketCalypso } from './WebSocketHandler.js';
+import type { WebSocketCalypso } from '../bus/types.js';
 import { CalypsoStatusCode, type CalypsoResponse } from '../../lcarslm/types.js';
 import type { WorkflowSummary } from '../../core/workflows/types.js';
 
@@ -21,12 +22,13 @@ class MockWebSocket extends EventEmitter {
     }
 }
 
-class TelemetryCoreStub implements WebSocketCalypso {
-    private observers: Set<(event: unknown) => void> = new Set();
+class KernelStub implements WebSocketCalypso {
+    private observers: Set<(event: any) => void> = new Set();
     public bootCalled: number = 0;
     public shouldFailBoot: boolean = false;
+    public commandsExecuted: string[] = [];
 
-    telemetry_subscribe(observer: (event: unknown) => void): () => void {
+    telemetry_subscribe(observer: (event: any) => void): () => void {
         this.observers.add(observer);
         return (): void => {
             this.observers.delete(observer);
@@ -39,9 +41,10 @@ class TelemetryCoreStub implements WebSocketCalypso {
         }
     }
 
-    async command_execute(): Promise<CalypsoResponse> {
+    async command_execute(command: string): Promise<CalypsoResponse> {
+        this.commandsExecuted.push(command);
         return {
-            message: '',
+            message: `ok: ${command}`,
             actions: [],
             success: true,
             statusCode: CalypsoStatusCode.OK
@@ -82,22 +85,23 @@ function flush_async(): Promise<void> {
     });
 }
 
+// ─── Telemetry Rebinding Tests ───────────────────────────────────────────────
+
 describe('WebSocketHandler telemetry rebinding', (): void => {
     it('rebinds telemetry stream after login reinitializes CalypsoCore', async (): Promise<void> => {
         const ws: MockWebSocket = new MockWebSocket();
-        const coreA: TelemetryCoreStub = new TelemetryCoreStub();
-        const coreB: TelemetryCoreStub = new TelemetryCoreStub();
-        let current: TelemetryCoreStub = coreA;
+        const kernelA: KernelStub = new KernelStub();
+        const kernelB: KernelStub = new KernelStub();
+        const bus: SessionBus = new SessionBus(kernelA);
 
         wsConnection_handle(ws as unknown as WebSocket, {
-            calypso_get: (): WebSocketCalypso => current,
-            calypso_reinitialize: (): WebSocketCalypso => {
-                current = coreB;
-                return current;
+            bus_get: (): SessionBus => bus,
+            calypso_reinitialize: (): void => {
+                bus.kernel_replace(kernelB);
             }
         });
 
-        coreA.telemetry_emit({ type: 'progress', label: 'before-login', percent: 25 });
+        kernelA.telemetry_emit({ type: 'progress', label: 'before-login', percent: 25 });
 
         ws.emit('message', Buffer.from(JSON.stringify({
             type: 'login',
@@ -106,8 +110,8 @@ describe('WebSocketHandler telemetry rebinding', (): void => {
         })));
         await flush_async();
 
-        coreA.telemetry_emit({ type: 'progress', label: 'stale-core', percent: 50 });
-        coreB.telemetry_emit({ type: 'progress', label: 'active-core', percent: 75 });
+        kernelA.telemetry_emit({ type: 'progress', label: 'stale-core', percent: 50 });
+        kernelB.telemetry_emit({ type: 'progress', label: 'active-core', percent: 75 });
 
         const messages: CapturedMessage[] = sentMessages_parse(ws);
         const telemetry = messages.filter((msg: CapturedMessage): boolean => msg.type === 'telemetry');
@@ -121,20 +125,21 @@ describe('WebSocketHandler telemetry rebinding', (): void => {
         expect(labels).toContain('before-login');
         expect(labels).toContain('active-core');
         expect(labels).not.toContain('stale-core');
-        expect(coreB.bootCalled).toBe(1);
+        expect(kernelB.bootCalled).toBe(1);
         expect(loginResponse?.success).toBe(true);
     });
 
     it('forwards boot_log telemetry payload fields without dropping phase/seq', async (): Promise<void> => {
         const ws: MockWebSocket = new MockWebSocket();
-        const core: TelemetryCoreStub = new TelemetryCoreStub();
+        const kernel: KernelStub = new KernelStub();
+        const bus: SessionBus = new SessionBus(kernel);
 
         wsConnection_handle(ws as unknown as WebSocket, {
-            calypso_get: (): WebSocketCalypso => core,
-            calypso_reinitialize: (): WebSocketCalypso => core
+            bus_get: (): SessionBus => bus,
+            calypso_reinitialize: (): void => {}
         });
 
-        core.telemetry_emit({
+        kernel.telemetry_emit({
             type: 'boot_log',
             phase: 'login_boot',
             id: 'sys_genesis',
@@ -159,16 +164,15 @@ describe('WebSocketHandler telemetry rebinding', (): void => {
     it('returns hard error when boot throws during login', async (): Promise<void> => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation((): void => {});
         const ws: MockWebSocket = new MockWebSocket();
-        const coreA: TelemetryCoreStub = new TelemetryCoreStub();
-        const coreB: TelemetryCoreStub = new TelemetryCoreStub();
-        coreB.shouldFailBoot = true;
-        let current: TelemetryCoreStub = coreA;
+        const kernelA: KernelStub = new KernelStub();
+        const kernelB: KernelStub = new KernelStub();
+        kernelB.shouldFailBoot = true;
+        const bus: SessionBus = new SessionBus(kernelA);
 
         wsConnection_handle(ws as unknown as WebSocket, {
-            calypso_get: (): WebSocketCalypso => current,
-            calypso_reinitialize: (): WebSocketCalypso => {
-                current = coreB;
-                return current;
+            bus_get: (): SessionBus => bus,
+            calypso_reinitialize: (): void => {
+                bus.kernel_replace(kernelB);
             }
         });
 
@@ -187,10 +191,156 @@ describe('WebSocketHandler telemetry rebinding', (): void => {
             (msg: CapturedMessage): boolean => msg.type === 'login-response',
         );
 
-        expect(coreB.bootCalled).toBe(1);
+        expect(kernelB.bootCalled).toBe(1);
         expect(errorResponse).toBeDefined();
         expect(errorResponse?.message).toMatch(/Boot failed:/);
         expect(loginResponse).toBeUndefined();
         errorSpy.mockRestore();
+    });
+});
+
+// ─── Cross-Surface Broadcast Tests ──────────────────────────────────────────
+
+describe('WebSocketHandler cross-surface broadcast', (): void => {
+    it('second connection receives session_event when first submits a command', async (): Promise<void> => {
+        const kernel: KernelStub = new KernelStub();
+        const bus: SessionBus = new SessionBus(kernel);
+
+        const ws1: MockWebSocket = new MockWebSocket();
+        const ws2: MockWebSocket = new MockWebSocket();
+
+        const deps = { bus_get: (): SessionBus => bus, calypso_reinitialize: (): void => {} };
+        wsConnection_handle(ws1 as unknown as WebSocket, deps);
+        wsConnection_handle(ws2 as unknown as WebSocket, deps);
+
+        ws1.emit('message', Buffer.from(JSON.stringify({
+            type: 'command',
+            id: 'cmd-1',
+            command: 'search histology'
+        })));
+        await flush_async();
+
+        const ws1Messages = sentMessages_parse(ws1);
+        const ws2Messages = sentMessages_parse(ws2);
+
+        // ws1 gets a direct response
+        const response = ws1Messages.find(m => m.type === 'response');
+        expect(response).toBeDefined();
+        expect(response?.id).toBe('cmd-1');
+
+        // ws2 gets a session_event with the full response
+        const event = ws2Messages.find(m => m.type === 'session_event');
+        expect(event).toBeDefined();
+        expect(event?.input).toBe('search histology');
+        expect((event?.response as CalypsoResponse)?.success).toBe(true);
+    });
+
+    it('session_event is NOT sent to the originating connection', async (): Promise<void> => {
+        const kernel: KernelStub = new KernelStub();
+        const bus: SessionBus = new SessionBus(kernel);
+
+        const ws1: MockWebSocket = new MockWebSocket();
+        const ws2: MockWebSocket = new MockWebSocket();
+
+        const deps = { bus_get: (): SessionBus => bus, calypso_reinitialize: (): void => {} };
+        wsConnection_handle(ws1 as unknown as WebSocket, deps);
+        wsConnection_handle(ws2 as unknown as WebSocket, deps);
+
+        ws1.emit('message', Buffer.from(JSON.stringify({
+            type: 'command',
+            id: 'cmd-x',
+            command: 'gather'
+        })));
+        await flush_async();
+
+        const ws1Messages = sentMessages_parse(ws1);
+        const ws1Events = ws1Messages.filter(m => m.type === 'session_event');
+
+        // Originator must NOT receive its own session_event
+        expect(ws1Events).toHaveLength(0);
+    });
+
+    it('unregistered connection no longer receives session_events', async (): Promise<void> => {
+        const kernel: KernelStub = new KernelStub();
+        const bus: SessionBus = new SessionBus(kernel);
+
+        const ws1: MockWebSocket = new MockWebSocket();
+        const ws2: MockWebSocket = new MockWebSocket();
+
+        const deps = { bus_get: (): SessionBus => bus, calypso_reinitialize: (): void => {} };
+        wsConnection_handle(ws1 as unknown as WebSocket, deps);
+        wsConnection_handle(ws2 as unknown as WebSocket, deps);
+
+        // ws2 disconnects
+        ws2.emit('close');
+
+        ws1.emit('message', Buffer.from(JSON.stringify({
+            type: 'command',
+            id: 'cmd-after-close',
+            command: 'harmonize'
+        })));
+        await flush_async();
+
+        const ws2Messages = sentMessages_parse(ws2);
+        const ws2Events = ws2Messages.filter(m => m.type === 'session_event');
+
+        // ws2 was closed before the command — should receive no session_events
+        expect(ws2Events).toHaveLength(0);
+    });
+
+    it('sourceId in session_event identifies the originating connection', async (): Promise<void> => {
+        const kernel: KernelStub = new KernelStub();
+        const bus: SessionBus = new SessionBus(kernel);
+
+        const ws1: MockWebSocket = new MockWebSocket();
+        const ws2: MockWebSocket = new MockWebSocket();
+
+        const deps = { bus_get: (): SessionBus => bus, calypso_reinitialize: (): void => {} };
+        wsConnection_handle(ws1 as unknown as WebSocket, deps);
+        wsConnection_handle(ws2 as unknown as WebSocket, deps);
+
+        ws1.emit('message', Buffer.from(JSON.stringify({
+            type: 'command',
+            id: 'cmd-src',
+            command: 'search'
+        })));
+        await flush_async();
+
+        const ws2Messages = sentMessages_parse(ws2);
+        const event = ws2Messages.find(m => m.type === 'session_event');
+
+        expect(event).toBeDefined();
+        // sourceId must be a valid ws-conn-N identifier
+        expect(typeof event?.sourceId).toBe('string');
+        expect(event?.sourceId).toMatch(/^ws-conn-\d+$/);
+    });
+
+    it('three connections: event from first reaches second and third but not first', async (): Promise<void> => {
+        const kernel: KernelStub = new KernelStub();
+        const bus: SessionBus = new SessionBus(kernel);
+
+        const ws1: MockWebSocket = new MockWebSocket();
+        const ws2: MockWebSocket = new MockWebSocket();
+        const ws3: MockWebSocket = new MockWebSocket();
+
+        const deps = { bus_get: (): SessionBus => bus, calypso_reinitialize: (): void => {} };
+        wsConnection_handle(ws1 as unknown as WebSocket, deps);
+        wsConnection_handle(ws2 as unknown as WebSocket, deps);
+        wsConnection_handle(ws3 as unknown as WebSocket, deps);
+
+        ws1.emit('message', Buffer.from(JSON.stringify({
+            type: 'command',
+            id: 'cmd-3way',
+            command: 'train'
+        })));
+        await flush_async();
+
+        const ws1Events = sentMessages_parse(ws1).filter(m => m.type === 'session_event');
+        const ws2Events = sentMessages_parse(ws2).filter(m => m.type === 'session_event');
+        const ws3Events = sentMessages_parse(ws3).filter(m => m.type === 'session_event');
+
+        expect(ws1Events).toHaveLength(0);  // originator gets no session_event
+        expect(ws2Events).toHaveLength(1);  // second surface receives it
+        expect(ws3Events).toHaveLength(1);  // third surface receives it
     });
 });

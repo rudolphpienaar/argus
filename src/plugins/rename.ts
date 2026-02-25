@@ -24,11 +24,15 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         const { args, store, shell, vfs, ui, dataDir } = context;
         
         let newName: string = args.join(' ');
-        if (newName.toLowerCase().startsWith('to ')) {
-            newName = newName.substring(3).trim();
-        } else if (newName.toLowerCase().startsWith('as ')) {
-            newName = newName.substring(3).trim();
+        // Strip natural-language connectors: "to <name>", "this as <name>", "X as <name>", etc.
+        const toMatch = newName.match(/(?:^|\s)to\s+(\S.*)/i);
+        const asMatch = newName.match(/(?:^|\s)as\s+(\S.*)/i);
+        if (toMatch) {
+            newName = toMatch[1].trim();
+        } else if (asMatch) {
+            newName = asMatch[1].trim();
         }
+        newName = newName.toLowerCase();
 
         if (!newName) {
             return {
@@ -61,16 +65,19 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
         shell.env_set('PROJECT', newName);
 
         // v12.0: Physical Contract - Materialize the view in our output/
-        // We merge from our primary parent (gather).
+        // Dynamically discover the primary parent — no hardcoded stage names.
         const inputDir = dataDir.replace(/\/output$/, '/input');
-        const parentOutputDir = `${inputDir}/gather`;
-
-        try {
-            if (vfs.node_stat(parentOutputDir)) {
-                merge_causal(vfs, parentOutputDir, dataDir, 'gather');
+        const parents = vfs.dir_list(inputDir);
+        if (parents.length > 0) {
+            const parentId = parents[0].name;
+            const parentOutputDir = `${inputDir}/${parentId}`;
+            try {
+                if (vfs.node_stat(parentOutputDir)) {
+                    merge_causal(vfs, parentOutputDir, dataDir, parentId);
+                }
+            } catch (e) {
+                // ignore
             }
-        } catch (e) {
-            // ignore
         }
 
         return {
@@ -89,7 +96,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
  */
 function merge_causal(vfs: any, src: string, dest: string, parentId: string): void {
     const nodes = vfs.dir_list(src);
-    
+
     for (const node of nodes) {
         // Skip system-owned infrastructure dirs
         if (['meta', 'input', 'output'].includes(node.name)) {
@@ -97,14 +104,10 @@ function merge_causal(vfs: any, src: string, dest: string, parentId: string): vo
         }
 
         const targetPath = `${dest}/${node.name}`;
-        const isDataDir = ['training', 'validation', 'images', 'masks'].includes(node.name);
 
-        if (isDataDir) {
-            // Relative link to parent output: ../input/<parentId>/<name>
+        if (node.type === 'folder') {
+            // Link all subdirectories — this is an alias-only operation
             vfs.link_create(targetPath, `../input/${parentId}/${node.name}`);
-        } else if (node.type === 'folder') {
-            vfs.dir_create(targetPath);
-            merge_causal(vfs, node.path, targetPath, parentId);
         } else {
             // Clone small work files
             vfs.tree_clone(node.path, targetPath);

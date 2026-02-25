@@ -243,7 +243,7 @@ function graphvizLayout_resolve(nodes: DagBoxNodeInput[], edges: DagBoxEdgeInput
         edges: [],
     };
 
-    const lines: string[] = result.stdout.split(/\r?\n/).map((line: string): string => line.trim()).filter(Boolean);
+    const lines: string[] = (result.stdout as string).split(/\r?\n/).map((line: string): string => line.trim()).filter(Boolean);
     for (const line of lines) {
         const t: string[] = tokens_split(line);
         if (t.length === 0) continue;
@@ -401,7 +401,9 @@ function fallback_render(nodes: DagBoxNodeInput[], edges: DagBoxEdgeInput[]): st
         lines.push(`│ ${label_fit(node.line2, width - 2)} │`);
         lines.push(`└${'─'.repeat(width)}┘`);
         const children = childMap.get(node.id) || [];
-        children.forEach((child: string, i: number): void => lines.push(`${i === children.length - 1 ? '└' : '├'}─► ${child}`));
+        children.forEach((child: string, i: number): void => {
+            lines.push(`${i === children.length - 1 ? '└' : '├'}─► ${child}`);
+        });
         lines.push('');
     }
     return lines;

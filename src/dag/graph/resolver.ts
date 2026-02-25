@@ -75,9 +75,9 @@ export function position_resolve(
     completedIds: Set<string>,
     staleIds?: Set<string>,
 ): WorkflowPosition {
-    // Auto-promote structural stages when all their deps are met.
-    // This makes structural nodes transparent to position resolution.
-    const effectiveCompleted = structuralCompletion_resolve(definition, completedIds);
+    // Auto-promote no-commands stages when all their deps are met.
+    // This makes no-commands nodes transparent to position resolution.
+    const effectiveCompleted = autoExecuteCompletion_resolve(definition, completedIds);
 
     const staleFn: ((id: string) => boolean) | undefined = staleIds ? (id: string): boolean => staleIds.has(id) : undefined;
     const allReadiness = dag_resolve(definition, effectiveCompleted, staleFn);
@@ -86,13 +86,13 @@ export function position_resolve(
     const topoOrder = topologicalSort_compute(definition);
 
     // Find the first ready (not complete) user-facing stage in topological order.
-    // Structural stages are skipped — they are transparent to the user.
+    // No-commands stages are skipped — they are transparent to the user.
     const readinessMap = new Map(allReadiness.map(r => [r.nodeId, r]));
     let currentStage: DAGNode | null = null;
 
     for (const id of topoOrder) {
         const node: DAGNode | undefined = definition.nodes.get(id);
-        if (!node || node.structural) continue; // skip structural nodes
+        if (!node || !nodeHasCommands(node)) continue; // skip no-commands nodes
         const r: NodeReadiness | undefined = readinessMap.get(id);
         if (r && r.ready && !r.complete) {
             currentStage = node;
@@ -100,14 +100,14 @@ export function position_resolve(
         }
     }
 
-    // Only include user-facing (non-structural) completed stages in progress counts.
+    // Only include user-facing (commands-bearing) completed stages in progress counts.
     const completedStages = Array.from(completedIds).filter(id => {
         const node = definition.nodes.get(id);
-        return node && !node.structural;
+        return node && nodeHasCommands(node);
     });
 
-    // User-facing total excludes structural nodes.
-    const userFacingTotal = Array.from(definition.nodes.values()).filter(n => !n.structural).length;
+    // User-facing total excludes no-commands nodes.
+    const userFacingTotal = Array.from(definition.nodes.values()).filter(n => nodeHasCommands(n)).length;
 
     return {
         completedStages,
@@ -126,15 +126,26 @@ export function position_resolve(
 }
 
 /**
- * Auto-promote structural stages when all their dependencies are met.
- * Structural stages are implementation-level nodes invisible to the user.
+ * Determine whether a DAG node has user-invocable commands.
+ * Nodes without commands are auto-executed when their parents complete.
+ *
+ * @param node - The DAGNode to inspect.
+ * @returns True if the node has at least one command, false otherwise.
+ */
+function nodeHasCommands(node: DAGNode): boolean {
+    return Array.isArray(node.commands) && node.commands.length > 0;
+}
+
+/**
+ * Auto-promote no-commands stages when all their dependencies are met.
+ * No-commands stages are implementation-level nodes invisible to the user.
  * They are treated as virtually complete once their deps are satisfied.
  *
  * @param definition - The DAG definition
  * @param completedIds - Set of actually materialized stage IDs
- * @returns Expanded set with structural stages auto-promoted
+ * @returns Expanded set with no-commands stages auto-promoted
  */
-function structuralCompletion_resolve(
+function autoExecuteCompletion_resolve(
     definition: DAGDefinition,
     completedIds: Set<string>,
 ): Set<string> {
@@ -144,7 +155,7 @@ function structuralCompletion_resolve(
     while (changed) {
         changed = false;
         for (const node of definition.nodes.values()) {
-            if (!node.structural || effective.has(node.id)) continue;
+            if (nodeHasCommands(node) || effective.has(node.id)) continue;
 
             const allParentsMet =
                 !node.previous || node.previous.every((parentId: string) => effective.has(parentId));

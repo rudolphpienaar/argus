@@ -1,43 +1,37 @@
 /**
  * @file LLM Intent Compiler
  *
- * Probabilistic mapping of natural language to strictly-typed JSON protocols.
- * Handles prompt construction, JSON extraction, and anaphora resolution.
+ * Probabilistic translation of noisy natural language into strictly-typed JSON intents.
+ * This is the "Higher Brain" component of the CNS.
  *
- * @module lcarslm/routing/LLMIntentCompiler
+ * @module lcarslm/kernel/LLMIntentCompiler
  */
 
-import type { CalypsoIntent, CalypsoAction, CalypsoStoreActions } from '../../types.js';
+import type { CalypsoIntent, CalypsoAction, CalypsoStoreActions } from '../types.js';
 import type { LCARSEngine } from './LCARSEngine.js';
-import type { SearchProvider } from '../../SearchProvider.js';
+import type { SearchProvider } from '../SearchProvider.js';
 import type { Dataset } from '../../core/models/types.js';
 
-interface ModelIntentPayload {
-    type?: unknown;
-    command?: unknown;
-    args?: unknown;
-}
-
 /**
- * Context required for LLM intent compilation.
+ * Context required for intent compilation.
  */
 export interface LLMCompilerContext {
     workflowCommands_resolve: () => string[];
-    searchProvider: SearchProvider;
     storeActions: CalypsoStoreActions;
+    searchProvider: SearchProvider;
 }
 
 /**
- * Compiler for semantic natural-language-to-protocol translation.
+ * Probabilistic compiler for noisy user inputs.
  */
 export class LLMIntentCompiler {
     /**
-     * Compile natural language into a structured intent using the LLM.
-     *
-     * @param input - Original user input.
-     * @param model - The LLM engine.
-     * @param ctx - Compiler context.
-     * @returns Compiled intent.
+     * Compile natural language input into a structured intent.
+     * 
+     * @param input - Grounded user input.
+     * @param model - The underlying language model.
+     * @param ctx - Compiler context (vocab + state).
+     * @returns Resolved intent.
      */
     public async compile(
         input: string, 
@@ -49,6 +43,14 @@ export class LLMIntentCompiler {
             ? workflowCommands.join(', ')
             : '(none)';
             
+        // v12.0: Strict Anaphora Context
+        // We only tell the compiler about datasets mentioned in the last turn
+        // to prevent over-eager selection of the entire catalog.
+        const recentDatasets = ctx.storeActions.lastMentioned_get();
+        const datasetLine = recentDatasets.length > 0
+            ? recentDatasets.map(d => `${d.id} (${d.name})`).join(', ')
+            : '(none mentioned in last turn)';
+
         const prompt: string = `
             You are the ARGUS Intent Compiler. Your job is to translate noisy natural language
             into a strictly-typed JSON intent object for the ARGUS Operating System.
@@ -57,162 +59,119 @@ export class LLMIntentCompiler {
             - Workflow: ${workflowLine}.
             - Shell: ls, cd, cat, mkdir, pwd, touch, rm, cp, mv, tree.
 
+            RECENTLY MENTIONED DATASETS (for anaphora like "it", "them", "those"):
+            ${datasetLine}
+
             FORMAT:
             { "type": "workflow" | "shell" | "llm", "command": string, "args": string[] }
 
             RULES:
             1. If the input is a command request, map it to the most relevant command.
-            2. For "search for [topic]", command is "search" and args is ["[topic]"].
-            3. For "list all [extension] files", command is "ls" and args is ["*.[extension]"].
-            4. If the input is conversational (greeting, question, etc.), set type to "llm".
-
-            EXAMPLES:
-            "Search for histology data" -> { "type": "workflow", "command": "search", "args": ["histology"] }
-            "list all text files" -> { "type": "shell", "command": "ls", "args": ["*.txt"] }
-            "rename this to project-x" -> { "type": "workflow", "command": "rename", "args": ["project-x"] }
-            "hello calypso" -> { "type": "llm" }
-
-            USER INPUT: "${input}"
+            2. For "list all [extension] files", command is "ls" and args is ["*.[extension]"].
+            3. If the input is conversational (greeting, question, etc.), set type to "llm".
         `;
 
         try {
-            const response = await model.query(prompt);
-            const payload: ModelIntentPayload | null = this.payload_parseFromModelText(response.answer);
-            if (!payload) {
-                return this.intent_modelFallback(input);
+            const result = await model.query(prompt + `\n\nINPUT: "${input}"`, [], true);
+            const jsonStr = this.json_extract(result.answer);
+            const intent = JSON.parse(jsonStr) as CalypsoIntent;
+
+            const validTypes = ['workflow', 'shell', 'llm'];
+            if (!intent.type || !validTypes.includes(intent.type)) {
+                return { type: 'llm', raw: input, isModelResolved: true };
             }
-            return this.intent_fromModelPayload(input, payload, ctx);
+
+            // Validate that a workflow command is actually in the allowed vocabulary
+            if (intent.type === 'workflow') {
+                const allowedCommands = ctx.workflowCommands_resolve();
+                if (!intent.command || !allowedCommands.includes(intent.command)) {
+                    return { type: 'llm', raw: input, isModelResolved: true };
+                }
+            }
+
+            // Post-process anaphora resolution for dataset IDs
+            intent.args = await this.anaphora_resolve(intent.args || [], ctx);
+
+            return {
+                ...intent,
+                raw: input,
+                isModelResolved: true
+            };
         } catch {
-            return this.intent_modelFallback(input);
+            return {
+                type: 'llm',
+                raw: input,
+                isModelResolved: true
+            };
         }
     }
 
     /**
-     * Parse side effects from a conversational response.
+     * Extract structured actions and clean text from LLM response.
      */
-    public actions_extract(text: string, ctx: LLMCompilerContext): { actions: CalypsoAction[], cleanText: string } {
+    public actions_extract(text: string, ctx: any): { actions: CalypsoAction[], cleanText: string } {
         const actions: CalypsoAction[] = [];
+        let cleanText = text;
 
-        // 1. Update search context
-        ctx.searchProvider.context_updateFromText(text);
-
-        // 2. Extract Individual Actions
-        this.datasetSelection_extract(text, actions);
-        this.workflowAdvance_extract(text, actions);
-        this.datasetRender_extract(text, ctx.searchProvider, actions);
-        this.projectRename_extract(text, ctx.storeActions, actions);
-
-        // 3. Clean up text markers
-        const cleanText: string = this.actionMarkers_strip(text);
-
-        return { actions, cleanText };
-    }
-
-    private datasetSelection_extract(text: string, actions: CalypsoAction[]): void {
-        const matches: RegExpMatchArray[] = Array.from(text.matchAll(/\[SELECT: (ds-[0-9]+)\]/g));
-        for (const match of matches) {
+        // 1. SELECT tags
+        const selectMatches = Array.from(text.matchAll(/\[SELECT: (ds-[0-9]+)\]/g));
+        for (const match of selectMatches) {
             actions.push({ type: 'dataset_select', id: match[1] });
+            cleanText = cleanText.replace(match[0], '');
         }
+
+        // 2. SHOW_DATASETS → workspace_render
+        const showDatasetsMatch = text.match(/\[ACTION: SHOW_DATASETS\]/i);
+        if (showDatasetsMatch) {
+            const selected = ctx.storeActions?.datasets_getSelected?.() ?? [];
+            actions.push({ type: 'workspace_render', datasets: selected });
+            cleanText = cleanText.replace(showDatasetsMatch[0], '');
+        }
+
+        return { actions, cleanText: cleanText.trim() };
     }
 
-    private workflowAdvance_extract(text: string, actions: CalypsoAction[]): void {
-        const match: RegExpMatchArray | null = text.match(/\[ACTION: PROCEED(?:\s+([a-z0-9_-]+))?\]/i);
-        if (match) {
-            actions.push({
-                type: 'stage_advance',
-                stage: 'process',
-                workflow: match[1]?.toLowerCase()
-            });
-        }
-    }
-
-    private datasetRender_extract(text: string, search: SearchProvider, actions: CalypsoAction[]): void {
-        if (!text.includes('[ACTION: SHOW_DATASETS]')) return;
-
-        let datasets: Dataset[] = [...search.lastMentioned_get()];
-        const filterMatch: RegExpMatchArray | null = text.match(/\[FILTER: (.*?)\]/);
+    /**
+     * Resolve pronouns like "those" or "them" into actual dataset IDs.
+     */
+    private async anaphora_resolve(args: string[], ctx: LLMCompilerContext): Promise<string[]> {
+        const resolutionTokens = ['it', 'them', 'those', 'this', 'that', 'all'];
+        const needsResolution = args.some(a => resolutionTokens.includes(a.toLowerCase()));
         
-        if (filterMatch) {
-            const ids: string[] = filterMatch[1].split(',').map(s => s.trim());
-            datasets = datasets.filter(ds => ids.includes(ds.id));
+        if (!needsResolution) {
+            return args;
         }
-        actions.push({ type: 'workspace_render', datasets });
-    }
 
-    private projectRename_extract(text: string, store: CalypsoStoreActions, actions: CalypsoAction[]): void {
-        const match: RegExpMatchArray | null = text.match(/\[ACTION: RENAME (.*?)\]/);
-        if (match) {
-            const active = store.project_getActive();
-            if (active) {
-                actions.push({ type: 'project_rename', id: active.id, newName: match[1].trim() });
-            }
+        const recentDatasets = ctx.storeActions.lastMentioned_get();
+        if (recentDatasets.length === 0) {
+            return args;
         }
-    }
 
-    private actionMarkers_strip(text: string): string {
-        return text
-            .replace(/\[SELECT: ds-[0-9]+\]/g, '')
-            .replace(/\[ACTION: PROCEED(?:\s+[a-z0-9_-]+)?\]/gi, '')
-            .replace(/\[ACTION: SHOW_DATASETS\]/g, '')
-            .replace(/\[FILTER:.*?\]/g, '')
-            .replace(/\[ACTION: RENAME.*?\]/g, '')
-            .trim();
-    }
-
-    private payload_parseFromModelText(text: string): ModelIntentPayload | null {
-        const jsonMatch: RegExpMatchArray | null = text.match(/\{.*?\}/s);
-        if (!jsonMatch || !jsonMatch[0]) return null;
-
-        try {
-            const parsed = JSON.parse(jsonMatch[0]);
-            return (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) 
-                ? (parsed as ModelIntentPayload) 
-                : null;
-        } catch {
-            return null;
-        }
-    }
-
-    private intent_fromModelPayload(input: string, payload: ModelIntentPayload, ctx: LLMCompilerContext): CalypsoIntent {
-        const typeValue = payload.type;
-        const type: CalypsoIntent['type'] = (typeValue === 'workflow' || typeValue === 'llm' || typeValue === 'shell' || typeValue === 'special') 
-            ? typeValue as CalypsoIntent['type'] 
-            : 'llm';
-
-        if (type !== 'workflow') return this.intent_modelFallback(input);
-
-        const command: string | undefined = typeof payload.command === 'string' && payload.command.length > 0 ? payload.command : undefined;
-        const workflowCommands: Set<string> = new Set<string>(ctx.workflowCommands_resolve());
-        
-        if (!command || !workflowCommands.has(command)) return this.intent_modelFallback(input);
-
-        const rawArgs: string[] = Array.isArray(payload.args) 
-            ? payload.args.filter((entry): entry is string => typeof entry === 'string') 
-            : [];
-        
-        // Selective resolution for mutation verbs
-        const resolutionVerbs = ['add', 'remove', 'deselect', 'gather', 'review', 'rename'];
-        const resolvedArgs: string[] = resolutionVerbs.includes(command) 
-            ? this.modelArgs_resolve(rawArgs, ctx.searchProvider)
-            : rawArgs;
-
-        return { type: 'workflow', command, args: resolvedArgs, raw: input, isModelResolved: true };
-    }
-
-    private modelArgs_resolve(args: string[], search: SearchProvider): string[] {
         const resolved: string[] = [];
         for (const arg of args) {
-            const resolvedDatasets = search.resolve(arg);
-            if (resolvedDatasets.length > 0) {
-                resolved.push(...resolvedDatasets.map(ds => ds.id));
+            if (resolutionTokens.includes(arg.toLowerCase())) {
+                resolved.push(...recentDatasets.map(ds => ds.id));
             } else {
-                resolved.push(arg);
+                // If it's a dataset ID but not recently mentioned, verify it exists
+                const resolvedDatasets = ctx.searchProvider.resolve(arg);
+                if (resolvedDatasets.length > 0) {
+                    resolved.push(...resolvedDatasets.map(ds => ds.id));
+                } else {
+                    resolved.push(arg);
+                }
             }
         }
-        return resolved;
+
+        return Array.from(new Set(resolved));
     }
 
-    private intent_modelFallback(input: string): CalypsoIntent {
-        return { type: 'llm', raw: input, isModelResolved: true };
+    /**
+     * Extract JSON block from markdown-wrapped model response.
+     */
+    private json_extract(text: string): string {
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start === -1 || end === -1) return '{}';
+        return text.substring(start, end + 1);
     }
 }

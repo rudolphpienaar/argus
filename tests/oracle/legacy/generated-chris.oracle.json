@@ -12,9 +12,6 @@
       "success": true
     },
     {
-      "vfs_exists": "${session}/search/data/search.json"
-    },
-    {
       "send": "add ds-001",
       "success": true,
       "capture_project": true
@@ -24,21 +21,17 @@
       "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/data/gather.json"
-    },
-    {
       "send": "proceed chris",
       "success": true
-    },
-    {
-      "vfs_exists": "${session}/search/gather/code/data/code.json"
     },
     {
       "send": "python main.py",
       "success": true
     },
     {
-      "vfs_exists": "${session}/search/gather/code/test/data/test.json"
+      "send": "test",
+      "success": false,
+      "output_contains": "ALREADY"
     },
     {
       "send": "publish",

@@ -14,8 +14,7 @@
 import type { 
     CalypsoResponse, 
     CalypsoAction, 
-    CalypsoStoreActions, 
-    CalypsoIntent 
+    CalypsoStoreActions 
 } from '../types.js';
 import { CalypsoStatusCode } from '../types.js';
 import type { LCARSEngine } from './LCARSEngine.js';
@@ -66,16 +65,15 @@ export class CalypsoKernel {
         this.mode = config.mode;
         
         // v12.0: Initialize Intent Guard based on kernel mode
-        // In NULL_HYPOTHESIS mode, we force EXPERIMENTAL (guardrails off)
         const guardMode = (this.mode === CalypsoOperationMode.STRICT) 
             ? IntentGuardMode.STRICT 
             : IntentGuardMode.EXPERIMENTAL;
         this.intentGuard = new IntentGuard({ mode: guardMode });
 
         this.statusProvider = new StatusProvider(
-            parserContext.vfs as any,
+            (parserContext as any).vfs as any,
             storeActions,
-            parserContext.workflowAdapter as any
+            (parserContext as any).workflowAdapter as any
         );
 
         this.intentParser = new IntentParser(
@@ -90,7 +88,7 @@ export class CalypsoKernel {
     }
 
     /**
-     * Resolve user input into a structured response with side effects.
+     * Resolve user input into a structured response.
      * 
      * v12.0: Implements the "Precedence of Truth" and the "Structural Bypass".
      */
@@ -98,7 +96,6 @@ export class CalypsoKernel {
         // v12.0: THE PRECEDENCE OF TRUTH
         
         // 1. GUIDANCE & CONFIRMATION (Bypassed in NULL_HYPOTHESIS)
-        // This is the first lens: deterministic interaction patterns.
         if (this.mode !== CalypsoOperationMode.NULL_HYPOTHESIS) {
             const guidance = this.workflowController.guidance_handle(input, this.controllerContext_create(sessionPath));
             if (guidance) return guidance;
@@ -108,8 +105,6 @@ export class CalypsoKernel {
         }
 
         // 2. FAST PATH (Bypassed in NULL_HYPOTHESIS)
-        // This is the second lens: exact deterministic matching.
-        // This must run even if the engine is offline.
         if (this.mode !== CalypsoOperationMode.NULL_HYPOTHESIS) {
             const intent = await this.intentParser.intent_resolve(input, null);
             if (intent.type !== 'llm') {
@@ -128,7 +123,6 @@ export class CalypsoKernel {
         }
 
         // 3. CONTEXT INJECTION (RAG) (Bypassed in NULL_HYPOTHESIS)
-        // This is the third lens: physical state grounding.
         const context = (this.mode !== CalypsoOperationMode.NULL_HYPOTHESIS)
             ? this.statusProvider.workflowContext_generate(sessionPath)
             : '--- NULL HYPOTHESIS MODE: NO CONTEXT PROVIDED ---';

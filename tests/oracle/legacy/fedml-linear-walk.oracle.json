@@ -14,22 +14,24 @@
     {
       "send": "gather",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/data/gather.json"]
+      "materialized": ["${session}/search/gather/output/.cohort"]
     },
     {
       "send": "harmonize",
       "expect": "OK",
-      "materialized": ["${session}/search/gather/harmonize/data/harmonize.json"]
+      "materialized": ["${session}/search/gather/harmonize/output/.harmonized"]
     },
     {
       "send": "proceed",
-      "expect": "OK",
-      "materialized": ["${session}/search/gather/harmonize/code/data/code.json"]
+      "expect": "OK"
     },
     {
       "send": "python train.py",
-      "expect": "OK",
-      "materialized": ["${session}/search/gather/harmonize/code/train/data/train.json"]
+      "expect": "OK"
+    },
+    {
+      "send": "/snapshot /",
+      "expect": "OK"
     }
   ]
 }

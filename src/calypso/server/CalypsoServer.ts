@@ -29,6 +29,8 @@ import { SYSTEM_KNOWLEDGE } from '../../core/data/knowledge.js';
 import { SettingsService } from '../../config/settings.js';
 import { restRequest_handle } from './RestHandler.js';
 import { wsConnection_handle } from './WebSocketHandler.js';
+import type { WebSocketHandlerDeps } from './WebSocketHandler.js';
+import { SessionBus } from './WebSocketHandler.js';
 import type { RestHandlerDeps } from './rest/types.js';
 
 // ─── Environment Loading ────────────────────────────────────────────────────
@@ -274,14 +276,27 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
     const settingsService: SettingsService = SettingsService.instance_get();
     let calypso: CalypsoCore = calypso_initialize('developer', settingsService);
 
+    // Session Bus wraps the kernel — replace the kernel reference on reinitialize
+    // so existing surface registrations survive login/reinit cycles.
+    const bus: SessionBus = new SessionBus(calypso);
+
     const deps: RestHandlerDeps = {
         calypso_get: () => calypso,
         calypso_reinitialize: (username?: string): CalypsoCore => {
             calypso = calypso_initialize(username, settingsService);
+            bus.kernel_replace(calypso);
             return calypso;
         },
         host,
         port
+    };
+
+    // WebSocket handler deps — surfaces interact exclusively through the bus.
+    const wsDeps: WebSocketHandlerDeps = {
+        bus_get: () => bus,
+        calypso_reinitialize: (username?: string): void => {
+            deps.calypso_reinitialize(username);
+        }
     };
 
     // HTTP server with REST handler
@@ -316,7 +331,7 @@ export function calypsoServer_start(options: CalypsoServerOptions = {}): http.Se
 
     wss.on('connection', (ws: WebSocket): void => {
         console.log(`WebSocket client connected (total: ${wss.clients.size})`);
-        wsConnection_handle(ws, deps);
+        wsConnection_handle(ws, wsDeps);
 
         ws.on('close', () => {
             console.log(`WebSocket client disconnected (total: ${wss.clients.size})`);

@@ -9,6 +9,7 @@
 import type { VirtualFileSystem } from '../vfs/VirtualFileSystem.js';
 import type { Shell } from '../vfs/Shell.js';
 import type { Dataset, AppState, Project } from '../core/models/types.js';
+export type { Dataset, AppState, Project };
 import type { FileNode } from '../vfs/types.js';
 import type { SearchProvider } from './SearchProvider.js';
 import type { SettingsService } from '../config/settings.js';
@@ -260,6 +261,14 @@ export interface PluginContext {
 
     /** v10.2: Physical directory for this stage's payload materialization. */
     dataDir: string;
+
+    /** v12.0: Unique identifier for the current workflow stage. */
+    stageId: string;
+}
+
+/** v12.0: Unified extraction bridge between CNS and Physical VM. */
+export interface PluginModule {
+    plugin_execute(context: PluginContext): Promise<PluginResult>;
 }
 
 // ─── CalypsoCore Types ─────────────────────────────────────────────────────
@@ -320,6 +329,9 @@ export interface CalypsoResponse {
         vfs?: VfsSnapshotNode;
         store?: Partial<AppState>;
     };
+
+    /** v12.0: Execution latency in milliseconds. */
+    latency_ms?: number;
 }
 
 /**

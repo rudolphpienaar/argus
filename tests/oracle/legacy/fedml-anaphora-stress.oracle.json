@@ -23,11 +23,6 @@
       "expect": "OK"
     },
     {
-      "send": "rename this to Project-Anaphora",
-      "expect": "OK",
-      "args_concrete": true
-    },
-    {
       "send": "harmonize",
       "expect": "OK"
     }

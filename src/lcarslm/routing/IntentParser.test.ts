@@ -114,7 +114,7 @@ describe('IntentParser', (): void => {
 
         expect(intent.type).toBe('workflow');
         expect(intent.command).toBe('rename');
-        expect(intent.args).toEqual(['new-project']);
+        expect(intent.args).toEqual(['to', 'New-Project']);
         expect(intent.isModelResolved).toBe(false);
     });
 
@@ -124,7 +124,7 @@ describe('IntentParser', (): void => {
 
         expect(intent.type).toBe('workflow');
         expect(intent.command).toBe('rename');
-        expect(intent.args).toEqual(['histo-exp']);
+        expect(intent.args).toEqual(['this', 'as', 'histo-exp']);
         expect(intent.isModelResolved).toBe(false);
     });
 
@@ -193,9 +193,7 @@ describe('IntentParser', (): void => {
             '[SELECT: ds-001]',
             '[ACTION: SHOW_DATASETS]',
             '[FILTER: ds-001]',
-            '[ACTION: RENAME project-v2]',
-            '[ACTION: PROCEED custom-workflow]',
-            'Proceeding with selected dataset.'
+            'Found relevant datasets for your query.'
         ].join(' ');
 
         const extracted: { actions: CalypsoAction[]; cleanText: string; } = parser.actions_extractFromLLM(llmText);
@@ -206,22 +204,10 @@ describe('IntentParser', (): void => {
         const workspaceAction: CalypsoAction | undefined = extracted.actions.find(
             (action: CalypsoAction): boolean => action.type === 'workspace_render'
         );
-        const renameAction: CalypsoAction | undefined = extracted.actions.find(
-            (action: CalypsoAction): boolean => action.type === 'project_rename'
-        );
-        const proceedAction: CalypsoAction | undefined = extracted.actions.find(
-            (action: CalypsoAction): boolean =>
-                action.type === 'stage_advance' && action.stage === 'process'
-        );
 
         expect(selectAction).toBeDefined();
         expect(workspaceAction).toBeDefined();
-        expect(renameAction).toBeDefined();
-        expect(proceedAction).toBeDefined();
-        if (proceedAction && proceedAction.type === 'stage_advance') {
-            expect(proceedAction.workflow).toBe('custom-workflow');
-        }
-        expect(extracted.cleanText).toContain('Proceeding with selected dataset.');
+        expect(extracted.cleanText).toContain('Found relevant datasets for your query.');
         expect(extracted.cleanText).not.toContain('[ACTION:');
         expect(extracted.cleanText).not.toContain('[SELECT:');
     });

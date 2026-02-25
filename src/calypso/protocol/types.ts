@@ -100,9 +100,27 @@ export interface ErrorMessage {
     message: string;
 }
 
+/**
+ * Cross-surface broadcast message.
+ *
+ * Sent to every surface that did NOT originate the intent. Contains the
+ * full CalypsoResponse so each secondary surface can run its complete
+ * rendering pipeline — identical to what the originator received.
+ *
+ * `sourceId` is attribution metadata; surfaces render all events the same way.
+ */
+export interface SessionEventMessage {
+    type: 'session_event';
+    sourceId: string;
+    input: string;
+    response: CalypsoResponse;
+    timestamp: number;
+}
+
 export type ServerMessage =
     | ResponseMessage
     | TelemetryMessage
+    | SessionEventMessage
     | LoginResponseMessage
     | PersonaResponseMessage
     | PromptResponseMessage

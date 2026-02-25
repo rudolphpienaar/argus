@@ -10,8 +10,8 @@
  * @module lcarslm/routing/IntentParser
  */
 
-import type { CalypsoAction, CalypsoIntent, CalypsoStoreActions } from '../../types.js';
-import type { SearchProvider } from '../../SearchProvider.js';
+import type { CalypsoAction, CalypsoIntent, CalypsoStoreActions } from '../types.js';
+import type { SearchProvider } from '../SearchProvider.js';
 import { LCARSEngine } from './LCARSEngine.js';
 import { FastPathRouter } from './FastPathRouter.js';
 import { LLMIntentCompiler } from './LLMIntentCompiler.js';
@@ -143,9 +143,6 @@ export class IntentParser {
     private inputGrounded_resolve(input: string): string {
         const words = input.trim().split(/\s+/);
         if (words.length === 0) return input;
-
-        const verb = words[0].toLowerCase();
-        if (verb === 'rename') return input;
 
         const groundedWords = words.map((word, index) => {
             if (index === 0) return word;

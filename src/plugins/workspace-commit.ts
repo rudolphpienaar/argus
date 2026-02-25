@@ -54,7 +54,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
  */
 function merge_causal(vfs: any, src: string, dest: string, parentId: string): void {
     const nodes = vfs.dir_list(src);
-    
+
     for (const node of nodes) {
         // v12.0: Skip system-owned infrastructure dirs
         if (['meta', 'input', 'output'].includes(node.name)) {
@@ -62,14 +62,10 @@ function merge_causal(vfs: any, src: string, dest: string, parentId: string): vo
         }
 
         const targetPath = `${dest}/${node.name}`;
-        const isDataDir = ['training', 'validation', 'images', 'masks'].includes(node.name);
 
-        if (isDataDir) {
-            // Relative link to parent output: ../input/<parentId>/<name>
+        if (node.type === 'folder') {
+            // Link all subdirectories to parent — no domain-specific name checks
             vfs.link_create(targetPath, `../input/${parentId}/${node.name}`);
-        } else if (node.type === 'folder') {
-            vfs.dir_create(targetPath);
-            merge_causal(vfs, node.path, targetPath, parentId);
         } else {
             // Clone small files (scripts, configs)
             vfs.tree_clone(node.path, targetPath);

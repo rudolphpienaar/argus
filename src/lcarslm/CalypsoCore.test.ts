@@ -177,8 +177,8 @@ describe('CalypsoCore', (): void => {
             expect(approveResponse.statusCode).toBe(CalypsoStatusCode.OK);
 
             const sessionPath: string = fixture.core.session_getPath();
-            // v12.0 Path Contract Check
-            expect(fixture.core.vfs_exists(`${sessionPath}/search/gather/harmonize/meta/harmonize.json`)).toBe(true);
+            // v13.0 Path Contract Check: all stages appear in the provenance chain
+            expect(fixture.core.vfs_exists(`${sessionPath}/search/gather/join_ml-readiness-gather/gather-gate/join_collect_gather-gate/pre_harmonize/harmonize/meta/harmonize.json`)).toBe(true);
         } finally {
             if (env.process?.env) {
                 env.process.env.CALYPSO_FAST = prevFast;

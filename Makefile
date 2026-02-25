@@ -66,14 +66,10 @@ calypso-ws:
 	@echo "Starting Calypso CLI client (WebSocket)..."
 	npx tsx src/calypso/cli/main.ts
 
-test-oracle:
+test-oracle: build
 	@echo "Running ORACLE integration tests..."
-	@echo "Building latest JS artifacts for ORACLE runner..."
-	@npm run build > /dev/null
 	node scripts/oracle-runner.mjs
 
-test-oracle-verbose:
+test-oracle-verbose: build
 	@echo "Running ORACLE integration tests (verbose)..."
-	@echo "Building latest JS artifacts for ORACLE runner..."
-	@npm run build > /dev/null
 	node scripts/oracle-runner.mjs --verbose

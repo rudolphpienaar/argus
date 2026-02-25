@@ -40,7 +40,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
                     '  `config visibility <public|private>`',
                     '  `publish-config`',
                 ].join('\n'),
-                statusCode: CalypsoStatusCode.CONVERSATIONAL,
+                statusCode: CalypsoStatusCode.OK,
             };
         }
 

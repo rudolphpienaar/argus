@@ -48,7 +48,7 @@ export async function plugin_execute(context: PluginContext): Promise<PluginResu
  * Handle 'search <keywords>' - Query catalog and update ledger.
  */
 async function query_handle(context: PluginContext): Promise<PluginResult> {
-    const { parameters, args, ui, search: searchProvider, dataDir, comms } = context;
+    const { parameters, args, ui, search: searchProvider, dataDir, comms, vfs } = context;
     const query: string = (parameters.query as string) || args.join(' ');
     
     if (!query) {
@@ -62,7 +62,11 @@ async function query_handle(context: PluginContext): Promise<PluginResult> {
 
     const resolved = await comms.datasetSearch_resolve(query);
     const results: Dataset[] = resolved.results;
-    const snap: SearchMaterialization = searchProvider.snapshot_materialize(query, results, dataDir);
+    
+    // v12.0: Materialize search snapshot in output/ for DAG linking
+    const outputDir = `${dataDir}/output`;
+    try { vfs.dir_create(outputDir); } catch { /* ignore */ }
+    const snap: SearchMaterialization = searchProvider.snapshot_materialize(query, results, outputDir);
 
     const displayPath: string | null = searchProvider.displayPath_resolve(snap.path);
     const snapLine: string = displayPath ? `\n${CalypsoPresenter.info_format(`SEARCH SNAPSHOT: ${displayPath}`)}` : '';
@@ -76,7 +80,8 @@ async function query_handle(context: PluginContext): Promise<PluginResult> {
                 `${CalypsoPresenter.searchDetails_format(results)}${semanticLine}${snapLine}`,
         statusCode: CalypsoStatusCode.OK,
         actions: [{ type: 'workspace_render', datasets: results }],
-        artifactData: snap.content
+        artifactData: snap.content,
+        physicalDataDir: outputDir
     };
 }
 
@@ -94,11 +99,14 @@ async function add_handle(ids: string[], context: PluginContext): Promise<Plugin
         return { message: `○ DATASET(S) "${ids.join(', ')}" NOT FOUND.`, statusCode: CalypsoStatusCode.ERROR };
     }
 
+    const outputDir = `${dataDir}/output`;
+    try { vfs.dir_create(outputDir); } catch { /* ignore */ }
+
     const addedIds: string[] = [];
     for (const ds of datasets) {
         store.dataset_select(ds);
         
-        // Materialize atomic add-file
+        // Materialize atomic add-file in output directory
         const fileName: string = `add-${ds.id}.json`;
         const content = {
             id: ds.id,
@@ -106,7 +114,7 @@ async function add_handle(ids: string[], context: PluginContext): Promise<Plugin
             provider: ds.provider,
             addedAt: new Date().toISOString()
         };
-        vfs.file_create(`${dataDir}/${fileName}`, JSON.stringify(content, null, 2));
+        vfs.file_create(`${outputDir}/${fileName}`, JSON.stringify(content, null, 2));
         addedIds.push(ds.id);
     }
 
@@ -115,7 +123,8 @@ async function add_handle(ids: string[], context: PluginContext): Promise<Plugin
                  `\n○ Materialized as atomic artifacts in search output.`,
         statusCode: CalypsoStatusCode.OK,
         actions: datasets.map(d => ({ type: 'dataset_select', id: d.id })),
-        artifactData: { added: addedIds }
+        artifactData: { added: addedIds },
+        physicalDataDir: outputDir
     };
 }
 
@@ -126,13 +135,14 @@ function remove_handle(ids: string[], context: PluginContext): PluginResult {
     const { store, vfs, dataDir } = context;
     if (ids.length === 0) return { message: '○ NO DATASET ID PROVIDED.', statusCode: CalypsoStatusCode.ERROR };
 
+    const outputDir = `${dataDir}/output`;
     const removedIds: string[] = [];
     for (const id of ids) {
         store.dataset_deselect(id);
         
         const fileName: string = `add-${id}.json`;
         try {
-            vfs.node_remove(`${dataDir}/${fileName}`);
+            vfs.node_remove(`${outputDir}/${fileName}`);
             removedIds.push(id);
         } catch { /* ignore missing */ }
     }
